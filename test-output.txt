@@ -1,0 +1,3 @@
+process.versions.electron: 42.0.1
+process.type: undefined
+electron type: string

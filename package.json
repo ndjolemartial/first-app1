@@ -1,0 +1,97 @@
+{
+  "name": "afrikimmo-app",
+  "version": "1.0.0",
+  "description": "Application de gestion immobilière Afrikimmo",
+  "main": "dist/main/index.js",
+  "scripts": {
+    "dev": "npm run build:dev && concurrently -k \"npm run dev:preload\" \"npm run dev:main\" \"npm run dev:vite\" \"npm run dev:electron\"",
+    "build:dev": "npm run build:preload && npm run build:main",
+    "dev:vite": "vite",
+    "dev:electron": "cross-env NODE_ENV=development node scripts/run-electron.js",
+    "dev:main": "tsc -p tsconfig.main.json --watch --preserveWatchOutput",
+    "dev:preload": "tsc -p tsconfig.preload.json --watch --preserveWatchOutput",
+    "build:preload": "tsc -p tsconfig.preload.json",
+    "build:main": "tsc -p tsconfig.main.json",
+    "build": "npm run build:preload && npm run build:main && npm run build:vite",
+    "build:vite": "vite build",
+    "build:electron": "tsc -p tsconfig.main.json",
+    "package": "npm run build && electron-builder",
+    "package:win": "npm run build && electron-builder --win",
+    "db:migrate": "prisma migrate dev",
+    "db:generate": "prisma generate",
+    "db:studio": "prisma studio",
+    "db:seed": "tsx scripts/seed.ts",
+    "db:reset": "prisma migrate reset",
+    "lint": "eslint src --ext .ts,.tsx",
+    "format": "prettier --write src",
+    "typecheck": "tsc --noEmit"
+  },
+  "build": {
+    "appId": "ci.afrikimmo.app",
+    "productName": "Afrikimmo-App",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "node_modules/**/*",
+      "package.json"
+    ],
+    "win": {
+      "target": "nsis"
+    },
+    "linux": {
+      "target": "AppImage"
+    },
+    "mac": {
+      "target": "dmg"
+    }
+  },
+  "keywords": [
+    "immobilier",
+    "gestion",
+    "electron"
+  ],
+  "author": "Afrikimmo",
+  "license": "ISC",
+  "devDependencies": {
+    "@prisma/client": "^5.22.0",
+    "@tailwindcss/vite": "^4.3.0",
+    "@types/node": "^25.7.0",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^6.0.1",
+    "autoprefixer": "^10.5.0",
+    "concurrently": "^9.2.1",
+    "cross-env": "^10.1.0",
+    "dotenv": "^17.4.2",
+    "electron": "^42.0.1",
+    "electron-builder": "^26.8.1",
+    "electron-log": "^5.4.3",
+    "postcss": "^8.5.14",
+    "prisma": "^5.22.0",
+    "tailwindcss": "^4.3.0",
+    "tsx": "^4.21.0",
+    "typescript": "^6.0.3",
+    "vite": "^8.0.12"
+  },
+  "dependencies": {
+    "@hookform/resolvers": "^5.2.2",
+    "@tanstack/react-query": "^5.100.10",
+    "@tanstack/react-table": "^8.21.3",
+    "@types/bcryptjs": "^2.4.6",
+    "@types/nodemailer": "^8.0.0",
+    "bcryptjs": "^3.0.3",
+    "clsx": "^2.1.1",
+    "date-fns": "^4.1.0",
+    "lucide-react": "^1.14.0",
+    "nodemailer": "^8.0.7",
+    "react": "^19.2.6",
+    "react-dom": "^19.2.6",
+    "react-hook-form": "^7.75.0",
+    "react-router-dom": "^7.15.0",
+    "recharts": "^3.8.1",
+    "zod": "^4.4.3",
+    "zustand": "^5.0.13"
+  }
+}

@@ -1,0 +1,868 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+// ── UTILISATEURS ──────────────────────────────────────────────
+
+model User {
+  id          Int       @id @default(autoincrement())
+  uuid        String    @unique @default(cuid())
+  matricule   String
+  firstName   String
+  lastName    String
+  email       String    @unique
+  password    String
+  role        UserRole  @default(AGENT)
+  isActive    Boolean   @default(true)
+  avatar      String?
+  phone       String?
+  mobile      String?
+  lastLoginAt DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  deletedAt   DateTime?
+
+  activities           CrmActivity[]
+  contracts            Contract[]      @relation("AgentContracts")
+  notes                Note[]
+  archivedEntities     ArchiveRecord[] @relation("ArchivedBy")
+  restoredEntities     ArchiveRecord[] @relation("RestoredBy")
+  commissions          Commission[]    @relation("UserCommissions")
+  commissionsPaid      Commission[]    @relation("CommissionPaidBy")
+  commissionsCancelled Commission[]    @relation("CommissionCancelledBy")
+}
+
+enum UserRole {
+  SUPER_ADMIN
+  ADMIN
+  MANAGER
+  AGENT
+  ACCOUNTANT
+  READONLY
+}
+
+// ── PROSPECTS ─────────────────────────────────────────────────
+
+model Prospect {
+  id           Int            @id @default(autoincrement())
+  uuid         String         @unique @default(cuid())
+  firstName    String
+  lastName     String
+  email        String?
+  phone        String?
+  mobile       String?
+  source       ProspectSource @default(PROSPECTION)
+  status       ProspectStatus @default(NOUVEAU)
+  budget       Decimal?       @db.Decimal(15, 2)
+  notes        String?        @db.Text
+  assignedToId Int?
+  convertedAt  DateTime?
+  clientId     Int?           @unique
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+  deletedAt    DateTime?
+
+  client     Client?       @relation(fields: [clientId], references: [id])
+  activities CrmActivity[]
+  tags       ProspectTag[]
+}
+
+enum ProspectSource {
+  SITE_WEB_AFRIKIMMO
+  RECOMMENDATION
+  TELEPHONE
+  RESEAUX_SOCIAUX
+  EMAIL
+  CONTACT_PERSONNEL
+  AUTRE
+  PROSPECTION
+}
+
+enum ProspectStatus {
+  NOUVEAU
+  CONTACTE
+  QUALIFIE
+  ENVOI_PROPOSITION
+  NEGOCIATION_EN_COURS
+  CONVERTI
+  PERDU
+}
+
+// ── CLIENTS ───────────────────────────────────────────────────
+
+model Client {
+  id                   Int        @id @default(autoincrement())
+  uuid                 String     @unique @default(cuid())
+  type                 ClientType @default(INDIVIDUEL)
+  firstName            String?
+  lastName             String?
+  civilite             CiviliteType       @default(MONSIEUR)
+  statutConjugal       StatutConjugalType @default(CELIBATAIRE)
+  entreprise           String?
+  registre_de_commerce String?
+  compte_contribuable  String?
+  email                String?
+  phone                String?
+  mobile               String?
+  address              String?
+  city                 String?
+  postalCode           String?
+  country              String     @default("CI")
+  nationality          String?
+  birthDate            DateTime?
+  idNumber             String?
+  fatherFirstName      String?
+  fatherLastName       String?
+  motherFirstName      String?
+  motherLastName       String?
+  notes                String?    @db.Text
+  isActive             Boolean      @default(true)
+  status               ClientStatus @default(ACTIF)
+  createdAt            DateTime     @default(now())
+  updatedAt            DateTime     @updatedAt
+  deletedAt            DateTime?
+
+  prospect   Prospect?
+  contracts  Contract[]
+  documents  Document[]
+  activities CrmActivity[]
+  invoices   Invoice[]
+  terrains   Terrain[]
+}
+
+enum ClientType {
+  INDIVIDUEL
+  ENTREPRISE
+}
+
+enum ClientStatus {
+  ACTIF
+  INACTIF
+  VIP
+  SUSPENDU
+}
+
+enum CiviliteType {
+  MONSIEUR
+  MADAME
+  MADEMOISELLE
+}
+
+enum StatutConjugalType {
+  CELIBATAIRE
+  MARIEE
+  CONCUBINAGE
+}
+
+// ── PROPRIÉTAIRES ─────────────────────────────────────────────
+
+model Owner {
+  id                  Int        @id @default(autoincrement())
+  uuid                String     @unique @default(cuid())
+  type                ClientType @default(INDIVIDUEL)
+  // Particulier
+  firstName           String?
+  lastName            String?
+  idNumber            String?    // Numéro pièce d'identité (particulier)
+  // Entreprise
+  companyName         String?
+  registreCommerce    String?    // Numéro registre de commerce
+  legalRepFirstName   String?    // Prénom représentant légal
+  legalRepLastName    String?    // Nom représentant légal
+  legalRepPhone       String?    // Contact représentant légal
+  legalRepIdNumber    String?    // Numéro pièce d'identité représentant légal
+  // Commun
+  email               String?
+  phone               String?
+  mobile              String?
+  address             String?
+  city                String?
+  postalCode          String?
+  country             String     @default("CI")
+  bankIban            String?
+  bankBic             String?
+  compte_contribuable String?
+  notes               String?    @db.Text
+  isActive            Boolean    @default(true)
+  createdAt           DateTime   @default(now())
+  updatedAt           DateTime   @updatedAt
+  deletedAt           DateTime?
+
+  properties Property[]
+  terrains   Terrain[]
+  documents  Document[]
+  activities CrmActivity[]
+}
+
+// ── LOTISSEMENTS ───────────────────────────────────────────────
+
+model Lotissement {
+  id              Int               @id @default(autoincrement())
+  uuid            String            @unique @default(cuid())
+  reference       String            @unique  // Ex: LOT-2024-0001
+  nom             String
+  commune         String?
+  quartier        String?
+  ville           String
+  pays            String            @default("CI")
+  surface         Decimal?          @db.Decimal(12, 2)  // Surface totale en m²
+  nombreParcelles Int?
+  promoteur       String?
+  statut          LotissementStatus @default(EN_COURS_LOTISSEMENT)
+  description     String?           @db.Text
+  latitude        Float?
+  longitude       Float?
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+  deletedAt       DateTime?
+
+  terrains   Terrain[]
+  documents  Document[]
+  activities CrmActivity[]
+}
+
+enum LotissementStatus {
+  EN_COURS_LOTISSEMENT
+  EN_COURS
+  OUVERT
+  PARTIELLEMENT_VENDU
+  COMPLET
+  FERME
+}
+
+// ── TERRAINS ───────────────────────────────────────────────────
+
+model Terrain {
+  id             Int           @id @default(autoincrement())
+  uuid           String        @unique @default(cuid())
+  reference      String        @unique  // Ex: TER-2024-0001
+  lotissementId  Int
+  ownerId        Int?
+  clientId       Int?          // Attributaire (client à qui le terrain est attribué)
+  numeroIlot     String?       // Numéro d'îlot
+  numeroParcelle String?       // Numéro de parcelle/lot
+  statut         TerrainStatus @default(DISPONIBLE)
+  surface        Decimal?      @db.Decimal(12, 2)  // m²
+  prixVente      Decimal?      @db.Decimal(15, 2)
+  viabilise      Boolean       @default(false)
+  numeroADU                    String?  // Numéro ADU
+  numeroAttestationAttribution String?  // Numéro attestation d'attribution
+  numeroAttestationCession     String?  // Numéro attestation de cession
+  numeroDM                     String?  // Numéro décision de morcellement
+  titreFoncier                 String?  // Numéro titre foncier
+  numeroACD                    String?  // Numéro arrêté de concession définitive
+  description    String?       @db.Text
+  latitude       Float?
+  longitude      Float?
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+  deletedAt      DateTime?
+
+  lotissement Lotissement   @relation(fields: [lotissementId], references: [id])
+  owner       Owner?        @relation(fields: [ownerId], references: [id])
+  client      Client?       @relation(fields: [clientId], references: [id])
+  documents   Document[]
+  photos      TerrainPhoto[]
+  activities  CrmActivity[]
+  contracts   Contract[]
+}
+
+enum TerrainStatus {
+  DISPONIBLE
+  RESERVE
+  VENDU
+  SOUS_OPTION
+}
+
+model TerrainPhoto {
+  id        Int      @id @default(autoincrement())
+  terrainId Int
+  path      String
+  caption   String?
+  isPrimary Boolean  @default(false)
+  order     Int      @default(0)
+  createdAt DateTime @default(now())
+
+  terrain Terrain @relation(fields: [terrainId], references: [id])
+}
+
+// ── BIENS IMMOBILIERS ─────────────────────────────────────────
+
+model Property {
+  id            Int                @id @default(autoincrement())
+  uuid          String             @unique @default(cuid())
+  reference     String             @unique
+  type          PropertyType
+  status        PropertyStatus     @default(DISPONIBLE)
+  ownerId       Int
+  address       String
+  addressLine2  String?
+  city          String
+  postalCode    String
+  country       String             @default("CI")
+  latitude      Float?
+  longitude     Float?
+  surface       Decimal            @db.Decimal(10, 2)
+  surfaceCarrez Decimal?           @db.Decimal(10, 2)
+  rooms         Int?
+  bedrooms      Int?
+  bathrooms     Int?
+  floor         Int?
+  totalFloors   Int?
+  buildYear     Int?
+  condition     PropertyCondition?
+  rentPrice     Decimal?           @db.Decimal(15, 2)
+  salePrice     Decimal?           @db.Decimal(15, 2)
+  charges       Decimal?           @db.Decimal(15, 2)
+  taxeFonciere  Decimal?           @db.Decimal(15, 2)
+  description   String?            @db.Text
+  amenities     Json?
+  createdAt     DateTime           @default(now())
+  updatedAt     DateTime           @updatedAt
+  deletedAt     DateTime?
+
+  owner      Owner           @relation(fields: [ownerId], references: [id])
+  contracts  Contract[]
+  documents  Document[]
+  photos     PropertyPhoto[]
+  activities CrmActivity[]
+}
+
+enum PropertyType {
+  APARTEMENT
+  DUPLEX
+  VILLA
+  STUDIO
+  BUREAU
+  PARKING
+  AUTRE
+}
+
+enum PropertyStatus {
+  DISPONIBLE
+  INDISPONIBLE
+  EN_LOCATION
+  SOLDE
+  SOUS_OPTION
+  EN_RENOVATION
+}
+
+enum PropertyCondition {
+  NOUVEAU
+  EXCELLENT
+  BON
+  MOYEN
+  MAUVAIS
+}
+
+model PropertyPhoto {
+  id         Int      @id @default(autoincrement())
+  propertyId Int
+  path       String
+  caption    String?
+  isPrimary  Boolean  @default(false)
+  order      Int      @default(0)
+  createdAt  DateTime @default(now())
+
+  property Property @relation(fields: [propertyId], references: [id])
+}
+
+// ── CONTRATS ──────────────────────────────────────────────────
+
+model Contract {
+  id                   Int              @id @default(autoincrement())
+  uuid                 String           @unique @default(cuid())
+  reference            String           @unique
+  type                 ContractType
+  status               ContractStatus   @default(BROUILLON)
+  assetType            ContractAssetType @default(PROPERTY)
+  propertyId           Int?
+  terrainId            Int?
+  clientId             Int
+  agentId              Int?
+  startDate            DateTime
+  endDate              DateTime?
+  signedAt             DateTime?
+  rentAmount           Decimal?         @db.Decimal(15, 2)
+  saleAmount           Decimal?         @db.Decimal(15, 2)
+  deposit              Decimal?         @db.Decimal(15, 2)
+  agencyFees           Decimal?         @db.Decimal(15, 2)
+  charges              Decimal?         @db.Decimal(15, 2)
+  paymentDay           Int?
+  paymentMethod        PaymentMethod    @default(ESPECE)
+  paymentModalites     PaymentModalites @default(CASH)
+  installmentCount     Int?
+  installmentAmount    Decimal?         @db.Decimal(15, 2)
+  firstInstallmentDate DateTime?
+  lastInstallmentDate  DateTime?
+  indexType            String?
+  lastRevisionAt       DateTime?
+  notes                String?          @db.Text
+  createdAt            DateTime         @default(now())
+  updatedAt            DateTime         @updatedAt
+  deletedAt            DateTime?
+
+  property     Property?         @relation(fields: [propertyId], references: [id])
+  terrain      Terrain?          @relation(fields: [terrainId], references: [id])
+  client       Client            @relation(fields: [clientId], references: [id])
+  agent        User?             @relation("AgentContracts", fields: [agentId], references: [id])
+  invoices     Invoice[]
+  documents    Document[]
+  activities   CrmActivity[]
+  installments SaleInstallment[]
+  commissions  Commission[]
+}
+
+enum ContractType {
+  RENTAL_UNFURNISHED
+  RENTAL_FURNISHED
+  SALE
+  MANAGEMENT
+  COMMERCIAL_LEASE
+}
+
+enum ContractAssetType {
+  PROPERTY
+  TERRAIN
+}
+
+enum ContractStatus {
+  BROUILLON
+  ACTIVE
+  EXPIRE
+  TERMINER
+  ANNULE
+  ATTENTE_SIGNATURE
+}
+
+enum PaymentMethod {
+  ESPECE
+  CHEQUE
+  TRANSFERT
+  VIREMENT
+  MOBILE_MONEY
+}
+
+enum PaymentModalites {
+  CASH
+  SUR_3_MOIS
+  SUR_6_MOIS
+  SUR_9_MOIS
+  SUR_12_MOIS
+  SUR_24_MOIS
+  SUR_36_MOIS
+  SUR_48_MOIS
+  SUR_60_MOIS
+  SUR_PLUS_60_MOIS
+}
+
+// ── COMPTABILITÉ ──────────────────────────────────────────────
+
+model Invoice {
+  id         Int           @id @default(autoincrement())
+  uuid       String        @unique @default(cuid())
+  reference  String        @unique
+  type       InvoiceType
+  status     InvoiceStatus @default(BROUILLON)
+  clientId   Int?
+  contractId Int?
+  subtotal   Decimal       @db.Decimal(15, 2)
+  taxRate    Decimal       @default(0) @db.Decimal(5, 2)
+  taxAmount  Decimal       @db.Decimal(15, 2)
+  total      Decimal       @db.Decimal(15, 2)
+  issueDate  DateTime      @default(now())
+  dueDate    DateTime
+  paidAt     DateTime?
+  notes      String?       @db.Text
+  createdAt  DateTime      @default(now())
+  updatedAt  DateTime      @updatedAt
+  deletedAt  DateTime?
+
+  client       Client?           @relation(fields: [clientId], references: [id])
+  contract     Contract?         @relation(fields: [contractId], references: [id])
+  items        InvoiceItem[]
+  payments     Payment[]
+  installments SaleInstallment[]
+}
+
+enum InvoiceType {
+  VENTE
+  ECHEANCE_VENTE
+  FRAIS_AGENCE
+  FRAIS_DE_GESTION
+  AVANCE
+  CAUTION
+  OTHER
+}
+
+enum InvoiceStatus {
+  BROUILLON
+  ENVOYEE
+  PAYEE
+  PARTIEL
+  EN_RETARD
+  ANNULEE
+}
+
+model InvoiceItem {
+  id          Int     @id @default(autoincrement())
+  invoiceId   Int
+  description String
+  quantity    Decimal @db.Decimal(10, 2)
+  unitPrice   Decimal @db.Decimal(15, 2)
+  total       Decimal @db.Decimal(15, 2)
+
+  invoice Invoice @relation(fields: [invoiceId], references: [id])
+}
+
+model Payment {
+  id        Int           @id @default(autoincrement())
+  invoiceId Int
+  amount    Decimal       @db.Decimal(15, 2)
+  method    PaymentMethod
+  paidAt    DateTime      @default(now())
+  reference String?
+  notes     String?
+
+  invoice Invoice @relation(fields: [invoiceId], references: [id])
+}
+
+// ── ÉCHÉANCES DE VENTE ────────────────────────────────────────
+
+model SaleInstallment {
+  id                Int               @id @default(autoincrement())
+  contractId        Int
+  installmentNumber Int
+  dueDate           DateTime
+  amount            Decimal           @db.Decimal(15, 2)
+  status            InstallmentStatus @default(EN_ATTENTE)
+  paidAt            DateTime?
+  paymentMethod     PaymentMethod?
+  paymentRef        String?
+  invoiceId         Int?
+  notes             String?
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+
+  contract Contract  @relation(fields: [contractId], references: [id])
+  invoice  Invoice?  @relation(fields: [invoiceId], references: [id])
+}
+
+enum InstallmentStatus {
+  EN_ATTENTE
+  A_REGLER
+  PAYE
+  EN_RETARD
+  ANNULE
+}
+
+// ── CRM & COMMUNICATION ───────────────────────────────────────
+
+model CrmActivity {
+  id             Int            @id @default(autoincrement())
+  type           ActivityType
+  subject        String
+  description    String?        @db.Text
+  status         ActivityStatus @default(EN_ATTENTE)
+  dueDate        DateTime?
+  completedAt    DateTime?
+  userId         Int?
+  prospectId     Int?
+  clientId       Int?
+  ownerId        Int?
+  propertyId     Int?
+  contractId     Int?
+  lotissementId  Int?
+  terrainId      Int?
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+
+  user        User?        @relation(fields: [userId], references: [id])
+  prospect    Prospect?    @relation(fields: [prospectId], references: [id])
+  client      Client?      @relation(fields: [clientId], references: [id])
+  owner       Owner?       @relation(fields: [ownerId], references: [id])
+  property    Property?    @relation(fields: [propertyId], references: [id])
+  contract    Contract?    @relation(fields: [contractId], references: [id])
+  lotissement Lotissement? @relation(fields: [lotissementId], references: [id])
+  terrain     Terrain?     @relation(fields: [terrainId], references: [id])
+}
+
+enum ActivityType {
+  NOTIFICATION
+  APPEL
+  EMAIL
+  SMS
+  REUNION
+  VISITE
+  TASK
+  RAPPEL
+  DOCUMENT
+}
+
+enum ActivityStatus {
+  EN_ATTENTE
+  EN_TRAITEMENT
+  TRAITE
+  ANNULE
+}
+
+model Communication {
+  id         Int          @id @default(autoincrement())
+  channel    CommChannel
+  direction  CommDirection @default(SORTANT)
+  to         String
+  subject    String?
+  body       String       @db.Text
+  status     CommStatus   @default(EN_ATTENTE)
+  sentAt     DateTime?
+  errorMsg   String?
+  templateId Int?
+  metadata   Json?
+  createdAt  DateTime     @default(now())
+
+  template CommTemplate? @relation(fields: [templateId], references: [id])
+}
+
+model CommTemplate {
+  id             Int          @id @default(autoincrement())
+  name           String
+  channel        CommChannel
+  subject        String?
+  body           String       @db.Text
+  variables      Json?
+  isActive       Boolean      @default(true)
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  communications Communication[]
+}
+
+enum CommChannel {
+  EMAIL
+  SMS
+}
+
+enum CommDirection {
+  ENTRANT
+  SORTANT
+}
+
+enum CommStatus {
+  EN_ATTENTE
+  ENVOYE
+  RECU
+  ECHEC
+  REFUSE
+}
+
+// ── DOCUMENTS ─────────────────────────────────────────────────
+
+model Document {
+  id             Int          @id @default(autoincrement())
+  name           String
+  type           String
+  path           String
+  size           Int
+  category       String?
+  clientId       Int?
+  ownerId        Int?
+  propertyId     Int?
+  contractId     Int?
+  lotissementId  Int?
+  terrainId      Int?
+  uploadedAt     DateTime     @default(now())
+
+  client      Client?      @relation(fields: [clientId], references: [id])
+  owner       Owner?       @relation(fields: [ownerId], references: [id])
+  property    Property?    @relation(fields: [propertyId], references: [id])
+  contract    Contract?    @relation(fields: [contractId], references: [id])
+  lotissement Lotissement? @relation(fields: [lotissementId], references: [id])
+  terrain     Terrain?     @relation(fields: [terrainId], references: [id])
+}
+
+model Note {
+  id         Int      @id @default(autoincrement())
+  content    String   @db.Text
+  entityType String
+  entityId   Int
+  userId     Int?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  user User? @relation(fields: [userId], references: [id])
+}
+
+model Tag {
+  id    Int    @id @default(autoincrement())
+  name  String @unique
+  color String?
+
+  prospects ProspectTag[]
+}
+
+model ProspectTag {
+  prospectId Int
+  tagId      Int
+
+  prospect Prospect @relation(fields: [prospectId], references: [id])
+  tag      Tag      @relation(fields: [tagId], references: [id])
+
+  @@id([prospectId, tagId])
+}
+
+model AppSetting {
+  key       String   @id
+  value     String   @db.Text
+  updatedAt DateTime @updatedAt
+}
+
+// ── ARCHIVAGE ─────────────────────────────────────────────────
+
+model ArchiveRecord {
+  id            Int               @id @default(autoincrement())
+  uuid          String            @unique @default(cuid())
+  entityType    ArchiveEntityType
+  entityId      Int
+  entityRef     String
+  snapshot      Json
+  reason        ArchiveReason     @default(MANUEL)
+  reasonDetail  String?           @db.Text
+  archivedById  Int?
+  archivedAt    DateTime          @default(now())
+  restoredById  Int?
+  restoredAt    DateTime?
+  status        ArchiveStatus     @default(ARCHIVE)
+  retentionDate DateTime?
+  notes         String?           @db.Text
+
+  archivedBy User? @relation("ArchivedBy", fields: [archivedById], references: [id])
+  restoredBy User? @relation("RestoredBy", fields: [restoredById], references: [id])
+}
+
+enum ArchiveEntityType {
+  CLIENT
+  PROSPECT
+  OWNER
+  PROPERTY
+  CONTRACT
+  INVOICE
+  DOCUMENT
+}
+
+enum ArchiveStatus {
+  ARCHIVE
+  RESTAURE
+  SUPPRIME_DEFINITIVEMENT
+}
+
+enum ArchiveReason {
+  MANUEL
+  CONTRAT_TERMINE
+  CLIENT_INACTIF
+  BIEN_VENDU
+  POLITIQUE_AUTOMATIQUE
+  DEMANDE_RGPD
+  AUTRE
+}
+
+model ArchivePolicy {
+  id               Int               @id @default(autoincrement())
+  name             String
+  description      String?           @db.Text
+  entityType       ArchiveEntityType
+  triggerCondition Json
+  retentionDays    Int?
+  isActive         Boolean           @default(true)
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+}
+
+// ── COMMISSIONS ───────────────────────────────────────────────
+
+// Apporteur d'affaire : référent externe (non-utilisateur de l'application)
+model BusinessReferrer {
+  id          Int       @id @default(autoincrement())
+  uuid        String    @unique @default(cuid())
+  firstName   String
+  lastName    String
+  companyName String?
+  email       String?
+  phone       String?
+  mobile      String?
+  address     String?
+  city        String?
+  country     String    @default("CI")
+  bankIban    String?
+  bankBic     String?
+  notes       String?   @db.Text
+  isActive    Boolean   @default(true)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  deletedAt   DateTime?
+
+  commissions Commission[]
+}
+
+model Commission {
+  id              Int                       @id @default(autoincrement())
+  uuid            String                    @unique @default(cuid())
+  reference       String                    @unique  // Ex: COM-2026-0001
+  contractId      Int
+  // Bénéficiaire : soit un utilisateur, soit un apporteur d'affaire
+  beneficiaryType CommissionBeneficiaryType
+  userId          Int?
+  referrerId      Int?
+  // Calcul de la commission
+  transactionType CommissionTransactionType // VENTE ou LOCATION
+  baseAmount      Decimal                   @db.Decimal(15, 2)  // Assiette (prix de vente ou loyer)
+  rate            Decimal                   @db.Decimal(5, 2)   // Taux en %
+  amount          Decimal                   @db.Decimal(15, 2)  // Montant de la commission
+  status          CommissionStatus          @default(A_PAYER)
+  source          CommissionSource          @default(MANUEL)
+  // Paiement
+  paidAt          DateTime?
+  paymentMethod   PaymentMethod?
+  paymentRef      String?                   // Référence du règlement (chèque, virement…)
+  paidById        Int?                      // Utilisateur ayant enregistré le paiement
+  // Annulation
+  cancelledAt     DateTime?
+  cancelReason    String?                   @db.Text
+  cancelledById   Int?                      // Utilisateur ayant annulé la commission
+  notes           String?                   @db.Text
+  createdAt       DateTime                  @default(now())
+  updatedAt       DateTime                  @updatedAt
+  deletedAt       DateTime?
+
+  contract    Contract          @relation(fields: [contractId], references: [id])
+  user        User?             @relation("UserCommissions", fields: [userId], references: [id])
+  referrer    BusinessReferrer? @relation(fields: [referrerId], references: [id])
+  paidBy      User?             @relation("CommissionPaidBy", fields: [paidById], references: [id])
+  cancelledBy User?             @relation("CommissionCancelledBy", fields: [cancelledById], references: [id])
+}
+
+enum CommissionBeneficiaryType {
+  USER       // Utilisateur de l'application (agent, manager…)
+  REFERRER   // Apporteur d'affaire externe
+}
+
+enum CommissionTransactionType {
+  VENTE
+  LOCATION
+  FRAIS_DOSSIER
+}
+
+enum CommissionStatus {
+  A_PAYER
+  PAYEE
+  ANNULEE
+}
+
+enum CommissionSource {
+  MANUEL       // Commission saisie manuellement
+  AUTOMATIQUE  // Commission générée à l'activation du contrat
+}
