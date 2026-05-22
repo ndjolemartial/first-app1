@@ -9,7 +9,7 @@
 **Nom du projet :** Afrikimmo-App  
 **Type :** Application de bureau (Desktop) multiplateforme  
 **Stack principale :** Electron + React + TypeScript + MariaDB  
-**Objectif :** Système de gestion immobilière complet couvrant la relation client, les biens, les contrats, la comptabilité et la communication.
+**Objectif :** Système de gestion immobilière complet couvrant la relation client, les biens, les conventions, la comptabilité et la communication.
 
 ---
 
@@ -57,7 +57,7 @@ afrikimmo_app/
 │   │   │   ├── properties.ipc.ts
 │   │   │   ├── lotissements.ipc.ts
 │   │   │   ├── terrains.ipc.ts
-│   │   │   ├── contracts.ipc.ts
+│   │   │   ├── conventions.ipc.ts
 │   │   │   ├── accounting.ipc.ts
 │   │   │   ├── communication.ipc.ts
 │   │   │   ├── crm.ipc.ts
@@ -87,7 +87,7 @@ afrikimmo_app/
 │   │   │   ├── properties/          ← Biens (hors terrains)
 │   │   │   ├── lotissements/        ← Module lotissements
 │   │   │   ├── terrains/            ← Module terrains (issu d'un lotissement)
-│   │   │   ├── contracts/
+│   │   │   ├── conventions/
 │   │   │   ├── accounting/
 │   │   │   ├── dashboard/
 │   │   │   ├── communication/
@@ -188,7 +188,7 @@ model User {
 
   // Relations
   activities  CrmActivity[]
-  contracts   Contract[]    @relation("AgentContracts")
+  conventions Convention[]  @relation("AgentConventions")
   notes       Note[]
 }
 
@@ -279,7 +279,7 @@ model Client {
   deletedAt       DateTime?
 
   prospect        Prospect?
-  contracts       Contract[]
+  conventions     Convention[]
   documents       Document[]
   activities      CrmActivity[]
   invoices        Invoice[]
@@ -464,7 +464,7 @@ model Property {
   deletedAt       DateTime?
 
   owner           Owner            @relation(fields: [ownerId], references: [id])
-  contracts       Contract[]
+  conventions     Convention[]
   documents       Document[]
   photos          PropertyPhoto[]
   activities      CrmActivity[]
@@ -510,13 +510,13 @@ model PropertyPhoto {
   property    Property  @relation(fields: [propertyId], references: [id])
 }
 
-// ── CONTRATS ──────────────────────────────────────────────────
-model Contract {
-  id              Int              @id @default(autoincrement())
-  uuid            String           @unique @default(cuid())
-  reference       String           @unique  // Ex: CT-2026-0007
-  type            ContractType
-  status          ContractStatus   @default(DRAFT)
+// ── CONVENTIONS ───────────────────────────────────────────────
+model Convention {
+  id              Int                @id @default(autoincrement())
+  uuid            String             @unique @default(cuid())
+  reference       String             @unique  // Ex: CV-2026-0007
+  type            ConventionType
+  status          ConventionStatus   @default(DRAFT)
   propertyId      Int
   clientId        Int
   agentId         Int?
@@ -548,14 +548,14 @@ model Contract {
 
   property        Property         @relation(fields: [propertyId], references: [id])
   client          Client           @relation(fields: [clientId], references: [id])
-  agent           User?            @relation("AgentContracts", fields: [agentId], references: [id])
+  agent           User?            @relation("AgentConventions", fields: [agentId], references: [id])
   invoices        Invoice[]
   documents       Document[]
   activities      CrmActivity[]
   installments    SaleInstallment[]
 }
 
-enum ContractType {
+enum ConventionType {
   RENTAL_UNFURNISHED
   RENTAL_FURNISHED
   SALE
@@ -563,7 +563,7 @@ enum ContractType {
   COMMERCIAL_LEASE
 }
 
-enum ContractStatus {
+enum ConventionStatus {
   BROUILLON
   ACTIVE
   EXPIRE
@@ -601,7 +601,7 @@ model Invoice {
   type            InvoiceType
   status          InvoiceStatus   @default(DRAFT)
   clientId        Int?
-  contractId      Int?
+  conventionId    Int?
   // Montants
   subtotal        Decimal         @db.Decimal(15, 2)
   taxRate         Decimal         @db.Decimal(5, 2)  @default(0)
@@ -618,7 +618,7 @@ model Invoice {
   deletedAt       DateTime?
 
   client          Client?         @relation(fields: [clientId], references: [id])
-  contract        Contract?       @relation(fields: [contractId], references: [id])
+  convention      Convention?     @relation(fields: [conventionId], references: [id])
   items           InvoiceItem[]
   payments        Payment[]
   installments    SaleInstallment[]
@@ -669,7 +669,7 @@ model Payment {
 // ── ÉCHÉANCES DE VENTE ────────────────────────────────────────
 model SaleInstallment {
   id                 Int                 @id @default(autoincrement())
-  contractId         Int
+  conventionId       Int
   installmentNumber  Int                 // Numéro de l'échéance (1, 2, 3…)
   dueDate            DateTime            // Date d'échéance prévue
   amount             Decimal             @db.Decimal(15, 2)
@@ -682,7 +682,7 @@ model SaleInstallment {
   createdAt          DateTime            @default(now())
   updatedAt          DateTime            @updatedAt
 
-  contract           Contract            @relation(fields: [contractId], references: [id])
+  convention         Convention          @relation(fields: [conventionId], references: [id])
   invoice            Invoice?            @relation(fields: [invoiceId], references: [id])
 }
 
@@ -708,7 +708,7 @@ model CrmActivity {
   clientId      Int?
   ownerId       Int?
   propertyId    Int?
-  contractId    Int?
+  conventionId  Int?
   createdAt     DateTime          @default(now())
   updatedAt     DateTime          @updatedAt
 
@@ -717,7 +717,7 @@ model CrmActivity {
   client        Client?           @relation(fields: [clientId], references: [id])
   owner         Owner?            @relation(fields: [ownerId], references: [id])
   property      Property?         @relation(fields: [propertyId], references: [id])
-  contract      Contract?         @relation(fields: [contractId], references: [id])
+  convention    Convention?       @relation(fields: [conventionId], references: [id])
 }
 
 enum ActivityType {
@@ -795,17 +795,17 @@ model Document {
   type        String    // MIME type
   path        String    // Chemin local relatif
   size        Int       // Bytes
-  category    String?   // "contrat", "diagnostic", "identité", "documents sur biens immobiliers"…
-  clientId    Int?
-  ownerId     Int?
-  propertyId  Int?
-  contractId  Int?
-  uploadedAt  DateTime  @default(now())
+  category     String?   // "convention", "diagnostic", "identité", "documents sur biens immobiliers"…
+  clientId     Int?
+  ownerId      Int?
+  propertyId   Int?
+  conventionId Int?
+  uploadedAt   DateTime  @default(now())
 
-  client      Client?   @relation(fields: [clientId], references: [id])
-  owner       Owner?    @relation(fields: [ownerId], references: [id])
-  property    Property? @relation(fields: [propertyId], references: [id])
-  contract    Contract? @relation(fields: [contractId], references: [id])
+  client       Client?     @relation(fields: [clientId], references: [id])
+  owner        Owner?      @relation(fields: [ownerId], references: [id])
+  property     Property?   @relation(fields: [propertyId], references: [id])
+  convention   Convention? @relation(fields: [conventionId], references: [id])
 }
 
 model Note {
@@ -850,7 +850,7 @@ model ArchiveRecord {
   uuid          String            @unique @default(cuid())
   entityType    ArchiveEntityType
   entityId      Int
-  entityRef     String            // Référence lisible (ex: CT-2026-0007, CLI-00042)
+  entityRef     String            // Référence lisible (ex: CV-2026-0007, CLI-00042)
   snapshot      Json              // Copie complète de l'entité au moment de l'archivage
   reason        ArchiveReason     @default(MANUEL)
   reasonDetail  String?           @db.Text
@@ -871,7 +871,7 @@ enum ArchiveEntityType {
   PROSPECT
   OWNER
   PROPERTY
-  CONTRACT
+  CONVENTION
   INVOICE
   DOCUMENT
 }
@@ -884,7 +884,7 @@ enum ArchiveStatus {
 
 enum ArchiveReason {
   MANUEL
-  CONTRAT_TERMINE
+  CONVENTION_TERMINEE
   CLIENT_INACTIF
   BIEN_VENDU
   POLITIQUE_AUTOMATIQUE
@@ -923,21 +923,23 @@ model ArchivePolicy {
 | Action                  | SUPER_ADMIN | ADMIN | MANAGER | AGENT | ACCOUNTANT | READONLY |
 |-------------------------|:-----------:|:-----:|:-------:|:-----:|:----------:|:--------:|
 | Gérer utilisateurs      | ✅          | ✅    | ❌      | ❌    | ❌         | ❌       |
-| CRUD Prospects          | ✅          | ✅    | ✅      | ✅    | ❌         | 👁️       |
-| CRUD Clients            | ✅          | ✅    | ✅      | ✅    | 👁️         | 👁️       |
-| CRUD Propriétaires      | ✅          | ✅    | ✅      | ✅    | 👁️         | 👁️       |
-| CRUD Biens              | ✅          | ✅    | ✅      | ✅    | 👁️         | 👁️       |
-| CRUD Contrats           | ✅          | ✅    | ✅      | ❌    | 👁️         | 👁️       |
+| CRUD Prospects          | ✅          | ✅    | ✅      | ✅    | ✅         | 👁️       |
+| CRUD Clients            | ✅          | ✅    | ✅      | ✅    | ✅         | 👁️       |
+| CRUD Propriétaires      | ✅          | ✅    | ✅      | ✅    | ✅         | 👁️       |
+| CRUD Biens              | ✅          | ✅    | ✅      | ✅    | ✅         | 👁️       |
+| CRUD Conventions        | ✅          | ✅    | ✅      | ❌    | ✅         | 👁️       |
 | Comptabilité (lecture)  | ✅          | ✅    | ✅      | ❌    | ✅         | 👁️       |
 | Comptabilité (écriture) | ✅          | ✅    | ✅     | ❌    | ✅         | ❌       |
-| Envoyer emails/SMS      | ✅          | ✅    | ✅      | ✅    | ❌         | ❌       |
-| Archiver une entité     | ✅          | ✅    | ✅      | ❌    | ❌         | ❌       |
+| Envoyer emails/SMS      | ✅          | ✅    | ✅      | ✅    | ✅         | ❌       |
+| Archiver une entité     | ✅          | ✅    | ✅      | ❌    | ✅         | ❌       |
 | Restaurer une archive   | ✅          | ✅    | ❌      | ❌    | ❌         | ❌       |
 | Suppr. définitive arch. | ✅          | ❌    | ❌      | ❌    | ❌         | ❌       |
 | Gérer politiques arch.  | ✅          | ✅    | ❌      | ❌    | ❌         | ❌       |
-| Consulter les archives  | ✅          | ✅    | ✅      | 👁️    | 👁️         | ❌       |
+| Consulter les archives  | ✅          | ✅    | ✅      | 👁️    | ✅         | ❌       |
 | Tableau de bord         | ✅          | ✅    | ✅      | ✅    | ✅         | ✅       |
 | Paramètres app          | ✅          | ✅    | ❌      | ❌    | ❌         | ❌       |
+
+> **Équivalence de rôles** — les utilisateurs **ACCOUNTANT (Comptable)** disposent des **mêmes droits d'accès que les MANAGER** : la colonne ACCOUNTANT ci-dessus est identique à la colonne MANAGER. Cette équivalence est appliquée de manière centralisée dans `checkRole` (`src/main/services/auth.service.ts`) — ACCOUNTANT n'obtient toutefois aucun droit réservé aux rôles ADMIN / SUPER_ADMIN.
 
 ---
 
@@ -971,7 +973,7 @@ model ArchivePolicy {
 
 **Route :** `/clients`  
 **Fonctionnalités :**
-- Fiche client complète : infos personnelles, documents KYC, contrats liés, historique paiements
+- Fiche client complète : infos personnelles, documents KYC, conventions liées, historique paiements
 - Support personnes physiques et morales
 - Timeline des activités (appels, emails, visites, notes)
 - Alerte documents expirés (pièce d'identité, etc.)
@@ -1022,6 +1024,7 @@ model ArchivePolicy {
 **Fonctionnalités :**
 - Référencement automatique (format configurable : `BN-YYYY-NNNN`)
 - **Ne concerne plus les terrains** (retrait de TERRAIN de PropertyType — voir module 5b)
+- **Origine du bien** : un bien provient soit d'un propriétaire, soit d'un programme immobilier (voir module 5d) — rattachement exclusif et optionnel (`ownerId` / `programmeId`)
 - Fiche bien complète : photos (galerie avec drag-and-drop), caractéristiques, diagnostics DPE
 - Carte interactive (si géocodage disponible)
 - Historique des locations/ventes (cash ou par échéances)
@@ -1031,11 +1034,28 @@ model ArchivePolicy {
 - Export fiche bien en PDF (pour publication)
 - Export csv et PDF de listes de biens par filtre 
 
-### Module 6 — Gestion des contrats
+### Module 5d — Gestion des programmes immobiliers
 
-**Route :** `/contracts`  
+**Route :** `/programmes`  
 **Fonctionnalités :**
-- Génération de contrats PDF (baux meublés/non meublés, compromis de vente, avenants de prolongation de délai, avenants de changement de site …)
+- Référencement automatique (`PROG-YYYY-NNNN`)
+- Fiche programme : nom, type (résidentiel / commercial / mixte), promoteur, localisation, surface, nombre de logements
+- Dates clés : date de démarrage et date de livraison prévisionnelle
+- Statuts : `EN_PROJET → EN_CONSTRUCTION → EN_COMMERCIALISATION → LIVRE → CLOTURE`
+- Vue des biens et terrains rattachés au programme (avec synthèse)
+- Création pré-remplie d'un bien ou d'un terrain depuis la fiche programme (`?programmeId=X`)
+- Un bien (`Property`) et un terrain (`Terrain`) peuvent être rattachés optionnellement à un programme
+- Pour un bien : origine **exclusive** — soit un propriétaire, soit un programme immobilier
+- Export CSV et PDF de la liste des programmes par filtre
+- CRUD complet avec soft delete
+
+> **Parallèle avec les lotissements** — un programme immobilier regroupe des biens, comme un lotissement regroupe des terrains. Les deux conteneurs coexistent : un terrain reste obligatoirement rattaché à un lotissement et peut, en plus, l'être à un programme.
+
+### Module 6 — Gestion des conventions
+
+**Route :** `/conventions`  
+**Fonctionnalités :**
+- Génération de conventions PDF (baux meublés/non meublés, compromis de vente, avenants de prolongation de délai, avenants de changement de site …)
 - Workflow de signature (statut `ATTENTE_DE_SIGNATURE → ACTIVE`)
 - Alerte renouvellement / échéance (J-90, J-30, J-0)
 - Révision annuelle du loyer (indice IRL/ILC)
@@ -1049,7 +1069,7 @@ model ArchivePolicy {
   - Génération automatique d'une facture (`ECHEANCE_VENTE`) à chaque appel de fonds
   - Alertes d'échéances à venir (J-15, J-7, J-0) via le module Communication
   - Alerte de retard de paiement dès le lendemain de la date d'échéance
-  - Remboursement anticipé : annulation des échéances restantes et clôture du contrat
+  - Remboursement anticipé : annulation des échéances restantes et clôture de la convention
   - Export PDF du tableau d'échéances pour le client
 
 ### Module 7 — Comptabilité
@@ -1059,8 +1079,8 @@ model ArchivePolicy {
 - Génération et envoi des factures (loyers, honoraires, charges)
 - Suivi des paiements (encaissements, impayés)
 - **Suivi des ventes par échéances** :
-  - Vue globale des contrats de vente en cours (cash vs échéances)
-  - Tableau de bord par contrat : montant total, encaissé, restant dû, nombre d'échéances réglées / restantes
+  - Vue globale des conventions de vente en cours (cash vs échéances)
+  - Tableau de bord par convention : montant total, encaissé, restant dû, nombre d'échéances réglées / restantes
   - Liste des échéances à venir sur les 30/60/90 prochains jours
   - Liste des échéances en retard avec relance automatique (J+1, J+7, J+15, J+30)
   - Encaissement d'une échéance : saisie du mode de paiement et référence, génération de reçu PDF
@@ -1076,7 +1096,7 @@ model ArchivePolicy {
 **Fonctionnalités :**
 - KPIs en temps réel : taux d'occupation, loyers encaissés/impayés, prospects actifs
 - Graphiques : évolution CA (12 mois), pipeline prospects, répartition biens par type
-- Alertes actives : contrats expirant, loyers en retard, documents manquants
+- Alertes actives : conventions expirant, loyers en retard, documents manquants
 - Rapports exportables en PDF et Excel :
   - Rapport mensuel de gestion
   - Bilan des impayés
@@ -1089,7 +1109,7 @@ model ArchivePolicy {
 **Route :** `/communication`  
 **Fonctionnalités :**
 - Bibliothèque de templates (emails et SMS) avec variables dynamiques `{{firstName}}`, `{{dueDate}}`, etc.
-- Envoi manuel depuis n'importe quelle fiche (client, contrat, prospect)
+- Envoi manuel depuis n'importe quelle fiche (client, convention, prospect)
 - Campagnes de relance automatiques (configurer déclencheurs et délais)
 - Historique de toutes les communications par entité
 - Configuration SMTP (email) et API SMS (Twilio / OVH / Brevo)
@@ -1111,18 +1131,34 @@ model ArchivePolicy {
 
 **Route :** `/archiving`  
 **Fonctionnalités :**
-- Vue centralisée de toutes les entités archivées avec filtres par type (client, contrat, bien, prospect…)
+- Vue centralisée de toutes les entités archivées avec filtres par type (client, convention, bien, prospect…)
 - Archivage manuel depuis n'importe quelle fiche avec saisie obligatoire du motif
 - Snapshot JSON complet de l'entité au moment de l'archivage (traçabilité immuable)
 - Restauration d'un élément archivé vers son module d'origine (avec vérification des conflits)
 - Suppression définitive après expiration de la durée de rétention (SUPER_ADMIN uniquement)
 - Recherche fulltext dans les archives (référence, nom, notes)
-- Politiques d'archivage automatique configurables (ex : contrats terminés depuis > 365 jours)
+- Politiques d'archivage automatique configurables (ex : conventions terminées depuis > 365 jours)
 - Tableau de bord des archives : volume par type, archives en attente de suppression, historique
 - Export des archives en CSV et PDF (avec horodatage et identité de l'archiveur)
 - Journal d'audit complet : qui a archivé/restauré/supprimé, quand et pourquoi
 - Alertes de rétention : notification avant suppression définitive automatique (J-30, J-7)
 - Conformité RGPD : suppression définitive à la demande (droit à l'oubli)
+
+#### Module 11b — GED (Gestion Électronique de Documents)
+
+**Routes :** `/archiving/ged` (documents), `/archiving/ged/dashboard`, `/archiving/ged/settings`, `/archiving/ged/:id`
+
+Volet documentaire du module Archivage, coexistant avec l'archivage d'entités. S'appuie sur le modèle `Document` enrichi (`numeroArchive` auto `ARC-AAAA-NNNN`, `categoryId`, `folderId`, `tags`, `ocrText`, emplacement physique, `uploadedById`, soft delete) et les modèles `DocumentCategory`, `DocumentFolder`, `DocumentTag`, `DocumentAuditLog`.
+
+**Phase 1 livrée :**
+- Import multi-formats (PDF, Word, Excel, images, vidéos, audios) par glisser-déposer ou sélecteur — copie de fichier via chemin (`webUtils.getPathForFile`)
+- Classement : catégories / sous-catégories, dossiers / arborescence, étiquettes, numérotation automatique
+- Consultation : liste filtrable + fiche document avec prévisualisation intégrée (image, PDF, audio, vidéo)
+- Recherche et filtres multiples (nom, numéro, description, catégorie, dossier, type)
+- Journal des actions (import, consultation, modification, suppression) — traçabilité
+- Tableau de bord : nombre de documents, récents, espace disque, répartition par type/catégorie, alertes
+
+**Phases suivantes :** OCR plein texte (Tesseract), archivage physique + QR codes, scan via scanner matériel, sauvegarde automatique. Le chiffrement des fichiers est reporté.
 
 ---
 
@@ -1147,11 +1183,27 @@ model ArchivePolicy {
 - `archiving:permanentDelete` — Suppression définitive (SUPER_ADMIN)
 - `archiving:listPolicies` — Lister les politiques d'archivage automatique
 - `archiving:createPolicy` — Créer une politique d'archivage
-- `contracts:generateInstallments` — Générer le tableau d'échéances d'un contrat de vente
-- `contracts:getInstallments` — Récupérer les échéances d'un contrat
+- `documents:list` — Liste paginée des documents de la GED (filtres : recherche, catégorie, dossier, type)
+- `documents:getById` — Document GED avec relations et journal des actions
+- `documents:import` — Importer un ou plusieurs fichiers dans la GED
+- `documents:update` — Mettre à jour les métadonnées d'un document
+- `documents:remove` — Mettre un document à la corbeille (soft delete)
+- `documents:open` — Ouvrir un document dans l'application externe
+- `documents:getFileData` — Données du fichier pour la prévisualisation intégrée
+- `documents:listCategories` / `createCategory` / `updateCategory` / `deleteCategory`
+- `documents:listFolders` / `createFolder` / `updateFolder` / `deleteFolder`
+- `documents:listTags` / `createTag` — Étiquettes documentaires
+- `documents:gedDashboard` — Statistiques du tableau de bord GED
+- `conventions:generateInstallments` — Générer le tableau d'échéances d'une convention de vente
+- `conventions:getInstallments` — Récupérer les échéances d'une convention
 - `accounting:payInstallment` — Enregistrer le paiement d'une échéance
 - `accounting:getOverdueInstallments` — Lister les échéances en retard
 - `accounting:getUpcomingInstallments` — Lister les échéances à venir (filtre par jours)
+- `programmes:list` — Liste des programmes immobiliers avec filtres
+- `programmes:getById` — Récupérer un programme (avec biens et terrains rattachés)
+- `programmes:create` — Créer un programme immobilier
+- `programmes:update` — Mettre à jour un programme
+- `programmes:delete` — Archiver (soft delete) un programme
 
 ### Pattern handler IPC (main process)
 
@@ -1294,17 +1346,17 @@ MAX_FILE_SIZE_MB=10
 |---------------|------------------------|------------------------------------------|:----------------:|
 | Unitaire      | Vitest                 | Services, utils, stores, hooks           | 80%+             |
 | Intégration   | Vitest + Prisma mock   | Handlers IPC, services BDD               | 60%+             |
-| E2E           | Playwright             | Parcours critiques (connexion, contrat…) | Parcours clés    |
+| E2E           | Playwright             | Parcours critiques (connexion, convention…) | Parcours clés |
 
 ### Cas de test prioritaires
 
 1. Authentification (connexion, permissions, session expirée)
 2. Création d'un prospect → conversion en client
-3. Création d'un contrat de location complet
+3. Création d'une convention de location complète
 4. Génération et envoi d'une quittance de loyer
 5. Calcul de révision de loyer (IRL)
 6. Envoi d'email / SMS de relance
-7. Export PDF d'un contrat
+7. Export PDF d'une convention
 
 ---
 
@@ -1349,7 +1401,7 @@ Suivre cet ordre pour une livraison incrémentale et testable :
 5b. **Terrains** — CRUD + lien lotissement obligatoire + viabilisation ✅
 6. **Prospects** — Pipeline Kanban + conversion
 7. **Clients** — Fiche complète + timeline
-8. **Contrats** — Création, workflow, génération PDF
+8. **Conventions** — Création, workflow, génération PDF
 9. **Comptabilité** — Factures, paiements, relances
 10. **Communication** — Templates, envoi email/SMS
 11. **CRM** — Agenda, activités, tâches
@@ -1389,4 +1441,4 @@ Suivre cet ordre pour une livraison incrémentale et testable :
 
 ---
 
-*Dernière mise à jour : Mai 2026 — Afrikimmo-app v1.0 (ajout module Archivage + gestion paiements par échéances)*
+*Dernière mise à jour : Mai 2026 — Afrikimmo-app v1.0 (refonte du module Archivage : GED documentaire — Phase 1)*

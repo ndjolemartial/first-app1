@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -9,6 +9,7 @@ import Card from '../../../shared/components/ui/Card';
 import { SkeletonTable } from '../../../shared/components/ui/Skeleton';
 import ConfirmDialog from '../../../shared/components/ui/ConfirmDialog';
 import { useTemplates, useCreateTemplate, useUpdateTemplate, useDeleteTemplate } from '../hooks/useCommunication';
+import VariablePicker from '../components/VariablePicker';
 import { Mail, MessageSquare, Plus, Edit, Trash2, Save, X } from 'lucide-react';
 
 const schema = z.object({
@@ -32,7 +33,7 @@ function TemplateForm({
   onCancel: () => void;
   loading: boolean;
 }) {
-  const { register, handleSubmit, watch, formState: { errors } } = useForm<z.input<typeof schema>, any, FormData>({
+  const { register, handleSubmit, watch, setValue, getValues, formState: { errors } } = useForm<z.input<typeof schema>, any, FormData>({
     resolver: zodResolver(schema),
     defaultValues: initial
       ? {
@@ -42,6 +43,38 @@ function TemplateForm({
       : { channel: 'EMAIL', isActive: true },
   });
   const channel = watch('channel');
+
+  const subjectRef = useRef<HTMLInputElement | null>(null);
+  const bodyRef = useRef<HTMLTextAreaElement | null>(null);
+  const subjectReg = register('subject');
+  const bodyReg = register('body');
+
+  /** Insère un jeton de variable à la position du curseur du champ ciblé. */
+  const insertVariable = (target: 'subject' | 'body', token: string) => {
+    const el = target === 'subject' ? subjectRef.current : bodyRef.current;
+    const current = String(getValues(target) ?? '');
+    const start = el?.selectionStart ?? current.length;
+    const end = el?.selectionEnd ?? current.length;
+    setValue(target, current.slice(0, start) + token + current.slice(end), {
+      shouldValidate: true,
+      shouldDirty: true,
+    });
+    // Garde la liste des variables déclarées synchronisée avec le contenu.
+    const key = token.replace(/[{}]/g, '');
+    const declared = String(getValues('variables') ?? '')
+      .split(',')
+      .map((v) => v.trim())
+      .filter(Boolean);
+    if (!declared.includes(key)) {
+      setValue('variables', [...declared, key].join(', '), { shouldDirty: true });
+    }
+    requestAnimationFrame(() => {
+      if (el) {
+        el.focus();
+        el.setSelectionRange(start + token.length, start + token.length);
+      }
+    });
+  };
 
   const onSubmit = (data: FormData) => {
     const vars = data.variables
@@ -74,20 +107,28 @@ function TemplateForm({
       </div>
       {channel === 'EMAIL' && (
         <div>
-          <label className="block text-xs font-medium text-slate-700 mb-1">Sujet</label>
+          <div className="flex items-center justify-between mb-1">
+            <label className="block text-xs font-medium text-slate-700">Sujet</label>
+            <VariablePicker onInsert={(t) => insertVariable('subject', t)} />
+          </div>
           <input
-            {...register('subject')}
+            {...subjectReg}
+            ref={(el) => { subjectReg.ref(el); subjectRef.current = el; }}
             className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
           />
         </div>
       )}
       <div>
-        <label className="block text-xs font-medium text-slate-700 mb-1">Corps du message *</label>
+        <div className="flex items-center justify-between mb-1">
+          <label className="block text-xs font-medium text-slate-700">Corps du message *</label>
+          <VariablePicker onInsert={(t) => insertVariable('body', t)} />
+        </div>
         <textarea
           rows={5}
-          {...register('body')}
+          {...bodyReg}
+          ref={(el) => { bodyReg.ref(el); bodyRef.current = el; }}
           className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 font-mono"
-          placeholder="Utilisez {{variableName}} pour les variables dynamiques"
+          placeholder="Saisissez le message — bouton « Insérer une variable » pour les champs dynamiques {{...}}"
         />
         {errors.body && <p className="text-xs text-red-500 mt-1">{errors.body.message}</p>}
       </div>
@@ -98,7 +139,7 @@ function TemplateForm({
           placeholder="firstName, dueDate, amount"
           className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
         />
-        <p className="text-xs text-slate-400 mt-1">Ex : firstName, dueDate, contractRef</p>
+        <p className="text-xs text-slate-400 mt-1">Complétée automatiquement à chaque variable insérée. Ex : firstName, dueDate, conventionRef</p>
       </div>
       <div className="flex items-center gap-2">
         <input type="checkbox" id="isActive" {...register('isActive')} className="rounded" />

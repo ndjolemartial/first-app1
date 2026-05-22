@@ -31,8 +31,10 @@ const ownerSchema = z.object({
   notes: z.string().optional(),
 });
 
-const WRITE_ROLES = ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'AGENT'];
-const READ_ROLES = [...WRITE_ROLES, 'ACCOUNTANT', 'READONLY'];
+// Module Propriétaires : réservé aux MANAGER+ (ACCOUNTANT inclus via checkRole).
+// AGENT et READONLY n'ont aucun accès au module.
+const WRITE_ROLES = ['SUPER_ADMIN', 'ADMIN', 'MANAGER'];
+const READ_ROLES  = ['SUPER_ADMIN', 'ADMIN', 'MANAGER'];
 
 /**
  * Enregistre les handlers IPC pour la gestion des propriétaires.
@@ -157,14 +159,14 @@ export function registerOwnersIPC(): void {
       const properties = await db.property.findMany({
         where: { ownerId: id, deletedAt: null },
         include: {
-          contracts: {
+          conventions: {
             where: { deletedAt: null, status: 'ACTIVE' },
             select: { rentAmount: true, type: true },
           },
         },
       });
       const totalRentIncome = properties.reduce((sum, p) => {
-        const rent = p.contracts.reduce((s, c) => s + Number(c.rentAmount ?? 0), 0);
+        const rent = p.conventions.reduce((s, c) => s + Number(c.rentAmount ?? 0), 0);
         return sum + rent;
       }, 0);
       return { success: true, data: { properties, totalRentIncome } };

@@ -1,4 +1,4 @@
-import { contextBridge, ipcRenderer } from 'electron';
+import { contextBridge, ipcRenderer, webUtils } from 'electron';
 
 type IpcArgs = Record<string, unknown>;
 
@@ -8,11 +8,15 @@ const api = {
 
 // Auth
 const auth = {
-  login: (email: string, password: string) => api.invoke('auth:login', { email, password }),
+  login: (identifier: string, password: string) => api.invoke('auth:login', { identifier, password }),
   logout: (token: string) => api.invoke('auth:logout', { token }),
   me: (token: string) => api.invoke('auth:me', { token }),
   changePassword: (token: string, currentPassword: string, newPassword: string) =>
     api.invoke('auth:changePassword', { token, currentPassword, newPassword }),
+  updateProfile: (token: string, payload: object) =>
+    api.invoke('auth:updateProfile', { token, payload }),
+  updateTheme: (token: string, theme: string) =>
+    api.invoke('auth:updateTheme', { token, theme }),
 };
 
 // Users
@@ -40,6 +44,10 @@ const prospects = {
   convertToClient: (token: string, id: number, clientData?: object) =>
     api.invoke('prospects:convertToClient', { token, id, clientData }),
   kanban: (token: string) => api.invoke('prospects:kanban', { token }),
+  assign: (token: string, id: number, assignedToId: number | null) =>
+    api.invoke('prospects:assign', { token, id, assignedToId }),
+  listAssignableUsers: (token: string) =>
+    api.invoke('prospects:listAssignableUsers', { token }),
 };
 
 // Clients
@@ -53,6 +61,12 @@ const clients = {
   toggleActive: (token: string, id: number) => api.invoke('clients:toggleActive', { token, id }),
   updateStatus: (token: string, id: number, status: string) =>
     api.invoke('clients:updateStatus', { token, id, status }),
+  assign: (token: string, id: number, assignedToId: number | null) =>
+    api.invoke('clients:assign', { token, id, assignedToId }),
+  setReferrer: (token: string, id: number, referrerId: number | null) =>
+    api.invoke('clients:setReferrer', { token, id, referrerId }),
+  listAssignableUsers: (token: string) => api.invoke('clients:listAssignableUsers', { token }),
+  listReferrers: (token: string) => api.invoke('clients:listReferrers', { token }),
 };
 
 // Owners
@@ -78,23 +92,35 @@ const properties = {
     api.invoke('properties:updateStatus', { token, id, status }),
 };
 
-// Contracts
-const contracts = {
+// Conventions
+const conventions = {
   list: (token: string, filters?: object, page?: number, limit?: number) =>
-    api.invoke('contracts:list', { token, filters, page, limit }),
-  getById: (token: string, id: number) => api.invoke('contracts:getById', { token, id }),
-  create: (token: string, payload: object) => api.invoke('contracts:create', { token, payload }),
-  update: (token: string, id: number, payload: object) => api.invoke('contracts:update', { token, id, payload }),
-  delete: (token: string, id: number) => api.invoke('contracts:delete', { token, id }),
+    api.invoke('conventions:list', { token, filters, page, limit }),
+  getById: (token: string, id: number) => api.invoke('conventions:getById', { token, id }),
+  create: (token: string, payload: object) => api.invoke('conventions:create', { token, payload }),
+  update: (token: string, id: number, payload: object) => api.invoke('conventions:update', { token, id, payload }),
+  delete: (token: string, id: number) => api.invoke('conventions:delete', { token, id }),
   generateInstallments: (token: string, id: number) =>
-    api.invoke('contracts:generateInstallments', { token, id }),
-  getInstallments: (token: string, contractId: number) =>
-    api.invoke('contracts:getInstallments', { token, contractId }),
+    api.invoke('conventions:generateInstallments', { token, id }),
+  getInstallments: (token: string, conventionId: number) =>
+    api.invoke('conventions:getInstallments', { token, conventionId }),
+};
+
+// Modèles de convention
+const conventionTemplates = {
+  list: (token: string, filters?: object, page?: number, limit?: number) =>
+    api.invoke('conventionTemplates:list', { token, filters, page, limit }),
+  getById: (token: string, id: number) => api.invoke('conventionTemplates:getById', { token, id }),
+  create: (token: string, payload: object) => api.invoke('conventionTemplates:create', { token, payload }),
+  update: (token: string, id: number, payload: object) =>
+    api.invoke('conventionTemplates:update', { token, id, payload }),
+  delete: (token: string, id: number) => api.invoke('conventionTemplates:delete', { token, id }),
 };
 
 // Accounting
 const accounting = {
   getDashboard: (token: string) => api.invoke('accounting:getDashboard', { token }),
+  getRevenue: (token: string, period: string) => api.invoke('accounting:getRevenue', { token, period }),
   getInvoices: (token: string, filters?: object, page?: number, limit?: number) =>
     api.invoke('accounting:getInvoices', { token, filters, page, limit }),
   getInvoiceById: (token: string, id: number) => api.invoke('accounting:getInvoiceById', { token, id }),
@@ -106,9 +132,20 @@ const accounting = {
   getOverdueInstallments: (token: string) => api.invoke('accounting:getOverdueInstallments', { token }),
   getUpcomingInstallments: (token: string, days?: number) =>
     api.invoke('accounting:getUpcomingInstallments', { token, days }),
+  getPaidInstallments: (token: string, year?: number, semester?: number) =>
+    api.invoke('accounting:getPaidInstallments', { token, year, semester }),
+  getCancelledInstallments: (token: string) =>
+    api.invoke('accounting:getCancelledInstallments', { token }),
+  listInstallments: (token: string) => api.invoke('accounting:listInstallments', { token }),
   payInstallment: (token: string, installmentId: number, payload: object) =>
     api.invoke('accounting:payInstallment', { token, installmentId, payload }),
-  getSaleContracts: (token: string) => api.invoke('accounting:getSaleContracts', { token }),
+  printInvoice: (token: string, invoiceId: number) =>
+    api.invoke('accounting:printInvoice', { token, invoiceId }),
+  cancelInstallment: (token: string, installmentId: number) =>
+    api.invoke('accounting:cancelInstallment', { token, installmentId }),
+  reinstateInstallment: (token: string, installmentId: number) =>
+    api.invoke('accounting:reinstateInstallment', { token, installmentId }),
+  getSaleConventions: (token: string) => api.invoke('accounting:getSaleConventions', { token }),
 };
 
 // Communication
@@ -194,9 +231,38 @@ const terrains = {
   delete: (token: string, id: number) => api.invoke('terrains:delete', { token, id }),
 };
 
+// Programmes immobiliers
+const programmes = {
+  list: (token: string, filters?: object, page?: number, limit?: number) =>
+    api.invoke('programmes:list', { token, filters, page, limit }),
+  getById: (token: string, id: number) => api.invoke('programmes:getById', { token, id }),
+  create: (token: string, payload: object) => api.invoke('programmes:create', { token, payload }),
+  update: (token: string, id: number, payload: object) => api.invoke('programmes:update', { token, id, payload }),
+  delete: (token: string, id: number) => api.invoke('programmes:delete', { token, id }),
+};
+
 // Géolocalisation
 const geo = {
   resolveMapLink: (token: string, link: string) => api.invoke('geo:resolveMapLink', { token, link }),
+};
+
+// Pays (table de référence)
+const countries = {
+  list: (token: string) => api.invoke('countries:list', { token }),
+};
+
+// Export de listes (PDF / Excel)
+const exporter = {
+  generate: (token: string, payload: object) => api.invoke('export:generate', { token, ...payload }),
+};
+
+// Modèles de facture
+const invoiceTemplates = {
+  list: (token: string) => api.invoke('invoiceTemplates:list', { token }),
+  update: (token: string, id: number, payload: object) =>
+    api.invoke('invoiceTemplates:update', { token, id, payload }),
+  setDefaults: (token: string, defaults: object) =>
+    api.invoke('invoiceTemplates:setDefaults', { token, defaults }),
 };
 
 // Commissions
@@ -218,9 +284,96 @@ const commissions = {
     api.invoke('commissions:updateReferrer', { token, id, payload }),
   deleteReferrer: (token: string, id: number) => api.invoke('commissions:deleteReferrer', { token, id }),
   listUsers: (token: string) => api.invoke('commissions:listUsers', { token }),
-  listEligibleContracts: (token: string) => api.invoke('commissions:listEligibleContracts', { token }),
+  listEligibleConventions: (token: string) => api.invoke('commissions:listEligibleConventions', { token }),
   getSettings: (token: string) => api.invoke('commissions:getSettings', { token }),
   updateSettings: (token: string, payload: object) => api.invoke('commissions:updateSettings', { token, payload }),
+};
+
+// Budgets
+const budget = {
+  getDashboard: (token: string) => api.invoke('budget:getDashboard', { token }),
+  list: (token: string, filters?: object) => api.invoke('budget:list', { token, filters }),
+  getById: (token: string, id: number) => api.invoke('budget:getById', { token, id }),
+  create: (token: string, payload: object) => api.invoke('budget:create', { token, payload }),
+  update: (token: string, id: number, payload: object) =>
+    api.invoke('budget:update', { token, id, payload }),
+  close: (token: string, id: number) => api.invoke('budget:close', { token, id }),
+  reopen: (token: string, id: number) => api.invoke('budget:reopen', { token, id }),
+  delete: (token: string, id: number) => api.invoke('budget:delete', { token, id }),
+  listLines: (token: string, filters?: object) => api.invoke('budget:listLines', { token, filters }),
+  getLineById: (token: string, id: number) => api.invoke('budget:getLineById', { token, id }),
+  createLine: (token: string, payload: object) => api.invoke('budget:createLine', { token, payload }),
+  updateLine: (token: string, id: number, payload: object) =>
+    api.invoke('budget:updateLine', { token, id, payload }),
+  toggleLineActive: (token: string, id: number) => api.invoke('budget:toggleLineActive', { token, id }),
+  deleteLine: (token: string, id: number) => api.invoke('budget:deleteLine', { token, id }),
+  listEligibleManagers: (token: string) => api.invoke('budget:listEligibleManagers', { token }),
+  listAccessibleLines: (token: string) => api.invoke('budget:listAccessibleLines', { token }),
+};
+
+// Trésorerie
+const treasury = {
+  getDashboard: (token: string) => api.invoke('treasury:getDashboard', { token }),
+  listAccounts: (token: string, filters?: object) =>
+    api.invoke('treasury:listAccounts', { token, filters }),
+  getAccountById: (token: string, id: number) => api.invoke('treasury:getAccountById', { token, id }),
+  createAccount: (token: string, payload: object) => api.invoke('treasury:createAccount', { token, payload }),
+  updateAccount: (token: string, id: number, payload: object) =>
+    api.invoke('treasury:updateAccount', { token, id, payload }),
+  deleteAccount: (token: string, id: number) => api.invoke('treasury:deleteAccount', { token, id }),
+  listOperations: (token: string, filters?: object, page?: number, limit?: number) =>
+    api.invoke('treasury:listOperations', { token, filters, page, limit }),
+  createOperation: (token: string, payload: object) => api.invoke('treasury:createOperation', { token, payload }),
+  updateOperation: (token: string, id: number, payload: object) =>
+    api.invoke('treasury:updateOperation', { token, id, payload }),
+  deleteOperation: (token: string, id: number) => api.invoke('treasury:deleteOperation', { token, id }),
+  listCategories: (token: string, filters?: object) =>
+    api.invoke('treasury:listCategories', { token, filters }),
+  createCategory: (token: string, payload: object) => api.invoke('treasury:createCategory', { token, payload }),
+  updateCategory: (token: string, id: number, payload: object) =>
+    api.invoke('treasury:updateCategory', { token, id, payload }),
+  deleteCategory: (token: string, id: number) => api.invoke('treasury:deleteCategory', { token, id }),
+  listUsers: (token: string) => api.invoke('treasury:listUsers', { token }),
+};
+
+// Dashboard
+const dashboard = {
+  getStats: (token: string) => api.invoke('dashboard:getStats', { token }),
+};
+
+// Paramètres applicatifs (réservés aux administrateurs)
+const settings = {
+  getCompany: (token: string) => api.invoke('settings:getCompany', { token }),
+  updateCompany: (token: string, payload: object) =>
+    api.invoke('settings:updateCompany', { token, payload }),
+  uploadLogo: (token: string, payload: object) =>
+    api.invoke('settings:uploadLogo', { token, payload }),
+  deleteLogo: (token: string) => api.invoke('settings:deleteLogo', { token }),
+  getLogoData: (token: string) => api.invoke('settings:getLogoData', { token }),
+
+  getStorage: (token: string) => api.invoke('settings:getStorage', { token }),
+  updateStorage: (token: string, payload: object) =>
+    api.invoke('settings:updateStorage', { token, payload }),
+
+  getEmail: (token: string) => api.invoke('settings:getEmail', { token }),
+  updateEmail: (token: string, payload: object) =>
+    api.invoke('settings:updateEmail', { token, payload }),
+  testEmail: (token: string, to: string) =>
+    api.invoke('settings:testEmail', { token, to }),
+
+  getSms: (token: string) => api.invoke('settings:getSms', { token }),
+  updateSms: (token: string, payload: object) =>
+    api.invoke('settings:updateSms', { token, payload }),
+  testSms: (token: string, to: string) =>
+    api.invoke('settings:testSms', { token, to }),
+
+  getSlideshow: (token: string) => api.invoke('settings:getSlideshow', { token }),
+  updateSlideshow: (token: string, items: object[]) =>
+    api.invoke('settings:updateSlideshow', { token, items }),
+  uploadSlideshowMedia: (token: string, payload: object) =>
+    api.invoke('settings:uploadSlideshowMedia', { token, payload }),
+  getSlideshowMediaData: (token: string, relativePath: string) =>
+    api.invoke('settings:getSlideshowMediaData', { token, relativePath }),
 };
 
 // Documents
@@ -239,6 +392,38 @@ const documents = {
     api.invoke('documents:getByTerrain', { token, terrainId }),
   openFile: (token: string, relativePath: string) =>
     api.invoke('documents:openFile', { token, relativePath }),
+  // GED — Gestion électronique de documents
+  list: (token: string, filters?: object, page?: number, limit?: number) =>
+    api.invoke('documents:list', { token, filters, page, limit }),
+  getById: (token: string, id: number) => api.invoke('documents:getById', { token, id }),
+  import: (token: string, payload: object) => api.invoke('documents:import', { token, payload }),
+  update: (token: string, id: number, payload: object) =>
+    api.invoke('documents:update', { token, id, payload }),
+  remove: (token: string, id: number) => api.invoke('documents:remove', { token, id }),
+  open: (token: string, id: number) => api.invoke('documents:open', { token, id }),
+  getFileData: (token: string, id: number) => api.invoke('documents:getFileData', { token, id }),
+  listCategories: (token: string) => api.invoke('documents:listCategories', { token }),
+  createCategory: (token: string, payload: object) =>
+    api.invoke('documents:createCategory', { token, payload }),
+  updateCategory: (token: string, id: number, payload: object) =>
+    api.invoke('documents:updateCategory', { token, id, payload }),
+  deleteCategory: (token: string, id: number) =>
+    api.invoke('documents:deleteCategory', { token, id }),
+  listFolders: (token: string) => api.invoke('documents:listFolders', { token }),
+  createFolder: (token: string, payload: object) =>
+    api.invoke('documents:createFolder', { token, payload }),
+  updateFolder: (token: string, id: number, payload: object) =>
+    api.invoke('documents:updateFolder', { token, id, payload }),
+  deleteFolder: (token: string, id: number) => api.invoke('documents:deleteFolder', { token, id }),
+  listTags: (token: string) => api.invoke('documents:listTags', { token }),
+  createTag: (token: string, payload: object) => api.invoke('documents:createTag', { token, payload }),
+  updateTag: (token: string, id: number, payload: object) =>
+    api.invoke('documents:updateTag', { token, id, payload }),
+  deleteTag: (token: string, id: number) => api.invoke('documents:deleteTag', { token, id }),
+  listAudit: (token: string, limit?: number) => api.invoke('documents:listAudit', { token, limit }),
+  gedDashboard: (token: string) => api.invoke('documents:gedDashboard', { token }),
+  /** Résout le chemin disque d'un fichier sélectionné/déposé (Electron webUtils). */
+  pathForFile: (file: File) => webUtils.getPathForFile(file),
 };
 
-contextBridge.exposeInMainWorld('electron', { auth, users, prospects, clients, owners, properties, contracts, accounting, communication, crm, archiving, documents, lotissements, terrains, geo, commissions });
+contextBridge.exposeInMainWorld('electron', { auth, users, prospects, clients, owners, properties, conventions, conventionTemplates, accounting, communication, crm, archiving, documents, lotissements, terrains, programmes, geo, countries, commissions, exporter, invoiceTemplates, treasury, budget, dashboard, settings });

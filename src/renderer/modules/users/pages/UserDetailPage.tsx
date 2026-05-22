@@ -13,7 +13,8 @@ import { Edit, KeyRound, Power } from 'lucide-react';
 
 const ROLE_VARIANT: Record<string, any> = {
   SUPER_ADMIN: 'danger', ADMIN: 'info', MANAGER: 'purple',
-  AGENT: 'success', ACCOUNTANT: 'warning', READONLY: 'default',
+  ACCOUNTANT: 'warning', ASSISTANTE_DIRECTION: 'warning',
+  AGENT: 'success', READONLY: 'default',
 };
 
 export default function UserDetailPage() {

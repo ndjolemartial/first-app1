@@ -1,5 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useAuthStore } from '../../../shared/stores/auth.store';
+import { toast } from '../../../shared/components/ui/Toast';
 
 const ipc = window.electron.accounting;
 
@@ -8,6 +9,14 @@ export function useAccountingDashboard() {
   return useQuery({
     queryKey: ['accounting', 'dashboard'],
     queryFn: () => ipc.getDashboard(token),
+  });
+}
+
+export function useRevenue(period: string) {
+  const token = useAuthStore((s) => s.token)!;
+  return useQuery({
+    queryKey: ['accounting', 'revenue', period],
+    queryFn: () => ipc.getRevenue(token, period),
   });
 }
 
@@ -73,6 +82,31 @@ export function useUpcomingInstallments(days = 30) {
   });
 }
 
+export function usePaidInstallments(year = 0, semester = 0) {
+  const token = useAuthStore((s) => s.token)!;
+  return useQuery({
+    queryKey: ['installments', 'paid', year, semester],
+    queryFn: () => ipc.getPaidInstallments(token, year, semester),
+  });
+}
+
+export function useCancelledInstallments() {
+  const token = useAuthStore((s) => s.token)!;
+  return useQuery({
+    queryKey: ['installments', 'cancelled'],
+    queryFn: () => ipc.getCancelledInstallments(token),
+  });
+}
+
+/** Liste de toutes les échéances de vente (pour sélecteurs / rattachements). */
+export function useAllInstallments() {
+  const token = useAuthStore((s) => s.token)!;
+  return useQuery({
+    queryKey: ['installments', 'all'],
+    queryFn: () => ipc.listInstallments(token),
+  });
+}
+
 export function usePayInstallment() {
   const token = useAuthStore((s) => s.token)!;
   const qc = useQueryClient();
@@ -86,10 +120,51 @@ export function usePayInstallment() {
   });
 }
 
-export function useSaleContracts() {
+export function useCancelInstallment() {
+  const token = useAuthStore((s) => s.token)!;
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (installmentId: number) => ipc.cancelInstallment(token, installmentId),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['installments'] });
+      qc.invalidateQueries({ queryKey: ['accounting', 'dashboard'] });
+    },
+  });
+}
+
+export function useReinstateInstallment() {
+  const token = useAuthStore((s) => s.token)!;
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (installmentId: number) => ipc.reinstateInstallment(token, installmentId),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['installments'] });
+      qc.invalidateQueries({ queryKey: ['accounting', 'dashboard'] });
+    },
+  });
+}
+
+/** Génère et enregistre le PDF d'une facture, avec retour utilisateur (toast). */
+export function usePrintInvoice() {
+  const token = useAuthStore((s) => s.token)!;
+  return async (invoiceId: number) => {
+    try {
+      const r = await ipc.printInvoice(token, invoiceId);
+      if (!r.success) {
+        toast.error(typeof r.error === 'string' ? r.error : "Erreur lors de l'impression");
+      } else if (!r.data?.canceled) {
+        toast.success('Facture enregistrée en PDF');
+      }
+    } catch {
+      toast.error("Erreur lors de l'impression de la facture");
+    }
+  };
+}
+
+export function useSaleConventions() {
   const token = useAuthStore((s) => s.token)!;
   return useQuery({
-    queryKey: ['accounting', 'sale-contracts'],
-    queryFn: () => ipc.getSaleContracts(token),
+    queryKey: ['accounting', 'sale-conventions'],
+    queryFn: () => ipc.getSaleConventions(token),
   });
 }

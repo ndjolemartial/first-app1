@@ -43,7 +43,7 @@ export default function CommissionTable({
       <thead className="bg-slate-50 border-b border-slate-200">
         <tr>
           <th className="text-left px-4 py-3 font-medium text-slate-600">Référence</th>
-          <th className="text-left px-4 py-3 font-medium text-slate-600">Contrat</th>
+          <th className="text-left px-4 py-3 font-medium text-slate-600">Convention</th>
           {showBeneficiary && <th className="text-left px-4 py-3 font-medium text-slate-600">Bénéficiaire</th>}
           <th className="text-left px-4 py-3 font-medium text-slate-600">Transaction</th>
           <th className="text-right px-4 py-3 font-medium text-slate-600">Assiette</th>
@@ -61,17 +61,22 @@ export default function CommissionTable({
               <span className="ml-2 text-xs text-slate-400">{SOURCE_LABEL[c.source] ?? c.source}</span>
             </td>
             <td className="px-4 py-3">
-              {c.contract ? (
+              {c.convention ? (
                 <button
                   className="font-medium text-indigo-600 hover:underline"
-                  onClick={() => navigate(`/contracts/${c.contractId}`)}
+                  onClick={() => navigate(`/conventions/${c.conventionId}`)}
                 >
-                  {c.contract.reference}
+                  {c.convention.reference}
                 </button>
               ) : '—'}
             </td>
             {showBeneficiary && (
-              <td className="px-4 py-3 text-slate-700">{beneficiaryName(c)}</td>
+              <td className="px-4 py-3 text-slate-700">
+                {beneficiaryName(c)}
+                {c.beneficiaryType === 'USER' && c.user?.fonction && (
+                  <span className="ml-2 text-xs text-slate-400">· {c.user.fonction}</span>
+                )}
+              </td>
             )}
             <td className="px-4 py-3 text-slate-600">{TRANSACTION_TYPE_LABEL[c.transactionType] ?? c.transactionType}</td>
             <td className="px-4 py-3 text-right text-slate-500">{formatCurrency(Number(c.baseAmount))}</td>

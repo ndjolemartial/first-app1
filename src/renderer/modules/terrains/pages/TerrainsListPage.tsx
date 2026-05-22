@@ -12,7 +12,12 @@ import EmptyState from '../../../shared/components/ui/EmptyState';
 import { useTerrains } from '../hooks/useTerrains';
 import { useLotissements } from '../../lotissements/hooks/useLotissements';
 import { formatDate, formatCurrency } from '../../../shared/utils/format';
+import ExportMenu, { ExportColumn } from '../../../shared/components/ExportMenu';
+import { useAuthStore } from '../../../shared/stores/auth.store';
 import { PlusCircle, Eye, Edit, Landmark } from 'lucide-react';
+
+/** Rôles habilités à créer/modifier un terrain. */
+const WRITE_ROLES = new Set(['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ACCOUNTANT', 'ASSISTANTE_DIRECTION']);
 
 const STATUT_OPTIONS = [
   { value: '', label: 'Tous les statuts' },
@@ -30,8 +35,24 @@ const STATUT_LABEL: Record<string, string> = {
   DISPONIBLE: 'Disponible', RESERVE: 'Réservé', VENDU: 'Vendu', SOUS_OPTION: 'Sous option',
 };
 
+const EXPORT_COLUMNS: ExportColumn[] = [
+  { header: 'Référence',     cell: (t) => t.reference },
+  { header: 'Lotissement',   cell: (t) => (t.lotissement ? `${t.lotissement.reference} — ${t.lotissement.nom}` : '') },
+  { header: 'Îlot',          cell: (t) => t.numeroIlot },
+  { header: 'Parcelle',      cell: (t) => t.numeroParcelle },
+  { header: 'Surface (m²)',  cell: (t) => t.surface ?? '' },
+  { header: 'Prix de vente', cell: (t) => (t.prixVente != null ? formatCurrency(Number(t.prixVente)) : '') },
+  { header: 'Attributaire',  cell: (t) => (t.client ? (t.client.type === 'INDIVIDUEL' ? `${t.client.firstName ?? ''} ${t.client.lastName ?? ''}`.trim() : (t.client.entreprise ?? '')) : '') },
+  { header: 'Viabilisé',     cell: (t) => (t.viabilise ? 'Oui' : 'Non') },
+  { header: 'Statut',        cell: (t) => STATUT_LABEL[t.statut] ?? t.statut },
+  { header: 'Créé le',       cell: (t) => formatDate(t.createdAt) },
+];
+
 export default function TerrainsListPage() {
   const navigate = useNavigate();
+  const token = useAuthStore((s) => s.token)!;
+  const role  = useAuthStore((s) => s.user?.role) ?? '';
+  const canWrite = WRITE_ROLES.has(role);
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState('');
   const [statut, setStatut] = useState('');
@@ -51,19 +72,39 @@ export default function TerrainsListPage() {
     ...(lotsRes?.data ?? []).map((l: any) => ({ value: String(l.id), label: `${l.reference} — ${l.nom}` })),
   ];
 
+  const filterSummary = [
+    search && `Recherche : "${search}"`,
+    statut && `Statut : ${STATUT_LABEL[statut] ?? statut}`,
+    lotissementId && `Lotissement : ${lotOptions.find((o) => o.value === lotissementId)?.label ?? lotissementId}`,
+  ].filter(Boolean).join('   —   ') || undefined;
+
   return (
     <PageLayout
       title="Gestion des terrains"
       breadcrumbs={[{ label: 'Terrains' }]}
       actions={
-        <Button icon={<PlusCircle className="h-4 w-4" />} onClick={() => navigate('/terrains/new')}>
-          Nouveau terrain
-        </Button>
+        <div className="flex gap-2">
+          <ExportMenu
+            fileName="terrains"
+            title="Liste des terrains"
+            subtitle={filterSummary}
+            columns={EXPORT_COLUMNS}
+            fetchRows={async () => {
+              const r = await window.electron.terrains.list(token, filters, 1, 100000);
+              return r.success ? r.data ?? [] : [];
+            }}
+          />
+          {canWrite && (
+            <Button icon={<PlusCircle className="h-4 w-4" />} onClick={() => navigate('/terrains/new')}>
+              Nouveau terrain
+            </Button>
+          )}
+        </div>
       }
     >
       <Card className="mb-4 flex flex-wrap gap-3 items-end">
         <div className="flex-1 min-w-[180px]">
-          <Input label="Rechercher" placeholder="Référence, parcelle, îlot, titre foncier…" value={search}
+          <Input label="Rechercher" placeholder="Référence, parcelle, îlot, titre foncier, attributaire…" value={search}
             onChange={(e) => { setSearch(e.target.value); setPage(1); }} />
         </div>
         <div className="w-56">
@@ -82,7 +123,7 @@ export default function TerrainsListPage() {
         ) : terrains.length === 0 ? (
           <EmptyState
             title="Aucun terrain trouvé"
-            action={{ label: 'Nouveau terrain', onClick: () => navigate('/terrains/new') }}
+            action={canWrite ? { label: 'Nouveau terrain', onClick: () => navigate('/terrains/new') } : undefined}
           />
         ) : (
           <>
@@ -139,8 +180,10 @@ export default function TerrainsListPage() {
                         <div className="flex justify-end gap-1">
                           <Button variant="ghost" size="sm" icon={<Eye className="h-4 w-4" />}
                             onClick={() => navigate(`/terrains/${t.id}`)} />
-                          <Button variant="ghost" size="sm" icon={<Edit className="h-4 w-4" />}
-                            onClick={() => navigate(`/terrains/${t.id}/edit`)} />
+                          {canWrite && (
+                            <Button variant="ghost" size="sm" icon={<Edit className="h-4 w-4" />}
+                              onClick={() => navigate(`/terrains/${t.id}/edit`)} />
+                          )}
                         </div>
                       </td>
                     </tr>

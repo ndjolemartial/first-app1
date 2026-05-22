@@ -19,8 +19,10 @@ const lotissementSchema = z.object({
   longitude: z.coerce.number().optional(),
 });
 
-const WRITE_ROLES = ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'AGENT'];
-const READ_ROLES = [...WRITE_ROLES, 'ACCOUNTANT', 'READONLY'];
+// Module Lotissements : réservé aux MANAGER+ (ACCOUNTANT inclus via checkRole).
+// AGENT et READONLY n'ont aucun accès au module.
+const WRITE_ROLES = ['SUPER_ADMIN', 'ADMIN', 'MANAGER'];
+const READ_ROLES  = ['SUPER_ADMIN', 'ADMIN', 'MANAGER'];
 
 const ser = <T>(v: T): T => JSON.parse(JSON.stringify(v));
 

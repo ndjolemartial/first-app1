@@ -1,7 +1,11 @@
 /** Constantes et helpers d'affichage du module Commissions. */
 
 /** Rôles autorisés à créer / payer / annuler des commissions. */
+// Écriture commissions : AD est explicitement exclue (consultation de ses propres commissions uniquement).
 export const COMMISSION_WRITE_ROLES = ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ACCOUNTANT'];
+
+/** Rôles autorisés à consulter l'interface Apporteurs d'affaire (AD incluse en lecture). */
+export const COMMISSION_REFERRERS_VIEW_ROLES = ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ACCOUNTANT', 'ASSISTANTE_DIRECTION'];
 
 /** Rôles autorisés à gérer les paramètres et supprimer un apporteur. */
 export const COMMISSION_ADMIN_ROLES = ['SUPER_ADMIN', 'ADMIN'];
@@ -21,6 +25,7 @@ export const COMMISSION_STATUS_VARIANT: Record<string, 'success' | 'info' | 'war
 export const TRANSACTION_TYPE_LABEL: Record<string, string> = {
   VENTE: 'Vente',
   LOCATION: 'Location',
+  SOUSCRIPTION: 'Souscription',
   FRAIS_DOSSIER: 'Frais d\'ouverture de dossier',
 };
 

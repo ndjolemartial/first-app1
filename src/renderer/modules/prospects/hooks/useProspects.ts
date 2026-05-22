@@ -124,3 +124,40 @@ export function useConvertProspect() {
     },
   });
 }
+
+/**
+ * Liste des utilisateurs candidats à l'affectation d'un prospect.
+ * L'IPC renvoie une 'Permission insuffisante' aux rôles non habilités —
+ * le hook est désactivé tant que `enabled = false`.
+ */
+export function useAssignableUsers(enabled = true) {
+  const token = useAuthStore((s) => s.token)!;
+  return useQuery({
+    queryKey: ['prospects', 'assignableUsers'],
+    queryFn:  async () => {
+      const res = await ipc().listAssignableUsers(token);
+      if (!res.success) throw new Error(typeof res.error === 'string' ? res.error : 'Erreur liste utilisateurs');
+      return res.data as Array<{ id: number; firstName: string; lastName: string; email: string; role: string }>;
+    },
+    enabled: !!token && enabled,
+  });
+}
+
+export function useAssignProspect() {
+  const token = useAuthStore((s) => s.token)!;
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, assignedToId }: { id: number; assignedToId: number | null }) =>
+      ipc().assign(token, id, assignedToId),
+    onSuccess: (res, { id }) => {
+      if (res.success) {
+        qc.invalidateQueries({ queryKey: ['prospects'] });
+        qc.invalidateQueries({ queryKey: ['prospects', id] });
+        toast.success('Affectation mise à jour');
+      } else {
+        toast.error(typeof res.error === 'string' ? res.error : 'Erreur d’affectation');
+      }
+    },
+    onError: () => toast.error('Erreur réseau'),
+  });
+}

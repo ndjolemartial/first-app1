@@ -11,6 +11,8 @@ import { SkeletonTable } from '../../../shared/components/ui/Skeleton';
 import EmptyState from '../../../shared/components/ui/EmptyState';
 import { useLotissements } from '../hooks/useLotissements';
 import { formatDate } from '../../../shared/utils/format';
+import ExportMenu, { ExportColumn } from '../../../shared/components/ExportMenu';
+import { useAuthStore } from '../../../shared/stores/auth.store';
 import { PlusCircle, Eye, Edit, Map } from 'lucide-react';
 
 const STATUT_OPTIONS = [
@@ -41,13 +43,31 @@ const STATUT_LABEL: Record<string, string> = {
   FERME: 'Fermé',
 };
 
+const EXPORT_COLUMNS: ExportColumn[] = [
+  { header: 'Référence', cell: (l) => l.reference },
+  { header: 'Nom',       cell: (l) => l.nom },
+  { header: 'Commune',   cell: (l) => l.commune },
+  { header: 'Quartier',  cell: (l) => l.quartier },
+  { header: 'Ville',     cell: (l) => l.ville },
+  { header: 'Promoteur', cell: (l) => l.promoteur },
+  { header: 'Parcelles', cell: (l) => `${l._count?.terrains ?? 0}${l.nombreParcelles ? ` / ${l.nombreParcelles}` : ''}` },
+  { header: 'Statut',    cell: (l) => STATUT_LABEL[l.statut] ?? l.statut },
+  { header: 'Créé le',   cell: (l) => formatDate(l.createdAt) },
+];
+
 export default function LotissementsListPage() {
   const navigate = useNavigate();
+  const token = useAuthStore((s) => s.token)!;
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState('');
   const [statut, setStatut] = useState('');
   const filters = { search: search || undefined, statut: statut || undefined };
   const { data, isLoading } = useLotissements(filters, page, 20);
+
+  const filterSummary = [
+    search && `Recherche : "${search}"`,
+    statut && `Statut : ${STATUT_LABEL[statut] ?? statut}`,
+  ].filter(Boolean).join('   —   ') || undefined;
 
   const lots: any[] = data?.data ?? [];
   const total: number = data?.total ?? 0;
@@ -57,9 +77,21 @@ export default function LotissementsListPage() {
       title="Gestion des lotissements"
       breadcrumbs={[{ label: 'Lotissements' }]}
       actions={
-        <Button icon={<PlusCircle className="h-4 w-4" />} onClick={() => navigate('/lotissements/new')}>
-          Nouveau lotissement
-        </Button>
+        <div className="flex gap-2">
+          <ExportMenu
+            fileName="lotissements"
+            title="Liste des lotissements"
+            subtitle={filterSummary}
+            columns={EXPORT_COLUMNS}
+            fetchRows={async () => {
+              const r = await window.electron.lotissements.list(token, filters, 1, 100000);
+              return r.success ? r.data ?? [] : [];
+            }}
+          />
+          <Button icon={<PlusCircle className="h-4 w-4" />} onClick={() => navigate('/lotissements/new')}>
+            Nouveau lotissement
+          </Button>
+        </div>
       }
     >
       <Card className="mb-4 flex flex-wrap gap-3 items-end">

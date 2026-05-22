@@ -6,6 +6,7 @@ import { z } from 'zod';
 
 const terrainSchema = z.object({
   lotissementId: z.coerce.number().int().positive('Lotissement requis'),
+  programmeId: z.coerce.number().int().positive().optional().nullable(),
   ownerId: z.coerce.number().int().positive().optional().nullable(),
   clientId: z.coerce.number().int().positive().optional().nullable(),
   numeroIlot: z.string().optional(),
@@ -25,8 +26,15 @@ const terrainSchema = z.object({
   longitude: z.coerce.number().optional().nullable(),
 });
 
-const WRITE_ROLES = ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'AGENT'];
-const READ_ROLES = [...WRITE_ROLES, 'ACCOUNTANT', 'READONLY'];
+// Module Terrains : MANAGER+ (ACCOUNTANT inclus via checkRole) ont un accès complet.
+// AGENT et READONLY peuvent consulter uniquement les terrains DISPONIBLE (lecture seule).
+const WRITE_ROLES = ['SUPER_ADMIN', 'ADMIN', 'MANAGER'];
+const READ_ROLES  = [...WRITE_ROLES, 'AGENT', 'ACCOUNTANT', 'READONLY'];
+/** Rôles disposant d'une vue globale (sans filtrage par statut). */
+const FULL_VIEW_ROLES = ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ACCOUNTANT', 'ASSISTANTE_DIRECTION'];
+function hasFullView(role: string): boolean {
+  return FULL_VIEW_ROLES.includes(role);
+}
 
 const ser = <T>(v: T): T => JSON.parse(JSON.stringify(v));
 
@@ -55,15 +63,21 @@ export function registerTerrainsIPC(): void {
       const db = getDb();
       const where: any = { deletedAt: null };
       if (filters.lotissementId) where.lotissementId = Number(filters.lotissementId);
+      if (filters.programmeId) where.programmeId = Number(filters.programmeId);
       if (filters.statut) where.statut = filters.statut;
       if (filters.viabilise !== undefined) where.viabilise = filters.viabilise;
       if (filters.clientId) where.clientId = Number(filters.clientId);
+      // AGENT / READONLY ne voient que les terrains DISPONIBLE (statut imposé).
+      if (!hasFullView(session.role)) where.statut = 'DISPONIBLE';
       if (filters.search) {
         where.OR = [
           { reference: { contains: filters.search } },
           { numeroParcelle: { contains: filters.search } },
           { numeroIlot: { contains: filters.search } },
           { titreFoncier: { contains: filters.search } },
+          { client: { firstName: { contains: filters.search } } },
+          { client: { lastName: { contains: filters.search } } },
+          { client: { entreprise: { contains: filters.search } } },
         ];
       }
       const [data, total] = await db.$transaction([
@@ -74,6 +88,7 @@ export function registerTerrainsIPC(): void {
           orderBy: [{ lotissementId: 'asc' }, { numeroIlot: 'asc' }, { numeroParcelle: 'asc' }],
           include: {
             lotissement: { select: { id: true, reference: true, nom: true, ville: true } },
+            programme: { select: { id: true, reference: true, nom: true } },
             client: { select: { id: true, firstName: true, lastName: true, entreprise: true, type: true } },
           },
         }),
@@ -96,6 +111,7 @@ export function registerTerrainsIPC(): void {
         where: { id, deletedAt: null },
         include: {
           lotissement: true,
+          programme: true,
           owner: true,
           client: true,
           documents: { orderBy: { uploadedAt: 'desc' } },
@@ -104,6 +120,10 @@ export function registerTerrainsIPC(): void {
         },
       });
       if (!terrain) return { success: false, error: 'Terrain introuvable' };
+      // AGENT / READONLY ne peuvent consulter qu'un terrain DISPONIBLE.
+      if (!hasFullView(session.role) && terrain.statut !== 'DISPONIBLE') {
+        return { success: false, error: 'Terrain inaccessible' };
+      }
       return ser({ success: true, data: terrain });
     } catch (error: any) {
       return { success: false, error: error.message };
@@ -122,6 +142,7 @@ export function registerTerrainsIPC(): void {
       const data: any = { ...parsed.data, reference };
       if (data.ownerId === null || data.ownerId === undefined) delete data.ownerId;
       if (data.clientId === null || data.clientId === undefined) delete data.clientId;
+      if (data.programmeId === null || data.programmeId === undefined) delete data.programmeId;
       if (data.prixVente === null) delete data.prixVente;
       const terrain = await db.terrain.create({ data });
       logger.info(`Terrain créé: ${terrain.reference}`);

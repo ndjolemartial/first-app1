@@ -1,4 +1,4 @@
-import { LogOut, Settings, KeyRound } from 'lucide-react';
+import { LogOut, User as UserIcon } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../../stores/auth.store';
 import { toast } from '../ui/Toast';
@@ -29,9 +29,17 @@ export default function TopBar({ title, children }: TopBarProps) {
         {children}
       </div>
       <div className="flex items-center gap-2">
-        <span className="text-sm text-slate-600 hidden md:block">
-          {user?.firstName} {user?.lastName}
-        </span>
+        <button
+          type="button"
+          onClick={() => navigate('/profile')}
+          className="flex items-center gap-2 rounded-lg px-2 py-1 hover:bg-slate-100 transition-colors"
+          title="Mon profil"
+        >
+          <UserIcon className="h-4 w-4 text-slate-500" />
+          <span className="text-sm text-slate-700 hidden md:block">
+            {user?.firstName} {user?.lastName}
+          </span>
+        </button>
         <Button variant="ghost" size="sm" onClick={handleLogout} icon={<LogOut className="h-4 w-4" />}>
           Déconnexion
         </Button>

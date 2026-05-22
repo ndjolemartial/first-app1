@@ -4,7 +4,10 @@ import Button from '../../../shared/components/ui/Button';
 import Badge from '../../../shared/components/ui/Badge';
 import { useProspectKanban, useUpdateProspectStatus } from '../hooks/useProspects';
 import { formatCurrency } from '../../../shared/utils/format';
-import { UserPlus, List, Eye, Phone, ArrowRight } from 'lucide-react';
+import { UserPlus, List, Eye, Phone, ArrowRight, UserCircle2 } from 'lucide-react';
+
+const formatUserName = (u: any): string =>
+  u ? `${u.firstName ?? ''} ${u.lastName ?? ''}`.trim() : '';
 
 // ── Configuration des colonnes ─────────────────────────────────────────────────
 
@@ -122,6 +125,12 @@ export default function ProspectKanbanPage() {
                           {formatCurrency(p.budget)}
                         </p>
                       )}
+                      <p className="flex items-center gap-1 text-xs text-slate-500">
+                        <UserCircle2 className="h-3 w-3" />
+                        {p.assignedTo
+                          ? formatUserName(p.assignedTo)
+                          : <span className="italic text-slate-400">Non alloué</span>}
+                      </p>
 
                       {/* Transitions de statut */}
                       <div className="flex flex-wrap gap-1 mt-2 pt-2 border-t border-slate-100">

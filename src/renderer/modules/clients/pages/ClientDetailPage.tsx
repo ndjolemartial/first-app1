@@ -6,9 +6,17 @@ import Badge from '../../../shared/components/ui/Badge';
 import Card from '../../../shared/components/ui/Card';
 import Select from '../../../shared/components/ui/Select';
 import ConfirmDialog from '../../../shared/components/ui/ConfirmDialog';
-import { useClient, useDeleteClient, useUpdateClientStatus } from '../hooks/useClients';
+import {
+  useClient, useDeleteClient, useUpdateClientStatus,
+  useAssignClient, useSetClientReferrer,
+  useClientAssignableUsers, useClientReferrers,
+} from '../hooks/useClients';
+import { useAuthStore } from '../../../shared/stores/auth.store';
 import { formatDate } from '../../../shared/utils/format';
-import { Edit, Trash2, FileText, IdCard } from 'lucide-react';
+import { Edit, Trash2, FileText, IdCard, Users } from 'lucide-react';
+
+/** Affectation client : AD est explicitement exclue (réduite au niveau AGENT sur ce module). */
+const ASSIGN_ROLES = new Set(['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ACCOUNTANT']);
 
 const STATUS_OPTIONS = [
   { value: 'ACTIF', label: 'Actif' },
@@ -30,10 +38,42 @@ export default function ClientDetailPage() {
   const { data: res, isLoading } = useClient(Number(id));
   const deleteClient = useDeleteClient();
   const updateStatus = useUpdateClientStatus();
+  const assignClient   = useAssignClient();
+  const setReferrer    = useSetClientReferrer();
+  const role = useAuthStore((s) => s.user?.role) ?? '';
+  const canAssign = ASSIGN_ROLES.has(role);
+  const { data: assignableUsersRes } = useClientAssignableUsers();
+  const { data: referrersRes }       = useClientReferrers();
   const [confirmDelete, setConfirmDelete] = useState(false);
 
   const c = res?.data;
-  if (isLoading || !c) return null;
+  if (isLoading) {
+    return (
+      <PageLayout title="Chargement…" breadcrumbs={[{ label: 'Clients', to: '/clients' }, { label: '…' }]}>
+        <Card><p className="text-sm text-slate-500">Chargement de la fiche…</p></Card>
+      </PageLayout>
+    );
+  }
+  if (!c) {
+    const errMsg = res && !res.success
+      ? (typeof res.error === 'string' ? res.error : 'Fiche inaccessible')
+      : 'Client introuvable';
+    return (
+      <PageLayout title="Fiche client" breadcrumbs={[{ label: 'Clients', to: '/clients' }, { label: 'Erreur' }]}>
+        <Card>
+          <p className="text-sm text-red-600">{errMsg}</p>
+          <button className="mt-3 text-sm text-blue-600 hover:underline" onClick={() => navigate('/clients')}>
+            ← Retour à la liste
+          </button>
+        </Card>
+      </PageLayout>
+    );
+  }
+
+  const formatUserName = (u: any) =>
+    u ? `${u.firstName ?? ''} ${u.lastName ?? ''}`.trim() || u.email : '';
+  const formatReferrerName = (r: any) =>
+    r ? (r.companyName ?? `${r.firstName ?? ''} ${r.lastName ?? ''}`.trim()) : '';
 
   const displayName = c.type === 'INDIVIDUEL'
     ? `${c.firstName ?? ''} ${c.lastName ?? ''}`.trim()
@@ -105,6 +145,79 @@ export default function ClientDetailPage() {
             </dl>
           </Card>
 
+          <Card>
+            <h3 className="font-semibold text-slate-700 mb-4 flex items-center gap-2">
+              <Users className="h-4 w-4" /> Affectation
+            </h3>
+            {canAssign ? (
+              <div className="space-y-4">
+                <div>
+                  <label className="text-xs font-medium text-slate-500 mb-1 block">
+                    Utilisateur référent
+                  </label>
+                  <Select
+                    label=""
+                    options={[
+                      { value: '', label: '— Aucun —' },
+                      ...((assignableUsersRes?.data ?? []) as any[]).map((u) => ({
+                        value: String(u.id),
+                        label: formatUserName(u),
+                      })),
+                    ]}
+                    value={c.assignedToId != null ? String(c.assignedToId) : ''}
+                    disabled={assignClient.isPending}
+                    onChange={(e) =>
+                      assignClient.mutate({
+                        id: c.id,
+                        assignedToId: e.target.value ? Number(e.target.value) : null,
+                      })
+                    }
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-medium text-slate-500 mb-1 block">
+                    Apporteur d'affaire
+                  </label>
+                  <Select
+                    label=""
+                    options={[
+                      { value: '', label: '— Aucun —' },
+                      ...((referrersRes?.data ?? []) as any[]).map((r) => ({
+                        value: String(r.id),
+                        label: r.companyName
+                          ? `${r.firstName ?? ''} ${r.lastName ?? ''} (${r.companyName})`.trim()
+                          : `${r.firstName ?? ''} ${r.lastName ?? ''}`.trim(),
+                      })),
+                    ]}
+                    value={c.referrerId != null ? String(c.referrerId) : ''}
+                    disabled={setReferrer.isPending}
+                    onChange={(e) =>
+                      setReferrer.mutate({
+                        id: c.id,
+                        referrerId: e.target.value ? Number(e.target.value) : null,
+                      })
+                    }
+                  />
+                </div>
+              </div>
+            ) : (
+              <dl className="space-y-3 text-sm">
+                <div className="flex justify-between">
+                  <dt className="text-slate-500">Utilisateur référent</dt>
+                  <dd className="font-medium text-slate-900">
+                    {c.assignedTo ? formatUserName(c.assignedTo) : '—'}
+                  </dd>
+                </div>
+                <div className="flex justify-between">
+                  <dt className="text-slate-500">Apporteur</dt>
+                  <dd className="font-medium text-slate-900">
+                    {c.referrer ? formatReferrerName(c.referrer) : '—'}
+                  </dd>
+                </div>
+              </dl>
+            )}
+          </Card>
+
           {c.type === 'INDIVIDUEL' && (c.fatherFirstName || c.fatherLastName || c.motherFirstName || c.motherLastName) && (
             <Card>
               <h3 className="font-semibold text-slate-700 mb-4">Filiation</h3>
@@ -136,17 +249,17 @@ export default function ClientDetailPage() {
           )}
         </div>
 
-        {c.contracts?.length > 0 && (
+        {c.conventions?.length > 0 && (
           <Card>
             <h3 className="font-semibold text-slate-700 mb-4 flex items-center gap-2">
-              <FileText className="h-4 w-4" /> Contrats ({c.contracts.length})
+              <FileText className="h-4 w-4" /> Conventions ({c.conventions.length})
             </h3>
             <div className="space-y-2">
-              {c.contracts.map((contract: any) => (
-                <div key={contract.id} className="flex items-center justify-between text-sm border border-slate-100 rounded-lg px-4 py-3">
-                  <span className="font-medium">{contract.reference}</span>
-                  <Badge variant={contract.status === 'ACTIVE' ? 'success' : 'default'}>{contract.status}</Badge>
-                  <span className="text-slate-500">{contract.property?.address}, {contract.property?.city}</span>
+              {c.conventions.map((convention: any) => (
+                <div key={convention.id} className="flex items-center justify-between text-sm border border-slate-100 rounded-lg px-4 py-3">
+                  <span className="font-medium">{convention.reference}</span>
+                  <Badge variant={convention.status === 'ACTIVE' ? 'success' : 'default'}>{convention.status}</Badge>
+                  <span className="text-slate-500">{convention.property?.address}, {convention.property?.city}</span>
                 </div>
               ))}
             </div>

@@ -11,7 +11,13 @@ import { SkeletonTable } from '../../../shared/components/ui/Skeleton';
 import EmptyState from '../../../shared/components/ui/EmptyState';
 import { useClients } from '../hooks/useClients';
 import { formatDate } from '../../../shared/utils/format';
+import ExportMenu, { ExportColumn } from '../../../shared/components/ExportMenu';
+import { useAuthStore } from '../../../shared/stores/auth.store';
 import { UserPlus, Eye, Edit } from 'lucide-react';
+
+/** Rôles habilités à créer un client (équivalents WRITE_ROLES côté IPC). */
+/** Création client : AD est explicitement exclue (réduite au niveau AGENT sur ce module). */
+const WRITE_ROLES = new Set(['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ACCOUNTANT']);
 
 const TYPE_OPTIONS = [
   { value: '', label: 'Tous les types' },
@@ -34,14 +40,37 @@ const STATUS_VARIANT: Record<string, 'success' | 'danger' | 'purple' | 'warning'
   SUSPENDU: 'warning',
 };
 
+const EXPORT_COLUMNS: ExportColumn[] = [
+  { header: 'Nom / Entreprise', cell: (c) => (c.type === 'INDIVIDUEL' ? `${c.firstName ?? ''} ${c.lastName ?? ''}`.trim() : c.entreprise) },
+  { header: 'Type',             cell: (c) => (c.type === 'INDIVIDUEL' ? 'Particulier' : 'Entreprise') },
+  { header: 'Téléphone',        cell: (c) => c.phone },
+  { header: 'Mobile',           cell: (c) => c.mobile },
+  { header: 'Email',            cell: (c) => c.email },
+  { header: 'Ville',            cell: (c) => c.city },
+  { header: 'Conventions',      cell: (c) => c._count?.conventions ?? 0 },
+  { header: 'Affecté à',        cell: (c) => c.assignedTo ? `${c.assignedTo.firstName ?? ''} ${c.assignedTo.lastName ?? ''}`.trim() : '' },
+  { header: 'Apporteur',        cell: (c) => c.referrer ? (c.referrer.companyName ?? `${c.referrer.firstName ?? ''} ${c.referrer.lastName ?? ''}`.trim()) : '' },
+  { header: 'Statut',           cell: (c) => STATUS_OPTIONS.find((o) => o.value === c.status)?.label ?? c.status },
+  { header: 'Créé le',          cell: (c) => formatDate(c.createdAt) },
+];
+
 export default function ClientsListPage() {
   const navigate = useNavigate();
+  const token = useAuthStore((s) => s.token)!;
+  const role  = useAuthStore((s) => s.user?.role) ?? '';
+  const canCreate = WRITE_ROLES.has(role);
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState('');
   const [type, setType] = useState('');
   const [status, setStatus] = useState('');
   const filters = { search: search || undefined, type: type || undefined, status: status || undefined };
   const { data, isLoading } = useClients(filters, page, 20);
+
+  const filterSummary = [
+    search && `Recherche : "${search}"`,
+    type && `Type : ${TYPE_OPTIONS.find((o) => o.value === type)?.label ?? type}`,
+    status && `Statut : ${STATUS_OPTIONS.find((o) => o.value === status)?.label ?? status}`,
+  ].filter(Boolean).join('   —   ') || undefined;
 
   const clients: any[] = data?.data ?? [];
   const total: number = data?.total ?? 0;
@@ -51,9 +80,23 @@ export default function ClientsListPage() {
       title="Gestion des clients"
       breadcrumbs={[{ label: 'Clients' }]}
       actions={
-        <Button icon={<UserPlus className="h-4 w-4" />} onClick={() => navigate('/clients/new')}>
-          Nouveau client
-        </Button>
+        <div className="flex gap-2">
+          <ExportMenu
+            fileName="clients"
+            title="Liste des clients"
+            subtitle={filterSummary}
+            columns={EXPORT_COLUMNS}
+            fetchRows={async () => {
+              const r = await window.electron.clients.list(token, filters, 1, 100000);
+              return r.success ? r.data ?? [] : [];
+            }}
+          />
+          {canCreate && (
+            <Button icon={<UserPlus className="h-4 w-4" />} onClick={() => navigate('/clients/new')}>
+              Nouveau client
+            </Button>
+          )}
+        </div>
       }
     >
       <Card className="mb-4 flex flex-wrap gap-3 items-end">
@@ -77,7 +120,7 @@ export default function ClientsListPage() {
         ) : clients.length === 0 ? (
           <EmptyState
             title="Aucun client trouvé"
-            action={{ label: 'Nouveau client', onClick: () => navigate('/clients/new') }}
+            action={canCreate ? { label: 'Nouveau client', onClick: () => navigate('/clients/new') } : undefined}
           />
         ) : (
           <>
@@ -88,7 +131,8 @@ export default function ClientsListPage() {
                   <th className="text-left px-4 py-3 font-medium text-slate-600">Type</th>
                   <th className="text-left px-4 py-3 font-medium text-slate-600">Contact</th>
                   <th className="text-left px-4 py-3 font-medium text-slate-600">Ville</th>
-                  <th className="text-left px-4 py-3 font-medium text-slate-600">Contrats</th>
+                  <th className="text-left px-4 py-3 font-medium text-slate-600">Affectation</th>
+                  <th className="text-left px-4 py-3 font-medium text-slate-600">Conventions</th>
                   <th className="text-left px-4 py-3 font-medium text-slate-600">Statut</th>
                   <th className="text-left px-4 py-3 font-medium text-slate-600">Depuis</th>
                   <th className="text-right px-4 py-3 font-medium text-slate-600">Actions</th>
@@ -119,7 +163,17 @@ export default function ClientsListPage() {
                       <p className="text-xs">{c.email ?? ''}</p>
                     </td>
                     <td className="px-4 py-3 text-slate-600">{c.city ?? '—'}</td>
-                    <td className="px-4 py-3 text-slate-600">{c._count?.contracts ?? 0}</td>
+                    <td className="px-4 py-3 text-slate-500">
+                      {c.assignedTo ? (
+                        <p className="text-slate-700">{`${c.assignedTo.firstName ?? ''} ${c.assignedTo.lastName ?? ''}`.trim()}</p>
+                      ) : <p className="text-slate-400">—</p>}
+                      {c.referrer && (
+                        <p className="text-xs">
+                          Apporteur : {c.referrer.companyName ?? `${c.referrer.firstName ?? ''} ${c.referrer.lastName ?? ''}`.trim()}
+                        </p>
+                      )}
+                    </td>
+                    <td className="px-4 py-3 text-slate-600">{c._count?.conventions ?? 0}</td>
                     <td className="px-4 py-3">
                       <Badge variant={STATUS_VARIANT[c.status] ?? 'default'}>
                         {STATUS_OPTIONS.find((o) => o.value === c.status)?.label ?? c.status ?? '—'}

@@ -1,49 +1,49 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useAuthStore } from '../../../shared/stores/auth.store';
 
-const ipc = () => window.electron.contracts;
+const ipc = () => window.electron.conventions;
 const token = () => useAuthStore.getState().token!;
 
-export function useContracts(filters: object = {}, page = 1, limit = 20) {
+export function useConventions(filters: object = {}, page = 1, limit = 20) {
   return useQuery({
-    queryKey: ['contracts', filters, page],
+    queryKey: ['conventions', filters, page],
     queryFn: () => ipc().list(token(), filters, page, limit),
   });
 }
 
-export function useContract(id: number) {
+export function useConvention(id: number) {
   return useQuery({
-    queryKey: ['contract', id],
+    queryKey: ['convention', id],
     queryFn: () => ipc().getById(token(), id),
     enabled: id > 0,
   });
 }
 
-export function useCreateContract() {
+export function useCreateConvention() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (payload: object) => ipc().create(token(), payload),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['contracts'] }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['conventions'] }),
   });
 }
 
-export function useUpdateContract() {
+export function useUpdateConvention() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: ({ id, payload }: { id: number; payload: object }) =>
       ipc().update(token(), id, payload),
     onSuccess: (_data, { id }) => {
-      qc.invalidateQueries({ queryKey: ['contracts'] });
-      qc.invalidateQueries({ queryKey: ['contract', id] });
+      qc.invalidateQueries({ queryKey: ['conventions'] });
+      qc.invalidateQueries({ queryKey: ['convention', id] });
     },
   });
 }
 
-export function useDeleteContract() {
+export function useDeleteConvention() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (id: number) => ipc().delete(token(), id),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['contracts'] }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['conventions'] }),
   });
 }
 
@@ -52,16 +52,16 @@ export function useGenerateInstallments() {
   return useMutation({
     mutationFn: (id: number) => ipc().generateInstallments(token(), id),
     onSuccess: (_data, id) => {
-      qc.invalidateQueries({ queryKey: ['contract', id] });
+      qc.invalidateQueries({ queryKey: ['convention', id] });
       qc.invalidateQueries({ queryKey: ['installments', id] });
     },
   });
 }
 
-export function useInstallments(contractId: number) {
+export function useInstallments(conventionId: number) {
   return useQuery({
-    queryKey: ['installments', contractId],
-    queryFn: () => ipc().getInstallments(token(), contractId),
-    enabled: contractId > 0,
+    queryKey: ['installments', conventionId],
+    queryFn: () => ipc().getInstallments(token(), conventionId),
+    enabled: conventionId > 0,
   });
 }

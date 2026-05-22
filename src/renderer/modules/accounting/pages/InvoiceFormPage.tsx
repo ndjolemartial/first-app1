@@ -7,23 +7,24 @@ import PageLayout from '../../../shared/components/layout/PageLayout';
 import Button from '../../../shared/components/ui/Button';
 import Input from '../../../shared/components/ui/Input';
 import Select from '../../../shared/components/ui/Select';
+import { FormSearchSelect } from '../../../shared/components/ui/SearchSelect';
 import Textarea from '../../../shared/components/ui/Textarea';
 import Card from '../../../shared/components/ui/Card';
 import { useInvoice, useCreateInvoice } from '../hooks/useAccounting';
 import { useClients } from '../../clients/hooks/useClients';
-import { useContracts } from '../../contracts/hooks/useContracts';
+import { useConventions } from '../../conventions/hooks/useConventions';
 import { Save, Plus, Trash2 } from 'lucide-react';
 
 const itemSchema = z.object({
   description: z.string().min(1, 'Description requise'),
-  quantity: z.coerce.number().positive(),
-  unitPrice: z.coerce.number().positive(),
+  quantity: z.coerce.number().positive('Quantité invalide'),
+  unitPrice: z.coerce.number().positive('Prix requis'),
 });
 
 const schema = z.object({
   type: z.enum(['VENTE', 'ECHEANCE_VENTE', 'FRAIS_AGENCE', 'FRAIS_DE_GESTION', 'AVANCE', 'CAUTION', 'OTHER']),
-  clientId: z.coerce.number().int().positive().optional(),
-  contractId: z.coerce.number().int().positive().optional(),
+  clientId: z.coerce.number().int().optional(),
+  conventionId: z.coerce.number().int().optional(),
   taxRate: z.coerce.number().min(0).max(100).default(0),
   issueDate: z.string().min(1),
   dueDate: z.string().min(1),
@@ -56,7 +57,7 @@ export default function InvoiceFormPage() {
   const { data: res } = useInvoice(isEdit ? Number(id) : 0);
   const create = useCreateInvoice();
   const { data: clientsRes } = useClients({}, 1, 500);
-  const { data: contractsRes } = useContracts({}, 1, 500);
+  const { data: conventionsRes } = useConventions({}, 1, 500);
 
   const today = new Date().toISOString().slice(0, 10);
 
@@ -89,12 +90,20 @@ export default function InvoiceFormPage() {
     })),
   ];
 
-  const contractOptions = [
-    { value: '', label: '— Contrat (optionnel) —' },
-    ...(contractsRes?.data ?? []).map((ct: any) => ({
-      value: String(ct.id),
-      label: ct.reference,
-    })),
+  const conventionOptions = [
+    { value: '', label: '— Convention (optionnel) —' },
+    ...(conventionsRes?.data ?? []).map((cv: any) => {
+      const client = cv.client;
+      const clientName = client
+        ? client.type === 'INDIVIDUEL'
+          ? `${client.firstName ?? ''} ${client.lastName ?? ''}`.trim()
+          : (client.entreprise ?? '')
+        : '';
+      return {
+        value: String(cv.id),
+        label: clientName ? `${cv.reference} — ${clientName}` : cv.reference,
+      };
+    }),
   ];
 
   useEffect(() => {
@@ -103,7 +112,7 @@ export default function InvoiceFormPage() {
       reset({
         type: inv.type,
         clientId: inv.clientId ?? undefined,
-        contractId: inv.contractId ?? undefined,
+        conventionId: inv.conventionId ?? undefined,
         taxRate: Number(inv.taxRate),
         issueDate: toDateInput(inv.issueDate),
         dueDate: toDateInput(inv.dueDate),
@@ -124,7 +133,7 @@ export default function InvoiceFormPage() {
       dueDate: new Date(data.dueDate).toISOString(),
     };
     if (!payload.clientId) delete payload.clientId;
-    if (!payload.contractId) delete payload.contractId;
+    if (!payload.conventionId) delete payload.conventionId;
 
     const r = await create.mutateAsync(payload);
     if (r.success) navigate(`/accounting/invoices/${r.data?.id ?? ''}`);
@@ -152,8 +161,8 @@ export default function InvoiceFormPage() {
             <Input label="Date d'échéance *" type="date" error={errors.dueDate?.message} {...register('dueDate')} />
           </div>
           <div className="grid grid-cols-2 gap-4 mt-4">
-            <Select label="Client" options={clientOptions} {...register('clientId')} />
-            <Select label="Contrat lié" options={contractOptions} {...register('contractId')} />
+            <FormSearchSelect control={control} name="clientId" label="Client" options={clientOptions} />
+            <FormSearchSelect control={control} name="conventionId" label="Convention liée" options={conventionOptions} />
           </div>
         </Card>
 
@@ -190,6 +199,7 @@ export default function InvoiceFormPage() {
                     placeholder="Qté"
                     min="0.01"
                     step="0.01"
+                    error={(errors.items?.[index]?.quantity as any)?.message}
                     {...register(`items.${index}.quantity`)}
                   />
                 </div>
@@ -199,6 +209,7 @@ export default function InvoiceFormPage() {
                     placeholder="Prix unitaire"
                     min="0"
                     step="100"
+                    error={(errors.items?.[index]?.unitPrice as any)?.message}
                     {...register(`items.${index}.unitPrice`)}
                   />
                 </div>

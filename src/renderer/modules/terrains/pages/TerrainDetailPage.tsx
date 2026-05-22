@@ -11,7 +11,7 @@ import { useTerrain, useDeleteTerrain, useUpdateTerrainStatut } from '../hooks/u
 import { useAuthStore } from '../../../shared/stores/auth.store';
 import { formatDate, formatCurrency } from '../../../shared/utils/format';
 import { toast } from '../../../shared/components/ui/Toast';
-import { Edit, Trash2, MapPin, Landmark, CheckCircle, FileText, ExternalLink, User } from 'lucide-react';
+import { Edit, Trash2, MapPin, Landmark, CheckCircle, FileText, ExternalLink, User, Building } from 'lucide-react';
 
 const STATUT_OPTIONS = [
   { value: 'DISPONIBLE', label: 'Disponible' },
@@ -119,6 +119,15 @@ export default function TerrainDetailPage() {
                 <span>·</span>
                 <span>{t.lotissement?.ville}</span>
               </div>
+              {t.programme && (
+                <div className="flex items-center gap-2 mt-1 text-sm text-slate-500">
+                  <Building className="h-4 w-4" />
+                  <button className="hover:underline text-indigo-600"
+                    onClick={() => navigate(`/programmes/${t.programme.id}`)}>
+                    {t.programme.reference} — {t.programme.nom}
+                  </button>
+                </div>
+              )}
             </div>
             {t.prixVente && (
               <div className="text-right">

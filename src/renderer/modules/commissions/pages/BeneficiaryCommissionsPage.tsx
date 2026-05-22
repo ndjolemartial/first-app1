@@ -8,9 +8,23 @@ import { useAuthStore } from '../../../shared/stores/auth.store';
 import { useBeneficiarySummary } from '../hooks/useCommissions';
 import CommissionTable from '../components/CommissionTable';
 import { PayCommissionModal, CancelCommissionModal } from '../components/CommissionModals';
-import { BENEFICIARY_TYPE_LABEL, COMMISSION_WRITE_ROLES } from '../utils/commissions.utils';
+import {
+  BENEFICIARY_TYPE_LABEL, COMMISSION_WRITE_ROLES,
+  COMMISSION_STATUS_LABEL, TRANSACTION_TYPE_LABEL,
+} from '../utils/commissions.utils';
 import { formatCurrency } from '../../../shared/utils/format';
+import ExportMenu, { ExportColumn } from '../../../shared/components/ExportMenu';
 import { Wallet, CheckCircle, Ban } from 'lucide-react';
+
+const EXPORT_COLUMNS: ExportColumn[] = [
+  { header: 'Référence',   cell: (c) => c.reference },
+  { header: 'Convention',  cell: (c) => c.convention?.reference ?? '' },
+  { header: 'Transaction', cell: (c) => TRANSACTION_TYPE_LABEL[c.transactionType] ?? c.transactionType },
+  { header: 'Assiette',    cell: (c) => formatCurrency(Number(c.baseAmount)) },
+  { header: 'Taux',        cell: (c) => `${Number(c.rate)} %` },
+  { header: 'Montant',     cell: (c) => formatCurrency(Number(c.amount)) },
+  { header: 'Statut',      cell: (c) => COMMISSION_STATUS_LABEL[c.status] ?? c.status },
+];
 
 type Tab = 'A_PAYER' | 'PAYEE' | 'ANNULEE';
 
@@ -49,6 +63,15 @@ export default function BeneficiaryCommissionsPage() {
     <PageLayout
       title={`Commissions — ${name}`}
       breadcrumbs={[{ label: 'Commissions', to: '/commissions' }, { label: name }]}
+      actions={
+        <ExportMenu
+          fileName={`commissions-${name.replace(/\s+/g, '-').toLowerCase()}`}
+          title={`Commissions de ${name}`}
+          subtitle={`Onglet : ${TABS.find((t) => t.value === tab)?.label ?? tab}`}
+          columns={EXPORT_COLUMNS}
+          fetchRows={async () => filtered}
+        />
+      }
     >
       {isLoading ? (
         <div className="p-8"><SkeletonTable rows={6} /></div>

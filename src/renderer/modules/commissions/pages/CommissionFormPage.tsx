@@ -7,11 +7,12 @@ import PageLayout from '../../../shared/components/layout/PageLayout';
 import Card from '../../../shared/components/ui/Card';
 import Button from '../../../shared/components/ui/Button';
 import Select from '../../../shared/components/ui/Select';
+import { FormSearchSelect } from '../../../shared/components/ui/SearchSelect';
 import Input from '../../../shared/components/ui/Input';
 import Textarea from '../../../shared/components/ui/Textarea';
 import {
   useCreateCommission,
-  useEligibleContracts,
+  useEligibleConventions,
   useCommissionUsers,
   useReferrers,
   useCommissionSettings,
@@ -20,17 +21,19 @@ import { clientName, referrerName, TRANSACTION_TYPE_LABEL } from '../utils/commi
 import { formatCurrency } from '../../../shared/utils/format';
 import { Save } from 'lucide-react';
 
-/** Détermine le type de transaction naturel d'un contrat. */
-function contractKind(type: string): 'VENTE' | 'LOCATION' {
-  return type === 'SALE' ? 'VENTE' : 'LOCATION';
+/** Détermine le type de transaction naturel d'une convention. */
+function conventionKind(type: string): 'VENTE' | 'LOCATION' | 'SOUSCRIPTION' {
+  if (type === 'SALE') return 'VENTE';
+  if (type === 'SOUSCRIPTION') return 'SOUSCRIPTION';
+  return 'LOCATION';
 }
 
 const schema = z.object({
-  contractId: z.string().min(1, 'Sélectionnez un contrat'),
+  conventionId: z.string().min(1, 'Sélectionnez une convention'),
   beneficiaryType: z.enum(['USER', 'REFERRER']),
   userId: z.string().optional(),
   referrerId: z.string().optional(),
-  transactionType: z.enum(['VENTE', 'LOCATION', 'FRAIS_DOSSIER']),
+  transactionType: z.enum(['VENTE', 'LOCATION', 'SOUSCRIPTION', 'FRAIS_DOSSIER']),
   baseAmount: z.string().refine((v) => Number(v) > 0, 'Le montant de l\'assiette doit être positif'),
   rate: z.string().refine((v) => {
     const n = Number(v);
@@ -49,22 +52,22 @@ export default function CommissionFormPage() {
   const [searchParams] = useSearchParams();
   const create = useCreateCommission();
 
-  const { data: contractsRes, isLoading: contractsLoading } = useEligibleContracts();
+  const { data: conventionsRes, isLoading: conventionsLoading } = useEligibleConventions();
   const { data: usersRes } = useCommissionUsers();
   const { data: referrersRes } = useReferrers({ isActive: true }, 1, 200);
   const { data: settingsRes } = useCommissionSettings();
 
-  const contracts: any[] = contractsRes?.data ?? [];
+  const conventions: any[] = conventionsRes?.data ?? [];
   const users: any[] = usersRes?.data ?? [];
   const referrers: any[] = referrersRes?.data ?? [];
   const settings = settingsRes?.data ?? { saleRate: 0, rentalRate: 0, dossierRate: 0 };
 
   const {
-    register, handleSubmit, watch, setValue, formState: { errors, isSubmitting },
+    register, handleSubmit, watch, setValue, control, formState: { errors, isSubmitting },
   } = useForm<FormData>({
     resolver: zodResolver(schema),
     defaultValues: {
-      contractId: searchParams.get('contractId') ?? '',
+      conventionId: searchParams.get('conventionId') ?? '',
       beneficiaryType: 'USER',
       userId: '',
       referrerId: '',
@@ -75,21 +78,22 @@ export default function CommissionFormPage() {
     },
   });
 
-  const contractId = watch('contractId');
+  const conventionId = watch('conventionId');
   const beneficiaryType = watch('beneficiaryType');
   const transactionType = watch('transactionType');
   const baseAmount = Number(watch('baseAmount') || 0);
   const rate = Number(watch('rate') || 0);
 
-  const selectedContract = contracts.find((c) => c.id === Number(contractId));
-  const naturalKind = selectedContract ? contractKind(selectedContract.type) : null;
+  const selectedConvention = conventions.find((c) => c.id === Number(conventionId));
+  const naturalKind = selectedConvention ? conventionKind(selectedConvention.type) : null;
   const computedAmount = Math.round(baseAmount * (rate / 100) * 100) / 100;
 
-  /** Pré-remplit l'assiette et le taux selon le contrat et le type de commission. */
+  /** Pré-remplit l'assiette et le taux selon la convention et le type de commission. */
   function applyDefaults(id: number, type: string) {
-    const c = contracts.find((x) => x.id === id);
+    const c = conventions.find((x) => x.id === id);
     if (!c) return;
-    if (type === 'VENTE') {
+    if (type === 'VENTE' || type === 'SOUSCRIPTION') {
+      // Vente et souscription : assiette = prix de vente, taux de vente par défaut
       const v = Number(c.saleAmount ?? 0);
       setValue('baseAmount', v > 0 ? String(v) : '');
       setValue('rate', String(settings.saleRate));
@@ -104,24 +108,24 @@ export default function CommissionFormPage() {
     }
   }
 
-  // Pré-remplissage si un contrat est passé en paramètre d'URL
+  // Pré-remplissage si une convention est passée en paramètre d'URL
   useEffect(() => {
-    if (contractId && contracts.length > 0) {
-      const c = contracts.find((x) => x.id === Number(contractId));
+    if (conventionId && conventions.length > 0) {
+      const c = conventions.find((x) => x.id === Number(conventionId));
       if (c) {
-        const kind = contractKind(c.type);
+        const kind = conventionKind(c.type);
         setValue('transactionType', kind);
-        applyDefaults(Number(contractId), kind);
+        applyDefaults(Number(conventionId), kind);
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [contracts.length]);
+  }, [conventions.length]);
 
   const apiError = create.data && !create.data.success ? create.data.error : null;
 
   const onSubmit = async (data: FormData) => {
     const payload: Record<string, unknown> = {
-      contractId: Number(data.contractId),
+      conventionId: Number(data.conventionId),
       beneficiaryType: data.beneficiaryType,
       transactionType: data.transactionType,
       baseAmount: Number(data.baseAmount),
@@ -135,15 +139,16 @@ export default function CommissionFormPage() {
     if (r.success) navigate('/commissions/all');
   };
 
-  const contractOptions = contracts.map((c) => ({
+  const conventionOptions = conventions.map((c) => ({
     value: String(c.id),
-    label: `${c.reference} — ${clientName(c.client)} (${TRANSACTION_TYPE_LABEL[contractKind(c.type)]})`,
+    label: `${c.reference} — ${clientName(c.client)} (${TRANSACTION_TYPE_LABEL[conventionKind(c.type)]})`,
   }));
 
-  // Le type proposé est celui du contrat (vente/location) + les frais de dossier
+  // Le type proposé est celui de la convention (vente/location/souscription) + les frais de dossier
   const typeOptions = [
     ...((!naturalKind || naturalKind === 'VENTE') ? [{ value: 'VENTE', label: 'Vente' }] : []),
     ...((!naturalKind || naturalKind === 'LOCATION') ? [{ value: 'LOCATION', label: 'Location' }] : []),
+    ...((!naturalKind || naturalKind === 'SOUSCRIPTION') ? [{ value: 'SOUSCRIPTION', label: 'Souscription' }] : []),
     { value: 'FRAIS_DOSSIER', label: 'Frais d\'ouverture de dossier' },
   ];
 
@@ -151,7 +156,9 @@ export default function CommissionFormPage() {
     ? 'Montant des frais d\'ouverture de dossier'
     : transactionType === 'LOCATION'
       ? 'Assiette (un mois de loyer)'
-      : 'Assiette (prix de vente)';
+      : transactionType === 'SOUSCRIPTION'
+        ? 'Assiette (montant de la souscription)'
+        : 'Assiette (prix de vente)';
 
   return (
     <PageLayout
@@ -162,29 +169,29 @@ export default function CommissionFormPage() {
         <Card>
           <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
 
-            {/* Contrat */}
+            {/* Convention */}
             <div>
-              <Select
-                label="Contrat (vente ou location)"
+              <FormSearchSelect
+                control={control}
+                name="conventionId"
+                label="Convention (vente, location ou souscription)"
                 required
-                placeholder={contractsLoading ? 'Chargement…' : 'Sélectionnez un contrat'}
-                options={contractOptions}
-                error={errors.contractId?.message}
-                {...register('contractId', {
-                  onChange: (e) => {
-                    const c = contracts.find((x) => x.id === Number(e.target.value));
-                    if (!c) return;
-                    const kind = contractKind(c.type);
-                    setValue('transactionType', kind);
-                    applyDefaults(c.id, kind);
-                  },
-                })}
+                placeholder={conventionsLoading ? 'Chargement…' : 'Sélectionnez une convention'}
+                options={conventionOptions}
+                error={errors.conventionId?.message}
+                onValueChange={(v) => {
+                  const c = conventions.find((x) => x.id === Number(v));
+                  if (!c) return;
+                  const kind = conventionKind(c.type);
+                  setValue('transactionType', kind);
+                  applyDefaults(c.id, kind);
+                }}
               />
-              {selectedContract && (
+              {selectedConvention && (
                 <p className="mt-1 text-xs text-slate-500">
-                  {TRANSACTION_TYPE_LABEL[contractKind(selectedContract.type)]} ·
-                  {' '}Bien {selectedContract.property?.reference ?? '—'} ·
-                  {' '}Client {clientName(selectedContract.client)}
+                  {TRANSACTION_TYPE_LABEL[conventionKind(selectedConvention.type)]} ·
+                  {' '}Bien {selectedConvention.property?.reference ?? '—'} ·
+                  {' '}Client {clientName(selectedConvention.client)}
                 </p>
               )}
             </div>
@@ -240,7 +247,7 @@ export default function CommissionFormPage() {
                 label="Type de commission"
                 options={typeOptions}
                 {...register('transactionType', {
-                  onChange: (e) => applyDefaults(Number(contractId), e.target.value),
+                  onChange: (e) => applyDefaults(Number(conventionId), e.target.value),
                 })}
               />
               {transactionType === 'FRAIS_DOSSIER' && (

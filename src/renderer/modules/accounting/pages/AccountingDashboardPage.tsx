@@ -1,15 +1,16 @@
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import PageLayout from '../../../shared/components/layout/PageLayout';
 import Card from '../../../shared/components/ui/Card';
 import Badge from '../../../shared/components/ui/Badge';
 import Button from '../../../shared/components/ui/Button';
 import { SkeletonTable } from '../../../shared/components/ui/Skeleton';
-import { useAccountingDashboard } from '../hooks/useAccounting';
+import { useAccountingDashboard, useRevenue, usePrintInvoice } from '../hooks/useAccounting';
 import { formatCurrency, formatDate } from '../../../shared/utils/format';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
 } from 'recharts';
-import { TrendingUp, AlertCircle, Clock, FileText, CheckCircle } from 'lucide-react';
+import { TrendingUp, AlertCircle, Clock, FileText, CheckCircle, Printer } from 'lucide-react';
 
 const MONTH_LABELS: Record<string, string> = {
   '01': 'Jan', '02': 'Fév', '03': 'Mar', '04': 'Avr',
@@ -24,9 +25,19 @@ const INSTALLMENT_STATUS_LABEL: Record<string, string> = {
   PAYE: 'Payé', EN_ATTENTE: 'En attente', A_REGLER: 'À régler', EN_RETARD: 'En retard', ANNULE: 'Annulé',
 };
 
+const REVENUE_PERIOD_OPTIONS = [
+  { value: 'month', label: 'ce mois' },
+  { value: 'quarter', label: 'ce trimestre' },
+  { value: 'semester', label: 'ce semestre' },
+  { value: 'year', label: 'cette année' },
+];
+
 export default function AccountingDashboardPage() {
   const navigate = useNavigate();
   const { data: res, isLoading } = useAccountingDashboard();
+  const [revenuePeriod, setRevenuePeriod] = useState('month');
+  const { data: revenueRes } = useRevenue(revenuePeriod);
+  const printInvoice = usePrintInvoice();
 
   if (isLoading) return <div className="p-8"><SkeletonTable rows={6} /></div>;
 
@@ -59,9 +70,27 @@ export default function AccountingDashboardPage() {
           <div className="rounded-xl bg-green-50 p-3">
             <TrendingUp className="h-6 w-6 text-green-600" />
           </div>
-          <div>
-            <p className="text-xs text-slate-500 mb-0.5">CA ce mois</p>
-            <p className="text-xl font-bold text-slate-900">{formatCurrency(d.monthlyRevenue ?? 0)}</p>
+          <div className="min-w-0">
+            <div className="flex items-center gap-1.5 mb-0.5">
+              <span className="text-xs text-slate-500">Chiffre d'affaires</span>
+              <select
+                value={revenuePeriod}
+                onChange={(e) => setRevenuePeriod(e.target.value)}
+                className="text-xs text-slate-500 bg-transparent border border-slate-200 rounded px-1 py-0.5 focus:outline-none focus:ring-1 focus:ring-blue-500"
+              >
+                {REVENUE_PERIOD_OPTIONS.map((o) => (
+                  <option key={o.value} value={o.value}>{o.label}</option>
+                ))}
+              </select>
+            </div>
+            <p className="text-xl font-bold text-slate-900">
+              {formatCurrency(revenueRes?.data?.revenue ?? 0)}
+            </p>
+            {revenueRes?.data?.label && (
+              <p className="text-xs text-slate-400">
+                {revenueRes.data.label} · {revenueRes.data.count ?? 0} encaissement(s)
+              </p>
+            )}
           </div>
         </Card>
         <Card className="flex items-center gap-4">
@@ -134,7 +163,7 @@ export default function AccountingDashboardPage() {
                   <div key={inst.id} className="flex items-center justify-between text-sm">
                     <div className="min-w-0">
                       <p className="font-medium text-slate-800 truncate">
-                        {inst.contract?.reference}
+                        {inst.convention?.reference}
                       </p>
                       <p className="text-xs text-slate-400">{formatDate(inst.dueDate)}</p>
                     </div>
@@ -166,7 +195,7 @@ export default function AccountingDashboardPage() {
           <table className="w-full text-sm">
             <thead className="bg-slate-50">
               <tr>
-                <th className="text-left px-3 py-2 font-medium text-slate-600">Contrat</th>
+                <th className="text-left px-3 py-2 font-medium text-slate-600">Convention</th>
                 <th className="text-left px-3 py-2 font-medium text-slate-600">Client</th>
                 <th className="text-left px-3 py-2 font-medium text-slate-600">Échéance</th>
                 <th className="text-right px-3 py-2 font-medium text-slate-600">Montant</th>
@@ -175,12 +204,12 @@ export default function AccountingDashboardPage() {
             </thead>
             <tbody className="divide-y divide-slate-100">
               {(d.overdueInstallments ?? []).slice(0, 10).map((inst: any) => {
-                const clientName = inst.contract?.client?.type === 'INDIVIDUEL'
-                  ? `${inst.contract?.client?.firstName ?? ''} ${inst.contract?.client?.lastName ?? ''}`.trim()
-                  : (inst.contract?.client?.entreprise ?? '—');
+                const clientName = inst.convention?.client?.type === 'INDIVIDUEL'
+                  ? `${inst.convention?.client?.firstName ?? ''} ${inst.convention?.client?.lastName ?? ''}`.trim()
+                  : (inst.convention?.client?.entreprise ?? '—');
                 return (
                   <tr key={inst.id} className="hover:bg-slate-50">
-                    <td className="px-3 py-2 font-medium">{inst.contract?.reference}</td>
+                    <td className="px-3 py-2 font-medium">{inst.convention?.reference}</td>
                     <td className="px-3 py-2 text-slate-600">{clientName}</td>
                     <td className="px-3 py-2 text-slate-500">{formatDate(inst.dueDate)}</td>
                     <td className="px-3 py-2 text-right font-semibold">{formatCurrency(Number(inst.amount))}</td>
@@ -214,6 +243,7 @@ export default function AccountingDashboardPage() {
                 <th className="text-left px-3 py-2 font-medium text-slate-600">Échéance</th>
                 <th className="text-right px-3 py-2 font-medium text-slate-600">Total</th>
                 <th className="text-left px-3 py-2 font-medium text-slate-600">Statut</th>
+                <th className="px-3 py-2" />
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
@@ -243,6 +273,14 @@ export default function AccountingDashboardPage() {
                       <Badge variant={STATUS_VARIANT[inv.status] ?? 'default'}>
                         {STATUS_LABEL[inv.status] ?? inv.status}
                       </Badge>
+                    </td>
+                    <td className="px-3 py-2 text-right" onClick={(e) => e.stopPropagation()}>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        icon={<Printer className="h-4 w-4" />}
+                        onClick={() => printInvoice(inv.id)}
+                      />
                     </td>
                   </tr>
                 );

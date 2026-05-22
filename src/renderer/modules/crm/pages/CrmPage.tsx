@@ -8,6 +8,8 @@ import { SkeletonTable } from '../../../shared/components/ui/Skeleton';
 import ConfirmDialog from '../../../shared/components/ui/ConfirmDialog';
 import { useActivities, useCrmStats, useDeleteActivity, useCompleteActivity } from '../hooks/useCrm';
 import { formatDate, formatRelative } from '../../../shared/utils/format';
+import ExportMenu, { ExportColumn } from '../../../shared/components/ExportMenu';
+import { useAuthStore } from '../../../shared/stores/auth.store';
 import {
   Plus, CheckCircle2, Trash2, Phone, Mail, MessageSquare,
   Calendar, Eye, Users, Briefcase, FileText, Bell, File,
@@ -48,8 +50,31 @@ const STATUS_OPTIONS = [
   { value: 'ANNULE', label: 'Annulé' },
 ];
 
+const entityName = (act: any): string => {
+  if (act.client) {
+    return act.client.type === 'INDIVIDUEL'
+      ? `${act.client.firstName ?? ''} ${act.client.lastName ?? ''}`.trim()
+      : (act.client.entreprise ?? '');
+  }
+  if (act.prospect) return `${act.prospect.firstName ?? ''} ${act.prospect.lastName ?? ''}`.trim();
+  if (act.property) return act.property.reference ?? '';
+  if (act.convention) return act.convention.reference ?? '';
+  return '';
+};
+
+const EXPORT_COLUMNS: ExportColumn[] = [
+  { header: 'Sujet',       cell: (a) => a.subject },
+  { header: 'Type',        cell: (a) => TYPE_LABEL[a.type] ?? a.type },
+  { header: 'Statut',      cell: (a) => STATUS_LABEL[a.status] ?? a.status },
+  { header: 'Échéance',    cell: (a) => formatDate(a.dueDate) },
+  { header: 'Entité liée', cell: (a) => entityName(a) },
+  { header: 'Assigné à',   cell: (a) => (a.user ? `${a.user.firstName ?? ''} ${a.user.lastName ?? ''}`.trim() : '') },
+  { header: 'Créé le',     cell: (a) => formatDate(a.createdAt) },
+];
+
 export default function CrmPage() {
   const navigate = useNavigate();
+  const token = useAuthStore((s) => s.token)!;
   const [typeFilter, setTypeFilter] = useState('');
   const [statusFilter, setStatusFilter] = useState('EN_ATTENTE');
   const [page, setPage] = useState(1);
@@ -59,6 +84,11 @@ export default function CrmPage() {
   const filters: any = {};
   if (typeFilter) filters.type = typeFilter;
   if (statusFilter) filters.status = statusFilter;
+
+  const filterSummary = [
+    typeFilter && `Type : ${TYPE_LABEL[typeFilter] ?? typeFilter}`,
+    statusFilter && `Statut : ${STATUS_LABEL[statusFilter] ?? statusFilter}`,
+  ].filter(Boolean).join('   —   ') || undefined;
 
   const { data: res, isLoading, refetch } = useActivities(filters, page, limit);
   const { data: statsRes } = useCrmStats();
@@ -90,7 +120,7 @@ export default function CrmPage() {
     }
     if (act.prospect) return { label: `${act.prospect.firstName} ${act.prospect.lastName}`, to: `/prospects/${act.prospect.id}`, icon: <Users className="h-3 w-3" /> };
     if (act.property) return { label: act.property.reference, to: `/properties/${act.property.id}`, icon: <FileText className="h-3 w-3" /> };
-    if (act.contract) return { label: act.contract.reference, to: `/contracts/${act.contract.id}`, icon: <FileText className="h-3 w-3" /> };
+    if (act.convention) return { label: act.convention.reference, to: `/conventions/${act.convention.id}`, icon: <FileText className="h-3 w-3" /> };
     return null;
   };
 
@@ -99,9 +129,21 @@ export default function CrmPage() {
       title="CRM — Activités"
       breadcrumbs={[{ label: 'CRM' }]}
       actions={
-        <Button icon={<Plus className="h-4 w-4" />} onClick={() => navigate('/crm/activities/new')}>
-          Nouvelle activité
-        </Button>
+        <div className="flex gap-2">
+          <ExportMenu
+            fileName="activites-crm"
+            title="Liste des activités CRM"
+            subtitle={filterSummary}
+            columns={EXPORT_COLUMNS}
+            fetchRows={async () => {
+              const r = await window.electron.crm.listActivities(token, filters, 1, 100000);
+              return r.success ? r.data ?? [] : [];
+            }}
+          />
+          <Button icon={<Plus className="h-4 w-4" />} onClick={() => navigate('/crm/activities/new')}>
+            Nouvelle activité
+          </Button>
+        </div>
       }
     >
       {/* Stats */}

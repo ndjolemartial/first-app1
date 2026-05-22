@@ -10,9 +10,27 @@ import { SkeletonTable } from '../../../shared/components/ui/Skeleton';
 import { useAuthStore } from '../../../shared/stores/auth.store';
 import { useCommissionsDashboard, useUpdateCommissionSettings } from '../hooks/useCommissions';
 import CommissionTable from '../components/CommissionTable';
-import { BENEFICIARY_TYPE_LABEL, COMMISSION_ADMIN_ROLES } from '../utils/commissions.utils';
+import ExportMenu, { ExportColumn } from '../../../shared/components/ExportMenu';
+import {
+  BENEFICIARY_TYPE_LABEL, COMMISSION_ADMIN_ROLES,
+  COMMISSION_WRITE_ROLES, COMMISSION_REFERRERS_VIEW_ROLES,
+  COMMISSION_STATUS_LABEL, TRANSACTION_TYPE_LABEL, beneficiaryName,
+} from '../utils/commissions.utils';
 import { formatCurrency } from '../../../shared/utils/format';
 import { Plus, Users, Wallet, CheckCircle, Ban, Settings, Percent } from 'lucide-react';
+
+/** Colonnes d'export pour la liste des commissions (PDF / Excel). */
+const EXPORT_COLUMNS: ExportColumn[] = [
+  { header: 'Référence',    cell: (c) => c.reference },
+  { header: 'Convention',   cell: (c) => c.convention?.reference ?? '' },
+  { header: 'Bénéficiaire', cell: (c) => beneficiaryName(c) },
+  { header: 'Type',         cell: (c) => BENEFICIARY_TYPE_LABEL[c.beneficiaryType] ?? c.beneficiaryType },
+  { header: 'Transaction',  cell: (c) => TRANSACTION_TYPE_LABEL[c.transactionType] ?? c.transactionType },
+  { header: 'Assiette',     cell: (c) => formatCurrency(Number(c.baseAmount)) },
+  { header: 'Taux',         cell: (c) => `${Number(c.rate)} %` },
+  { header: 'Montant',      cell: (c) => formatCurrency(Number(c.amount)) },
+  { header: 'Statut',       cell: (c) => COMMISSION_STATUS_LABEL[c.status] ?? c.status },
+];
 
 /** Modale de configuration des taux de commission par défaut. */
 function SettingsModal({
@@ -56,7 +74,7 @@ function SettingsModal({
     >
       <p className="text-sm text-slate-500 mb-4">
         Ces taux pré-remplissent les nouvelles commissions et sont appliqués automatiquement
-        à l'activation d'un contrat de vente ou de location.
+        à l'activation d'une convention de vente ou de location.
       </p>
       <form className="space-y-4">
         <div>
@@ -66,7 +84,7 @@ function SettingsModal({
             {...register('saleRate')}
             className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
           />
-          <p className="text-xs text-slate-400 mt-1">Appliqué sur le prix de vente du contrat.</p>
+          <p className="text-xs text-slate-400 mt-1">Appliqué sur le prix de vente de la convention.</p>
         </div>
         <div>
           <label className="block text-xs font-medium text-slate-700 mb-1">Taux pour les locations (%)</label>
@@ -95,7 +113,10 @@ function SettingsModal({
 export default function CommissionsDashboardPage() {
   const navigate = useNavigate();
   const role = useAuthStore((s) => s.user?.role ?? '');
+  const token = useAuthStore((s) => s.token)!;
   const isAdmin = COMMISSION_ADMIN_ROLES.includes(role);
+  const canManage = COMMISSION_WRITE_ROLES.includes(role);
+  const canViewReferrers = COMMISSION_REFERRERS_VIEW_ROLES.includes(role);
   const [showSettings, setShowSettings] = useState(false);
 
   const { data: res, isLoading } = useCommissionsDashboard();
@@ -107,17 +128,30 @@ export default function CommissionsDashboardPage() {
       breadcrumbs={[{ label: 'Commissions' }]}
       actions={
         <div className="flex gap-2">
+          <ExportMenu
+            fileName="commissions"
+            title="Liste des commissions"
+            columns={EXPORT_COLUMNS}
+            fetchRows={async () => {
+              const r = await window.electron.commissions.list(token, {}, 1, 100000);
+              return r.success ? r.data ?? [] : [];
+            }}
+          />
           {isAdmin && (
             <Button variant="secondary" icon={<Settings className="h-4 w-4" />} onClick={() => setShowSettings(true)}>
               Taux par défaut
             </Button>
           )}
-          <Button variant="secondary" icon={<Users className="h-4 w-4" />} onClick={() => navigate('/commissions/referrers')}>
-            Apporteurs d'affaire
-          </Button>
-          <Button icon={<Plus className="h-4 w-4" />} onClick={() => navigate('/commissions/new')}>
-            Nouvelle commission
-          </Button>
+          {canViewReferrers && (
+            <Button variant="secondary" icon={<Users className="h-4 w-4" />} onClick={() => navigate('/commissions/referrers')}>
+              Apporteurs d'affaire
+            </Button>
+          )}
+          {canManage && (
+            <Button icon={<Plus className="h-4 w-4" />} onClick={() => navigate('/commissions/new')}>
+              Nouvelle commission
+            </Button>
+          )}
         </div>
       }
     >

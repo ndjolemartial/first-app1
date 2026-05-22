@@ -30,7 +30,28 @@ export default function OwnerDetailPage() {
 
   const o = res?.data;
   const portfolio = portfolioRes?.data;
-  if (isLoading || !o) return null;
+  if (isLoading) {
+    return (
+      <PageLayout title="Chargement…" breadcrumbs={[{ label: 'Propriétaires', to: '/owners' }, { label: '…' }]}>
+        <Card><p className="text-sm text-slate-500">Chargement de la fiche…</p></Card>
+      </PageLayout>
+    );
+  }
+  if (!o) {
+    const errMsg = res && !res.success
+      ? (typeof res.error === 'string' ? res.error : 'Fiche inaccessible')
+      : 'Propriétaire introuvable';
+    return (
+      <PageLayout title="Fiche propriétaire" breadcrumbs={[{ label: 'Propriétaires', to: '/owners' }, { label: 'Erreur' }]}>
+        <Card>
+          <p className="text-sm text-red-600">{errMsg}</p>
+          <button className="mt-3 text-sm text-blue-600 hover:underline" onClick={() => navigate('/owners')}>
+            ← Retour à la liste
+          </button>
+        </Card>
+      </PageLayout>
+    );
+  }
 
   const displayName = o.type === 'INDIVIDUEL'
     ? `${o.firstName ?? ''} ${o.lastName ?? ''}`.trim()

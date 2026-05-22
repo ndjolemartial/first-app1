@@ -6,24 +6,32 @@ import Badge from '../../../shared/components/ui/Badge';
 import Card from '../../../shared/components/ui/Card';
 import { SkeletonTable } from '../../../shared/components/ui/Skeleton';
 import ConfirmDialog from '../../../shared/components/ui/ConfirmDialog';
-import { useContract, useDeleteContract, useGenerateInstallments } from '../hooks/useContracts';
+import { useConvention, useDeleteConvention, useGenerateInstallments } from '../hooks/useConventions';
+import { usePrintInvoice } from '../../accounting/hooks/useAccounting';
 import { formatDate, formatCurrency } from '../../../shared/utils/format';
-import { Edit, Trash2, FileText, User, Building2, MapPin, RefreshCw } from 'lucide-react';
+import { Edit, Trash2, FileText, User, Building2, MapPin, Link2, Printer, RefreshCw } from 'lucide-react';
 
 const STATUS_VARIANT: Record<string, 'success' | 'info' | 'warning' | 'danger' | 'default'> = {
   ACTIVE: 'success', BROUILLON: 'info', ATTENTE_SIGNATURE: 'warning',
   EXPIRE: 'danger', TERMINER: 'default', ANNULE: 'danger',
 };
 const STATUS_LABEL: Record<string, string> = {
-  ACTIVE: 'Actif', BROUILLON: 'Brouillon', ATTENTE_SIGNATURE: 'Attente signature',
-  EXPIRE: 'Expiré', TERMINER: 'Terminé', ANNULE: 'Annulé',
+  ACTIVE: 'Active', BROUILLON: 'Brouillon', ATTENTE_SIGNATURE: 'Attente signature',
+  EXPIRE: 'Expirée', TERMINER: 'Terminée', ANNULE: 'Annulée',
 };
 const TYPE_LABEL: Record<string, string> = {
   RENTAL_UNFURNISHED: 'Location non meublée', RENTAL_FURNISHED: 'Location meublée',
   SALE: 'Vente', MANAGEMENT: 'Gestion', COMMERCIAL_LEASE: 'Bail commercial',
+  SOUSCRIPTION: 'Souscription', AVENANT: 'Avenant', RESILIATION: 'Résiliation',
+};
+const AMENDMENT_NATURE_LABEL: Record<string, string> = {
+  PROLONGATION_DELAI: 'Avenant de prolongation de délai',
+  TRANSFERT_PROPRIETE: 'Avenant de transfert de propriété',
+  TRANSFERT_SITE: 'Avenant de transfert de site / changement de lot',
 };
 const PAYMENT_LABEL: Record<string, string> = {
   ESPECE: 'Espèces', CHEQUE: 'Chèque', TRANSFERT: 'Transfert', VIREMENT: 'Virement', MOBILE_MONEY: 'Mobile Money',
+  NON_DEFINI: 'Non défini',
 };
 const INSTALLMENT_STATUS_VARIANT: Record<string, 'success' | 'info' | 'warning' | 'danger' | 'default'> = {
   PAYE: 'success', EN_ATTENTE: 'info', A_REGLER: 'warning', EN_RETARD: 'danger', ANNULE: 'default',
@@ -32,27 +40,33 @@ const INSTALLMENT_STATUS_LABEL: Record<string, string> = {
   PAYE: 'Payé', EN_ATTENTE: 'En attente', A_REGLER: 'À régler', EN_RETARD: 'En retard', ANNULE: 'Annulé',
 };
 
-export default function ContractDetailPage() {
+export default function ConventionDetailPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const { data: res, isLoading, refetch } = useContract(Number(id));
-  const deleteContract = useDeleteContract();
+  const { data: res, isLoading, refetch } = useConvention(Number(id));
+  const deleteConvention = useDeleteConvention();
   const generateInstallments = useGenerateInstallments();
+  const printInvoice = usePrintInvoice();
   const [showDelete, setShowDelete] = useState(false);
 
   if (isLoading) return <div className="p-8"><SkeletonTable rows={6} /></div>;
 
   const c = res?.data;
-  if (!c) return <div className="p-8 text-slate-500">Contrat introuvable.</div>;
+  if (!c) return <div className="p-8 text-slate-500">Convention introuvable.</div>;
 
   const isSale = c.type === 'SALE';
   const clientName = c.client?.type === 'INDIVIDUEL'
     ? `${c.client?.firstName ?? ''} ${c.client?.lastName ?? ''}`.trim()
     : (c.client?.entreprise ?? '—');
+  const secondaryClientName = c.secondaryClient
+    ? (c.secondaryClient.type === 'INDIVIDUEL'
+        ? `${c.secondaryClient.firstName ?? ''} ${c.secondaryClient.lastName ?? ''}`.trim()
+        : (c.secondaryClient.entreprise ?? '—'))
+    : null;
 
   const handleDelete = async () => {
-    const r = await deleteContract.mutateAsync(Number(id));
-    if (r.success) navigate('/contracts');
+    const r = await deleteConvention.mutateAsync(Number(id));
+    if (r.success) navigate('/conventions');
     setShowDelete(false);
   };
 
@@ -69,10 +83,13 @@ export default function ContractDetailPage() {
   return (
     <PageLayout
       title={c.reference}
-      breadcrumbs={[{ label: 'Contrats', to: '/contracts' }, { label: c.reference }]}
+      breadcrumbs={[{ label: 'Conventions', to: '/conventions' }, { label: c.reference }]}
       actions={
         <div className="flex gap-2">
-          <Button variant="secondary" icon={<Edit className="h-4 w-4" />} onClick={() => navigate(`/contracts/${id}/edit`)}>
+          <Button variant="secondary" icon={<Printer className="h-4 w-4" />} onClick={() => navigate(`/conventions/${id}/document`)}>
+            Générer le document
+          </Button>
+          <Button variant="secondary" icon={<Edit className="h-4 w-4" />} onClick={() => navigate(`/conventions/${id}/edit`)}>
             Modifier
           </Button>
           <Button variant="danger" icon={<Trash2 className="h-4 w-4" />} onClick={() => setShowDelete(true)}>
@@ -84,7 +101,7 @@ export default function ContractDetailPage() {
       <div className="grid grid-cols-3 gap-6">
         {/* Colonne principale */}
         <div className="col-span-2 space-y-6">
-          {/* En-tête contrat */}
+          {/* En-tête convention */}
           <Card>
             <div className="flex items-start justify-between mb-4">
               <div className="flex items-center gap-3">
@@ -93,7 +110,11 @@ export default function ContractDetailPage() {
                 </div>
                 <div>
                   <h2 className="text-lg font-bold text-slate-900">{c.reference}</h2>
-                  <p className="text-slate-500 text-sm">{TYPE_LABEL[c.type] ?? c.type}</p>
+                  <p className="text-slate-500 text-sm">
+                    {c.type === 'AVENANT' && c.amendmentType
+                      ? (AMENDMENT_NATURE_LABEL[c.amendmentType] ?? TYPE_LABEL[c.type])
+                      : (TYPE_LABEL[c.type] ?? c.type)}
+                  </p>
                 </div>
               </div>
               <Badge variant={STATUS_VARIANT[c.status] ?? 'default'}>{STATUS_LABEL[c.status] ?? c.status}</Badge>
@@ -112,7 +133,7 @@ export default function ContractDetailPage() {
               )}
               {c.signedAt && (
                 <div>
-                  <p className="text-xs text-slate-500 mb-1">Signé le</p>
+                  <p className="text-xs text-slate-500 mb-1">Signée le</p>
                   <p className="font-medium">{formatDate(c.signedAt)}</p>
                 </div>
               )}
@@ -140,6 +161,12 @@ export default function ContractDetailPage() {
                 <div>
                   <p className="text-xs text-slate-500 mb-1">Prix de vente</p>
                   <p className="font-bold text-lg text-slate-900">{formatCurrency(Number(c.saleAmount))}</p>
+                </div>
+              )}
+              {c.apportInitial && (
+                <div>
+                  <p className="text-xs text-slate-500 mb-1">Apport initial</p>
+                  <p className="font-medium">{formatCurrency(Number(c.apportInitial))}</p>
                 </div>
               )}
               {c.deposit && (
@@ -208,6 +235,7 @@ export default function ContractDetailPage() {
                       <th className="text-right px-3 py-2 font-medium text-slate-600">Montant</th>
                       <th className="text-left px-3 py-2 font-medium text-slate-600">Statut</th>
                       <th className="text-left px-3 py-2 font-medium text-slate-600">Payé le</th>
+                      <th className="px-3 py-2" />
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
@@ -224,6 +252,16 @@ export default function ContractDetailPage() {
                         <td className="px-3 py-2 text-slate-500">
                           {inst.paidAt ? formatDate(inst.paidAt) : '—'}
                         </td>
+                        <td className="px-3 py-2 text-right">
+                          {inst.status === 'PAYE' && inst.invoiceId && (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              icon={<Printer className="h-4 w-4" />}
+                              onClick={() => printInvoice(inst.invoiceId)}
+                            />
+                          )}
+                        </td>
                       </tr>
                     ))}
                   </tbody>
@@ -238,7 +276,7 @@ export default function ContractDetailPage() {
           {/* Client */}
           <Card>
             <h3 className="font-semibold text-slate-800 mb-3 flex items-center gap-2">
-              <User className="h-4 w-4 text-slate-500" /> Client
+              <User className="h-4 w-4 text-slate-500" /> {secondaryClientName ? 'Client principal' : 'Client'}
             </h3>
             <p className="font-medium text-slate-900">{clientName}</p>
             {c.client?.phone && <p className="text-sm text-slate-500">{c.client.phone}</p>}
@@ -247,6 +285,17 @@ export default function ContractDetailPage() {
               onClick={() => navigate(`/clients/${c.client?.id}`)}>
               Voir le client →
             </Button>
+            {secondaryClientName && (
+              <div className="mt-3 pt-3 border-t border-slate-100">
+                <p className="text-xs text-slate-500 mb-1">Souscripteur associé / successeur</p>
+                <p className="font-medium text-slate-900">{secondaryClientName}</p>
+                {c.secondaryClient?.phone && <p className="text-sm text-slate-500">{c.secondaryClient.phone}</p>}
+                <Button variant="ghost" size="sm" className="mt-1 -ml-2"
+                  onClick={() => navigate(`/clients/${c.secondaryClient?.id}`)}>
+                  Voir le souscripteur →
+                </Button>
+              </div>
+            )}
           </Card>
 
           {/* Bien ou terrain rattaché */}
@@ -284,6 +333,44 @@ export default function ContractDetailPage() {
             </Card>
           )}
 
+          {/* Conventions liées (avenant / résiliation) */}
+          {(c.parentConvention || (c.amendments?.length ?? 0) > 0) && (
+            <Card>
+              <h3 className="font-semibold text-slate-800 mb-3 flex items-center gap-2">
+                <Link2 className="h-4 w-4 text-slate-500" /> Conventions liées
+              </h3>
+              {c.parentConvention && (
+                <div className="mb-3">
+                  <p className="text-xs text-slate-500 mb-1">
+                    {c.type === 'RESILIATION' ? 'Convention résiliée' : 'Convention initiale / précédente'}
+                  </p>
+                  <button
+                    className="text-sm font-medium text-blue-600 hover:underline"
+                    onClick={() => navigate(`/conventions/${c.parentConvention.id}`)}
+                  >
+                    {c.parentConvention.reference} — {TYPE_LABEL[c.parentConvention.type] ?? c.parentConvention.type}
+                  </button>
+                </div>
+              )}
+              {(c.amendments?.length ?? 0) > 0 && (
+                <div>
+                  <p className="text-xs text-slate-500 mb-1">Avenants &amp; résiliation</p>
+                  <div className="space-y-1">
+                    {c.amendments.map((a: any) => (
+                      <button
+                        key={a.id}
+                        className="block text-sm font-medium text-blue-600 hover:underline"
+                        onClick={() => navigate(`/conventions/${a.id}`)}
+                      >
+                        {a.reference} — {TYPE_LABEL[a.type] ?? a.type}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </Card>
+          )}
+
           {/* Métadonnées */}
           <Card>
             <h3 className="font-semibold text-slate-800 mb-3">Informations</h3>
@@ -299,11 +386,11 @@ export default function ContractDetailPage() {
                 </div>
               )}
               <div className="flex justify-between">
-                <span className="text-slate-500">Créé le</span>
+                <span className="text-slate-500">Créée le</span>
                 <span>{formatDate(c.createdAt)}</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-slate-500">Mis à jour</span>
+                <span className="text-slate-500">Mise à jour</span>
                 <span>{formatDate(c.updatedAt)}</span>
               </div>
             </div>
@@ -313,8 +400,8 @@ export default function ContractDetailPage() {
 
       <ConfirmDialog
         open={showDelete}
-        title="Supprimer le contrat"
-        message={`Supprimer le contrat ${c.reference} ? Cette action est irréversible.`}
+        title="Supprimer la convention"
+        message={`Supprimer la convention ${c.reference} ? Cette action est irréversible.`}
         onConfirm={handleDelete}
         onClose={() => setShowDelete(false)}
       />

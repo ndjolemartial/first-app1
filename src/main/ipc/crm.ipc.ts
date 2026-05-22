@@ -19,7 +19,12 @@ const activitySchema = z.object({
   clientId: z.number().int().positive().optional(),
   ownerId: z.number().int().positive().optional(),
   propertyId: z.number().int().positive().optional(),
-  contractId: z.number().int().positive().optional(),
+  conventionId: z.number().int().positive().optional(),
+  lotissementId: z.number().int().positive().optional(),
+  terrainId: z.number().int().positive().optional(),
+  programmeId: z.number().int().positive().optional(),
+  invoiceId: z.number().int().positive().optional(),
+  installmentId: z.number().int().positive().optional(),
 });
 
 export function registerCrmIPC(): void {
@@ -37,7 +42,7 @@ export function registerCrmIPC(): void {
       if (filters.clientId) where.clientId = filters.clientId;
       if (filters.prospectId) where.prospectId = filters.prospectId;
       if (filters.propertyId) where.propertyId = filters.propertyId;
-      if (filters.contractId) where.contractId = filters.contractId;
+      if (filters.conventionId) where.conventionId = filters.conventionId;
       if (filters.dueBefore) where.dueDate = { ...(where.dueDate ?? {}), lte: new Date(filters.dueBefore) };
       if (filters.dueAfter) where.dueDate = { ...(where.dueDate ?? {}), gte: new Date(filters.dueAfter) };
       if (filters.search) {
@@ -58,7 +63,12 @@ export function registerCrmIPC(): void {
             prospect: { select: { id: true, firstName: true, lastName: true } },
             owner: { select: { id: true, firstName: true, lastName: true, companyName: true } },
             property: { select: { id: true, reference: true, address: true } },
-            contract: { select: { id: true, reference: true } },
+            convention: { select: { id: true, reference: true } },
+            lotissement: { select: { id: true, reference: true, nom: true } },
+            terrain: { select: { id: true, reference: true } },
+            programme: { select: { id: true, reference: true, nom: true } },
+            invoice: { select: { id: true, reference: true } },
+            installment: { select: { id: true, installmentNumber: true, convention: { select: { reference: true } } } },
           },
         }),
         db.crmActivity.count({ where }),
@@ -84,7 +94,12 @@ export function registerCrmIPC(): void {
           prospect: { select: { id: true, firstName: true, lastName: true } },
           owner: { select: { id: true, firstName: true, lastName: true, companyName: true } },
           property: { select: { id: true, reference: true, address: true } },
-          contract: { select: { id: true, reference: true } },
+          convention: { select: { id: true, reference: true } },
+          lotissement: { select: { id: true, reference: true, nom: true } },
+          terrain: { select: { id: true, reference: true } },
+          programme: { select: { id: true, reference: true, nom: true } },
+          invoice: { select: { id: true, reference: true } },
+          installment: { select: { id: true, installmentNumber: true, convention: { select: { reference: true } } } },
         },
       });
       if (!activity) return { success: false, error: 'Activité introuvable' };
@@ -116,7 +131,12 @@ export function registerCrmIPC(): void {
           clientId: d.clientId ?? null,
           ownerId: d.ownerId ?? null,
           propertyId: d.propertyId ?? null,
-          contractId: d.contractId ?? null,
+          conventionId: d.conventionId ?? null,
+          lotissementId: d.lotissementId ?? null,
+          terrainId: d.terrainId ?? null,
+          programmeId: d.programmeId ?? null,
+          invoiceId: d.invoiceId ?? null,
+          installmentId: d.installmentId ?? null,
         } as any,
       });
       logger.info(`CRM activity created: ${activity.id}`);

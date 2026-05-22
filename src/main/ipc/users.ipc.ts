@@ -10,10 +10,18 @@ const createUserSchema = z.object({
   firstName: z.string().min(1),
   lastName: z.string().min(1),
   email: z.string().email(),
+  login: z.string().optional(),
   password: z.string().min(6),
-  role: z.enum(['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'AGENT', 'ACCOUNTANT', 'READONLY']),
+  role: z.enum(['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ACCOUNTANT', 'ASSISTANTE_DIRECTION', 'AGENT', 'READONLY']),
   phone: z.string().optional(),
   mobile: z.string().optional(),
+  fonction: z.string().optional(),
+  idNumber: z.string().optional(),
+  civilite: z.enum(['MONSIEUR', 'MADAME', 'MADEMOISELLE']).optional(),
+  statutConjugal: z.enum(['CELIBATAIRE', 'MARIEE', 'CONCUBINAGE']).optional(),
+  hireDate: z.string().optional(),
+  cnpsNumber: z.string().optional(),
+  residence: z.string().optional(),
 });
 
 const updateUserSchema = createUserSchema
@@ -73,8 +81,10 @@ export function registerUsersIPC(): void {
         where: { id, deletedAt: null },
         select: {
           id: true, uuid: true, matricule: true, firstName: true, lastName: true,
-          email: true, role: true, isActive: true, avatar: true, phone: true,
-          mobile: true, lastLoginAt: true, createdAt: true, updatedAt: true,
+          email: true, login: true, role: true, isActive: true, avatar: true, phone: true,
+          mobile: true, fonction: true, idNumber: true, civilite: true,
+          statutConjugal: true, hireDate: true, cnpsNumber: true, residence: true,
+          lastLoginAt: true, createdAt: true, updatedAt: true,
         },
       });
       if (!user) return { success: false, error: 'Utilisateur introuvable' };
@@ -92,9 +102,10 @@ export function registerUsersIPC(): void {
       const parsed = createUserSchema.safeParse(payload);
       if (!parsed.success) return { success: false, error: parsed.error.format() };
       const db = getDb();
-      const hashed = await hashPassword(parsed.data.password);
+      const { password, hireDate, ...rest } = parsed.data;
+      const hashed = await hashPassword(password);
       const user = await db.user.create({
-        data: { ...parsed.data, password: hashed },
+        data: { ...rest, password: hashed, hireDate: hireDate ? new Date(hireDate) : null },
         select: {
           id: true, uuid: true, matricule: true, firstName: true, lastName: true,
           email: true, role: true, isActive: true,
@@ -115,9 +126,12 @@ export function registerUsersIPC(): void {
       const parsed = updateUserSchema.safeParse(payload);
       if (!parsed.success) return { success: false, error: parsed.error.format() };
       const db = getDb();
+      const { hireDate, ...rest } = parsed.data;
+      const data: any = { ...rest };
+      if (hireDate !== undefined) data.hireDate = hireDate ? new Date(hireDate) : null;
       const user = await db.user.update({
         where: { id, deletedAt: null },
-        data: parsed.data,
+        data,
         select: {
           id: true, uuid: true, firstName: true, lastName: true, email: true,
           role: true, isActive: true,

@@ -7,9 +7,11 @@ import PageLayout from '../../../shared/components/layout/PageLayout';
 import Button from '../../../shared/components/ui/Button';
 import Input from '../../../shared/components/ui/Input';
 import Select from '../../../shared/components/ui/Select';
+import { FormSearchSelect } from '../../../shared/components/ui/SearchSelect';
 import Textarea from '../../../shared/components/ui/Textarea';
 import Card from '../../../shared/components/ui/Card';
 import { useLotissement, useCreateLotissement, useUpdateLotissement } from '../hooks/useLotissements';
+import { useCountries } from '../../../shared/hooks/useCountries';
 import { Save } from 'lucide-react';
 
 const schema = z.object({
@@ -44,10 +46,13 @@ export default function LotissementFormPage() {
   const create = useCreateLotissement();
   const update = useUpdateLotissement();
 
-  const { register, handleSubmit, reset, formState: { errors, isSubmitting } } = useForm<z.input<typeof schema>, any, FormData>({
+  const { register, handleSubmit, reset, control, formState: { errors, isSubmitting } } = useForm<z.input<typeof schema>, any, FormData>({
     resolver: zodResolver(schema),
     defaultValues: { statut: 'EN_COURS_LOTISSEMENT', pays: 'CI' },
   });
+
+  const { data: countriesRes } = useCountries();
+  const countryOptions = (countriesRes?.data ?? []).map((c) => ({ value: c.isoCode, label: c.name }));
 
   useEffect(() => {
     if (isEdit && res?.data) reset({ ...res.data });
@@ -89,7 +94,7 @@ export default function LotissementFormPage() {
             </div>
             <div className="grid grid-cols-2 gap-4">
               <Input label="Ville / Village" required error={errors.ville?.message} {...register('ville')} />
-              <Input label="Pays" defaultValue="CI" {...register('pays')} />
+              <FormSearchSelect control={control} name="pays" label="Pays" options={countryOptions} />
             </div>
           </div>
 

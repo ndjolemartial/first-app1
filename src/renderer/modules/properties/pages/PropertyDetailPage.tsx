@@ -21,7 +21,7 @@ const STATUS_LABEL: Record<string, string> = {
   SOLDE: 'Soldé', SOUS_OPTION: 'Sous option', EN_RENOVATION: 'En rénovation',
 };
 
-const CONTRACT_STATUS_VARIANT: Record<string, 'success' | 'info' | 'warning' | 'danger' | 'default'> = {
+const CONVENTION_STATUS_VARIANT: Record<string, 'success' | 'info' | 'warning' | 'danger' | 'default'> = {
   ACTIVE: 'success', BROUILLON: 'info', ATTENTE_SIGNATURE: 'warning',
   EXPIRE: 'danger', TERMINER: 'default', ANNULE: 'danger',
 };
@@ -92,7 +92,7 @@ export default function PropertyDetailPage() {
               </div>
               <div>
                 <p className="text-xs text-slate-500 mb-1">Surface</p>
-                <p className="font-medium text-slate-800">{p.surface} m²</p>
+                <p className="font-medium text-slate-800">{p.surface != null ? `${p.surface} m²` : '—'}</p>
               </div>
               {p.rooms && (
                 <div>
@@ -124,6 +124,24 @@ export default function PropertyDetailPage() {
                   <p className="font-medium text-slate-800">{p.condition}</p>
                 </div>
               )}
+              {p.garage && (
+                <div>
+                  <p className="text-xs text-slate-500 mb-1">Garage</p>
+                  <p className="font-medium text-slate-800">{p.garage}</p>
+                </div>
+              )}
+              {p.cuisine && (
+                <div>
+                  <p className="text-xs text-slate-500 mb-1">Cuisine</p>
+                  <p className="font-medium text-slate-800">{p.cuisine}</p>
+                </div>
+              )}
+              {p.terrasseBalcon && (
+                <div>
+                  <p className="text-xs text-slate-500 mb-1">Terrasse ou balcon</p>
+                  <p className="font-medium text-slate-800">{p.terrasseBalcon}</p>
+                </div>
+              )}
             </div>
 
             {p.description && (
@@ -141,16 +159,16 @@ export default function PropertyDetailPage() {
             label={`${p.address ?? ''}${p.city ? `, ${p.city}` : ''}`.trim() || undefined}
           />
 
-          {/* Contrats liés */}
+          {/* Conventions liées */}
           <Card>
             <div className="flex items-center justify-between mb-4">
               <h3 className="font-semibold text-slate-800 flex items-center gap-2">
-                <FileText className="h-4 w-4 text-slate-500" /> Contrats ({p.contracts?.length ?? 0})
+                <FileText className="h-4 w-4 text-slate-500" /> Conventions ({p.conventions?.length ?? 0})
               </h3>
-              <Button size="sm" onClick={() => navigate('/contracts/new')}>Nouveau contrat</Button>
+              <Button size="sm" onClick={() => navigate('/conventions/new')}>Nouvelle convention</Button>
             </div>
-            {p.contracts?.length === 0 ? (
-              <p className="text-slate-400 text-sm">Aucun contrat pour ce bien.</p>
+            {p.conventions?.length === 0 ? (
+              <p className="text-slate-400 text-sm">Aucune convention pour ce bien.</p>
             ) : (
               <table className="w-full text-sm">
                 <thead className="bg-slate-50">
@@ -163,8 +181,8 @@ export default function PropertyDetailPage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
-                  {p.contracts?.map((c: any) => (
-                    <tr key={c.id} className="hover:bg-slate-50 cursor-pointer" onClick={() => navigate(`/contracts/${c.id}`)}>
+                  {p.conventions?.map((c: any) => (
+                    <tr key={c.id} className="hover:bg-slate-50 cursor-pointer" onClick={() => navigate(`/conventions/${c.id}`)}>
                       <td className="px-3 py-2 font-medium text-slate-900">{c.reference}</td>
                       <td className="px-3 py-2 text-slate-600">{TYPE_LABEL[c.type] ?? c.type}</td>
                       <td className="px-3 py-2 text-slate-600">
@@ -174,7 +192,7 @@ export default function PropertyDetailPage() {
                       </td>
                       <td className="px-3 py-2 text-slate-600">{formatDate(c.startDate)}</td>
                       <td className="px-3 py-2">
-                        <Badge variant={CONTRACT_STATUS_VARIANT[c.status] ?? 'default'}>{c.status}</Badge>
+                        <Badge variant={CONVENTION_STATUS_VARIANT[c.status] ?? 'default'}>{c.status}</Badge>
                       </td>
                     </tr>
                   ))}
@@ -205,13 +223,24 @@ export default function PropertyDetailPage() {
             {!p.rentPrice && !p.salePrice && <p className="text-slate-400 text-sm">Prix non renseigné</p>}
           </Card>
 
-          {/* Propriétaire */}
+          {/* Origine du bien */}
           <Card>
             <h3 className="font-semibold text-slate-800 mb-3 flex items-center gap-2">
-              <User className="h-4 w-4 text-slate-500" /> Propriétaire
+              <User className="h-4 w-4 text-slate-500" /> Origine du bien
             </h3>
-            {p.owner ? (
+            {p.programme ? (
               <div>
+                <p className="text-xs text-slate-500 mb-0.5">Programme immobilier</p>
+                <p className="font-medium text-slate-900">{p.programme.nom}</p>
+                <p className="text-sm text-slate-500 font-mono">{p.programme.reference}</p>
+                <Button variant="ghost" size="sm" className="mt-2 -ml-2"
+                  onClick={() => navigate(`/programmes/${p.programme.id}`)}>
+                  Voir le programme →
+                </Button>
+              </div>
+            ) : p.owner ? (
+              <div>
+                <p className="text-xs text-slate-500 mb-0.5">Propriétaire</p>
                 <p className="font-medium text-slate-900">{ownerName}</p>
                 {p.owner.phone && <p className="text-sm text-slate-500">{p.owner.phone}</p>}
                 {p.owner.email && <p className="text-sm text-slate-500">{p.owner.email}</p>}
@@ -221,7 +250,7 @@ export default function PropertyDetailPage() {
                 </Button>
               </div>
             ) : (
-              <p className="text-slate-400 text-sm">Non renseigné</p>
+              <p className="text-slate-400 text-sm">Non renseignée</p>
             )}
           </Card>
 

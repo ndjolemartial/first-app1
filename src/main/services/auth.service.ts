@@ -14,14 +14,20 @@ const sessions = new Map<string, Session>();
 
 /**
  * Authentifie un utilisateur et crée une session.
+ *
+ * @param identifier Adresse email OU login de l'utilisateur.
  */
-export async function login(email: string, password: string) {
+export async function login(identifier: string, password: string) {
   const db = getDb();
-  const user = await db.user.findUnique({
-    where: { email, deletedAt: null },
+  const user = await db.user.findFirst({
+    where: {
+      deletedAt: null,
+      OR: [{ email: identifier }, { login: identifier }],
+    },
     select: {
       id: true, uuid: true, matricule: true, firstName: true, lastName: true,
       email: true, password: true, role: true, isActive: true, avatar: true,
+      theme: true,
     },
   });
 
@@ -72,9 +78,19 @@ export function requireSession(event: IpcMainInvokeEvent): Session {
 
 /**
  * Vérifie les permissions d'un rôle pour une action.
+ *
+ * Équivalence de rôles : les comptables (ACCOUNTANT) ET les assistantes de direction
+ * (ASSISTANTE_DIRECTION) disposent des mêmes droits d'accès que les managers
+ * (MANAGER). Toute action autorisée à un MANAGER l'est donc automatiquement à ces
+ * deux rôles — sans qu'ils obtiennent pour autant les droits réservés aux rôles
+ * supérieurs (ADMIN, SUPER_ADMIN).
  */
 export function checkRole(session: Session, allowedRoles: string[]): void {
-  if (!allowedRoles.includes(session.role)) {
-    throw new Error('Permission insuffisante');
-  }
+  if (allowedRoles.includes(session.role)) return;
+  // ACCOUNTANT et ASSISTANTE_DIRECTION héritent des permissions d'un manager.
+  if (
+    (session.role === 'ACCOUNTANT' || session.role === 'ASSISTANTE_DIRECTION') &&
+    allowedRoles.includes('MANAGER')
+  ) return;
+  throw new Error('Permission insuffisante');
 }

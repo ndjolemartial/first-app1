@@ -6,9 +6,21 @@ import Badge from '../../../shared/components/ui/Badge';
 import Card from '../../../shared/components/ui/Card';
 import Select from '../../../shared/components/ui/Select';
 import ConfirmDialog from '../../../shared/components/ui/ConfirmDialog';
-import { useProspect, useDeleteProspect, useConvertProspect, useUpdateProspectStatus } from '../hooks/useProspects';
+import {
+  useProspect, useDeleteProspect, useConvertProspect, useUpdateProspectStatus,
+  useAssignableUsers, useAssignProspect,
+} from '../hooks/useProspects';
+import { useAuthStore } from '../../../shared/stores/auth.store';
 import { formatDate, formatCurrency } from '../../../shared/utils/format';
 import { Edit, Trash2, UserCheck } from 'lucide-react';
+
+/** Affectation des prospects : exclusivement réservée aux MANAGER+ (les comptables n'y ont pas accès). */
+const ASSIGN_ROLES = new Set(['SUPER_ADMIN', 'ADMIN', 'MANAGER']);
+/** Rôles habilités à convertir un prospect en client (équivalents à la création de client). */
+/** Conversion prospect→client : AD est explicitement exclue (réduite au niveau AGENT sur ce module). */
+const CONVERT_ROLES = new Set(['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ACCOUNTANT']);
+const formatUserName = (u: any): string =>
+  u ? `${u.firstName ?? ''} ${u.lastName ?? ''}`.trim() : '';
 
 // ── Constantes ────────────────────────────────────────────────────────────────
 
@@ -62,6 +74,12 @@ export default function ProspectDetailPage() {
   const deleteProspect  = useDeleteProspect();
   const convert         = useConvertProspect();
   const updateStatus    = useUpdateProspectStatus();
+  const assign          = useAssignProspect();
+
+  const role     = useAuthStore((s) => s.user?.role) ?? '';
+  const canAssign  = ASSIGN_ROLES.has(role);
+  const canConvert = CONVERT_ROLES.has(role);
+  const { data: assignableUsers } = useAssignableUsers(canAssign);
 
   const [confirmDelete,  setConfirmDelete]  = useState(false);
   const [confirmConvert, setConfirmConvert] = useState(false);
@@ -90,7 +108,7 @@ export default function ProspectDetailPage() {
               />
             </div>
           )}
-          {!isConverted && (
+          {!isConverted && canConvert && (
             <Button
               variant="secondary"
               icon={<UserCheck className="h-4 w-4" />}
@@ -154,6 +172,7 @@ export default function ProspectDetailPage() {
                 ['Mobile',    p.mobile || '—'],
                 ['Source',    SOURCE_LABEL[p.source] ?? p.source ?? '—'],
                 ['Budget',    p.budget ? formatCurrency(p.budget) : '—'],
+                ['Créé par',  p.createdBy ? formatUserName(p.createdBy) : '—'],
                 ['Créé le',   formatDate(p.createdAt)],
                 ['Modifié le',formatDate(p.updatedAt)],
               ].map(([label, value]) => (
@@ -165,14 +184,52 @@ export default function ProspectDetailPage() {
             </dl>
           </Card>
 
+          {/* Affectation */}
           <Card>
-            <h3 className="font-semibold text-slate-700 mb-4">Notes</h3>
-            {p.notes
-              ? <p className="text-sm text-slate-600 whitespace-pre-wrap">{p.notes}</p>
-              : <p className="text-sm text-slate-400 italic">Aucune note enregistrée.</p>
-            }
+            <h3 className="font-semibold text-slate-700 mb-4">Affectation</h3>
+            {canAssign ? (
+              <div className="space-y-2">
+                <p className="text-xs text-slate-500">
+                  Sélectionnez l'utilisateur en charge de ce prospect ou laissez non alloué.
+                </p>
+                <select
+                  value={p.assignedToId ?? ''}
+                  disabled={assign.isPending}
+                  onChange={(e) =>
+                    assign.mutate({
+                      id: p.id,
+                      assignedToId: e.target.value === '' ? null : Number(e.target.value),
+                    })
+                  }
+                  className="w-full text-sm border border-slate-200 rounded px-2 py-1.5 bg-white focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:opacity-50"
+                >
+                  <option value="">Non alloué</option>
+                  {(assignableUsers ?? []).map((u) => (
+                    <option key={u.id} value={u.id}>
+                      {formatUserName(u)} {u.role ? `— ${u.role}` : ''}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            ) : (
+              <p className="text-sm text-slate-700">
+                {p.assignedTo
+                  ? formatUserName(p.assignedTo)
+                  : <span className="italic text-slate-400">Non alloué</span>}
+              </p>
+            )}
           </Card>
+
         </div>
+
+        {/* Notes */}
+        <Card>
+          <h3 className="font-semibold text-slate-700 mb-4">Notes</h3>
+          {p.notes
+            ? <p className="text-sm text-slate-600 whitespace-pre-wrap">{p.notes}</p>
+            : <p className="text-sm text-slate-400 italic">Aucune note enregistrée.</p>
+          }
+        </Card>
 
         {/* Activités CRM */}
         {p.activities?.length > 0 && (

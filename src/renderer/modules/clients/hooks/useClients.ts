@@ -88,3 +88,57 @@ export function useUpdateClientStatus() {
     },
   });
 }
+
+/** Affecte / désaffecte un client à un utilisateur (suivi commercial). */
+export function useAssignClient() {
+  const token = useAuthStore((s) => s.token)!;
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, assignedToId }: { id: number; assignedToId: number | null }) =>
+      ipc().assign(token, id, assignedToId),
+    onSuccess: (res, { id }) => {
+      if (res.success) {
+        qc.invalidateQueries({ queryKey: ['clients'] });
+        qc.invalidateQueries({ queryKey: ['clients', id] });
+        toast.success('Affectation mise à jour');
+      } else toast.error(String(res.error));
+    },
+  });
+}
+
+/** Affecte / retire un apporteur d'affaire sur un client. */
+export function useSetClientReferrer() {
+  const token = useAuthStore((s) => s.token)!;
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, referrerId }: { id: number; referrerId: number | null }) =>
+      ipc().setReferrer(token, id, referrerId),
+    onSuccess: (res, { id }) => {
+      if (res.success) {
+        qc.invalidateQueries({ queryKey: ['clients'] });
+        qc.invalidateQueries({ queryKey: ['clients', id] });
+        toast.success('Apporteur mis à jour');
+      } else toast.error(String(res.error));
+    },
+  });
+}
+
+/** Liste les utilisateurs actifs candidats à l'affectation d'un client. */
+export function useClientAssignableUsers() {
+  const token = useAuthStore((s) => s.token)!;
+  return useQuery({
+    queryKey: ['clients', 'assignableUsers'],
+    queryFn: () => ipc().listAssignableUsers(token),
+    enabled: !!token,
+  });
+}
+
+/** Liste les apporteurs d'affaire actifs candidats au rattachement d'un client. */
+export function useClientReferrers() {
+  const token = useAuthStore((s) => s.token)!;
+  return useQuery({
+    queryKey: ['clients', 'referrers'],
+    queryFn: () => ipc().listReferrers(token),
+    enabled: !!token,
+  });
+}

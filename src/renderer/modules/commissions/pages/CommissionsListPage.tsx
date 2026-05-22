@@ -7,7 +7,15 @@ import { useAuthStore } from '../../../shared/stores/auth.store';
 import { useCommissions } from '../hooks/useCommissions';
 import CommissionTable from '../components/CommissionTable';
 import { PayCommissionModal, CancelCommissionModal } from '../components/CommissionModals';
-import { COMMISSION_WRITE_ROLES } from '../utils/commissions.utils';
+import {
+  COMMISSION_WRITE_ROLES,
+  COMMISSION_STATUS_LABEL,
+  TRANSACTION_TYPE_LABEL,
+  BENEFICIARY_TYPE_LABEL,
+  beneficiaryName,
+} from '../utils/commissions.utils';
+import { formatCurrency } from '../../../shared/utils/format';
+import ExportMenu, { ExportColumn } from '../../../shared/components/ExportMenu';
 import { Plus, Search } from 'lucide-react';
 
 const STATUS_OPTIONS = [
@@ -27,11 +35,33 @@ const TRANSACTION_OPTIONS = [
   { value: '', label: 'Toutes les transactions' },
   { value: 'VENTE', label: 'Ventes' },
   { value: 'LOCATION', label: 'Locations' },
+  { value: 'SOUSCRIPTION', label: 'Souscriptions' },
+];
+
+const EXPORT_COLUMNS: ExportColumn[] = [
+  { header: 'Référence',         cell: (c) => c.reference },
+  { header: 'Convention',        cell: (c) => c.convention?.reference ?? '' },
+  { header: 'Bénéficiaire',      cell: (c) => beneficiaryName(c) },
+  {
+    header: 'Type bénéficiaire',
+    cell: (c) => {
+      const label = BENEFICIARY_TYPE_LABEL[c.beneficiaryType] ?? c.beneficiaryType;
+      return c.beneficiaryType === 'USER' && c.user?.fonction
+        ? `${label} (${c.user.fonction})`
+        : label;
+    },
+  },
+  { header: 'Transaction',       cell: (c) => TRANSACTION_TYPE_LABEL[c.transactionType] ?? c.transactionType },
+  { header: 'Assiette',          cell: (c) => formatCurrency(Number(c.baseAmount)) },
+  { header: 'Taux',              cell: (c) => `${Number(c.rate)} %` },
+  { header: 'Montant',           cell: (c) => formatCurrency(Number(c.amount)) },
+  { header: 'Statut',            cell: (c) => COMMISSION_STATUS_LABEL[c.status] ?? c.status },
 ];
 
 export default function CommissionsListPage() {
   const navigate = useNavigate();
   const role = useAuthStore((s) => s.user?.role ?? '');
+  const token = useAuthStore((s) => s.token)!;
   const canManage = COMMISSION_WRITE_ROLES.includes(role);
 
   const [search, setSearch] = useState('');
@@ -50,6 +80,13 @@ export default function CommissionsListPage() {
   if (beneficiaryType) filters.beneficiaryType = beneficiaryType;
   if (transactionType) filters.transactionType = transactionType;
 
+  const filterSummary = [
+    search && `Recherche : "${search}"`,
+    status && `Statut : ${STATUS_OPTIONS.find((o) => o.value === status)?.label ?? status}`,
+    beneficiaryType && `Bénéficiaire : ${BENEFICIARY_OPTIONS.find((o) => o.value === beneficiaryType)?.label ?? beneficiaryType}`,
+    transactionType && `Transaction : ${TRANSACTION_OPTIONS.find((o) => o.value === transactionType)?.label ?? transactionType}`,
+  ].filter(Boolean).join('   —   ') || undefined;
+
   const { data: res, isLoading } = useCommissions(filters, page, limit);
   const commissions = res?.data ?? [];
   const total = res?.total ?? 0;
@@ -60,11 +97,23 @@ export default function CommissionsListPage() {
       title="Toutes les commissions"
       breadcrumbs={[{ label: 'Commissions', to: '/commissions' }, { label: 'Toutes les commissions' }]}
       actions={
-        canManage && (
-          <Button icon={<Plus className="h-4 w-4" />} onClick={() => navigate('/commissions/new')}>
-            Nouvelle commission
-          </Button>
-        )
+        <div className="flex gap-2">
+          <ExportMenu
+            fileName="commissions"
+            title="Liste des commissions"
+            subtitle={filterSummary}
+            columns={EXPORT_COLUMNS}
+            fetchRows={async () => {
+              const r = await window.electron.commissions.list(token, filters, 1, 100000);
+              return r.success ? r.data ?? [] : [];
+            }}
+          />
+          {canManage && (
+            <Button icon={<Plus className="h-4 w-4" />} onClick={() => navigate('/commissions/new')}>
+              Nouvelle commission
+            </Button>
+          )}
+        </div>
       }
     >
       {/* Filtres */}
@@ -73,7 +122,7 @@ export default function CommissionsListPage() {
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
           <input
             type="text"
-            placeholder="Rechercher (référence, contrat, bénéficiaire)…"
+            placeholder="Rechercher (référence, convention, bénéficiaire)…"
             value={search}
             onChange={(e) => { setSearch(e.target.value); setPage(1); }}
             className="w-full pl-9 pr-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"

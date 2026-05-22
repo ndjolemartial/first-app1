@@ -8,8 +8,10 @@ import Card from '../../../shared/components/ui/Card';
 import Button from '../../../shared/components/ui/Button';
 import Input from '../../../shared/components/ui/Input';
 import Select from '../../../shared/components/ui/Select';
+import { FormSearchSelect } from '../../../shared/components/ui/SearchSelect';
 import Textarea from '../../../shared/components/ui/Textarea';
 import { useReferrer, useCreateReferrer, useUpdateReferrer } from '../hooks/useCommissions';
+import { useCountries } from '../../../shared/hooks/useCountries';
 import { Save } from 'lucide-react';
 
 const schema = z.object({
@@ -39,10 +41,13 @@ export default function ReferrerFormPage() {
   const create = useCreateReferrer();
   const update = useUpdateReferrer();
 
-  const { register, handleSubmit, reset, formState: { errors, isSubmitting } } = useForm<FormData>({
+  const { register, handleSubmit, reset, control, formState: { errors, isSubmitting } } = useForm<FormData>({
     resolver: zodResolver(schema),
     defaultValues: { country: 'CI', isActive: 'true' },
   });
+
+  const { data: countriesRes } = useCountries();
+  const countryOptions = (countriesRes?.data ?? []).map((c) => ({ value: c.isoCode, label: c.name }));
 
   useEffect(() => {
     if (isEdit && res?.data) {
@@ -110,7 +115,7 @@ export default function ReferrerFormPage() {
               <Input label="Adresse" {...register('address')} />
               <div className="grid grid-cols-2 gap-4">
                 <Input label="Ville" {...register('city')} />
-                <Input label="Pays" {...register('country')} />
+                <FormSearchSelect control={control} name="country" label="Pays" options={countryOptions} />
               </div>
             </div>
 

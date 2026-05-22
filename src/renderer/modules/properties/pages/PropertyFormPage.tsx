@@ -1,22 +1,28 @@
-import { useNavigate, useParams } from 'react-router-dom';
-import { useEffect } from 'react';
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import { useEffect, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
+import { clsx } from 'clsx';
 import PageLayout from '../../../shared/components/layout/PageLayout';
 import Button from '../../../shared/components/ui/Button';
 import Input from '../../../shared/components/ui/Input';
 import Select from '../../../shared/components/ui/Select';
+import { FormSearchSelect } from '../../../shared/components/ui/SearchSelect';
 import Textarea from '../../../shared/components/ui/Textarea';
 import Card from '../../../shared/components/ui/Card';
 import { useProperty, useCreateProperty, useUpdateProperty } from '../hooks/useProperties';
 import { useOwners } from '../../owners/hooks/useOwners';
+import { useProgrammes } from '../../programmes/hooks/useProgrammes';
+import { useCountries } from '../../../shared/hooks/useCountries';
 import { useAuthStore } from '../../../shared/stores/auth.store';
 import MapLinkField from '../../../shared/components/MapLinkField';
 import { Save } from 'lucide-react';
 
 const schema = z.object({
-  ownerId: z.coerce.number().int().positive('Propriétaire requis'),
+  // Origine du bien : propriétaire OU programme immobilier (jamais les deux).
+  ownerId: z.coerce.number().int().positive().optional().or(z.literal('')),
+  programmeId: z.coerce.number().int().positive().optional().or(z.literal('')),
   type: z.enum(['APARTEMENT', 'DUPLEX', 'VILLA', 'STUDIO', 'BUREAU', 'PARKING', 'AUTRE']),
   status: z.enum(['DISPONIBLE', 'INDISPONIBLE', 'EN_LOCATION', 'SOLDE', 'SOUS_OPTION', 'EN_RENOVATION']).default('DISPONIBLE'),
   address: z.string().min(1, 'Adresse requise'),
@@ -34,8 +40,11 @@ const schema = z.object({
     .trim()
     .optional()
     .refine((v) => !v || (Number.isFinite(Number(v)) && Number(v) >= -180 && Number(v) <= 180), 'Longitude entre -180 et 180'),
-  surface: z.coerce.number().positive('Surface requise'),
-  surfaceCarrez: z.coerce.number().optional(),
+  surface: z
+    .string()
+    .trim()
+    .optional()
+    .refine((v) => !v || (Number.isFinite(Number(v)) && Number(v) > 0), 'Surface invalide'),
   rooms: z.coerce.number().int().optional(),
   bedrooms: z.coerce.number().int().optional(),
   bathrooms: z.coerce.number().int().optional(),
@@ -43,6 +52,9 @@ const schema = z.object({
   totalFloors: z.coerce.number().int().optional(),
   buildYear: z.coerce.number().int().optional(),
   condition: z.enum(['NOUVEAU', 'EXCELLENT', 'BON', 'MOYEN', 'MAUVAIS']).optional(),
+  garage: z.string().optional(),
+  cuisine: z.string().optional(),
+  terrasseBalcon: z.string().optional(),
   rentPrice: z.coerce.number().optional(),
   salePrice: z.coerce.number().optional(),
   charges: z.coerce.number().optional(),
@@ -50,6 +62,13 @@ const schema = z.object({
 });
 
 type FormData = z.infer<typeof schema>;
+type SourceType = 'OWNER' | 'PROGRAMME' | 'NONE';
+
+const SOURCE_OPTIONS: { value: SourceType; label: string }[] = [
+  { value: 'OWNER', label: 'Propriétaire' },
+  { value: 'PROGRAMME', label: 'Programme immobilier' },
+  { value: 'NONE', label: 'Non précisée' },
+];
 
 const TYPE_OPTIONS = [
   { value: 'APARTEMENT', label: 'Appartement' },
@@ -84,10 +103,19 @@ export default function PropertyFormPage() {
   const isEdit = !!id;
   const navigate = useNavigate();
   const token = useAuthStore((s) => s.token)!;
+  const [searchParams] = useSearchParams();
+  const presetProgrammeId = searchParams.get('programmeId') ?? '';
+
   const { data: res } = useProperty(isEdit ? Number(id) : 0);
   const create = useCreateProperty();
   const update = useUpdateProperty();
   const { data: ownersRes } = useOwners({}, 1, 200);
+  const { data: programmesRes } = useProgrammes({}, 1, 200);
+  const { data: countriesRes } = useCountries();
+  const countryOptions = (countriesRes?.data ?? []).map((c) => ({ value: c.isoCode, label: c.name }));
+
+  // Origine du bien : propriétaire par défaut, ou programme si pré-rempli.
+  const [sourceType, setSourceType] = useState<SourceType>(presetProgrammeId ? 'PROGRAMME' : 'OWNER');
 
   const ownerOptions = [
     { value: '', label: '— Choisir un propriétaire —' },
@@ -100,23 +128,38 @@ export default function PropertyFormPage() {
     })),
   ];
 
-  const { register, handleSubmit, reset, setValue, formState: { errors, isSubmitting } } = useForm<
+  const programmeOptions = [
+    { value: '', label: '— Choisir un programme —' },
+    ...(programmesRes?.data ?? []).map((p: any) => ({
+      value: String(p.id),
+      label: `${p.reference} — ${p.nom}`,
+    })),
+  ];
+
+  const { register, handleSubmit, reset, setValue, control, formState: { errors, isSubmitting } } = useForm<
     z.input<typeof schema>,
     any,
     FormData
   >({
     resolver: zodResolver(schema),
-    defaultValues: { type: 'VILLA', status: 'DISPONIBLE', country: 'CI' },
+    defaultValues: {
+      type: 'VILLA',
+      status: 'DISPONIBLE',
+      country: 'CI',
+      ownerId: '',
+      programmeId: presetProgrammeId,
+    },
   });
 
   useEffect(() => {
     if (isEdit && res?.data) {
       const p = res.data;
+      setSourceType(p.programmeId ? 'PROGRAMME' : p.ownerId ? 'OWNER' : 'NONE');
       reset({
         ...p,
-        ownerId: p.ownerId,
-        surface: Number(p.surface),
-        surfaceCarrez: p.surfaceCarrez ? Number(p.surfaceCarrez) : undefined,
+        ownerId: p.ownerId ?? '',
+        programmeId: p.programmeId ?? '',
+        surface: p.surface != null ? String(p.surface) : '',
         rentPrice: p.rentPrice ? Number(p.rentPrice) : undefined,
         salePrice: p.salePrice ? Number(p.salePrice) : undefined,
         charges: p.charges ? Number(p.charges) : undefined,
@@ -126,11 +169,20 @@ export default function PropertyFormPage() {
     }
   }, [res, isEdit, reset]);
 
+  const handleSourceChange = (v: SourceType) => {
+    setSourceType(v);
+    if (v !== 'OWNER') setValue('ownerId', '');
+    if (v !== 'PROGRAMME') setValue('programmeId', '');
+  };
+
   const onSubmit = async (data: FormData) => {
     const payload: any = { ...data };
     if (!payload.condition) delete payload.condition;
+    payload.surface = data.surface ? Number(data.surface) : null;
     payload.latitude = data.latitude ? Number(data.latitude) : null;
     payload.longitude = data.longitude ? Number(data.longitude) : null;
+    payload.ownerId = sourceType === 'OWNER' && data.ownerId ? Number(data.ownerId) : null;
+    payload.programmeId = sourceType === 'PROGRAMME' && data.programmeId ? Number(data.programmeId) : null;
     let r;
     if (isEdit) r = await update.mutateAsync({ id: Number(id), payload });
     else r = await create.mutateAsync(payload);
@@ -146,13 +198,42 @@ export default function PropertyFormPage() {
         {/* Identification */}
         <Card>
           <h3 className="text-base font-semibold text-slate-800 mb-4">Identification</h3>
-          <div className="grid grid-cols-2 gap-4">
-            <Select
-              label="Propriétaire *"
-              options={ownerOptions}
-              error={errors.ownerId?.message}
-              {...register('ownerId')}
-            />
+
+          {/* Origine du bien */}
+          <div>
+            <label className="text-sm font-medium text-slate-700">Origine du bien</label>
+            <div className="mt-1.5 flex flex-wrap gap-2">
+              {SOURCE_OPTIONS.map((opt) => (
+                <button
+                  key={opt.value}
+                  type="button"
+                  onClick={() => handleSourceChange(opt.value)}
+                  className={clsx(
+                    'px-3.5 py-2 rounded-lg text-sm font-medium border transition-colors',
+                    sourceType === opt.value
+                      ? 'bg-blue-600 text-white border-blue-600'
+                      : 'bg-white text-slate-600 border-slate-300 hover:bg-slate-50',
+                  )}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+            <p className="mt-1.5 text-xs text-slate-400">
+              Un bien provient soit d'un propriétaire, soit d'un programme immobilier.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4 mt-4">
+            {sourceType === 'OWNER' && (
+              <FormSearchSelect control={control} name="ownerId" label="Propriétaire" options={ownerOptions} />
+            )}
+            {sourceType === 'PROGRAMME' && (
+              <FormSearchSelect control={control} name="programmeId" label="Programme immobilier" options={programmeOptions} />
+            )}
+            {sourceType === 'NONE' && (
+              <p className="text-sm text-slate-400 self-center">Aucune origine renseignée.</p>
+            )}
             <Select label="Type de bien *" options={TYPE_OPTIONS} error={errors.type?.message} {...register('type')} />
           </div>
           <div className="grid grid-cols-2 gap-4 mt-4">
@@ -171,7 +252,7 @@ export default function PropertyFormPage() {
           <div className="grid grid-cols-3 gap-4 mt-4">
             <Input label="Ville *" error={errors.city?.message} {...register('city')} />
             <Input label="Code postal" {...register('postalCode')} />
-            <Input label="Pays" defaultValue="CI" {...register('country')} />
+            <FormSearchSelect control={control} name="country" label="Pays" options={countryOptions} />
           </div>
           <div className="mt-4">
             <MapLinkField
@@ -207,10 +288,7 @@ export default function PropertyFormPage() {
         {/* Caractéristiques */}
         <Card>
           <h3 className="text-base font-semibold text-slate-800 mb-4">Caractéristiques</h3>
-          <div className="grid grid-cols-2 gap-4">
-            <Input label="Surface (m²) *" type="number" step="0.01" error={errors.surface?.message} {...register('surface')} />
-            <Input label="Surface Carrez (m²)" type="number" step="0.01" {...register('surfaceCarrez')} />
-          </div>
+          <Input label="Surface (m²)" type="number" step="0.01" error={errors.surface?.message} {...register('surface')} />
           <div className="grid grid-cols-3 gap-4 mt-4">
             <Input label="Pièces" type="number" {...register('rooms')} />
             <Input label="Chambres" type="number" {...register('bedrooms')} />
@@ -220,6 +298,11 @@ export default function PropertyFormPage() {
             <Input label="Étage" type="number" {...register('floor')} />
             <Input label="Nbre d'étages" type="number" {...register('totalFloors')} />
             <Input label="Année construction" type="number" {...register('buildYear')} />
+          </div>
+          <div className="grid grid-cols-3 gap-4 mt-4">
+            <Input label="Garage" placeholder="Ex : box fermé, 2 places…" {...register('garage')} />
+            <Input label="Cuisine" placeholder="Ex : américaine équipée…" {...register('cuisine')} />
+            <Input label="Terrasse ou balcon" placeholder="Ex : terrasse 12 m² exposée sud…" {...register('terrasseBalcon')} />
           </div>
         </Card>
 

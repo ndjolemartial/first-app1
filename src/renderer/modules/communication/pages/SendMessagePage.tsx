@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -7,6 +7,7 @@ import PageLayout from '../../../shared/components/layout/PageLayout';
 import Button from '../../../shared/components/ui/Button';
 import Card from '../../../shared/components/ui/Card';
 import { useSendEmail, useSendSms, useTemplates } from '../hooks/useCommunication';
+import VariablePicker from '../components/VariablePicker';
 import { Send } from 'lucide-react';
 
 const emailSchema = z.object({
@@ -25,9 +26,32 @@ function EmailForm({ onSuccess }: { onSuccess: () => void }) {
   const { data: tmplRes } = useTemplates('EMAIL');
   const templates = (tmplRes?.data ?? []).filter((t: any) => t.isActive);
 
-  const { register, handleSubmit, setValue, formState: { errors, isSubmitting } } = useForm({
+  const { register, handleSubmit, setValue, getValues, formState: { errors, isSubmitting } } = useForm({
     resolver: zodResolver(emailSchema),
   });
+
+  const subjectRef = useRef<HTMLInputElement | null>(null);
+  const bodyRef = useRef<HTMLTextAreaElement | null>(null);
+  const subjectReg = register('subject');
+  const bodyReg = register('body');
+
+  /** Insère un jeton de variable à la position du curseur du champ ciblé. */
+  const insertVariable = (target: 'subject' | 'body', token: string) => {
+    const el = target === 'subject' ? subjectRef.current : bodyRef.current;
+    const current = String(getValues(target) ?? '');
+    const start = el?.selectionStart ?? current.length;
+    const end = el?.selectionEnd ?? current.length;
+    setValue(target, current.slice(0, start) + token + current.slice(end), {
+      shouldValidate: true,
+      shouldDirty: true,
+    });
+    requestAnimationFrame(() => {
+      if (el) {
+        el.focus();
+        el.setSelectionRange(start + token.length, start + token.length);
+      }
+    });
+  };
 
   const applyTemplate = (id: string) => {
     const t = templates.find((t: any) => String(t.id) === id);
@@ -63,14 +87,22 @@ function EmailForm({ onSuccess }: { onSuccess: () => void }) {
         {errors.to && <p className="text-xs text-red-500 mt-1">{String(errors.to.message)}</p>}
       </div>
       <div>
-        <label className="block text-xs font-medium text-slate-700 mb-1">Sujet *</label>
-        <input {...register('subject')}
+        <div className="flex items-center justify-between mb-1">
+          <label className="block text-xs font-medium text-slate-700">Sujet *</label>
+          <VariablePicker onInsert={(t) => insertVariable('subject', t)} />
+        </div>
+        <input {...subjectReg}
+          ref={(el) => { subjectReg.ref(el); subjectRef.current = el; }}
           className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
         {errors.subject && <p className="text-xs text-red-500 mt-1">{String(errors.subject.message)}</p>}
       </div>
       <div>
-        <label className="block text-xs font-medium text-slate-700 mb-1">Message *</label>
-        <textarea rows={8} {...register('body')}
+        <div className="flex items-center justify-between mb-1">
+          <label className="block text-xs font-medium text-slate-700">Message *</label>
+          <VariablePicker onInsert={(t) => insertVariable('body', t)} />
+        </div>
+        <textarea rows={8} {...bodyReg}
+          ref={(el) => { bodyReg.ref(el); bodyRef.current = el; }}
           className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
         {errors.body && <p className="text-xs text-red-500 mt-1">{String(errors.body.message)}</p>}
       </div>
@@ -89,9 +121,30 @@ function SmsForm({ onSuccess }: { onSuccess: () => void }) {
   const { data: tmplRes } = useTemplates('SMS');
   const templates = (tmplRes?.data ?? []).filter((t: any) => t.isActive);
 
-  const { register, handleSubmit, setValue, formState: { errors, isSubmitting } } = useForm({
+  const { register, handleSubmit, setValue, getValues, formState: { errors, isSubmitting } } = useForm({
     resolver: zodResolver(smsSchema),
   });
+
+  const bodyRef = useRef<HTMLTextAreaElement | null>(null);
+  const bodyReg = register('body');
+
+  /** Insère un jeton de variable à la position du curseur du message. */
+  const insertVariable = (token: string) => {
+    const el = bodyRef.current;
+    const current = String(getValues('body') ?? '');
+    const start = el?.selectionStart ?? current.length;
+    const end = el?.selectionEnd ?? current.length;
+    setValue('body', current.slice(0, start) + token + current.slice(end), {
+      shouldValidate: true,
+      shouldDirty: true,
+    });
+    requestAnimationFrame(() => {
+      if (el) {
+        el.focus();
+        el.setSelectionRange(start + token.length, start + token.length);
+      }
+    });
+  };
 
   const applyTemplate = (id: string) => {
     const t = templates.find((t: any) => String(t.id) === id);
@@ -124,8 +177,12 @@ function SmsForm({ onSuccess }: { onSuccess: () => void }) {
         {errors.to && <p className="text-xs text-red-500 mt-1">{String(errors.to.message)}</p>}
       </div>
       <div>
-        <label className="block text-xs font-medium text-slate-700 mb-1">Message *</label>
-        <textarea rows={4} {...register('body')} maxLength={160}
+        <div className="flex items-center justify-between mb-1">
+          <label className="block text-xs font-medium text-slate-700">Message *</label>
+          <VariablePicker onInsert={insertVariable} />
+        </div>
+        <textarea rows={4} {...bodyReg} maxLength={160}
+          ref={(el) => { bodyReg.ref(el); bodyRef.current = el; }}
           className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
         {errors.body && <p className="text-xs text-red-500 mt-1">{String(errors.body.message)}</p>}
         <p className="text-xs text-slate-400 mt-1">Max 160 caractères pour un SMS standard.</p>

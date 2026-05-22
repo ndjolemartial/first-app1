@@ -7,16 +7,17 @@ import Card from '../../../shared/components/ui/Card';
 import { SkeletonTable } from '../../../shared/components/ui/Skeleton';
 import ConfirmDialog from '../../../shared/components/ui/ConfirmDialog';
 import { useArchives, useArchiveStats, useRestoreArchive, usePermanentDelete } from '../hooks/useArchiving';
+import ArchivingNav from '../components/ArchivingNav';
 import { useAuthStore } from '../../../shared/stores/auth.store';
 import { formatDate, formatDateTime } from '../../../shared/utils/format';
 import { Archive, RotateCcw, Trash2, Settings } from 'lucide-react';
 
 const ENTITY_LABEL: Record<string, string> = {
   CLIENT: 'Client', PROSPECT: 'Prospect', OWNER: 'Propriétaire',
-  PROPERTY: 'Bien', CONTRACT: 'Contrat', INVOICE: 'Facture', DOCUMENT: 'Document',
+  PROPERTY: 'Bien', CONVENTION: 'Convention', INVOICE: 'Facture', DOCUMENT: 'Document',
 };
 const REASON_LABEL: Record<string, string> = {
-  MANUEL: 'Manuel', CONTRAT_TERMINE: 'Contrat terminé', CLIENT_INACTIF: 'Client inactif',
+  MANUEL: 'Manuel', CONVENTION_TERMINEE: 'Convention terminée', CLIENT_INACTIF: 'Client inactif',
   BIEN_VENDU: 'Bien vendu', POLITIQUE_AUTOMATIQUE: 'Automatique', DEMANDE_RGPD: 'RGPD', AUTRE: 'Autre',
 };
 const STATUS_VARIANT: Record<string, 'warning' | 'success' | 'danger' | 'default'> = {
@@ -88,6 +89,7 @@ export default function ArchivingPage() {
         </Button>
       }
     >
+      <ArchivingNav />
       {/* Stats */}
       {stats && (
         <div className="grid grid-cols-3 gap-4 mb-6">

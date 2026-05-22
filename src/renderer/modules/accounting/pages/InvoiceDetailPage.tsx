@@ -6,9 +6,10 @@ import Button from '../../../shared/components/ui/Button';
 import Badge from '../../../shared/components/ui/Badge';
 import Card from '../../../shared/components/ui/Card';
 import { SkeletonTable } from '../../../shared/components/ui/Skeleton';
-import { useInvoice, useUpdateInvoiceStatus, useAddPayment } from '../hooks/useAccounting';
+import { useInvoice, useUpdateInvoiceStatus, useAddPayment, usePrintInvoice } from '../hooks/useAccounting';
+import TreasuryAccountFields from '../../../shared/components/TreasuryAccountFields';
 import { formatCurrency, formatDate } from '../../../shared/utils/format';
-import { FileText, User, CreditCard, Plus } from 'lucide-react';
+import { FileText, User, CreditCard, Plus, Printer } from 'lucide-react';
 
 const STATUS_VARIANT: Record<string, 'success' | 'info' | 'warning' | 'danger' | 'default'> = {
   BROUILLON: 'default', ENVOYEE: 'info', PAYEE: 'success',
@@ -42,9 +43,10 @@ export default function InvoiceDetailPage() {
   const { data: res, isLoading, refetch } = useInvoice(Number(id));
   const updateStatus = useUpdateInvoiceStatus();
   const addPayment = useAddPayment();
+  const printInvoice = usePrintInvoice();
   const [showPaymentForm, setShowPaymentForm] = useState(false);
 
-  const { register, handleSubmit, reset, formState: { isSubmitting } } = useForm({
+  const { register, handleSubmit, reset, watch, setValue, formState: { isSubmitting } } = useForm({
     defaultValues: { amount: '', method: 'ESPECE', reference: '', notes: '' },
   });
 
@@ -68,7 +70,14 @@ export default function InvoiceDetailPage() {
   const onPaymentSubmit = async (data: any) => {
     const r = await addPayment.mutateAsync({
       invoiceId: Number(id),
-      payload: { ...data, amount: Number(data.amount) },
+      payload: {
+        amount: Number(data.amount),
+        method: data.method,
+        reference: data.reference,
+        notes: data.notes,
+        bankAccountId: data.bankAccountId ? Number(data.bankAccountId) : undefined,
+        categoryId: data.categoryId ? Number(data.categoryId) : undefined,
+      },
     });
     if (r.success) {
       reset();
@@ -87,6 +96,14 @@ export default function InvoiceDetailPage() {
       ]}
       actions={
         <div className="flex gap-2">
+          <Button
+            variant="secondary"
+            size="sm"
+            icon={<Printer className="h-4 w-4" />}
+            onClick={() => printInvoice(Number(id))}
+          >
+            Imprimer
+          </Button>
           {transitions.map((s) => (
             <Button
               key={s}
@@ -192,7 +209,7 @@ export default function InvoiceDetailPage() {
                   icon={<Plus className="h-4 w-4" />}
                   onClick={() => setShowPaymentForm((v) => !v)}
                 >
-                  Encaisser
+                  Encaissement partiel
                 </Button>
               )}
             </div>
@@ -204,7 +221,7 @@ export default function InvoiceDetailPage() {
                     <label className="block text-xs font-medium text-slate-700 mb-1">Montant *</label>
                     <input
                       type="number"
-                      step="100"
+                      step="any"
                       min="1"
                       required
                       {...register('amount')}
@@ -231,6 +248,7 @@ export default function InvoiceDetailPage() {
                     className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
                   />
                 </div>
+                <TreasuryAccountFields register={register} watch={watch} setValue={setValue} direction="ENTREE" />
                 <div className="flex gap-2 justify-end">
                   <Button type="button" variant="secondary" size="sm" onClick={() => setShowPaymentForm(false)}>Annuler</Button>
                   <Button type="submit" size="sm" loading={isSubmitting}>Enregistrer</Button>
@@ -282,16 +300,16 @@ export default function InvoiceDetailPage() {
             </Card>
           )}
 
-          {inv.contract && (
+          {inv.convention && (
             <Card>
               <h3 className="font-semibold text-slate-800 mb-3 flex items-center gap-2">
-                <CreditCard className="h-4 w-4 text-slate-500" /> Contrat
+                <CreditCard className="h-4 w-4 text-slate-500" /> Convention
               </h3>
-              <p className="font-medium text-slate-900">{inv.contract?.reference}</p>
-              <p className="text-sm text-slate-500">{inv.contract?.property?.address}</p>
+              <p className="font-medium text-slate-900">{inv.convention?.reference}</p>
+              <p className="text-sm text-slate-500">{inv.convention?.property?.address}</p>
               <Button variant="ghost" size="sm" className="mt-2 -ml-2"
-                onClick={() => navigate(`/contracts/${inv.contract?.id}`)}>
-                Voir le contrat →
+                onClick={() => navigate(`/conventions/${inv.convention?.id}`)}>
+                Voir la convention →
               </Button>
             </Card>
           )}

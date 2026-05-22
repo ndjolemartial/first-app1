@@ -7,11 +7,19 @@ import PageLayout from '../../../shared/components/layout/PageLayout';
 import Button from '../../../shared/components/ui/Button';
 import Input from '../../../shared/components/ui/Input';
 import Select from '../../../shared/components/ui/Select';
+import { FormSearchSelect } from '../../../shared/components/ui/SearchSelect';
 import Textarea from '../../../shared/components/ui/Textarea';
 import Card from '../../../shared/components/ui/Card';
-import { useClient, useCreateClient, useUpdateClient } from '../hooks/useClients';
+import {
+  useClient, useCreateClient, useUpdateClient,
+  useClientAssignableUsers, useClientReferrers,
+} from '../hooks/useClients';
+import { useCountries } from '../../../shared/hooks/useCountries';
 import { useAuthStore } from '../../../shared/stores/auth.store';
 import { Save, Upload, X, FileText } from 'lucide-react';
+
+/** Affectation client : AD est explicitement exclue (réduite au niveau AGENT sur ce module). */
+const ASSIGN_ROLES = new Set(['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ACCOUNTANT']);
 
 const schema = z.object({
   type: z.enum(['INDIVIDUEL', 'ENTREPRISE']),
@@ -36,6 +44,9 @@ const schema = z.object({
   motherLastName: z.string().optional(),
   notes: z.string().optional(),
   status: z.string().optional(),
+  // Champs d'affectation — convertis en number|null lors de la soumission.
+  assignedToId: z.string().optional(),
+  referrerId:   z.string().optional(),
 });
 
 type FormData = z.infer<typeof schema>;
@@ -73,10 +84,31 @@ export default function ClientFormPage() {
   const isEdit = !!id;
   const navigate = useNavigate();
   const token = useAuthStore((s) => s.token)!;
+  const role = useAuthStore((s) => s.user?.role) ?? '';
+  const canAssign = ASSIGN_ROLES.has(role);
 
   const { data: res } = useClient(isEdit ? Number(id) : 0);
   const create = useCreateClient();
   const update = useUpdateClient();
+
+  const { data: assignableUsersRes } = useClientAssignableUsers();
+  const { data: referrersRes }       = useClientReferrers();
+  const userOptions = [
+    { value: '', label: '— Aucun —' },
+    ...((assignableUsersRes?.data ?? []) as any[]).map((u) => ({
+      value: String(u.id),
+      label: `${u.firstName ?? ''} ${u.lastName ?? ''}`.trim() || u.email,
+    })),
+  ];
+  const referrerOptions = [
+    { value: '', label: '— Aucun —' },
+    ...((referrersRes?.data ?? []) as any[]).map((r) => ({
+      value: String(r.id),
+      label: r.companyName
+        ? `${r.firstName ?? ''} ${r.lastName ?? ''} (${r.companyName})`.trim()
+        : `${r.firstName ?? ''} ${r.lastName ?? ''}`.trim(),
+    })),
+  ];
 
   const [type, setType] = useState<'INDIVIDUEL' | 'ENTREPRISE'>('INDIVIDUEL');
   const [idDocFile, setIdDocFile] = useState<File | null>(null);
@@ -84,10 +116,17 @@ export default function ClientFormPage() {
   const [existingIdDoc, setExistingIdDoc] = useState<{ name: string; size: number } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const { register, handleSubmit, reset, watch, formState: { errors, isSubmitting } } = useForm<FormData>({
+  const { register, handleSubmit, reset, watch, control, formState: { errors, isSubmitting } } = useForm<FormData>({
     resolver: zodResolver(schema),
-    defaultValues: { type: 'INDIVIDUEL', country: 'CI', status: 'ACTIF', civilite: 'MONSIEUR', statutConjugal: 'CELIBATAIRE' },
+    defaultValues: {
+      type: 'INDIVIDUEL', country: 'CI', status: 'ACTIF',
+      civilite: 'MONSIEUR', statutConjugal: 'CELIBATAIRE',
+      assignedToId: '', referrerId: '',
+    },
   });
+
+  const { data: countriesRes } = useCountries();
+  const countryOptions = (countriesRes?.data ?? []).map((c) => ({ value: c.isoCode, label: c.name }));
 
   const watchType = watch('type');
   useEffect(() => setType(watchType as any), [watchType]);
@@ -95,7 +134,11 @@ export default function ClientFormPage() {
   useEffect(() => {
     if (isEdit && res?.data) {
       const c = res.data;
-      reset({ ...c });
+      reset({
+        ...c,
+        assignedToId: c.assignedToId != null ? String(c.assignedToId) : '',
+        referrerId:   c.referrerId   != null ? String(c.referrerId)   : '',
+      });
       setType(c.type);
       const idDoc = c.documents?.find((d: any) => d.category === 'identité');
       if (idDoc) setExistingIdDoc({ name: idDoc.name, size: idDoc.size });
@@ -140,7 +183,14 @@ export default function ClientFormPage() {
   }
 
   const onSubmit = async (data: FormData) => {
-    const payload = { ...data };
+    // Convertit les sélecteurs d'affectation (chaînes) en number|null|undefined.
+    // Si l'utilisateur n'a pas le droit d'affecter, on retire ces champs du payload.
+    const { assignedToId, referrerId, ...rest } = data;
+    const payload: any = { ...rest };
+    if (canAssign) {
+      payload.assignedToId = assignedToId ? Number(assignedToId) : null;
+      payload.referrerId   = referrerId   ? Number(referrerId)   : null;
+    }
     let r: any;
     if (isEdit) {
       r = await update.mutateAsync({ id: Number(id), payload });
@@ -262,10 +312,32 @@ export default function ClientFormPage() {
           <Input label="Adresse" {...register('address')} />
           <div className="grid grid-cols-2 gap-4">
             <Input label="Ville" {...register('city')} />
-            <Input label="Pays" defaultValue="CI" {...register('country')} />
+            <FormSearchSelect control={control} name="country" label="Pays" options={countryOptions} />
           </div>
           <Textarea label="Notes" rows={3} {...register('notes')} />
           <Select label="Statut" options={STATUS_OPTIONS} {...register('status')} />
+
+          {canAssign && (
+            <div className="border-t border-slate-100 pt-4">
+              <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-3">
+                Affectation
+              </p>
+              <div className="grid grid-cols-2 gap-4">
+                <FormSearchSelect
+                  control={control}
+                  name="assignedToId"
+                  label="Utilisateur référent"
+                  options={userOptions}
+                />
+                <FormSearchSelect
+                  control={control}
+                  name="referrerId"
+                  label="Apporteur d'affaire"
+                  options={referrerOptions}
+                />
+              </div>
+            </div>
+          )}
 
           <div className="flex justify-end gap-3 pt-2">
             <Button variant="secondary" type="button" onClick={() => navigate('/clients')}>Annuler</Button>

@@ -1,0 +1,106 @@
+import { ipcMain } from 'electron';
+import { getDb } from '../services/db.service';
+import { getSession, checkRole } from '../services/auth.service';
+import logger from '../utils/logger';
+
+const READ_ROLES = ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'AGENT', 'ACCOUNTANT', 'ASSISTANTE_DIRECTION', 'READONLY'];
+const PRIVILEGED_ROLES = ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ACCOUNTANT', 'ASSISTANTE_DIRECTION'];
+
+const SLIDESHOW_SETTING_KEY = 'dashboard.slideshow';
+
+interface SlideshowItem {
+  type: 'image' | 'video';
+  src: string;
+  caption?: string;
+  durationMs?: number;
+}
+
+const DEFAULT_SLIDESHOW: SlideshowItem[] = [
+  {
+    type: 'image',
+    src: 'https://images.unsplash.com/photo-1568605114967-8130f3a36994?auto=format&fit=crop&w=1600&q=80',
+    caption: 'Bienvenue sur Afrikimmo — votre portefeuille immobilier en un coup d’œil',
+    durationMs: 6000,
+  },
+  {
+    type: 'image',
+    src: 'https://images.unsplash.com/photo-1582407947304-fd86f028f716?auto=format&fit=crop&w=1600&q=80',
+    caption: 'Gérez vos biens, conventions et clients depuis une interface unique',
+    durationMs: 6000,
+  },
+  {
+    type: 'image',
+    src: 'https://images.unsplash.com/photo-1560518883-ce09059eeffa?auto=format&fit=crop&w=1600&q=80',
+    caption: 'Suivez vos ventes, vos échéances et vos commissions en temps réel',
+    durationMs: 6000,
+  },
+];
+
+export function registerDashboardIPC(): void {
+  ipcMain.handle('dashboard:getStats', async (_event, { token }: any) => {
+    try {
+      const session = getSession(token);
+      if (!session) return { success: false, error: 'Session expirée' };
+      checkRole(session, READ_ROLES);
+
+      const db = getDb();
+      const isPrivileged = PRIVILEGED_ROLES.includes(session.role);
+
+      const prospectsCountPromise = db.prospect.count({ where: { deletedAt: null } });
+
+      const privilegedPromises = isPrivileged
+        ? Promise.all([
+            db.client.count({ where: { deletedAt: null } }),
+            db.owner.count({ where: { deletedAt: null } }),
+            db.terrain.count({ where: { deletedAt: null, statut: 'DISPONIBLE' } }),
+            db.property.count({ where: { deletedAt: null, status: 'DISPONIBLE' } }),
+            db.lotissement.count({ where: { deletedAt: null } }),
+            db.programmeImmobilier.count({ where: { deletedAt: null } }),
+          ])
+        : Promise.resolve([null, null, null, null, null, null] as const);
+
+      const slideshowPromise = db.appSetting
+        .findUnique({ where: { key: SLIDESHOW_SETTING_KEY } })
+        .then((s) => {
+          if (!s?.value) return DEFAULT_SLIDESHOW;
+          try {
+            const parsed = JSON.parse(s.value);
+            return Array.isArray(parsed) && parsed.length > 0
+              ? (parsed as SlideshowItem[])
+              : DEFAULT_SLIDESHOW;
+          } catch {
+            return DEFAULT_SLIDESHOW;
+          }
+        })
+        .catch(() => DEFAULT_SLIDESHOW);
+
+      const [prospectsCount, privileged, slideshow] = await Promise.all([
+        prospectsCountPromise,
+        privilegedPromises,
+        slideshowPromise,
+      ]);
+
+      const [clientsCount, ownersCount, availableTerrainsCount, availablePropertiesCount, lotissementsCount, programmesCount] = privileged;
+
+      return {
+        success: true,
+        data: {
+          isPrivileged,
+          counts: {
+            prospects: prospectsCount,
+            clients: clientsCount,
+            owners: ownersCount,
+            availableTerrains: availableTerrainsCount,
+            availableProperties: availablePropertiesCount,
+            lotissements: lotissementsCount,
+            programmes: programmesCount,
+          },
+          slideshow,
+        },
+      };
+    } catch (error: any) {
+      logger.error('dashboard:getStats error', error.message);
+      return { success: false, error: error.message };
+    }
+  });
+}

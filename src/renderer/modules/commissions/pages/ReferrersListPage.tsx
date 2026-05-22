@@ -9,12 +9,23 @@ import { SkeletonTable } from '../../../shared/components/ui/Skeleton';
 import { useAuthStore } from '../../../shared/stores/auth.store';
 import { useReferrers, useDeleteReferrer } from '../hooks/useCommissions';
 import { referrerName, COMMISSION_WRITE_ROLES, COMMISSION_ADMIN_ROLES } from '../utils/commissions.utils';
+import ExportMenu, { ExportColumn } from '../../../shared/components/ExportMenu';
 import { Plus, Search, Pencil, Trash2, Receipt } from 'lucide-react';
 
 const ACTIVE_OPTIONS = [
   { value: '', label: 'Tous' },
   { value: 'true', label: 'Actifs' },
   { value: 'false', label: 'Inactifs' },
+];
+
+const EXPORT_COLUMNS: ExportColumn[] = [
+  { header: 'Apporteur',   cell: (r) => referrerName(r) },
+  { header: 'Email',       cell: (r) => r.email },
+  { header: 'Téléphone',   cell: (r) => r.phone },
+  { header: 'Mobile',      cell: (r) => r.mobile },
+  { header: 'Ville',       cell: (r) => r.city },
+  { header: 'Commissions', cell: (r) => r._count?.commissions ?? 0 },
+  { header: 'Statut',      cell: (r) => (r.isActive ? 'Actif' : 'Inactif') },
 ];
 
 export default function ReferrersListPage() {
@@ -31,9 +42,16 @@ export default function ReferrersListPage() {
   const [deleteTarget, setDeleteTarget] = useState<any>(null);
   const deleteReferrer = useDeleteReferrer();
 
+  const token = useAuthStore((s) => s.token)!;
+
   const filters: any = {};
   if (search) filters.search = search;
   if (active) filters.isActive = active;
+
+  const filterSummary = [
+    search && `Recherche : "${search}"`,
+    active && `Statut : ${ACTIVE_OPTIONS.find((o) => o.value === active)?.label ?? active}`,
+  ].filter(Boolean).join('   —   ') || undefined;
 
   const { data: res, isLoading } = useReferrers(filters, page, limit);
   const referrers = res?.data ?? [];
@@ -53,11 +71,23 @@ export default function ReferrersListPage() {
       title="Apporteurs d'affaire"
       breadcrumbs={[{ label: 'Commissions', to: '/commissions' }, { label: 'Apporteurs d\'affaire' }]}
       actions={
-        canManage && (
-          <Button icon={<Plus className="h-4 w-4" />} onClick={() => navigate('/commissions/referrers/new')}>
-            Nouvel apporteur
-          </Button>
-        )
+        <div className="flex gap-2">
+          <ExportMenu
+            fileName="apporteurs-affaire"
+            title="Liste des apporteurs d'affaire"
+            subtitle={filterSummary}
+            columns={EXPORT_COLUMNS}
+            fetchRows={async () => {
+              const r = await window.electron.commissions.listReferrers(token, filters, 1, 100000);
+              return r.success ? r.data ?? [] : [];
+            }}
+          />
+          {canManage && (
+            <Button icon={<Plus className="h-4 w-4" />} onClick={() => navigate('/commissions/referrers/new')}>
+              Nouvel apporteur
+            </Button>
+          )}
+        </div>
       }
     >
       {/* Filtres */}

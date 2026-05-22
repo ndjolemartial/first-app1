@@ -11,6 +11,8 @@ import { SkeletonTable } from '../../../shared/components/ui/Skeleton';
 import EmptyState from '../../../shared/components/ui/EmptyState';
 import { useOwners } from '../hooks/useOwners';
 import { formatDate } from '../../../shared/utils/format';
+import ExportMenu, { ExportColumn } from '../../../shared/components/ExportMenu';
+import { useAuthStore } from '../../../shared/stores/auth.store';
 import { UserPlus, Eye, Edit, Home } from 'lucide-react';
 
 const TYPE_OPTIONS = [
@@ -19,13 +21,31 @@ const TYPE_OPTIONS = [
   { value: 'ENTREPRISE', label: 'Entreprise' },
 ];
 
+const EXPORT_COLUMNS: ExportColumn[] = [
+  { header: 'Nom / Entreprise', cell: (o) => (o.type === 'INDIVIDUEL' ? `${o.firstName ?? ''} ${o.lastName ?? ''}`.trim() : o.companyName) },
+  { header: 'Type',             cell: (o) => (o.type === 'INDIVIDUEL' ? 'Particulier' : 'Entreprise') },
+  { header: 'Téléphone',        cell: (o) => o.phone },
+  { header: 'Mobile',           cell: (o) => o.mobile },
+  { header: 'Email',            cell: (o) => o.email },
+  { header: 'Ville',            cell: (o) => o.city },
+  { header: 'Biens',            cell: (o) => o._count?.properties ?? 0 },
+  { header: 'Statut',           cell: (o) => (o.isActive ? 'Actif' : 'Inactif') },
+  { header: 'Depuis',           cell: (o) => formatDate(o.createdAt) },
+];
+
 export default function OwnersListPage() {
   const navigate = useNavigate();
+  const token = useAuthStore((s) => s.token)!;
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState('');
   const [type, setType] = useState('');
   const filters = { search: search || undefined, type: type || undefined };
   const { data, isLoading } = useOwners(filters, page, 20);
+
+  const filterSummary = [
+    search && `Recherche : "${search}"`,
+    type && `Type : ${TYPE_OPTIONS.find((o) => o.value === type)?.label ?? type}`,
+  ].filter(Boolean).join('   —   ') || undefined;
 
   const owners: any[] = data?.data ?? [];
   const total: number = data?.total ?? 0;
@@ -35,9 +55,21 @@ export default function OwnersListPage() {
       title="Gestion des propriétaires"
       breadcrumbs={[{ label: 'Propriétaires' }]}
       actions={
-        <Button icon={<UserPlus className="h-4 w-4" />} onClick={() => navigate('/owners/new')}>
-          Nouveau propriétaire
-        </Button>
+        <div className="flex gap-2">
+          <ExportMenu
+            fileName="proprietaires"
+            title="Liste des propriétaires"
+            subtitle={filterSummary}
+            columns={EXPORT_COLUMNS}
+            fetchRows={async () => {
+              const r = await window.electron.owners.list(token, filters, 1, 100000);
+              return r.success ? r.data ?? [] : [];
+            }}
+          />
+          <Button icon={<UserPlus className="h-4 w-4" />} onClick={() => navigate('/owners/new')}>
+            Nouveau propriétaire
+          </Button>
+        </div>
       }
     >
       <Card className="mb-4 flex flex-wrap gap-3 items-end">

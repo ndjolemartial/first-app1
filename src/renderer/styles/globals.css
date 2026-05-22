@@ -1,14 +1,76 @@
 @import "tailwindcss";
 
+/* ════════════════════════════════════════════════════════════════════════════
+ * Palettes des thèmes graphiques.
+ *
+ * Trois thèmes : DEFAULT (clair, bleu ardoise), AFRIKIMMO (bleu marine + or),
+ * DARK_GOLD (sombre avec accents or et touches rouge bordeaux). Le thème actif
+ * est appliqué via l'attribut `data-theme` sur l'élément <html>.
+ *
+ * Toute modification ici doit rester cohérente avec
+ * `src/main/services/theme.service.ts`.
+ * ══════════════════════════════════════════════════════════════════════════ */
+
+:root,
+:root[data-theme="DEFAULT"] {
+  --theme-primary:        #1E3A5F;
+  --theme-primary-hover:  #2563EB;
+  --theme-accent:         #2563EB;
+  --theme-bg:             #F8FAFC;
+  --theme-surface:        #FFFFFF;
+  --theme-text:           #1E293B;
+  --theme-text-muted:     #64748B;
+  --theme-border:         #E2E8F0;
+  --theme-sidebar:        #1E3A5F;
+  --theme-sidebar-text:   #E2E8F0;
+  --theme-sidebar-hover:  #2D4F7C;
+  --theme-sidebar-active: #2563EB;
+  --theme-danger:         #DC2626;
+}
+
+:root[data-theme="AFRIKIMMO"] {
+  --theme-primary:        #0E2A47;
+  --theme-primary-hover:  #14365E;
+  --theme-accent:         #C8102E;
+  --theme-bg:             #FFFFFF;
+  --theme-surface:        #F8F9FA;
+  --theme-text:           #1F2937;
+  --theme-text-muted:     #6B7280;
+  --theme-border:         #E5E7EB;
+  --theme-sidebar:        #0E2A47;
+  --theme-sidebar-text:   #E5E7EB;
+  --theme-sidebar-hover:  #163766;
+  --theme-sidebar-active: #C8102E;
+  --theme-danger:         #B91C1C;
+}
+
+:root[data-theme="DARK_GOLD"] {
+  --theme-primary:        #C8102E;
+  --theme-primary-hover:  #E11D48;
+  --theme-accent:         #C8102E;
+  --theme-bg:             #0D0D10;
+  --theme-surface:        #1A1A20;
+  --theme-text:           #E5E5E5;
+  --theme-text-muted:     #9CA3AF;
+  --theme-border:         #2D2D38;
+  --theme-sidebar:        #14141A;
+  --theme-sidebar-text:   #D4D4D8;
+  --theme-sidebar-hover:  #24242E;
+  --theme-sidebar-active: #C8102E;
+  --theme-danger:         #B22222;
+}
+
 @theme {
-  --color-primary: #1E3A5F;
-  --color-primary-light: #2563EB;
-  --color-primary-50: #EFF6FF;
-  --color-primary-100: #DBEAFE;
-  --color-sidebar: #1E3A5F;
-  --color-sidebar-text: #E2E8F0;
-  --color-sidebar-hover: #2D4F7C;
-  --color-sidebar-active: #2563EB;
+  /* Couleurs paramétrables (Tailwind 4 résout les CSS vars au runtime). */
+  --color-primary:        var(--theme-primary);
+  --color-primary-light:  var(--theme-primary-hover);
+  --color-primary-50:     #EFF6FF;
+  --color-primary-100:    #DBEAFE;
+  --color-sidebar:        var(--theme-sidebar);
+  --color-sidebar-text:   var(--theme-sidebar-text);
+  --color-sidebar-hover:  var(--theme-sidebar-hover);
+  --color-sidebar-active: var(--theme-sidebar-active);
+  --color-accent:         var(--theme-accent);
 
   --font-family-sans: 'DM Sans', system-ui, sans-serif;
   --radius-default: 0.5rem;
@@ -20,8 +82,8 @@
 
 body {
   font-family: var(--font-family-sans);
-  background-color: #F8FAFC;
-  color: #1E293B;
+  background-color: var(--theme-bg);
+  color: var(--theme-text);
   margin: 0;
   padding: 0;
   overflow: hidden;
@@ -33,18 +95,143 @@ body {
   flex-direction: column;
 }
 
-/* Scrollbar personnalisée */
+/* Scrollbar personnalisée. */
 ::-webkit-scrollbar {
   width: 6px;
   height: 6px;
 }
 ::-webkit-scrollbar-track {
-  background: #F1F5F9;
+  background: var(--theme-bg);
 }
 ::-webkit-scrollbar-thumb {
-  background: #CBD5E1;
+  background: var(--theme-border);
   border-radius: 3px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: #94A3B8;
+  background: var(--theme-text-muted);
+}
+
+/* ════════════════════════════════════════════════════════════════════════════
+ * Mode sombre : pour ne pas réécrire tous les composants, on réinterprète les
+ * principales classes Tailwind utilisées comme fonds / textes / bordures
+ * lorsque `data-theme="DARK_GOLD"` est actif. Les boutons primaires (bleu)
+ * basculent vers l'or, les liens et badges info reprennent l'accent doré, les
+ * rouges restent rouges (danger).
+ * ══════════════════════════════════════════════════════════════════════════ */
+
+[data-theme="DARK_GOLD"] .bg-white {
+  background-color: var(--theme-surface) !important;
+  color: var(--theme-text);
+}
+[data-theme="DARK_GOLD"] .bg-slate-50,
+[data-theme="DARK_GOLD"] .hover\:bg-slate-50:hover {
+  background-color: #14141A !important;
+}
+[data-theme="DARK_GOLD"] .bg-slate-100,
+[data-theme="DARK_GOLD"] .hover\:bg-slate-100:hover {
+  background-color: #1F1F26 !important;
+}
+[data-theme="DARK_GOLD"] .bg-slate-200 {
+  background-color: #2A2A33 !important;
+}
+
+[data-theme="DARK_GOLD"] .border-slate-100,
+[data-theme="DARK_GOLD"] .border-slate-200,
+[data-theme="DARK_GOLD"] .divide-slate-100 > * + *,
+[data-theme="DARK_GOLD"] .divide-slate-200 > * + * {
+  border-color: var(--theme-border) !important;
+}
+
+[data-theme="DARK_GOLD"] .text-slate-900,
+[data-theme="DARK_GOLD"] .text-slate-800 {
+  color: var(--theme-text) !important;
+}
+[data-theme="DARK_GOLD"] .text-slate-700 {
+  color: #D4D4D8 !important;
+}
+[data-theme="DARK_GOLD"] .text-slate-600,
+[data-theme="DARK_GOLD"] .text-slate-500 {
+  color: var(--theme-text-muted) !important;
+}
+[data-theme="DARK_GOLD"] .text-slate-400,
+[data-theme="DARK_GOLD"] .text-slate-300 {
+  color: #71717A !important;
+}
+
+/* Boutons et liens primaires → rouge. */
+[data-theme="DARK_GOLD"] .bg-blue-600,
+[data-theme="DARK_GOLD"] .bg-blue-500,
+[data-theme="DARK_GOLD"] .hover\:bg-blue-700:hover {
+  background-color: var(--theme-accent) !important;
+  color: #FFFFFF !important;
+}
+[data-theme="DARK_GOLD"] .text-blue-700,
+[data-theme="DARK_GOLD"] .text-blue-600,
+[data-theme="DARK_GOLD"] .hover\:text-blue-700:hover {
+  color: #F87171 !important;
+}
+[data-theme="DARK_GOLD"] .bg-blue-50,
+[data-theme="DARK_GOLD"] .bg-blue-100 {
+  background-color: #2A1414 !important;
+}
+[data-theme="DARK_GOLD"] .border-blue-200,
+[data-theme="DARK_GOLD"] .border-blue-300 {
+  border-color: #7C1D1D !important;
+}
+
+/* Inputs et champs de formulaire. */
+[data-theme="DARK_GOLD"] input,
+[data-theme="DARK_GOLD"] textarea,
+[data-theme="DARK_GOLD"] select {
+  background-color: #1F1F26 !important;
+  color: var(--theme-text) !important;
+  border-color: var(--theme-border) !important;
+}
+[data-theme="DARK_GOLD"] input::placeholder,
+[data-theme="DARK_GOLD"] textarea::placeholder {
+  color: #71717A !important;
+}
+[data-theme="DARK_GOLD"] .placeholder\:text-slate-400::placeholder {
+  color: #71717A !important;
+}
+
+/* Badges info bleus → rouge. */
+[data-theme="DARK_GOLD"] .bg-blue-100.text-blue-700,
+[data-theme="DARK_GOLD"] .bg-blue-50.text-blue-700 {
+  background-color: rgba(200, 16, 46, 0.18) !important;
+  color: #F87171 !important;
+}
+
+/* ════════════════════════════════════════════════════════════════════════════
+ * Thème AFRIKIMMO : retouches sélectives pour passer les boutons et liens
+ * primaires bleu de l'app en accent rouge, tout en conservant le mode clair.
+ * ══════════════════════════════════════════════════════════════════════════ */
+
+[data-theme="AFRIKIMMO"] .bg-blue-600,
+[data-theme="AFRIKIMMO"] .hover\:bg-blue-700:hover {
+  background-color: var(--theme-accent) !important;
+  color: #FFFFFF !important;
+}
+[data-theme="AFRIKIMMO"] .text-blue-700,
+[data-theme="AFRIKIMMO"] .text-blue-600,
+[data-theme="AFRIKIMMO"] .hover\:text-blue-700:hover {
+  color: #A50820 !important;
+}
+[data-theme="AFRIKIMMO"] .bg-blue-50 {
+  background-color: #FEF2F2 !important;
+}
+[data-theme="AFRIKIMMO"] .border-blue-200,
+[data-theme="AFRIKIMMO"] .border-blue-300 {
+  border-color: #FCA5A5 !important;
+}
+
+/* Page de connexion : placeholder « A » passe au rouge en AFRIKIMMO. Le titre
+ * reste en noir pour rester lisible et conforme à la charte. */
+[data-theme="AFRIKIMMO"] .login-placeholder,
+[data-theme="AFRIKIMMO"] .sidebar-placeholder {
+  background-color: var(--theme-accent) !important;
+  color: #FFFFFF !important;
+}
+[data-theme="AFRIKIMMO"] .login-title {
+  color: #0F172A !important;
 }

@@ -13,12 +13,12 @@ const FALLBACK_RATE_SALE = 5;
 const FALLBACK_RATE_RENTAL = 50;
 const FALLBACK_RATE_DOSSIER = 10;
 
-/** Types de contrats de location éligibles à une commission. */
-const RENTAL_CONTRACT_TYPES = ['RENTAL_UNFURNISHED', 'RENTAL_FURNISHED', 'COMMERCIAL_LEASE'];
+/** Types de conventions de location éligibles à une commission. */
+const RENTAL_CONVENTION_TYPES = ['RENTAL_UNFURNISHED', 'RENTAL_FURNISHED', 'COMMERCIAL_LEASE'];
 
-/** Vrai si le type de contrat est éligible à une commission (vente ou location). */
-export function isCommissionEligibleContract(type: string): boolean {
-  return type === 'SALE' || RENTAL_CONTRACT_TYPES.includes(type);
+/** Vrai si le type de convention est éligible à une commission (vente, location ou souscription). */
+export function isCommissionEligibleConvention(type: string): boolean {
+  return type === 'SALE' || type === 'SOUSCRIPTION' || RENTAL_CONVENTION_TYPES.includes(type);
 }
 
 export interface DefaultRates {
@@ -84,23 +84,29 @@ export async function setDefaultRates(db: Db, rates: DefaultRates): Promise<void
 }
 
 /**
- * Détermine l'assiette de commission d'un contrat selon son type.
- * - Vente (SALE)         → assiette = prix de vente
- * - Location (RENTAL_*)  → assiette = un mois de loyer
- * - Gestion (MANAGEMENT) → non éligible
+ * Détermine l'assiette de commission d'une convention selon son type.
+ * - Vente (SALE)             → assiette = prix de vente
+ * - Souscription             → assiette = montant de la souscription (prix de vente)
+ * - Location (RENTAL_*)      → assiette = un mois de loyer
+ * - Gestion (MANAGEMENT)     → non éligible
  */
-export function getCommissionBase(contract: {
+export function getCommissionBase(convention: {
   type: string;
   saleAmount: unknown;
   rentAmount: unknown;
-}): { transactionType: 'VENTE' | 'LOCATION'; baseAmount: number } | null {
-  if (contract.type === 'SALE') {
-    const base = Number(contract.saleAmount ?? 0);
+}): { transactionType: 'VENTE' | 'LOCATION' | 'SOUSCRIPTION'; baseAmount: number } | null {
+  if (convention.type === 'SALE') {
+    const base = Number(convention.saleAmount ?? 0);
     if (base <= 0) return null;
     return { transactionType: 'VENTE', baseAmount: base };
   }
-  if (RENTAL_CONTRACT_TYPES.includes(contract.type)) {
-    const base = Number(contract.rentAmount ?? 0);
+  if (convention.type === 'SOUSCRIPTION') {
+    const base = Number(convention.saleAmount ?? 0);
+    if (base <= 0) return null;
+    return { transactionType: 'SOUSCRIPTION', baseAmount: base };
+  }
+  if (RENTAL_CONVENTION_TYPES.includes(convention.type)) {
+    const base = Number(convention.rentAmount ?? 0);
     if (base <= 0) return null;
     return { transactionType: 'LOCATION', baseAmount: base };
   }
@@ -113,34 +119,34 @@ export function computeCommissionAmount(baseAmount: number, rate: number): numbe
 }
 
 /**
- * Génère automatiquement la commission de l'agent à l'activation d'un contrat.
+ * Génère automatiquement la commission de l'agent à l'activation d'une convention.
  *
- * La commission n'est créée que si le contrat possède un agent, qu'il est
+ * La commission n'est créée que si la convention possède un agent, qu'elle est
  * éligible (vente ou location) et qu'aucune commission active n'existe déjà
- * pour cet agent sur ce contrat. Toute erreur est journalisée sans être
- * propagée, afin de ne jamais bloquer l'activation du contrat.
+ * pour cet agent sur cette convention. Toute erreur est journalisée sans être
+ * propagée, afin de ne jamais bloquer l'activation de la convention.
  *
  * @returns la commission créée, ou null si aucune génération n'a eu lieu.
  */
-export async function autoGenerateContractCommission(
+export async function autoGenerateConventionCommission(
   db: Db,
-  contractId: number,
+  conventionId: number,
 ): Promise<{ id: number; reference: string } | null> {
   try {
-    const contract = await db.contract.findUnique({
-      where: { id: contractId },
+    const convention = await db.convention.findUnique({
+      where: { id: conventionId },
       select: { id: true, type: true, agentId: true, saleAmount: true, rentAmount: true },
     });
-    if (!contract || !contract.agentId) return null;
+    if (!convention || !convention.agentId) return null;
 
-    const base = getCommissionBase(contract);
+    const base = getCommissionBase(convention);
     if (!base) return null;
 
-    // Évite les doublons : une seule commission auto par agent et par contrat.
+    // Évite les doublons : une seule commission auto par agent et par convention.
     const existing = await db.commission.findFirst({
       where: {
-        contractId,
-        userId: contract.agentId,
+        conventionId,
+        userId: convention.agentId,
         beneficiaryType: 'USER',
         status: { not: 'ANNULEE' },
         deletedAt: null,
@@ -150,16 +156,17 @@ export async function autoGenerateContractCommission(
     if (existing) return null;
 
     const rates = await getDefaultRates(db);
-    const rate = base.transactionType === 'VENTE' ? rates.saleRate : rates.rentalRate;
+    // Vente et souscription partagent le taux de vente ; la location a le sien.
+    const rate = base.transactionType === 'LOCATION' ? rates.rentalRate : rates.saleRate;
     const amount = computeCommissionAmount(base.baseAmount, rate);
     const reference = await nextCommissionRef(db);
 
     const commission = await db.commission.create({
       data: {
         reference,
-        contractId,
+        conventionId,
         beneficiaryType: 'USER',
-        userId: contract.agentId,
+        userId: convention.agentId,
         transactionType: base.transactionType,
         baseAmount: base.baseAmount as never,
         rate: rate as never,
@@ -169,10 +176,10 @@ export async function autoGenerateContractCommission(
       },
       select: { id: true, reference: true },
     });
-    logger.info(`Commission auto-générée: ${commission.reference} (contrat #${contractId})`);
+    logger.info(`Commission auto-générée: ${commission.reference} (convention #${conventionId})`);
     return commission;
   } catch (error: any) {
-    logger.error('autoGenerateContractCommission error', error?.message ?? error);
+    logger.error('autoGenerateConventionCommission error', error?.message ?? error);
     return null;
   }
 }

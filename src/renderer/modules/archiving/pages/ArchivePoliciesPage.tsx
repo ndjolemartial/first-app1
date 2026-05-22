@@ -9,17 +9,18 @@ import Card from '../../../shared/components/ui/Card';
 import { SkeletonTable } from '../../../shared/components/ui/Skeleton';
 import ConfirmDialog from '../../../shared/components/ui/ConfirmDialog';
 import { usePolicies, useCreatePolicy, useUpdatePolicy, useDeletePolicy } from '../hooks/useArchiving';
+import ArchivingNav from '../components/ArchivingNav';
 import { Plus, Edit, Trash2, Save, X, Shield } from 'lucide-react';
 
 const ENTITY_LABEL: Record<string, string> = {
   CLIENT: 'Client', PROSPECT: 'Prospect', OWNER: 'Propriétaire',
-  PROPERTY: 'Bien', CONTRACT: 'Contrat', INVOICE: 'Facture', DOCUMENT: 'Document',
+  PROPERTY: 'Bien', CONVENTION: 'Convention', INVOICE: 'Facture', DOCUMENT: 'Document',
 };
 
 const schema = z.object({
   name: z.string().min(1, 'Nom requis'),
   description: z.string().optional(),
-  entityType: z.enum(['CLIENT', 'PROSPECT', 'OWNER', 'PROPERTY', 'CONTRACT', 'INVOICE', 'DOCUMENT']),
+  entityType: z.enum(['CLIENT', 'PROSPECT', 'OWNER', 'PROPERTY', 'CONVENTION', 'INVOICE', 'DOCUMENT']),
   triggerCondition: z.string().min(1, 'Condition requise'),
   retentionDays: z.coerce.number().int().positive().optional(),
   isActive: z.boolean().default(true),
@@ -48,7 +49,7 @@ function PolicyForm({
             ? JSON.stringify(initial.triggerCondition, null, 2)
             : initial.triggerCondition,
         }
-      : { entityType: 'CONTRACT', isActive: true, triggerCondition: '{"status": "TERMINER", "olderThanDays": 365}' },
+      : { entityType: 'CONVENTION', isActive: true, triggerCondition: '{"status": "TERMINER", "olderThanDays": 365}' },
   });
 
   const onSubmit = (data: FormData) => {
@@ -142,6 +143,7 @@ export default function ArchivePoliciesPage() {
         </Button>
       }
     >
+      <ArchivingNav />
       <div className="mb-6 p-4 bg-blue-50 border border-blue-100 rounded-xl text-sm text-blue-800">
         <strong>Les politiques d'archivage automatique</strong> définissent des règles qui peuvent être appliquées manuellement ou via des scripts planifiés pour archiver automatiquement les entités remplissant les conditions définies.
       </div>

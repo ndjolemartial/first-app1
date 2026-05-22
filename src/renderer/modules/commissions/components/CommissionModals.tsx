@@ -3,6 +3,7 @@ import Modal from '../../../shared/components/ui/Modal';
 import Button from '../../../shared/components/ui/Button';
 import { usePayCommission, useCancelCommission } from '../hooks/useCommissions';
 import { PAYMENT_METHOD_OPTIONS, beneficiaryName } from '../utils/commissions.utils';
+import TreasuryAccountFields from '../../../shared/components/TreasuryAccountFields';
 import { formatCurrency } from '../../../shared/utils/format';
 import { CreditCard, Ban } from 'lucide-react';
 
@@ -21,7 +22,14 @@ export function PayCommissionModal({ commission, onClose, onSuccess }: ModalProp
   const error = payCommission.data && !payCommission.data.success ? payCommission.data.error : null;
 
   const onSubmit = async (data: any) => {
-    const r = await payCommission.mutateAsync({ id: commission.id, ...data });
+    const r = await payCommission.mutateAsync({
+      id: commission.id,
+      method: data.method,
+      paymentRef: data.paymentRef,
+      notes: data.notes,
+      bankAccountId: data.bankAccountId ? Number(data.bankAccountId) : undefined,
+      categoryId: data.categoryId ? Number(data.categoryId) : undefined,
+    });
     if (r.success) onSuccess();
   };
 
@@ -79,6 +87,7 @@ export function PayCommissionModal({ commission, onClose, onSuccess }: ModalProp
             className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
           />
         </div>
+        <TreasuryAccountFields register={register} direction="SORTIE" />
         {error && <p className="text-xs text-red-600">{typeof error === 'string' ? error : 'Erreur lors du paiement'}</p>}
       </form>
     </Modal>
@@ -127,7 +136,7 @@ export function CancelCommissionModal({ commission, onClose, onSuccess }: ModalP
           rows={3}
           {...register('reason', { required: 'Le motif est obligatoire' })}
           className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-400"
-          placeholder="Ex : contrat annulé, erreur de saisie…"
+          placeholder="Ex : convention annulée, erreur de saisie…"
         />
         {errors.reason && <p className="text-xs text-red-600">{errors.reason.message as string}</p>}
         {apiError && <p className="text-xs text-red-600">{typeof apiError === 'string' ? apiError : 'Erreur lors de l\'annulation'}</p>}

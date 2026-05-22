@@ -7,9 +7,11 @@ import PageLayout from '../../../shared/components/layout/PageLayout';
 import Button from '../../../shared/components/ui/Button';
 import Input from '../../../shared/components/ui/Input';
 import Select from '../../../shared/components/ui/Select';
+import { FormSearchSelect } from '../../../shared/components/ui/SearchSelect';
 import Textarea from '../../../shared/components/ui/Textarea';
 import Card from '../../../shared/components/ui/Card';
 import { useOwner, useCreateOwner, useUpdateOwner } from '../hooks/useOwners';
+import { useCountries } from '../../../shared/hooks/useCountries';
 import { useAuthStore } from '../../../shared/stores/auth.store';
 import { Save, Upload, X, FileText } from 'lucide-react';
 
@@ -133,10 +135,13 @@ export default function OwnerFormPage() {
   const [existingRc, setExistingRc] = useState<string | null>(null);
   const rcRef = useRef<HTMLInputElement>(null);
 
-  const { register, handleSubmit, reset, watch, formState: { errors, isSubmitting } } = useForm<FormData>({
+  const { register, handleSubmit, reset, watch, control, formState: { errors, isSubmitting } } = useForm<FormData>({
     resolver: zodResolver(schema),
     defaultValues: { type: 'INDIVIDUEL', country: 'CI' },
   });
+
+  const { data: countriesRes } = useCountries();
+  const countryOptions = (countriesRes?.data ?? []).map((c) => ({ value: c.isoCode, label: c.name }));
 
   const watchType = watch('type');
   useEffect(() => setType(watchType as any), [watchType]);
@@ -315,7 +320,7 @@ export default function OwnerFormPage() {
               <Input label="Adresse" {...register('address')} />
               <div className="grid grid-cols-2 gap-4">
                 <Input label="Ville" {...register('city')} />
-                <Input label="Pays" defaultValue="CI" {...register('country')} />
+                <FormSearchSelect control={control} name="country" label="Pays" options={countryOptions} />
               </div>
             </div>
 

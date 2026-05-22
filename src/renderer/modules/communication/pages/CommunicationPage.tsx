@@ -7,6 +7,8 @@ import Card from '../../../shared/components/ui/Card';
 import { SkeletonTable } from '../../../shared/components/ui/Skeleton';
 import { useCommunicationHistory } from '../hooks/useCommunication';
 import { formatDateTime } from '../../../shared/utils/format';
+import ExportMenu, { ExportColumn } from '../../../shared/components/ExportMenu';
+import { useAuthStore } from '../../../shared/stores/auth.store';
 import { Mail, MessageSquare, Send, BookOpen } from 'lucide-react';
 
 const CHANNEL_VARIANT: Record<string, 'info' | 'success'> = { EMAIL: 'info', SMS: 'success' };
@@ -29,8 +31,19 @@ const STATUS_OPTIONS = [
   { value: 'ECHEC', label: 'Échec' },
 ];
 
+const EXPORT_COLUMNS: ExportColumn[] = [
+  { header: 'Canal',        cell: (c) => c.channel },
+  { header: 'Destinataire', cell: (c) => c.to },
+  { header: 'Sujet',        cell: (c) => c.subject },
+  { header: 'Message',      cell: (c) => c.body },
+  { header: 'Template',     cell: (c) => c.template?.name },
+  { header: 'Date',         cell: (c) => formatDateTime(c.sentAt ?? c.createdAt) },
+  { header: 'Statut',       cell: (c) => STATUS_LABEL[c.status] ?? c.status },
+];
+
 export default function CommunicationPage() {
   const navigate = useNavigate();
+  const token = useAuthStore((s) => s.token)!;
   const [channel, setChannel] = useState('');
   const [status, setStatus] = useState('');
   const [page, setPage] = useState(1);
@@ -39,6 +52,11 @@ export default function CommunicationPage() {
   const filters: any = {};
   if (channel) filters.channel = channel;
   if (status) filters.status = status;
+
+  const filterSummary = [
+    channel && `Canal : ${CHANNEL_OPTIONS.find((o) => o.value === channel)?.label ?? channel}`,
+    status && `Statut : ${STATUS_LABEL[status] ?? status}`,
+  ].filter(Boolean).join('   —   ') || undefined;
 
   const { data: res, isLoading } = useCommunicationHistory(filters, page, limit);
   const history = res?.data ?? [];
@@ -51,6 +69,16 @@ export default function CommunicationPage() {
       breadcrumbs={[{ label: 'Communication' }]}
       actions={
         <div className="flex gap-2">
+          <ExportMenu
+            fileName="communications"
+            title="Historique des communications"
+            subtitle={filterSummary}
+            columns={EXPORT_COLUMNS}
+            fetchRows={async () => {
+              const r = await window.electron.communication.getHistory(token, filters, 1, 100000);
+              return r.success ? r.data ?? [] : [];
+            }}
+          />
           <Button variant="secondary" icon={<BookOpen className="h-4 w-4" />} onClick={() => navigate('/communication/templates')}>
             Templates
           </Button>

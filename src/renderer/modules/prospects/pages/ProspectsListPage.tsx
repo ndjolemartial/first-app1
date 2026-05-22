@@ -9,9 +9,15 @@ import Select from '../../../shared/components/ui/Select';
 import Pagination from '../../../shared/components/ui/Pagination';
 import { SkeletonTable } from '../../../shared/components/ui/Skeleton';
 import EmptyState from '../../../shared/components/ui/EmptyState';
-import { useProspects } from '../hooks/useProspects';
+import { useProspects, useAssignableUsers, useAssignProspect } from '../hooks/useProspects';
 import { formatDate, formatCurrency } from '../../../shared/utils/format';
+import ExportMenu, { ExportColumn } from '../../../shared/components/ExportMenu';
+import { useAuthStore } from '../../../shared/stores/auth.store';
 import { UserPlus, LayoutDashboard, Eye, Edit } from 'lucide-react';
+
+// Rôles habilités à affecter / désaffecter un prospect.
+// Exception à l'équivalence ACCOUNTANT = MANAGER : les comptables n'ont pas accès à l'affectation.
+const ASSIGN_ROLES = new Set(['SUPER_ADMIN', 'ADMIN', 'MANAGER']);
 
 // ── Constantes d'affichage ─────────────────────────────────────────────────────
 
@@ -69,24 +75,80 @@ const SOURCE_LABEL: Record<string, string> = {
   AUTRE:               'Autre',
 };
 
+// ── Colonnes d'export ───────────────────────────────────────────────────────────
+
+const formatUserName = (u: any): string =>
+  u ? `${u.firstName ?? ''} ${u.lastName ?? ''}`.trim() : '';
+
+const EXPORT_COLUMNS: ExportColumn[] = [
+  { header: 'Prénom',           cell: (p) => p.firstName },
+  { header: 'Nom',              cell: (p) => p.lastName },
+  { header: 'Email',            cell: (p) => p.email },
+  { header: 'Téléphone',        cell: (p) => p.phone },
+  { header: 'Mobile',           cell: (p) => p.mobile },
+  { header: 'Statut',           cell: (p) => STATUS_LABEL[p.status] ?? p.status },
+  { header: 'Budget',           cell: (p) => (p.budget != null ? formatCurrency(p.budget) : '') },
+  { header: 'Source',           cell: (p) => SOURCE_LABEL[p.source] ?? p.source },
+  { header: 'Affecté à',        cell: (p) => formatUserName(p.assignedTo) || 'Non alloué' },
+  { header: 'Créé par',         cell: (p) => formatUserName(p.createdBy) },
+  { header: 'Date de création', cell: (p) => formatDate(p.createdAt) },
+];
+
 // ── Composant ─────────────────────────────────────────────────────────────────
 
 export default function ProspectsListPage() {
   const navigate = useNavigate();
-  const [page,   setPage]   = useState(1);
-  const [search, setSearch] = useState('');
-  const [status, setStatus] = useState('');
-  const [source, setSource] = useState('');
+  const token = useAuthStore((s) => s.token)!;
+  const role = useAuthStore((s) => s.user?.role) ?? '';
+  const canAssign = ASSIGN_ROLES.has(role);
+
+  const [page,       setPage]       = useState(1);
+  const [search,     setSearch]     = useState('');
+  const [status,     setStatus]     = useState('');
+  const [source,     setSource]     = useState('');
+  const [assignedTo, setAssignedTo] = useState<string>('');
+
+  // assignedToId : '' = tous ; '__none__' = non alloués ; sinon ID utilisateur.
+  const assignedFilter =
+    assignedTo === ''         ? undefined :
+    assignedTo === '__none__' ? null      :
+    Number(assignedTo);
 
   const filters = {
     search: search || undefined,
     status: status || undefined,
     source: source || undefined,
+    assignedToId: assignedFilter,
   };
+
+  const { data: usersData } = useAssignableUsers(canAssign);
+  const assignableUsers = usersData ?? [];
+  const userLabel = (id: number) => {
+    const u = assignableUsers.find((x) => x.id === id);
+    return u ? formatUserName(u) : `#${id}`;
+  };
+
+  const assignedSummary =
+    assignedTo === ''         ? null :
+    assignedTo === '__none__' ? 'Non alloués' :
+                                `Affecté à : ${userLabel(Number(assignedTo))}`;
+
+  const filterSummary = [
+    search && `Recherche : "${search}"`,
+    status && `Statut : ${STATUS_LABEL[status] ?? status}`,
+    source && `Source : ${SOURCE_LABEL[source] ?? source}`,
+    assignedSummary,
+  ].filter(Boolean).join('   —   ') || undefined;
 
   const { data, isLoading, error } = useProspects(filters, page, 20);
   const prospects: any[] = data?.data  ?? [];
   const total: number    = data?.total ?? 0;
+
+  const assignMutation = useAssignProspect();
+  const onAssignChange = (prospectId: number, value: string) => {
+    const newAssignedId = value === '' ? null : Number(value);
+    assignMutation.mutate({ id: prospectId, assignedToId: newAssignedId });
+  };
 
   return (
     <PageLayout
@@ -94,6 +156,16 @@ export default function ProspectsListPage() {
       breadcrumbs={[{ label: 'Prospects' }]}
       actions={
         <div className="flex gap-2">
+          <ExportMenu
+            fileName="prospects"
+            title="Liste des prospects"
+            subtitle={filterSummary}
+            columns={EXPORT_COLUMNS}
+            fetchRows={async () => {
+              const r = await window.electron.prospects.list(token, filters, 1, 100000);
+              return r.success ? r.data ?? [] : [];
+            }}
+          />
           <Button
             variant="secondary"
             icon={<LayoutDashboard className="h-4 w-4" />}
@@ -137,11 +209,28 @@ export default function ProspectsListPage() {
               onChange={(e) => { setSource(e.target.value); setPage(1); }}
             />
           </div>
-          {(search || status || source) && (
+          {canAssign && (
+            <div className="w-56">
+              <Select
+                label="Affectation"
+                value={assignedTo}
+                onChange={(e) => { setAssignedTo(e.target.value); setPage(1); }}
+                options={[
+                  { value: '',          label: 'Toutes les affectations' },
+                  { value: '__none__',  label: 'Non alloués' },
+                  ...assignableUsers.map((u) => ({
+                    value: String(u.id),
+                    label: formatUserName(u),
+                  })),
+                ]}
+              />
+            </div>
+          )}
+          {(search || status || source || assignedTo) && (
             <Button
               variant="ghost"
               type="button"
-              onClick={() => { setSearch(''); setStatus(''); setSource(''); setPage(1); }}
+              onClick={() => { setSearch(''); setStatus(''); setSource(''); setAssignedTo(''); setPage(1); }}
             >
               Réinitialiser
             </Button>
@@ -173,6 +262,7 @@ export default function ProspectsListPage() {
                   <th className="text-left px-4 py-3 font-medium text-slate-600">Statut</th>
                   <th className="text-left px-4 py-3 font-medium text-slate-600">Budget</th>
                   <th className="text-left px-4 py-3 font-medium text-slate-600">Source</th>
+                  <th className="text-left px-4 py-3 font-medium text-slate-600">Affectation</th>
                   <th className="text-left px-4 py-3 font-medium text-slate-600">Date</th>
                   <th className="text-right px-4 py-3 font-medium text-slate-600">Actions</th>
                 </tr>
@@ -210,6 +300,27 @@ export default function ProspectsListPage() {
                     </td>
                     <td className="px-4 py-3 text-slate-500 text-xs">
                       {SOURCE_LABEL[p.source] ?? p.source ?? '—'}
+                    </td>
+                    <td className="px-4 py-3 text-xs" onClick={(e) => e.stopPropagation()}>
+                      {canAssign ? (
+                        <select
+                          value={p.assignedToId ?? ''}
+                          disabled={assignMutation.isPending}
+                          onChange={(e) => onAssignChange(p.id, e.target.value)}
+                          className="w-40 text-xs border border-slate-200 rounded px-1.5 py-1 bg-white focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:opacity-50"
+                        >
+                          <option value="">Non alloué</option>
+                          {assignableUsers.map((u) => (
+                            <option key={u.id} value={u.id}>{formatUserName(u)}</option>
+                          ))}
+                        </select>
+                      ) : (
+                        <span className="text-slate-600">
+                          {p.assignedTo
+                            ? formatUserName(p.assignedTo)
+                            : <span className="italic text-slate-400">Non alloué</span>}
+                        </span>
+                      )}
                     </td>
                     <td className="px-4 py-3 text-slate-500 text-xs">
                       {formatDate(p.createdAt)}

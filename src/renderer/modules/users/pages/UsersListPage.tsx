@@ -18,8 +18,9 @@ const ROLE_OPTIONS = [
   { value: 'SUPER_ADMIN', label: 'Super Admin' },
   { value: 'ADMIN', label: 'Admin' },
   { value: 'MANAGER', label: 'Manager' },
-  { value: 'AGENT', label: 'Agent' },
   { value: 'ACCOUNTANT', label: 'Comptable' },
+  { value: 'ASSISTANTE_DIRECTION', label: 'Assistante de Direction' },
+  { value: 'AGENT', label: 'Agent' },
   { value: 'READONLY', label: 'Lecture seule' },
 ];
 
@@ -27,8 +28,9 @@ const ROLE_VARIANT: Record<string, any> = {
   SUPER_ADMIN: 'danger',
   ADMIN: 'info',
   MANAGER: 'purple',
-  AGENT: 'success',
   ACCOUNTANT: 'warning',
+  ASSISTANTE_DIRECTION: 'warning',
+  AGENT: 'success',
   READONLY: 'default',
 };
 

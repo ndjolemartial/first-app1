@@ -127,11 +127,11 @@ export function useCommissionUsers() {
   });
 }
 
-export function useEligibleContracts() {
+export function useEligibleConventions() {
   const token = useAuthStore((s) => s.token)!;
   return useQuery({
-    queryKey: ['commissions', 'eligible-contracts'],
-    queryFn: () => ipc.listEligibleContracts(token),
+    queryKey: ['commissions', 'eligible-conventions'],
+    queryFn: () => ipc.listEligibleConventions(token),
   });
 }
 

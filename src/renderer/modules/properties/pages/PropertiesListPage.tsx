@@ -11,7 +11,12 @@ import { SkeletonTable } from '../../../shared/components/ui/Skeleton';
 import EmptyState from '../../../shared/components/ui/EmptyState';
 import { useProperties } from '../hooks/useProperties';
 import { formatCurrency } from '../../../shared/utils/format';
+import ExportMenu, { ExportColumn } from '../../../shared/components/ExportMenu';
+import { useAuthStore } from '../../../shared/stores/auth.store';
 import { Plus, Eye, Edit, Building2 } from 'lucide-react';
+
+/** Rôles habilités à créer/modifier un bien. */
+const WRITE_ROLES = new Set(['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ACCOUNTANT', 'ASSISTANTE_DIRECTION']);
 
 const TYPE_OPTIONS = [
   { value: '', label: 'Tous les types' },
@@ -57,8 +62,29 @@ const TYPE_LABEL: Record<string, string> = {
   VILLA: 'Villa', STUDIO: 'Studio', BUREAU: 'Bureau', PARKING: 'Parking', AUTRE: 'Autre',
 };
 
+const EXPORT_COLUMNS: ExportColumn[] = [
+  { header: 'Référence',     cell: (p) => p.reference },
+  { header: 'Type',          cell: (p) => TYPE_LABEL[p.type] ?? p.type },
+  { header: 'Adresse',       cell: (p) => p.address },
+  { header: 'Ville',         cell: (p) => p.city },
+  { header: 'Origine',       cell: (p) => (
+    p.programme
+      ? `Programme : ${p.programme.nom}`
+      : p.owner
+        ? `Propriétaire : ${p.owner.companyName ?? `${p.owner.firstName ?? ''} ${p.owner.lastName ?? ''}`.trim()}`
+        : ''
+  ) },
+  { header: 'Surface (m²)',  cell: (p) => p.surface ?? '' },
+  { header: 'Loyer mensuel', cell: (p) => (p.rentPrice != null ? formatCurrency(Number(p.rentPrice)) : '') },
+  { header: 'Prix de vente', cell: (p) => (p.salePrice != null ? formatCurrency(Number(p.salePrice)) : '') },
+  { header: 'Statut',        cell: (p) => STATUS_LABEL[p.status] ?? p.status },
+];
+
 export default function PropertiesListPage() {
   const navigate = useNavigate();
+  const token = useAuthStore((s) => s.token)!;
+  const role  = useAuthStore((s) => s.user?.role) ?? '';
+  const canWrite = WRITE_ROLES.has(role);
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState('');
   const [type, setType] = useState('');
@@ -70,6 +96,12 @@ export default function PropertiesListPage() {
     status: status || undefined,
   };
   const { data, isLoading } = useProperties(filters, page, 20);
+
+  const filterSummary = [
+    search && `Recherche : "${search}"`,
+    type && `Type : ${TYPE_LABEL[type] ?? type}`,
+    status && `Statut : ${STATUS_LABEL[status] ?? status}`,
+  ].filter(Boolean).join('   —   ') || undefined;
   const properties: any[] = data?.data ?? [];
   const total: number = data?.total ?? 0;
 
@@ -78,14 +110,28 @@ export default function PropertiesListPage() {
       title="Gestion des biens"
       breadcrumbs={[{ label: 'Biens' }]}
       actions={
-        <Button icon={<Plus className="h-4 w-4" />} onClick={() => navigate('/properties/new')}>
-          Nouveau bien
-        </Button>
+        <div className="flex gap-2">
+          <ExportMenu
+            fileName="biens"
+            title="Liste des biens immobiliers"
+            subtitle={filterSummary}
+            columns={EXPORT_COLUMNS}
+            fetchRows={async () => {
+              const r = await window.electron.properties.list(token, filters, 1, 100000);
+              return r.success ? r.data ?? [] : [];
+            }}
+          />
+          {canWrite && (
+            <Button icon={<Plus className="h-4 w-4" />} onClick={() => navigate('/properties/new')}>
+              Nouveau bien
+            </Button>
+          )}
+        </div>
       }
     >
       <Card className="mb-4 flex flex-wrap gap-3 items-end">
         <div className="flex-1 min-w-[200px]">
-          <Input label="Rechercher" placeholder="Référence, adresse, ville…" value={search}
+          <Input label="Rechercher" placeholder="Référence, adresse, ville, propriétaire…" value={search}
             onChange={(e) => { setSearch(e.target.value); setPage(1); }} />
         </div>
         <div className="w-44">
@@ -105,7 +151,7 @@ export default function PropertiesListPage() {
           <EmptyState
             title="Aucun bien trouvé"
             description="Commencez par référencer un bien immobilier."
-            action={{ label: 'Nouveau bien', onClick: () => navigate('/properties/new') }}
+            action={canWrite ? { label: 'Nouveau bien', onClick: () => navigate('/properties/new') } : undefined}
           />
         ) : (
           <>
@@ -115,7 +161,7 @@ export default function PropertiesListPage() {
                   <th className="text-left px-4 py-3 font-medium text-slate-600">Référence</th>
                   <th className="text-left px-4 py-3 font-medium text-slate-600">Type</th>
                   <th className="text-left px-4 py-3 font-medium text-slate-600">Adresse</th>
-                  <th className="text-left px-4 py-3 font-medium text-slate-600">Propriétaire</th>
+                  <th className="text-left px-4 py-3 font-medium text-slate-600">Origine</th>
                   <th className="text-left px-4 py-3 font-medium text-slate-600">Surface</th>
                   <th className="text-left px-4 py-3 font-medium text-slate-600">Prix</th>
                   <th className="text-left px-4 py-3 font-medium text-slate-600">Statut</th>
@@ -139,11 +185,19 @@ export default function PropertiesListPage() {
                       <p className="text-xs text-slate-500">{p.city}</p>
                     </td>
                     <td className="px-4 py-3 text-slate-600">
-                      {p.owner
-                        ? (p.owner.companyName ?? `${p.owner.firstName ?? ''} ${p.owner.lastName ?? ''}`.trim())
-                        : '—'}
+                      {p.programme ? (
+                        <>
+                          <span className="block text-[11px] uppercase tracking-wide text-indigo-500">Programme</span>
+                          <span>{p.programme.nom}</span>
+                        </>
+                      ) : p.owner ? (
+                        <>
+                          <span className="block text-[11px] uppercase tracking-wide text-slate-400">Propriétaire</span>
+                          <span>{p.owner.companyName ?? `${p.owner.firstName ?? ''} ${p.owner.lastName ?? ''}`.trim()}</span>
+                        </>
+                      ) : '—'}
                     </td>
-                    <td className="px-4 py-3 text-slate-600">{p.surface} m²</td>
+                    <td className="px-4 py-3 text-slate-600">{p.surface != null ? `${p.surface} m²` : '—'}</td>
                     <td className="px-4 py-3 text-slate-600">
                       {p.rentPrice ? <p>{formatCurrency(Number(p.rentPrice))}<span className="text-xs text-slate-400">/mois</span></p> : null}
                       {p.salePrice ? <p className="text-xs">{formatCurrency(Number(p.salePrice))}</p> : null}
@@ -158,8 +212,10 @@ export default function PropertiesListPage() {
                       <div className="flex justify-end gap-1">
                         <Button variant="ghost" size="sm" icon={<Eye className="h-4 w-4" />}
                           onClick={() => navigate(`/properties/${p.id}`)} />
-                        <Button variant="ghost" size="sm" icon={<Edit className="h-4 w-4" />}
-                          onClick={() => navigate(`/properties/${p.id}/edit`)} />
+                        {canWrite && (
+                          <Button variant="ghost" size="sm" icon={<Edit className="h-4 w-4" />}
+                            onClick={() => navigate(`/properties/${p.id}/edit`)} />
+                        )}
                       </div>
                     </td>
                   </tr>

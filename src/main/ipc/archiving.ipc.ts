@@ -4,16 +4,18 @@ import { getSession, checkRole } from '../services/auth.service';
 import logger from '../utils/logger';
 import { z } from 'zod';
 
-const READ_ROLES = ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'AGENT', 'ACCOUNTANT'];
-const WRITE_ROLES = ['SUPER_ADMIN', 'ADMIN', 'MANAGER'];
+// Module Archivage : réservé aux MANAGER+ (ACCOUNTANT inclus via checkRole).
+// AGENT et READONLY n'ont aucun accès au module.
+const READ_ROLES    = ['SUPER_ADMIN', 'ADMIN', 'MANAGER'];
+const WRITE_ROLES   = ['SUPER_ADMIN', 'ADMIN', 'MANAGER'];
 const RESTORE_ROLES = ['SUPER_ADMIN', 'ADMIN'];
 
 const archiveSchema = z.object({
-  entityType: z.enum(['CLIENT', 'PROSPECT', 'OWNER', 'PROPERTY', 'CONTRACT', 'INVOICE', 'DOCUMENT']),
+  entityType: z.enum(['CLIENT', 'PROSPECT', 'OWNER', 'PROPERTY', 'CONVENTION', 'INVOICE', 'DOCUMENT']),
   entityId: z.number().int().positive(),
   entityRef: z.string().min(1),
   snapshot: z.record(z.string(), z.unknown()),
-  reason: z.enum(['MANUEL', 'CONTRAT_TERMINE', 'CLIENT_INACTIF', 'BIEN_VENDU', 'POLITIQUE_AUTOMATIQUE', 'DEMANDE_RGPD', 'AUTRE']).default('MANUEL'),
+  reason: z.enum(['MANUEL', 'CONVENTION_TERMINEE', 'CLIENT_INACTIF', 'BIEN_VENDU', 'POLITIQUE_AUTOMATIQUE', 'DEMANDE_RGPD', 'AUTRE']).default('MANUEL'),
   reasonDetail: z.string().optional(),
   retentionDate: z.string().optional(),
   notes: z.string().optional(),
@@ -22,7 +24,7 @@ const archiveSchema = z.object({
 const policySchema = z.object({
   name: z.string().min(1),
   description: z.string().optional(),
-  entityType: z.enum(['CLIENT', 'PROSPECT', 'OWNER', 'PROPERTY', 'CONTRACT', 'INVOICE', 'DOCUMENT']),
+  entityType: z.enum(['CLIENT', 'PROSPECT', 'OWNER', 'PROPERTY', 'CONVENTION', 'INVOICE', 'DOCUMENT']),
   triggerCondition: z.record(z.string(), z.unknown()),
   retentionDays: z.number().int().positive().optional(),
   isActive: z.boolean().default(true),

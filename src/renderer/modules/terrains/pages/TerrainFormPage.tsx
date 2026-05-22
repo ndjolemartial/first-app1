@@ -7,10 +7,12 @@ import PageLayout from '../../../shared/components/layout/PageLayout';
 import Button from '../../../shared/components/ui/Button';
 import Input from '../../../shared/components/ui/Input';
 import Select from '../../../shared/components/ui/Select';
+import { FormSearchSelect } from '../../../shared/components/ui/SearchSelect';
 import Textarea from '../../../shared/components/ui/Textarea';
 import Card from '../../../shared/components/ui/Card';
 import { useTerrain, useCreateTerrain, useUpdateTerrain } from '../hooks/useTerrains';
 import { useLotissements } from '../../lotissements/hooks/useLotissements';
+import { useProgrammes } from '../../programmes/hooks/useProgrammes';
 import { useClients } from '../../clients/hooks/useClients';
 import { useAuthStore } from '../../../shared/stores/auth.store';
 import { toast } from '../../../shared/components/ui/Toast';
@@ -19,6 +21,7 @@ import { Save, Paperclip } from 'lucide-react';
 
 const schema = z.object({
   lotissementId: z.coerce.number().int().positive('Lotissement requis'),
+  programmeId: z.coerce.number().int().positive().optional().or(z.literal('')),
   clientId: z.coerce.number().int().positive().optional().or(z.literal('')),
   numeroIlot: z.string().optional(),
   numeroParcelle: z.string().optional(),
@@ -110,6 +113,7 @@ export default function TerrainFormPage() {
   const update = useUpdateTerrain();
   const { data: lotsRes } = useLotissements({}, 1, 200);
   const { data: clientsRes } = useClients({}, 1, 200);
+  const { data: programmesRes } = useProgrammes({}, 1, 200);
 
   const [scanFiles, setScanFiles] = useState<Partial<Record<ScanKey, File>>>({});
   const [existingDocs, setExistingDocs] = useState<Record<string, any>>({});
@@ -140,9 +144,18 @@ export default function TerrainFormPage() {
     })),
   ];
 
-  const defaultLotissementId = searchParams.get('lotissementId') ?? '';
+  const programmeOptions = [
+    { value: '', label: '— Aucun programme —' },
+    ...(programmesRes?.data ?? []).map((p: any) => ({
+      value: String(p.id),
+      label: `${p.reference} — ${p.nom}`,
+    })),
+  ];
 
-  const { register, handleSubmit, reset, setValue, formState: { errors, isSubmitting } } = useForm<
+  const defaultLotissementId = searchParams.get('lotissementId') ?? '';
+  const defaultProgrammeId = searchParams.get('programmeId') ?? '';
+
+  const { register, handleSubmit, reset, setValue, control, formState: { errors, isSubmitting } } = useForm<
     z.input<typeof schema>,
     any,
     FormData
@@ -152,6 +165,7 @@ export default function TerrainFormPage() {
       statut: 'DISPONIBLE',
       viabilise: false,
       lotissementId: defaultLotissementId ? Number(defaultLotissementId) : ('' as any),
+      programmeId: defaultProgrammeId ? Number(defaultProgrammeId) : ('' as any),
     },
   });
 
@@ -161,6 +175,7 @@ export default function TerrainFormPage() {
       reset({
         ...t,
         clientId: t.clientId ?? ('' as any),
+        programmeId: t.programmeId ?? ('' as any),
         surface: t.surface ?? ('' as any),
         prixVente: t.prixVente ?? ('' as any),
         latitude: t.latitude != null ? String(t.latitude) : '',
@@ -202,6 +217,7 @@ export default function TerrainFormPage() {
     const payload: any = {
       ...data,
       clientId: data.clientId === '' ? null : data.clientId,
+      programmeId: data.programmeId === '' ? null : data.programmeId,
       surface: data.surface === '' ? null : data.surface,
       prixVente: data.prixVente === '' ? null : data.prixVente,
       latitude: data.latitude ? Number(data.latitude) : null,
@@ -225,13 +241,22 @@ export default function TerrainFormPage() {
       <Card className="max-w-3xl mx-auto">
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
 
-          {/* Lotissement */}
-          <Select
-            label="Lotissement *"
-            options={lotOptions}
-            error={errors.lotissementId?.message}
-            {...register('lotissementId')}
-          />
+          {/* Rattachement */}
+          <div className="grid grid-cols-2 gap-4">
+            <FormSearchSelect
+              control={control}
+              name="lotissementId"
+              label="Lotissement *"
+              options={lotOptions}
+              error={errors.lotissementId?.message}
+            />
+            <FormSearchSelect
+              control={control}
+              name="programmeId"
+              label="Programme immobilier"
+              options={programmeOptions}
+            />
+          </div>
 
           {/* Identification de la parcelle */}
           <div className="border-t border-slate-200 pt-4 space-y-4">
@@ -408,7 +433,12 @@ export default function TerrainFormPage() {
 
           {/* Attributaire */}
           <div className="border-t border-slate-200 pt-4">
-            <Select label="Client (si déjà attribué)" options={clientOptions} {...register('clientId')} />
+            <FormSearchSelect
+              control={control}
+              name="clientId"
+              label="Client (si déjà attribué)"
+              options={clientOptions}
+            />
           </div>
 
           <Textarea label="Description / Notes" rows={3} {...register('description')} />
