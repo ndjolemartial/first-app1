@@ -8,6 +8,7 @@ import ConfirmDialog from '../../../shared/components/ui/ConfirmDialog';
 import { useOwner, useDeleteOwner, useOwnerPortfolio } from '../hooks/useOwners';
 import { formatDate, formatCurrency } from '../../../shared/utils/format';
 import { Edit, Trash2, Home, Building2, FileText, ExternalLink } from 'lucide-react';
+import EntityDocumentsCard from '../../archiving/components/EntityDocumentsCard';
 
 const PROPERTY_STATUS_VARIANT: Record<string, any> = {
   DISPONIBLE: 'success', RESERVE: 'warning', SOUS_OPTION: 'warning', VENDU: 'default',
@@ -233,6 +234,12 @@ export default function OwnerDetailPage() {
             <p className="text-sm text-slate-600 whitespace-pre-wrap">{o.notes}</p>
           </Card>
         )}
+
+        <EntityDocumentsCard
+          documents={o.documents ?? []}
+          defaultLinks={{ ownerId: Number(id) }}
+          invalidateKey={['owners', Number(id)]}
+        />
       </div>
 
       <ConfirmDialog

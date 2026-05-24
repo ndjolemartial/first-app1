@@ -13,6 +13,7 @@ import Card from '../../../shared/components/ui/Card';
 import { useInvoice, useCreateInvoice } from '../hooks/useAccounting';
 import { useClients } from '../../clients/hooks/useClients';
 import { useConventions } from '../../conventions/hooks/useConventions';
+import { formatPersonName } from '../../../shared/utils/format';
 import { Save, Plus, Trash2 } from 'lucide-react';
 
 const itemSchema = z.object({
@@ -84,21 +85,14 @@ export default function InvoiceFormPage() {
     { value: '', label: '— Client (optionnel) —' },
     ...(clientsRes?.data ?? []).map((c: any) => ({
       value: String(c.id),
-      label: c.type === 'INDIVIDUEL'
-        ? `${c.firstName ?? ''} ${c.lastName ?? ''}`.trim()
-        : (c.entreprise ?? ''),
+      label: formatPersonName(c, ''),
     })),
   ];
 
   const conventionOptions = [
     { value: '', label: '— Convention (optionnel) —' },
     ...(conventionsRes?.data ?? []).map((cv: any) => {
-      const client = cv.client;
-      const clientName = client
-        ? client.type === 'INDIVIDUEL'
-          ? `${client.firstName ?? ''} ${client.lastName ?? ''}`.trim()
-          : (client.entreprise ?? '')
-        : '';
+      const clientName = formatPersonName(cv.client, '');
       return {
         value: String(cv.id),
         label: clientName ? `${cv.reference} — ${clientName}` : cv.reference,

@@ -7,7 +7,13 @@ interface ModalProps {
   onClose: () => void;
   title?: string;
   children: React.ReactNode;
-  size?: 'sm' | 'md' | 'lg' | 'xl';
+  /**
+   * Taille de la modale.
+   * - sm / md / lg / xl : centrée sur l'écran, largeur bornée.
+   * - content : occupe toute la zone de contenu (hors sidebar de 240px),
+   *   superposée à la partie blanche du tableau de bord.
+   */
+  size?: 'sm' | 'md' | 'lg' | 'xl' | 'content';
   footer?: React.ReactNode;
 }
 
@@ -29,13 +35,29 @@ export default function Modal({ open, onClose, title, children, size = 'md', foo
 
   if (!open) return null;
 
+  const isContent = size === 'content';
+
   return (
     <div
       ref={overlayRef}
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+      className={clsx(
+        'fixed z-50 bg-black/50',
+        // Mode 'content' : commence après la sidebar (w-60 = 240px) pour
+        // ne couvrir que la zone blanche du dashboard.
+        isContent
+          ? 'top-0 right-0 bottom-0 left-60 flex items-stretch justify-stretch p-0'
+          : 'inset-0 flex items-center justify-center p-4',
+      )}
       onClick={(e) => { if (e.target === overlayRef.current) onClose(); }}
     >
-      <div className={clsx('bg-white rounded-xl shadow-xl w-full flex flex-col max-h-[90vh]', sizes[size])}>
+      <div
+        className={clsx(
+          'bg-white shadow-xl w-full flex flex-col',
+          isContent
+            ? 'h-full max-h-full rounded-none'
+            : clsx('rounded-xl max-h-[90vh]', sizes[size]),
+        )}
+      >
         {title && (
           <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
             <h2 className="text-lg font-semibold text-slate-900">{title}</h2>

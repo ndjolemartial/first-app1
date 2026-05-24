@@ -15,6 +15,7 @@ import { useConvention, useConventions, useCreateConvention, useUpdateConvention
 import { useClients } from '../../clients/hooks/useClients';
 import { useProperties } from '../../properties/hooks/useProperties';
 import { useTerrains } from '../../terrains/hooks/useTerrains';
+import { formatPersonName } from '../../../shared/utils/format';
 import { Save } from 'lucide-react';
 
 /** Identifiant optionnel : une chaîne vide est traitée comme « non renseigné ». */
@@ -360,9 +361,7 @@ export default function ConventionFormPage() {
     { value: '', label: '— Choisir un client —' },
     ...(clientsRes?.data ?? []).map((c: any) => ({
       value: String(c.id),
-      label: c.type === 'INDIVIDUEL'
-        ? `${c.firstName ?? ''} ${c.lastName ?? ''}`.trim()
-        : (c.entreprise ?? ''),
+      label: formatPersonName(c),
     })),
   ];
 
@@ -370,9 +369,7 @@ export default function ConventionFormPage() {
     { value: '', label: '— Aucun (facultatif) —' },
     ...(clientsRes?.data ?? []).map((c: any) => ({
       value: String(c.id),
-      label: c.type === 'INDIVIDUEL'
-        ? `${c.firstName ?? ''} ${c.lastName ?? ''}`.trim()
-        : (c.entreprise ?? ''),
+      label: formatPersonName(c),
     })),
   ];
 
@@ -525,9 +522,7 @@ export default function ConventionFormPage() {
         return coTerrainIds.some((tid) => selectedTerrainIdSet.has(tid));
       })
       .map((co: any) => {
-        const cn = co.client?.type === 'INDIVIDUEL'
-          ? `${co.client?.firstName ?? ''} ${co.client?.lastName ?? ''}`.trim()
-          : (co.client?.entreprise ?? '');
+        const cn = formatPersonName(co.client, '');
         return {
           value: String(co.id),
           label: `${co.reference} — ${TYPE_LABELS[co.type] ?? co.type}${cn ? ` — ${cn}` : ''}`,

@@ -85,6 +85,7 @@ export function registerUsersIPC(): void {
           mobile: true, fonction: true, idNumber: true, civilite: true,
           statutConjugal: true, hireDate: true, cnpsNumber: true, residence: true,
           lastLoginAt: true, createdAt: true, updatedAt: true,
+          linkedDocuments: { where: { deletedAt: null }, orderBy: { uploadedAt: 'desc' } },
         },
       });
       if (!user) return { success: false, error: 'Utilisateur introuvable' };

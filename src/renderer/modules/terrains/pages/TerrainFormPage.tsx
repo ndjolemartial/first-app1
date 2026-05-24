@@ -17,6 +17,7 @@ import { useClients } from '../../clients/hooks/useClients';
 import { useAuthStore } from '../../../shared/stores/auth.store';
 import { toast } from '../../../shared/components/ui/Toast';
 import MapLinkField from '../../../shared/components/MapLinkField';
+import { formatPersonName } from '../../../shared/utils/format';
 import { Save, Paperclip } from 'lucide-react';
 
 const schema = z.object({
@@ -168,9 +169,7 @@ export default function TerrainFormPage() {
     { value: '', label: '— Aucun attributaire —' },
     ...(clientsRes?.data ?? []).map((c: any) => ({
       value: String(c.id),
-      label: c.type === 'INDIVIDUEL'
-        ? `${c.firstName ?? ''} ${c.lastName ?? ''}`.trim()
-        : c.entreprise ?? '—',
+      label: formatPersonName(c),
     })),
   ];
 

@@ -36,3 +36,28 @@ export function fullName(
   const parts = [lastName, firstName].filter(Boolean);
   return parts.length > 0 ? parts.join(' ') : fallback;
 }
+
+/**
+ * Formate le nom d'une personne (client, propriétaire, prospect, apporteur
+ * d'affaires, utilisateur) au format « Nom Prénom » pour l'affichage dans
+ * les sélecteurs. Gère également les personnes morales (entreprise /
+ * raison sociale) et retombe sur le fallback si rien n'est renseigné.
+ */
+export function formatPersonName(
+  person: {
+    firstName?: string | null;
+    lastName?: string | null;
+    entreprise?: string | null;
+    companyName?: string | null;
+    type?: string | null;
+  } | null | undefined,
+  fallback = '—',
+): string {
+  if (!person) return fallback;
+  // Personne morale : on privilégie la raison sociale.
+  const business = person.entreprise || person.companyName;
+  if (person.type === 'ENTREPRISE' && business) return business;
+  const parts = [person.lastName, person.firstName].filter(Boolean);
+  if (parts.length > 0) return parts.join(' ');
+  return business || fallback;
+}

@@ -48,6 +48,7 @@ model User {
   treasuryOperations   TreasuryOperation[] @relation("TreasuryCreatedBy")
   linkedBankAccounts   BankAccount[]       @relation("BankAccountLinkedUser")
   uploadedDocuments    Document[]          @relation("DocumentUploadedBy")
+  linkedDocuments      Document[]          @relation("DocumentLinkedUser")
   documentAuditLogs    DocumentAuditLog[]  @relation("DocumentAuditUser")
   managedBudgetLines   BudgetLine[]        @relation("BudgetLineManager")
   closedBudgets        Budget[]            @relation("BudgetClosedBy")
@@ -94,6 +95,7 @@ model Prospect {
   createdBy  User?         @relation("ProspectCreatedBy",  fields: [createdById],  references: [id])
   activities CrmActivity[]
   tags       ProspectTag[]
+  documents  Document[]
 }
 
 enum ProspectSource {
@@ -696,6 +698,7 @@ model Attestation {
   convention      Convention?          @relation(fields: [conventionId], references: [id])
   template        AttestationTemplate? @relation(fields: [templateId], references: [id])
   emittedBy       User?                @relation("AttestationEmittedBy", fields: [emittedById], references: [id])
+  documents       Document[]
 }
 
 enum PaymentMethod {
@@ -752,6 +755,7 @@ model Invoice {
   payments     Payment[]
   installments SaleInstallment[]
   activities   CrmActivity[]
+  documents    Document[]
 }
 
 enum InvoiceType {
@@ -985,6 +989,15 @@ model Document {
   terrainId      Int?
   programmeId    Int?
   projectId      Int?
+  // Rattachements complémentaires : un document peut être lié à au plus
+  // une entité de chaque type (FK nullables, pattern identique aux
+  // rattachements ci-dessus).
+  prospectId     Int?
+  referrerId     Int?         // Apporteur d'affaires (BusinessReferrer)
+  linkedUserId   Int?         // Utilisateur rattaché (distinct de uploadedBy)
+  invoiceId      Int?
+  commissionId   Int?
+  attestationId  Int?
   uploadedAt     DateTime     @default(now())
   updatedAt      DateTime     @updatedAt
   deletedAt      DateTime?
@@ -997,6 +1010,12 @@ model Document {
   terrain          Terrain?             @relation(fields: [terrainId], references: [id])
   programme        ProgrammeImmobilier? @relation(fields: [programmeId], references: [id])
   project          Project?             @relation(fields: [projectId], references: [id])
+  prospect         Prospect?            @relation(fields: [prospectId], references: [id])
+  referrer         BusinessReferrer?    @relation("DocumentReferrer", fields: [referrerId], references: [id])
+  linkedUser       User?                @relation("DocumentLinkedUser", fields: [linkedUserId], references: [id])
+  invoice          Invoice?             @relation(fields: [invoiceId], references: [id])
+  commission       Commission?          @relation(fields: [commissionId], references: [id])
+  attestation      Attestation?         @relation(fields: [attestationId], references: [id])
   documentCategory DocumentCategory?    @relation(fields: [categoryId], references: [id])
   folder           DocumentFolder?      @relation(fields: [folderId], references: [id])
   uploadedBy       User?                @relation("DocumentUploadedBy", fields: [uploadedById], references: [id])
@@ -1199,6 +1218,7 @@ model BusinessReferrer {
 
   commissions Commission[]
   clients     Client[]     @relation("ClientReferrer")
+  documents   Document[]   @relation("DocumentReferrer")
 }
 
 model Commission {
@@ -1236,6 +1256,7 @@ model Commission {
   referrer    BusinessReferrer? @relation(fields: [referrerId], references: [id])
   paidBy      User?             @relation("CommissionPaidBy", fields: [paidById], references: [id])
   cancelledBy User?             @relation("CommissionCancelledBy", fields: [cancelledById], references: [id])
+  documents   Document[]
 }
 
 enum CommissionBeneficiaryType {

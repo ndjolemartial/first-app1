@@ -290,6 +290,7 @@ function registerCommissionsIPC() {
                     ...commissionInclude,
                     paidBy: { select: { id: true, firstName: true, lastName: true } },
                     cancelledBy: { select: { id: true, firstName: true, lastName: true } },
+                    documents: { where: { deletedAt: null }, orderBy: { uploadedAt: 'desc' } },
                 },
             });
             if (!commission || commission.deletedAt)
@@ -578,7 +579,12 @@ function registerCommissionsIPC() {
                 return { success: false, error: 'Session expirée' };
             (0, auth_service_1.checkRole)(session, REFERRERS_VIEW_ROLES);
             const db = (0, db_service_1.getDb)();
-            const referrer = await db.businessReferrer.findUnique({ where: { id } });
+            const referrer = await db.businessReferrer.findUnique({
+                where: { id },
+                include: {
+                    documents: { where: { deletedAt: null }, orderBy: { uploadedAt: 'desc' } },
+                },
+            });
             if (!referrer || referrer.deletedAt)
                 return { success: false, error: 'Apporteur d\'affaire introuvable' };
             return ser({ success: true, data: referrer });

@@ -10,6 +10,7 @@ import { useInvoice, useUpdateInvoiceStatus, useAddPayment, usePrintInvoice, use
 import TreasuryAccountFields from '../../../shared/components/TreasuryAccountFields';
 import { formatCurrency, formatDate } from '../../../shared/utils/format';
 import { FileText, User, CreditCard, Plus, Printer, RotateCcw } from 'lucide-react';
+import EntityDocumentsCard from '../../archiving/components/EntityDocumentsCard';
 
 const STATUS_VARIANT: Record<string, 'success' | 'info' | 'warning' | 'danger' | 'default'> = {
   BROUILLON: 'default', ENVOYEE: 'info', PAYEE: 'success',
@@ -368,6 +369,12 @@ export default function InvoiceDetailPage() {
             </div>
           </Card>
         </div>
+
+        <EntityDocumentsCard
+          documents={inv.documents ?? []}
+          defaultLinks={{ invoiceId: Number(id) }}
+          invalidateKey={['invoices', Number(id)]}
+        />
       </div>
     </PageLayout>
   );

@@ -605,6 +605,7 @@ function registerAccountingIPC() {
                     },
                     items: true,
                     payments: { orderBy: { paidAt: 'desc' } },
+                    documents: { where: { deletedAt: null }, orderBy: { uploadedAt: 'desc' } },
                 },
             });
             if (!invoice)

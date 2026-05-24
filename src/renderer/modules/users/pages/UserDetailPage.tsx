@@ -10,6 +10,7 @@ import Input from '../../../shared/components/ui/Input';
 import { useUser, useResetPassword, useToggleUserActive } from '../hooks/useUsers';
 import { formatDate, formatDateTime } from '../../../shared/utils/format';
 import { Edit, KeyRound, Power } from 'lucide-react';
+import EntityDocumentsCard from '../../archiving/components/EntityDocumentsCard';
 
 const ROLE_VARIANT: Record<string, any> = {
   SUPER_ADMIN: 'danger', ADMIN: 'info', MANAGER: 'purple',
@@ -90,6 +91,12 @@ export default function UserDetailPage() {
             </dl>
           </Card>
         </div>
+
+        <EntityDocumentsCard
+          documents={user.linkedDocuments ?? []}
+          defaultLinks={{ linkedUserId: Number(id) }}
+          invalidateKey={['users', Number(id)]}
+        />
       </div>
 
       <Modal open={resetOpen} onClose={() => setResetOpen(false)} title="Réinitialiser le mot de passe" size="sm"

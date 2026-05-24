@@ -1,28 +1,37 @@
 import { useEffect, useRef, useState } from 'react';
 import { clsx } from 'clsx';
-import { UploadCloud, File as FileIcon, X } from 'lucide-react';
+import { UploadCloud, File as FileIcon, X, Link2 } from 'lucide-react';
 import Modal from '../../../shared/components/ui/Modal';
 import Button from '../../../shared/components/ui/Button';
+import Input from '../../../shared/components/ui/Input';
 import Select from '../../../shared/components/ui/Select';
 import Textarea from '../../../shared/components/ui/Textarea';
 import { useImportDocuments, useGedCategories, useGedFolders, useGedTags } from '../hooks/useGed';
 import { hierOptions, formatBytes } from '../utils/gedTree';
+import DocumentLinksFields, { DocumentLinks, EMPTY_LINKS } from './DocumentLinksFields';
 
 interface DocumentImportModalProps {
   open: boolean;
   onClose: () => void;
   defaultFolderId?: number | null;
+  /** Rattachements pré-remplis (ex : ouverture depuis la fiche projet). */
+  defaultLinks?: { [K in keyof DocumentLinks]?: number | string };
+  /** Callback déclenché après un import réussi (pour rafraîchir la vue appelante). */
+  onImported?: () => void;
 }
 
 const ACCEPT = '.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,image/*,video/*,audio/*';
 
 /** Modale d'import de documents : glisser-déposer multi-formats + classement. */
-export default function DocumentImportModal({ open, onClose, defaultFolderId }: DocumentImportModalProps) {
+export default function DocumentImportModal({ open, onClose, defaultFolderId, defaultLinks, onImported }: DocumentImportModalProps) {
   const [files, setFiles] = useState<File[]>([]);
   const [categoryId, setCategoryId] = useState('');
   const [folderId, setFolderId] = useState('');
   const [tagIds, setTagIds] = useState<number[]>([]);
+  const [archiveName, setArchiveName] = useState('');
   const [description, setDescription] = useState('');
+  const [links, setLinks] = useState<DocumentLinks>(EMPTY_LINKS);
+  const [showLinks, setShowLinks] = useState(false);
   const [dragOver, setDragOver] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -36,21 +45,42 @@ export default function DocumentImportModal({ open, onClose, defaultFolderId }: 
       setFiles([]);
       setCategoryId('');
       setTagIds([]);
+      setArchiveName('');
       setDescription('');
       setFolderId(defaultFolderId ? String(defaultFolderId) : '');
+      const initLinks: DocumentLinks = { ...EMPTY_LINKS };
+      if (defaultLinks) {
+        for (const [k, v] of Object.entries(defaultLinks)) {
+          if (v != null) (initLinks as any)[k] = String(v);
+        }
+      }
+      setLinks(initLinks);
+      // Panneau Rattachements ouvert par défaut pour mettre en avant la fonctionnalité.
+      setShowLinks(true);
     }
-  }, [open, defaultFolderId]);
+  }, [open, defaultFolderId, defaultLinks]);
 
   const addFiles = (list: FileList | File[]) => {
-    setFiles((prev) => [...prev, ...Array.from(list)]);
+    const snapshot = Array.from(list);
+    setFiles((prev) => [...prev, ...snapshot]);
   };
 
   const handleImport = async () => {
     if (files.length === 0) return;
+    const linkPayload: Record<string, number> = {};
+    for (const [k, v] of Object.entries(links)) {
+      if (v) linkPayload[k] = Number(v);
+    }
+    const trimmedName = archiveName.trim();
     const payload = {
-      files: files.map((f) => ({
+      files: files.map((f, i) => ({
         sourcePath: window.electron.documents.pathForFile(f),
         originalName: f.name,
+        // Nom d'affichage : si l'utilisateur a saisi un nom d'archive,
+        // on l'utilise (avec suffixe " (N)" si plusieurs fichiers).
+        displayName: trimmedName
+          ? files.length > 1 ? `${trimmedName} (${i + 1})` : trimmedName
+          : undefined,
         mimeType: f.type || 'application/octet-stream',
         size: f.size,
       })),
@@ -58,10 +88,16 @@ export default function DocumentImportModal({ open, onClose, defaultFolderId }: 
       categoryId: categoryId ? Number(categoryId) : undefined,
       folderId: folderId ? Number(folderId) : undefined,
       tagIds: tagIds.length ? tagIds : undefined,
+      ...linkPayload,
     };
     const r: any = await importDocs.mutateAsync(payload);
-    if (r.success) onClose();
+    if (r.success) {
+      onImported?.();
+      onClose();
+    }
   };
+
+  const activeLinkCount = Object.values(links).filter(Boolean).length;
 
   const categoryOptions = hierOptions(catRes?.data ?? [], '— Aucune catégorie —');
   const folderOptions = hierOptions(folderRes?.data ?? [], '— Aucun dossier —');
@@ -72,7 +108,7 @@ export default function DocumentImportModal({ open, onClose, defaultFolderId }: 
       open={open}
       onClose={onClose}
       title="Archiver des documents"
-      size="lg"
+      size="content"
       footer={
         <>
           <Button variant="secondary" onClick={onClose}>Annuler</Button>
@@ -88,6 +124,20 @@ export default function DocumentImportModal({ open, onClose, defaultFolderId }: 
       }
     >
       <div className="space-y-4">
+        {/* Nom et description de l'archive */}
+        <Input
+          label="Nom de l'archive"
+          placeholder="Ex : Pièce d'identité Jean Dupont (laisser vide pour conserver le nom du fichier)"
+          value={archiveName}
+          onChange={(e) => setArchiveName(e.target.value)}
+        />
+        <Textarea
+          label="Description (commune aux fichiers archivés)"
+          rows={2}
+          value={description}
+          onChange={(e) => setDescription(e.target.value)}
+        />
+
         {/* Zone de glisser-déposer */}
         <div
           onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
@@ -111,7 +161,9 @@ export default function DocumentImportModal({ open, onClose, defaultFolderId }: 
             type="file"
             multiple
             accept={ACCEPT}
-            className="hidden"
+            className="sr-only"
+            tabIndex={-1}
+            onClick={(e) => e.stopPropagation()}
             onChange={(e) => { if (e.target.files?.length) addFiles(e.target.files); e.target.value = ''; }}
           />
         </div>
@@ -167,12 +219,37 @@ export default function DocumentImportModal({ open, onClose, defaultFolderId }: 
           </div>
         )}
 
-        <Textarea
-          label="Description (commune aux fichiers archivés)"
-          rows={2}
-          value={description}
-          onChange={(e) => setDescription(e.target.value)}
-        />
+        {/* Rattachements aux entités métier (repliable, ouvert par défaut) */}
+        <div className="rounded-lg border border-slate-200 bg-slate-50/60">
+          <button
+            type="button"
+            onClick={() => setShowLinks((v) => !v)}
+            className="flex w-full items-center justify-between px-4 py-3 text-left hover:bg-slate-100/60 rounded-t-lg"
+          >
+            <span className="flex items-center gap-2.5">
+              <Link2 className="h-5 w-5 text-blue-600" />
+              <span className="text-sm font-semibold text-slate-800">Rattacher à des entités</span>
+              {activeLinkCount > 0 && (
+                <span className="rounded-full bg-blue-100 px-2 py-0.5 text-xs font-semibold text-blue-700">
+                  {activeLinkCount}
+                </span>
+              )}
+              <span className="text-xs font-normal text-slate-500">
+                — client, propriétaire, prospect, apporteur, utilisateur, bien, terrain…
+              </span>
+            </span>
+            <span className="text-xs text-slate-400">{showLinks ? 'Masquer' : 'Afficher'}</span>
+          </button>
+          {showLinks && (
+            <div className="border-t border-slate-200 bg-white p-4 rounded-b-lg">
+              <DocumentLinksFields
+                values={links}
+                onChange={(field, value) => setLinks((prev) => ({ ...prev, [field]: value }))}
+                compact
+              />
+            </div>
+          )}
+        </div>
       </div>
     </Modal>
   );

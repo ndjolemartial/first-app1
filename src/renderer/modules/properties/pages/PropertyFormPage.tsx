@@ -18,6 +18,7 @@ import { useClients } from '../../clients/hooks/useClients';
 import { useCountries } from '../../../shared/hooks/useCountries';
 import { useAuthStore } from '../../../shared/stores/auth.store';
 import MapLinkField from '../../../shared/components/MapLinkField';
+import { formatPersonName } from '../../../shared/utils/format';
 import { Save } from 'lucide-react';
 
 // Statuts pour lesquels un client rattaché est obligatoire.
@@ -140,10 +141,7 @@ export default function PropertyFormPage() {
     { value: '', label: '— Choisir un propriétaire —' },
     ...(ownersRes?.data ?? []).map((o: any) => ({
       value: String(o.id),
-      label:
-        o.type === 'ENTREPRISE'
-          ? o.companyName ?? ''
-          : `${o.firstName ?? ''} ${o.lastName ?? ''}`.trim(),
+      label: formatPersonName(o, ''),
     })),
   ];
 
@@ -159,10 +157,7 @@ export default function PropertyFormPage() {
     { value: '', label: '— Choisir un client —' },
     ...(clientsRes?.data ?? []).map((c: any) => ({
       value: String(c.id),
-      label:
-        c.type === 'ENTREPRISE'
-          ? c.entreprise ?? ''
-          : `${c.firstName ?? ''} ${c.lastName ?? ''}`.trim(),
+      label: formatPersonName(c, ''),
     })),
   ];
 

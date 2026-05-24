@@ -1,4 +1,5 @@
 /** Constantes et helpers d'affichage du module Commissions. */
+import { formatPersonName } from '../../../shared/utils/format';
 
 /** Rôles autorisés à créer / payer / annuler des commissions. */
 // Écriture commissions : AD est explicitement exclue (consultation de ses propres commissions uniquement).
@@ -64,16 +65,13 @@ export function clientName(client: any): string {
 export function beneficiaryName(commission: any): string {
   if (!commission) return '—';
   if (commission.beneficiaryType === 'USER') {
-    const u = commission.user;
-    return u ? `${u.firstName ?? ''} ${u.lastName ?? ''}`.trim() || '—' : '—';
+    return formatPersonName(commission.user);
   }
-  const r = commission.referrer;
-  if (!r) return '—';
-  return r.companyName || `${r.firstName ?? ''} ${r.lastName ?? ''}`.trim() || '—';
+  return referrerName(commission.referrer);
 }
 
 /** Nom affichable d'un apporteur d'affaire. */
 export function referrerName(referrer: any): string {
   if (!referrer) return '—';
-  return referrer.companyName || `${referrer.firstName ?? ''} ${referrer.lastName ?? ''}`.trim() || '—';
+  return referrer.companyName || formatPersonName(referrer);
 }

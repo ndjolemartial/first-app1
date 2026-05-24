@@ -14,6 +14,7 @@ import {
 import { useAuthStore } from '../../../shared/stores/auth.store';
 import { formatDate } from '../../../shared/utils/format';
 import { Edit, Trash2, FileText, IdCard, Users } from 'lucide-react';
+import EntityDocumentsCard from '../../archiving/components/EntityDocumentsCard';
 
 /** Affectation client : AD est explicitement exclue (réduite au niveau AGENT sur ce module). */
 const ASSIGN_ROLES = new Set(['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ACCOUNTANT']);
@@ -301,6 +302,12 @@ export default function ClientDetailPage() {
             <p className="text-sm text-slate-600 whitespace-pre-wrap">{c.notes}</p>
           </Card>
         )}
+
+        <EntityDocumentsCard
+          documents={(c.documents ?? []).filter((d: any) => d.category !== 'identité')}
+          defaultLinks={{ clientId: Number(id) }}
+          invalidateKey={['clients', Number(id)]}
+        />
       </div>
 
       <ConfirmDialog

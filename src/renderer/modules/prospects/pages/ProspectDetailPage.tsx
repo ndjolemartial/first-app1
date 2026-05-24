@@ -13,6 +13,7 @@ import {
 import { useAuthStore } from '../../../shared/stores/auth.store';
 import { formatDate, formatCurrency } from '../../../shared/utils/format';
 import { Edit, Trash2, UserCheck } from 'lucide-react';
+import EntityDocumentsCard from '../../archiving/components/EntityDocumentsCard';
 
 /** Affectation des prospects : exclusivement réservée aux MANAGER+ (les comptables n'y ont pas accès). */
 const ASSIGN_ROLES = new Set(['SUPER_ADMIN', 'ADMIN', 'MANAGER']);
@@ -230,6 +231,12 @@ export default function ProspectDetailPage() {
             : <p className="text-sm text-slate-400 italic">Aucune note enregistrée.</p>
           }
         </Card>
+
+        <EntityDocumentsCard
+          documents={p.documents ?? []}
+          defaultLinks={{ prospectId: Number(id) }}
+          invalidateKey={['prospects', Number(id)]}
+        />
 
         {/* Activités CRM */}
         {p.activities?.length > 0 && (

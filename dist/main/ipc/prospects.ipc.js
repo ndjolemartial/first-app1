@@ -159,6 +159,7 @@ function registerProspectsIPC() {
                     client: true,
                     assignedTo: { select: USER_BRIEF_SELECT },
                     createdBy: { select: USER_BRIEF_SELECT },
+                    documents: { where: { deletedAt: null }, orderBy: { uploadedAt: 'desc' } },
                 },
             });
             if (!prospect)

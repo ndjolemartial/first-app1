@@ -12,6 +12,7 @@ import { useProperties } from '../../properties/hooks/useProperties';
 import { useTerrains } from '../../terrains/hooks/useTerrains';
 import { useConvention } from '../hooks/useConventions';
 import { ATTESTATION_TYPE_LABELS } from '../utils/attestationTemplate';
+import { formatPersonName } from '../../../shared/utils/format';
 import { Save } from 'lucide-react';
 
 const TYPE_OPTIONS = Object.entries(ATTESTATION_TYPE_LABELS).map(([value, label]) => ({ value, label }));
@@ -22,9 +23,7 @@ const ASSET_OPTIONS = [
 ];
 
 function clientLabel(c: any): string {
-  return c.type === 'INDIVIDUEL'
-    ? `${c.firstName ?? ''} ${c.lastName ?? ''}`.trim()
-    : (c.entreprise ?? '');
+  return formatPersonName(c, '');
 }
 
 function toDateInput(val?: string | Date | null): string {

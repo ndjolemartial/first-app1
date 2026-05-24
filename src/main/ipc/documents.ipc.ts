@@ -80,6 +80,7 @@ const importSchema = z.object({
     sourcePath: z.string().optional(),
     fileData: z.string().optional(),
     originalName: z.string().min(1),
+    displayName: z.string().optional(),
     mimeType: z.string().default('application/octet-stream'),
     size: z.number().int().nonnegative().default(0),
   })).min(1),
@@ -94,6 +95,13 @@ const importSchema = z.object({
   terrainId: z.number().int().positive().optional(),
   lotissementId: z.number().int().positive().optional(),
   programmeId: z.number().int().positive().optional(),
+  projectId: z.number().int().positive().optional(),
+  prospectId: z.number().int().positive().optional(),
+  referrerId: z.number().int().positive().optional(),
+  linkedUserId: z.number().int().positive().optional(),
+  invoiceId: z.number().int().positive().optional(),
+  commissionId: z.number().int().positive().optional(),
+  attestationId: z.number().int().positive().optional(),
 });
 
 const updateGedSchema = z.object({
@@ -106,6 +114,21 @@ const updateGedSchema = z.object({
   physBureau: z.string().optional(),
   physCarton: z.string().optional(),
   physClasseur: z.string().optional(),
+  // Rattachements (null pour détacher)
+  clientId: z.number().int().positive().nullable().optional(),
+  ownerId: z.number().int().positive().nullable().optional(),
+  propertyId: z.number().int().positive().nullable().optional(),
+  conventionId: z.number().int().positive().nullable().optional(),
+  terrainId: z.number().int().positive().nullable().optional(),
+  lotissementId: z.number().int().positive().nullable().optional(),
+  programmeId: z.number().int().positive().nullable().optional(),
+  projectId: z.number().int().positive().nullable().optional(),
+  prospectId: z.number().int().positive().nullable().optional(),
+  referrerId: z.number().int().positive().nullable().optional(),
+  linkedUserId: z.number().int().positive().nullable().optional(),
+  invoiceId: z.number().int().positive().nullable().optional(),
+  commissionId: z.number().int().positive().nullable().optional(),
+  attestationId: z.number().int().positive().nullable().optional(),
 });
 
 /**
@@ -325,6 +348,14 @@ export function registerDocumentsIPC(): void {
       if (filters.folderId) where.folderId = Number(filters.folderId);
       if (filters.uploadedById) where.uploadedById = Number(filters.uploadedById);
       if (filters.tagId) where.tags = { some: { tagId: Number(filters.tagId) } };
+      // Filtres par entité rattachée
+      for (const fk of [
+        'clientId', 'ownerId', 'propertyId', 'conventionId', 'terrainId',
+        'lotissementId', 'programmeId', 'projectId', 'prospectId',
+        'referrerId', 'linkedUserId', 'invoiceId', 'commissionId', 'attestationId',
+      ] as const) {
+        if (filters[fk]) where[fk] = Number(filters[fk]);
+      }
       if (filters.dateFrom || filters.dateTo) {
         where.uploadedAt = {};
         if (filters.dateFrom) where.uploadedAt.gte = new Date(filters.dateFrom);
@@ -377,6 +408,13 @@ export function registerDocumentsIPC(): void {
           terrain: { select: { id: true, reference: true } },
           lotissement: { select: { id: true, reference: true, nom: true } },
           programme: { select: { id: true, reference: true, nom: true } },
+          project: { select: { id: true, reference: true, nom: true } },
+          prospect: { select: { id: true, firstName: true, lastName: true } },
+          referrer: { select: { id: true, firstName: true, lastName: true, companyName: true } },
+          linkedUser: { select: { id: true, firstName: true, lastName: true, matricule: true } },
+          invoice: { select: { id: true, reference: true } },
+          commission: { select: { id: true, reference: true } },
+          attestation: { select: { id: true, reference: true, type: true } },
           auditLogs: {
             orderBy: { createdAt: 'desc' },
             take: 50,
@@ -413,7 +451,7 @@ export function registerDocumentsIPC(): void {
         }
         const doc = await db.document.create({
           data: {
-            name: f.originalName,
+            name: f.displayName?.trim() || f.originalName,
             type: f.mimeType,
             path: stored.relativePath,
             size: stored.size,
@@ -429,6 +467,13 @@ export function registerDocumentsIPC(): void {
             terrainId: d.terrainId ?? null,
             lotissementId: d.lotissementId ?? null,
             programmeId: d.programmeId ?? null,
+            projectId: d.projectId ?? null,
+            prospectId: d.prospectId ?? null,
+            referrerId: d.referrerId ?? null,
+            linkedUserId: d.linkedUserId ?? null,
+            invoiceId: d.invoiceId ?? null,
+            commissionId: d.commissionId ?? null,
+            attestationId: d.attestationId ?? null,
             tags: d.tagIds && d.tagIds.length
               ? { create: d.tagIds.map((tagId) => ({ tagId })) }
               : undefined,

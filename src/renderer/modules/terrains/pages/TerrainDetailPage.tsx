@@ -16,6 +16,7 @@ import { formatDate, formatCurrency } from '../../../shared/utils/format';
 import { toast } from '../../../shared/components/ui/Toast';
 import EditAcdInvoicesModal from '../components/EditAcdInvoicesModal';
 import { Edit, Trash2, MapPin, Landmark, CheckCircle, FileText, ExternalLink, User, Building, Receipt, PencilLine } from 'lucide-react';
+import EntityDocumentsCard from '../../archiving/components/EntityDocumentsCard';
 
 const STATUT_OPTIONS = [
   { value: 'DISPONIBLE', label: 'Disponible' },
@@ -456,6 +457,12 @@ export default function TerrainDetailPage() {
             <p className="text-sm text-slate-600 whitespace-pre-wrap">{t.description}</p>
           </Card>
         )}
+
+        <EntityDocumentsCard
+          documents={t.documents ?? []}
+          defaultLinks={{ terrainId: Number(id) }}
+          invalidateKey={['terrain', Number(id)]}
+        />
       </div>
 
       <ConfirmDialog

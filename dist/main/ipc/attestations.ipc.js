@@ -52,6 +52,7 @@ const INCLUDE = {
     convention: true,
     template: true,
     emittedBy: { select: { id: true, firstName: true, lastName: true, matricule: true } },
+    documents: { where: { deletedAt: null }, orderBy: { uploadedAt: 'desc' } },
 };
 /**
  * Met à jour les champs `numeroAttestationAttribution` / `numeroAttestationCession`

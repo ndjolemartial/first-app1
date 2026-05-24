@@ -13,6 +13,7 @@ import Textarea from '../../../shared/components/ui/Textarea';
 import { useReferrer, useCreateReferrer, useUpdateReferrer } from '../hooks/useCommissions';
 import { useCountries } from '../../../shared/hooks/useCountries';
 import { Save } from 'lucide-react';
+import EntityDocumentsCard from '../../archiving/components/EntityDocumentsCard';
 
 const schema = z.object({
   firstName: z.string().min(1, 'Prénom requis'),
@@ -153,6 +154,14 @@ export default function ReferrerFormPage() {
             </div>
           </form>
         </Card>
+
+        {isEdit && (
+          <EntityDocumentsCard
+            documents={res?.data?.documents ?? []}
+            defaultLinks={{ referrerId: Number(id) }}
+            invalidateKey={['commissions', 'referrer', Number(id)]}
+          />
+        )}
       </div>
     </PageLayout>
   );

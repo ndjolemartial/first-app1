@@ -307,6 +307,7 @@ export function registerCommissionsIPC(): void {
           ...commissionInclude,
           paidBy: { select: { id: true, firstName: true, lastName: true } },
           cancelledBy: { select: { id: true, firstName: true, lastName: true } },
+          documents: { where: { deletedAt: null }, orderBy: { uploadedAt: 'desc' } },
         },
       });
       if (!commission || commission.deletedAt) return { success: false, error: 'Commission introuvable' };
@@ -583,7 +584,12 @@ export function registerCommissionsIPC(): void {
       if (!session) return { success: false, error: 'Session expirée' };
       checkRole(session, REFERRERS_VIEW_ROLES);
       const db = getDb();
-      const referrer = await db.businessReferrer.findUnique({ where: { id } });
+      const referrer = await db.businessReferrer.findUnique({
+        where: { id },
+        include: {
+          documents: { where: { deletedAt: null }, orderBy: { uploadedAt: 'desc' } },
+        },
+      });
       if (!referrer || referrer.deletedAt) return { success: false, error: 'Apporteur d\'affaire introuvable' };
       return ser({ success: true, data: referrer });
     } catch (error: any) {

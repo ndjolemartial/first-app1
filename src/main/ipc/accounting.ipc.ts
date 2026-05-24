@@ -632,6 +632,7 @@ export function registerAccountingIPC(): void {
           },
           items: true,
           payments: { orderBy: { paidAt: 'desc' } },
+          documents: { where: { deletedAt: null }, orderBy: { uploadedAt: 'desc' } },
         },
       });
       if (!invoice) return { success: false, error: 'Facture introuvable' };

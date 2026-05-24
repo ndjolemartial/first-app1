@@ -10,6 +10,7 @@ import { useAttestation, useDeleteAttestation } from '../hooks/useAttestations';
 import { ATTESTATION_TYPE_LABELS } from '../utils/attestationTemplate';
 import { formatDate, formatCurrency } from '../../../shared/utils/format';
 import { Edit, Trash2, FileText, User, MapPin, Link2 } from 'lucide-react';
+import EntityDocumentsCard from '../../archiving/components/EntityDocumentsCard';
 
 const TYPE_BADGE: Record<string, 'success' | 'info' | 'warning' | 'danger' | 'default'> = {
   ATTRIBUTION: 'info',
@@ -168,6 +169,12 @@ export default function AttestationDetailPage() {
             Émise par {a.emittedBy.firstName} {a.emittedBy.lastName} ({a.emittedBy.matricule})
           </p>
         )}
+
+        <EntityDocumentsCard
+          documents={a.documents ?? []}
+          defaultLinks={{ attestationId: Number(id) }}
+          invalidateKey={['attestation', Number(id)]}
+        />
       </div>
 
       <ConfirmDialog

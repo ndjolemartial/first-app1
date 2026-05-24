@@ -12,6 +12,7 @@ import Card from '../../../shared/components/ui/Card';
 import { useAuthStore } from '../../../shared/stores/auth.store';
 import { useProject, useCreateProject, useUpdateProject, useProjectTypes } from '../hooks/useProjects';
 import { useCountries } from '../../../shared/hooks/useCountries';
+import { formatPersonName } from '../../../shared/utils/format';
 import { Save } from 'lucide-react';
 
 const schema = z.object({
@@ -95,11 +96,11 @@ export default function ProjectFormPage() {
   // Listes pour les selects de rattachement (limite large pour un MVP).
   const clientOptions = useEntityOptions(
     () => window.electron.clients.list(token, {}, 1, 500),
-    (c) => [c.firstName, c.lastName, c.entreprise].filter(Boolean).join(' ') || `Client #${c.id}`,
+    (c) => formatPersonName(c, `Client #${c.id}`),
   );
   const ownerOptions = useEntityOptions(
     () => window.electron.owners.list(token, {}, 1, 500),
-    (o) => [o.firstName, o.lastName].filter(Boolean).join(' ') || o.companyName || `Propriétaire #${o.id}`,
+    (o) => formatPersonName(o, `Propriétaire #${o.id}`),
   );
   const terrainOptions = useEntityOptions(
     () => window.electron.terrains.list(token, {}, 1, 500),

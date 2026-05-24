@@ -61,6 +61,7 @@ const INCLUDE = {
   convention: true,
   template: true,
   emittedBy: { select: { id: true, firstName: true, lastName: true, matricule: true } },
+  documents: { where: { deletedAt: null }, orderBy: { uploadedAt: 'desc' as const } },
 };
 
 /**

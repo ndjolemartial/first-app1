@@ -11,6 +11,7 @@ import ConfirmDialog from '../../../shared/components/ui/ConfirmDialog';
 import { formatDate, formatCurrency } from '../../../shared/utils/format';
 import { Edit, Trash2, Building2, FileText, User } from 'lucide-react';
 import { useState } from 'react';
+import EntityDocumentsCard from '../../archiving/components/EntityDocumentsCard';
 
 const STATUS_VARIANT: Record<string, 'success' | 'info' | 'warning' | 'danger' | 'default' | 'purple'> = {
   DISPONIBLE: 'success', RESERVE: 'warning', SOUS_OPTION: 'warning', VENDU: 'default',
@@ -328,6 +329,12 @@ export default function PropertyDetailPage() {
             </div>
           </Card>
         </div>
+
+        <EntityDocumentsCard
+          documents={p.documents ?? []}
+          defaultLinks={{ propertyId: Number(id) }}
+          invalidateKey={['property', Number(id)]}
+        />
       </div>
 
       <ConfirmDialog

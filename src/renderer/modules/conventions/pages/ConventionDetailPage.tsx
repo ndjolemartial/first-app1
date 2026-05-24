@@ -11,6 +11,7 @@ import { usePrintInvoice } from '../../accounting/hooks/useAccounting';
 import { formatDate, formatCurrency } from '../../../shared/utils/format';
 import EditInstallmentsModal from '../components/EditInstallmentsModal';
 import { Edit, Trash2, FileText, User, Building2, MapPin, Link2, Printer, RefreshCw, FilePlus, PencilLine } from 'lucide-react';
+import EntityDocumentsCard from '../../archiving/components/EntityDocumentsCard';
 
 const STATUS_VARIANT: Record<string, 'success' | 'info' | 'warning' | 'danger' | 'default'> = {
   ACTIVE: 'success', BROUILLON: 'info', ATTENTE_SIGNATURE: 'warning',
@@ -476,6 +477,12 @@ export default function ConventionDetailPage() {
             </div>
           </Card>
         </div>
+
+        <EntityDocumentsCard
+          documents={c.documents ?? []}
+          defaultLinks={{ conventionId: Number(id) }}
+          invalidateKey={['convention', Number(id)]}
+        />
       </div>
 
       <ConfirmDialog

@@ -10,6 +10,7 @@ import { PROGRAMME_STATUT_VARIANT, PROGRAMME_STATUT_LABEL, PROGRAMME_TYPE_LABEL 
 import { formatDate, formatCurrency } from '../../../shared/utils/format';
 import { Edit, Trash2, Building, Building2, Landmark } from 'lucide-react';
 import EntityCashflowSection from '../../treasury/components/EntityCashflowSection';
+import EntityDocumentsCard from '../../archiving/components/EntityDocumentsCard';
 
 const PROPERTY_TYPE_LABEL: Record<string, string> = {
   APARTEMENT: 'Appartement', DUPLEX: 'Duplex', VILLA: 'Villa',
@@ -202,6 +203,12 @@ export default function ProgrammeDetailPage() {
             </div>
           )}
         </Card>
+
+        <EntityDocumentsCard
+          documents={prog.documents ?? []}
+          defaultLinks={{ programmeId: Number(id) }}
+          invalidateKey={['programme', Number(id)]}
+        />
       </div>
 
       <ConfirmDialog

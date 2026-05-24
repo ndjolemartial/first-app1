@@ -8,8 +8,9 @@ import ConfirmDialog from '../../../shared/components/ui/ConfirmDialog';
 import { useProject, useDeleteProject } from '../hooks/useProjects';
 import { PROJECT_STATUS_LABEL, PROJECT_STATUS_VARIANT } from '../types/project.types';
 import { formatDate, formatCurrency } from '../../../shared/utils/format';
-import { Edit, Trash2, Briefcase, MapPin, Calendar, Wallet, FileText } from 'lucide-react';
+import { Edit, Trash2, Briefcase, MapPin, Calendar, Wallet } from 'lucide-react';
 import EntityCashflowSection from '../../treasury/components/EntityCashflowSection';
+import EntityDocumentsCard from '../../archiving/components/EntityDocumentsCard';
 
 export default function ProjectDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -242,26 +243,11 @@ export default function ProjectDetailPage() {
           newOperationQuery={`?projectId=${id}`}
         />
 
-        {/* Documents */}
-        <Card>
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="font-semibold text-slate-700 flex items-center gap-2">
-              <FileText className="h-4 w-4" /> Documents ({documents.length})
-            </h3>
-          </div>
-          {documents.length === 0 ? (
-            <p className="text-slate-400 text-sm">Aucun document rattaché à ce projet.</p>
-          ) : (
-            <ul className="divide-y divide-slate-100">
-              {documents.map((d: any) => (
-                <li key={d.id} className="py-2.5 flex items-center justify-between text-sm">
-                  <span className="font-medium text-slate-800">{d.name}</span>
-                  <span className="text-xs text-slate-500">{formatDate(d.uploadedAt)}</span>
-                </li>
-              ))}
-            </ul>
-          )}
-        </Card>
+        <EntityDocumentsCard
+          documents={documents}
+          defaultLinks={{ projectId: Number(id) }}
+          invalidateKey={['project', Number(id)]}
+        />
       </div>
 
       <ConfirmDialog

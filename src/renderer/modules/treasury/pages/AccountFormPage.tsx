@@ -13,6 +13,7 @@ import {
   useTreasuryAccount, useCreateTreasuryAccount, useUpdateTreasuryAccount, useTreasuryUsers,
 } from '../hooks/useTreasury';
 import { ACCOUNT_TYPE_OPTIONS } from '../utils/treasury.utils';
+import { formatPersonName } from '../../../shared/utils/format';
 import { Save } from 'lucide-react';
 
 const schema = z.object({
@@ -53,7 +54,7 @@ export default function AccountFormPage() {
     { value: '', label: '— Aucun (compte commun à tous) —' },
     ...(usersRes?.data ?? []).map((u: any) => ({
       value: String(u.id),
-      label: `${u.firstName} ${u.lastName} (${u.role})`,
+      label: `${formatPersonName(u)} (${u.role})`,
     })),
   ];
 

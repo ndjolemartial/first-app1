@@ -12,12 +12,13 @@ import ConfirmDialog from '../../../shared/components/ui/ConfirmDialog';
 import { SkeletonTable } from '../../../shared/components/ui/Skeleton';
 import { formatDate, formatDateTime } from '../../../shared/utils/format';
 import DocumentPreview from '../components/DocumentPreview';
+import DocumentLinksFields, { DocumentLinks, EMPTY_LINKS } from '../components/DocumentLinksFields';
 import {
   useGedDocument, useGedCategories, useGedFolders, useGedTags,
   useUpdateGedDocument, useDeleteGedDocument, openDocumentExternally,
 } from '../hooks/useGed';
 import { hierOptions, formatBytes, mimeGroup } from '../utils/gedTree';
-import { ExternalLink, Trash2, Save, History } from 'lucide-react';
+import { ExternalLink, Trash2, Save, History, Link2 } from 'lucide-react';
 
 const ACTION_LABEL: Record<string, string> = {
   IMPORT: 'Archivage', CONSULTATION: 'Consultation', MODIFICATION: 'Modification',
@@ -40,6 +41,8 @@ export default function GedDocumentDetailPage() {
   const [categoryId, setCategoryId] = useState('');
   const [folderId, setFolderId] = useState('');
   const [tagIds, setTagIds] = useState<number[]>([]);
+  const [links, setLinks] = useState<DocumentLinks>(EMPTY_LINKS);
+  const [showLinks, setShowLinks] = useState(false);
   const [showDelete, setShowDelete] = useState(false);
 
   const doc = res?.data;
@@ -51,6 +54,22 @@ export default function GedDocumentDetailPage() {
       setCategoryId(doc.categoryId ? String(doc.categoryId) : '');
       setFolderId(doc.folderId ? String(doc.folderId) : '');
       setTagIds((doc.tags ?? []).map((t: any) => t.tagId));
+      setLinks({
+        clientId:      doc.clientId      ? String(doc.clientId)      : '',
+        ownerId:       doc.ownerId       ? String(doc.ownerId)       : '',
+        propertyId:    doc.propertyId    ? String(doc.propertyId)    : '',
+        conventionId:  doc.conventionId  ? String(doc.conventionId)  : '',
+        terrainId:     doc.terrainId     ? String(doc.terrainId)     : '',
+        lotissementId: doc.lotissementId ? String(doc.lotissementId) : '',
+        programmeId:   doc.programmeId   ? String(doc.programmeId)   : '',
+        projectId:     doc.projectId     ? String(doc.projectId)     : '',
+        prospectId:    doc.prospectId    ? String(doc.prospectId)    : '',
+        referrerId:    doc.referrerId    ? String(doc.referrerId)    : '',
+        linkedUserId:  doc.linkedUserId  ? String(doc.linkedUserId)  : '',
+        invoiceId:     doc.invoiceId     ? String(doc.invoiceId)     : '',
+        commissionId:  doc.commissionId  ? String(doc.commissionId)  : '',
+        attestationId: doc.attestationId ? String(doc.attestationId) : '',
+      });
     }
   }, [doc]);
 
@@ -62,17 +81,32 @@ export default function GedDocumentDetailPage() {
   const folderOptions = hierOptions(folderRes?.data ?? [], '— Aucun dossier —');
   const tags: any[] = tagRes?.data ?? [];
 
-  const linked = doc.client
-    ? { label: 'Client', to: `/clients/${doc.client.id}`, name: doc.client.entreprise ?? `${doc.client.firstName ?? ''} ${doc.client.lastName ?? ''}`.trim() }
-    : doc.owner ? { label: 'Propriétaire', to: `/owners/${doc.owner.id}`, name: doc.owner.companyName ?? `${doc.owner.firstName ?? ''} ${doc.owner.lastName ?? ''}`.trim() }
-    : doc.property ? { label: 'Bien', to: `/properties/${doc.property.id}`, name: doc.property.reference }
-    : doc.convention ? { label: 'Convention', to: `/conventions/${doc.convention.id}`, name: doc.convention.reference }
-    : doc.terrain ? { label: 'Terrain', to: `/terrains/${doc.terrain.id}`, name: doc.terrain.reference }
-    : doc.lotissement ? { label: 'Lotissement', to: `/lotissements/${doc.lotissement.id}`, name: doc.lotissement.nom }
-    : doc.programme ? { label: 'Programme', to: `/programmes/${doc.programme.id}`, name: doc.programme.nom }
-    : null;
+  const personName = (p: any) =>
+    [p?.firstName, p?.lastName].filter(Boolean).join(' ').trim()
+    || p?.entreprise || p?.companyName || '—';
+
+  const linkedItems: Array<{ label: string; to: string; name: string }> = [
+    doc.client      && { label: 'Client',              to: `/clients/${doc.client.id}`,           name: personName(doc.client) },
+    doc.owner       && { label: 'Propriétaire',        to: `/owners/${doc.owner.id}`,             name: personName(doc.owner) },
+    doc.prospect    && { label: 'Prospect',            to: `/prospects/${doc.prospect.id}`,       name: personName(doc.prospect) },
+    doc.referrer    && { label: "Apporteur d'affaires", to: `/commissions/referrers/${doc.referrer.id}/edit`, name: doc.referrer.companyName || personName(doc.referrer) },
+    doc.linkedUser  && { label: 'Utilisateur',         to: `/users/${doc.linkedUser.id}`,         name: personName(doc.linkedUser) },
+    doc.property    && { label: 'Bien',                to: `/properties/${doc.property.id}`,      name: doc.property.reference },
+    doc.terrain     && { label: 'Terrain',             to: `/terrains/${doc.terrain.id}`,         name: doc.terrain.reference },
+    doc.lotissement && { label: 'Lotissement',         to: `/lotissements/${doc.lotissement.id}`, name: `${doc.lotissement.reference} · ${doc.lotissement.nom}` },
+    doc.programme   && { label: 'Programme',           to: `/programmes/${doc.programme.id}`,     name: `${doc.programme.reference} · ${doc.programme.nom}` },
+    doc.project     && { label: 'Projet',              to: `/projects/${doc.project.id}`,         name: `${doc.project.reference} · ${doc.project.nom}` },
+    doc.convention  && { label: 'Convention',          to: `/conventions/${doc.convention.id}`,   name: doc.convention.reference },
+    doc.invoice     && { label: 'Facture',             to: `/accounting/invoices/${doc.invoice.id}`, name: doc.invoice.reference },
+    doc.attestation && { label: 'Attestation',         to: `/conventions/attestations/${doc.attestation.id}`, name: doc.attestation.reference },
+    doc.commission  && { label: 'Commission',          to: `/commissions/all`,                    name: doc.commission.reference },
+  ].filter(Boolean) as Array<{ label: string; to: string; name: string }>;
 
   const handleSave = async () => {
+    const linkPayload: Record<string, number | null> = {};
+    for (const [k, v] of Object.entries(links)) {
+      linkPayload[k] = v ? Number(v) : null;
+    }
     await update.mutateAsync({
       id: docId,
       payload: {
@@ -81,9 +115,12 @@ export default function GedDocumentDetailPage() {
         categoryId: categoryId ? Number(categoryId) : null,
         folderId: folderId ? Number(folderId) : null,
         tagIds,
+        ...linkPayload,
       },
     });
   };
+
+  const activeLinkCount = Object.values(links).filter(Boolean).length;
 
   return (
     <PageLayout
@@ -190,12 +227,50 @@ export default function GedDocumentDetailPage() {
                 </div>
               ))}
             </dl>
-            {linked && (
+            {linkedItems.length > 0 && (
               <div className="mt-3 border-t border-slate-100 pt-3">
-                <p className="text-xs text-slate-500">Rattaché à</p>
-                <button className="text-sm font-medium text-blue-600 hover:underline" onClick={() => navigate(linked.to)}>
-                  {linked.label} : {linked.name}
-                </button>
+                <p className="mb-1.5 text-xs text-slate-500">Rattaché à</p>
+                <ul className="space-y-1">
+                  {linkedItems.map((item) => (
+                    <li key={`${item.label}-${item.to}`} className="flex items-baseline gap-2 text-sm">
+                      <span className="text-xs text-slate-400">{item.label}</span>
+                      <button className="font-medium text-blue-600 hover:underline" onClick={() => navigate(item.to)}>
+                        {item.name}
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </Card>
+
+          {/* Édition des rattachements */}
+          <Card>
+            <button
+              type="button"
+              onClick={() => setShowLinks((v) => !v)}
+              className="-mx-1 flex w-full items-center justify-between rounded px-1 py-1 text-left hover:bg-slate-50"
+            >
+              <h3 className="flex items-center gap-2 font-semibold text-slate-800">
+                <Link2 className="h-4 w-4 text-slate-500" />
+                Rattachements
+                {activeLinkCount > 0 && (
+                  <span className="rounded-full bg-blue-100 px-2 py-0.5 text-xs font-semibold text-blue-700">
+                    {activeLinkCount}
+                  </span>
+                )}
+              </h3>
+              <span className="text-xs text-slate-400">{showLinks ? 'Masquer' : 'Modifier'}</span>
+            </button>
+            {showLinks && (
+              <div className="mt-3 space-y-3">
+                <DocumentLinksFields
+                  values={links}
+                  onChange={(field, value) => setLinks((prev) => ({ ...prev, [field]: value }))}
+                />
+                <Button onClick={handleSave} loading={update.isPending} icon={<Save className="h-4 w-4" />} className="w-full">
+                  Enregistrer les rattachements
+                </Button>
               </div>
             )}
           </Card>

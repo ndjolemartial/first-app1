@@ -76,6 +76,7 @@ const importSchema = zod_1.z.object({
         sourcePath: zod_1.z.string().optional(),
         fileData: zod_1.z.string().optional(),
         originalName: zod_1.z.string().min(1),
+        displayName: zod_1.z.string().optional(),
         mimeType: zod_1.z.string().default('application/octet-stream'),
         size: zod_1.z.number().int().nonnegative().default(0),
     })).min(1),
@@ -90,6 +91,13 @@ const importSchema = zod_1.z.object({
     terrainId: zod_1.z.number().int().positive().optional(),
     lotissementId: zod_1.z.number().int().positive().optional(),
     programmeId: zod_1.z.number().int().positive().optional(),
+    projectId: zod_1.z.number().int().positive().optional(),
+    prospectId: zod_1.z.number().int().positive().optional(),
+    referrerId: zod_1.z.number().int().positive().optional(),
+    linkedUserId: zod_1.z.number().int().positive().optional(),
+    invoiceId: zod_1.z.number().int().positive().optional(),
+    commissionId: zod_1.z.number().int().positive().optional(),
+    attestationId: zod_1.z.number().int().positive().optional(),
 });
 const updateGedSchema = zod_1.z.object({
     name: zod_1.z.string().min(1).optional(),
@@ -101,6 +109,21 @@ const updateGedSchema = zod_1.z.object({
     physBureau: zod_1.z.string().optional(),
     physCarton: zod_1.z.string().optional(),
     physClasseur: zod_1.z.string().optional(),
+    // Rattachements (null pour détacher)
+    clientId: zod_1.z.number().int().positive().nullable().optional(),
+    ownerId: zod_1.z.number().int().positive().nullable().optional(),
+    propertyId: zod_1.z.number().int().positive().nullable().optional(),
+    conventionId: zod_1.z.number().int().positive().nullable().optional(),
+    terrainId: zod_1.z.number().int().positive().nullable().optional(),
+    lotissementId: zod_1.z.number().int().positive().nullable().optional(),
+    programmeId: zod_1.z.number().int().positive().nullable().optional(),
+    projectId: zod_1.z.number().int().positive().nullable().optional(),
+    prospectId: zod_1.z.number().int().positive().nullable().optional(),
+    referrerId: zod_1.z.number().int().positive().nullable().optional(),
+    linkedUserId: zod_1.z.number().int().positive().nullable().optional(),
+    invoiceId: zod_1.z.number().int().positive().nullable().optional(),
+    commissionId: zod_1.z.number().int().positive().nullable().optional(),
+    attestationId: zod_1.z.number().int().positive().nullable().optional(),
 });
 /**
  * Enregistre les handlers IPC pour la gestion des documents.
@@ -314,6 +337,15 @@ function registerDocumentsIPC() {
                 where.uploadedById = Number(filters.uploadedById);
             if (filters.tagId)
                 where.tags = { some: { tagId: Number(filters.tagId) } };
+            // Filtres par entité rattachée
+            for (const fk of [
+                'clientId', 'ownerId', 'propertyId', 'conventionId', 'terrainId',
+                'lotissementId', 'programmeId', 'projectId', 'prospectId',
+                'referrerId', 'linkedUserId', 'invoiceId', 'commissionId', 'attestationId',
+            ]) {
+                if (filters[fk])
+                    where[fk] = Number(filters[fk]);
+            }
             if (filters.dateFrom || filters.dateTo) {
                 where.uploadedAt = {};
                 if (filters.dateFrom)
@@ -371,6 +403,13 @@ function registerDocumentsIPC() {
                     terrain: { select: { id: true, reference: true } },
                     lotissement: { select: { id: true, reference: true, nom: true } },
                     programme: { select: { id: true, reference: true, nom: true } },
+                    project: { select: { id: true, reference: true, nom: true } },
+                    prospect: { select: { id: true, firstName: true, lastName: true } },
+                    referrer: { select: { id: true, firstName: true, lastName: true, companyName: true } },
+                    linkedUser: { select: { id: true, firstName: true, lastName: true, matricule: true } },
+                    invoice: { select: { id: true, reference: true } },
+                    commission: { select: { id: true, reference: true } },
+                    attestation: { select: { id: true, reference: true, type: true } },
                     auditLogs: {
                         orderBy: { createdAt: 'desc' },
                         take: 50,
@@ -412,7 +451,7 @@ function registerDocumentsIPC() {
                 }
                 const doc = await db.document.create({
                     data: {
-                        name: f.originalName,
+                        name: f.displayName?.trim() || f.originalName,
                         type: f.mimeType,
                         path: stored.relativePath,
                         size: stored.size,
@@ -428,6 +467,13 @@ function registerDocumentsIPC() {
                         terrainId: d.terrainId ?? null,
                         lotissementId: d.lotissementId ?? null,
                         programmeId: d.programmeId ?? null,
+                        projectId: d.projectId ?? null,
+                        prospectId: d.prospectId ?? null,
+                        referrerId: d.referrerId ?? null,
+                        linkedUserId: d.linkedUserId ?? null,
+                        invoiceId: d.invoiceId ?? null,
+                        commissionId: d.commissionId ?? null,
+                        attestationId: d.attestationId ?? null,
                         tags: d.tagIds && d.tagIds.length
                             ? { create: d.tagIds.map((tagId) => ({ tagId })) }
                             : undefined,

@@ -9,6 +9,7 @@ import { useLotissement, useDeleteLotissement } from '../hooks/useLotissements';
 import { formatDate, formatCurrency } from '../../../shared/utils/format';
 import { Edit, Trash2, MapPin, Layers } from 'lucide-react';
 import EntityCashflowSection from '../../treasury/components/EntityCashflowSection';
+import EntityDocumentsCard from '../../archiving/components/EntityDocumentsCard';
 
 const STATUT_VARIANT: Record<string, any> = {
   EN_COURS: 'warning', OUVERT: 'success', PARTIELLEMENT_VENDU: 'info',
@@ -175,6 +176,12 @@ export default function LotissementDetailPage() {
           entityType="LOTISSEMENT"
           entityId={Number(id)}
           newOperationQuery={`?lotissementId=${id}`}
+        />
+
+        <EntityDocumentsCard
+          documents={lot.documents ?? []}
+          defaultLinks={{ lotissementId: Number(id) }}
+          invalidateKey={['lotissement', Number(id)]}
         />
       </div>
 

@@ -19,6 +19,7 @@ import {
 } from '../hooks/useCommissions';
 import { clientName, referrerName, TRANSACTION_TYPE_LABEL } from '../utils/commissions.utils';
 import { formatCurrency } from '../../../shared/utils/format';
+import { formatPersonName } from '../../../shared/utils/format';
 import { Save } from 'lucide-react';
 
 /** Détermine le type de transaction naturel d'une convention. */
@@ -215,7 +216,7 @@ export default function CommissionFormPage() {
                   placeholder="Sélectionnez un utilisateur"
                   options={users.map((u) => ({
                     value: String(u.id),
-                    label: `${u.firstName} ${u.lastName} — ${u.role}`,
+                    label: `${formatPersonName(u)} — ${u.role}`,
                   }))}
                   {...register('userId')}
                 />

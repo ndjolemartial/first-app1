@@ -19,6 +19,7 @@ import { useTerrains } from '../../terrains/hooks/useTerrains';
 import { useLotissements } from '../../lotissements/hooks/useLotissements';
 import { useProgrammes } from '../../programmes/hooks/useProgrammes';
 import { useInvoices, useAllInstallments } from '../../accounting/hooks/useAccounting';
+import { formatPersonName } from '../../../shared/utils/format';
 import { Save } from 'lucide-react';
 
 const schema = z.object({
@@ -72,12 +73,9 @@ function toDateTimeLocal(val?: string | null): string {
   return d.toISOString().slice(0, 16);
 }
 
-/** Nom affichable d'un client (particulier : prénom + nom ; entreprise : raison sociale). */
+/** Nom affichable d'un client (particulier : nom + prénom ; entreprise : raison sociale). */
 function clientName(c: any): string {
-  if (!c) return '';
-  return c.type === 'INDIVIDUEL'
-    ? `${c.firstName ?? ''} ${c.lastName ?? ''}`.trim()
-    : (c.entreprise ?? '');
+  return formatPersonName(c, '');
 }
 
 export default function ActivityFormPage() {
@@ -102,9 +100,7 @@ export default function ActivityFormPage() {
     { value: '', label: '— Client (optionnel) —' },
     ...(clientsRes?.data ?? []).map((c: any) => ({
       value: String(c.id),
-      label: c.type === 'INDIVIDUEL'
-        ? `${c.firstName ?? ''} ${c.lastName ?? ''}`.trim()
-        : (c.entreprise ?? ''),
+      label: formatPersonName(c, ''),
     })),
   ];
 
@@ -112,7 +108,7 @@ export default function ActivityFormPage() {
     { value: '', label: '— Prospect (optionnel) —' },
     ...(prospectsRes?.data ?? []).map((p: any) => ({
       value: String(p.id),
-      label: `${p.firstName ?? ''} ${p.lastName ?? ''}`.trim(),
+      label: formatPersonName(p, ''),
     })),
   ];
 
