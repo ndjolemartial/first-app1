@@ -9,7 +9,9 @@ const ownerSchema = z.object({
   // Particulier
   firstName: z.string().optional(),
   lastName: z.string().optional(),
+  nationality: z.string().optional(),
   idNumber: z.string().optional(),
+  idTypeId: z.number().int().positive().nullable().optional(),
   // Entreprise
   companyName: z.string().optional(),
   registreCommerce: z.string().optional(),
@@ -17,6 +19,7 @@ const ownerSchema = z.object({
   legalRepLastName: z.string().optional(),
   legalRepPhone: z.string().optional(),
   legalRepIdNumber: z.string().optional(),
+  legalRepIdTypeId: z.number().int().positive().nullable().optional(),
   // Commun
   email: z.string().email().optional().or(z.literal('')),
   phone: z.string().optional(),
@@ -96,6 +99,8 @@ export function registerOwnersIPC(): void {
           },
           documents: { orderBy: { uploadedAt: 'desc' } },
           activities: { orderBy: { createdAt: 'desc' }, take: 20 },
+          idType:         { select: { id: true, code: true, label: true } },
+          legalRepIdType: { select: { id: true, code: true, label: true } },
         },
       });
       if (!owner) return { success: false, error: 'Propriétaire introuvable' };

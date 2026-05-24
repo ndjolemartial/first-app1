@@ -143,6 +143,7 @@ model Client {
   birthDate            DateTime?
   birthPlace           String?
   idNumber             String?
+  idTypeId             Int?
   fatherFirstName      String?
   fatherLastName       String?
   motherFirstName      String?
@@ -161,6 +162,7 @@ model Client {
   prospect             Prospect?
   assignedTo           User?             @relation("ClientAssignedTo", fields: [assignedToId], references: [id])
   referrer             BusinessReferrer? @relation("ClientReferrer", fields: [referrerId], references: [id])
+  idType               IdDocumentType?   @relation("ClientIdType", fields: [idTypeId], references: [id])
   conventions          Convention[]      @relation("ConventionClient")
   secondaryConventions Convention[]      @relation("ConventionSecondaryClient")
   documents            Document[]
@@ -206,7 +208,9 @@ model Owner {
   // Particulier
   firstName           String?
   lastName            String?
+  nationality         String?    // Nationalité (particulier)
   idNumber            String?    // Numéro pièce d'identité (particulier)
+  idTypeId            Int?       // Type de pièce d'identité (particulier)
   // Entreprise
   companyName         String?
   registreCommerce    String?    // Numéro registre de commerce
@@ -214,6 +218,7 @@ model Owner {
   legalRepLastName    String?    // Nom représentant légal
   legalRepPhone       String?    // Contact représentant légal
   legalRepIdNumber    String?    // Numéro pièce d'identité représentant légal
+  legalRepIdTypeId    Int?       // Type de pièce d'identité du représentant légal
   // Commun
   email               String?
   phone               String?
@@ -236,6 +241,8 @@ model Owner {
   documents  Document[]
   activities CrmActivity[]
   projects   Project[]
+  idType         IdDocumentType? @relation("OwnerIdType",         fields: [idTypeId],         references: [id])
+  legalRepIdType IdDocumentType? @relation("OwnerLegalRepIdType", fields: [legalRepIdTypeId], references: [id])
 }
 
 // ── LOTISSEMENTS ───────────────────────────────────────────────
@@ -253,6 +260,10 @@ model Lotissement {
   nombreParcelles Int?
   promoteur       String?
   statut          LotissementStatus @default(EN_COURS_LOTISSEMENT)
+  // Titre administratif sollicité (référentiel paramétrable) et numéro du
+  // titre obtenu lorsqu'il est délivré.
+  titleTypeId     Int?
+  titleNumber     String?
   description     String?           @db.Text
   latitude        Float?
   longitude       Float?
@@ -270,6 +281,7 @@ model Lotissement {
   activities          CrmActivity[]
   projects            Project[]
   treasuryOperations  TreasuryOperation[]
+  titleType           LotissementTitleType? @relation(fields: [titleTypeId], references: [id])
 }
 
 enum LotissementStatus {
@@ -516,6 +528,8 @@ model Convention {
   deposit              Decimal?         @db.Decimal(15, 2)
   agencyFees           Decimal?         @db.Decimal(15, 2)
   charges              Decimal?         @db.Decimal(15, 2)
+  // Frais d'ouverture de dossier facturés au client à la signature.
+  fraisOuvertureDossier Decimal?        @db.Decimal(15, 2)
   paymentDay           Int?
   paymentMethod        PaymentMethod    @default(ESPECE)
   paymentModalites     PaymentModalites @default(CASH)
@@ -1130,6 +1144,45 @@ model Country {
   isoCode  String @unique  // Code ISO 3166-1 alpha-2 (ex: CI)
   name     String          // Nom du pays en français
   dialCode String          // Indicatif téléphonique international (ex: +225)
+}
+
+// ── TYPES DE PIÈCES D'IDENTITÉ ────────────────────────────────
+
+/// Catalogue extensible des types de pièces d'identité (CNI, Passeport,
+/// Permis de conduire, etc.). Géré depuis Paramètres › Types de pièces
+/// d'identité. Une entrée par défaut (CNI) est créée en seed.
+model IdDocumentType {
+  id          Int       @id @default(autoincrement())
+  code        String    @unique  // Slug stable (ex: CNI, PASSEPORT)
+  label       String             // Libellé d'affichage (ex: « Carte Nationale d'Identité (CNI) »)
+  isDefault   Boolean   @default(false)
+  isActive    Boolean   @default(true)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  deletedAt   DateTime?
+
+  clients          Client[] @relation("ClientIdType")
+  owners           Owner[]  @relation("OwnerIdType")
+  ownersLegalReps  Owner[]  @relation("OwnerLegalRepIdType")
+}
+
+// ── NATURES DE TITRES DE LOTISSEMENT ──────────────────────────
+
+/// Catalogue extensible des natures de titres administratifs sollicités pour
+/// un lotissement (Arrêté d'approbation, Permis d'aménager, etc.). Géré
+/// depuis Paramètres › Natures de titres de lotissement. Une entrée par
+/// défaut (Arrêté d'approbation) est créée en seed.
+model LotissementTitleType {
+  id        Int       @id @default(autoincrement())
+  code      String    @unique  // Slug stable (ex: ARRETE_APPROBATION)
+  label     String             // Libellé d'affichage (ex: « Arrêté d'approbation »)
+  isDefault Boolean   @default(false)
+  isActive  Boolean   @default(true)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  lotissements Lotissement[]
 }
 
 // ── ARCHIVAGE ─────────────────────────────────────────────────

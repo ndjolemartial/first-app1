@@ -54,11 +54,19 @@ async function nextReference(db: ReturnType<typeof getDb>): Promise<string> {
 }
 
 const INCLUDE = {
-  client: true,
-  secondaryClient: true,
-  terrain: { include: { lotissement: true } },
+  client:          { include: { idType: { select: { id: true, code: true, label: true } } } },
+  secondaryClient: { include: { idType: { select: { id: true, code: true, label: true } } } },
+  terrain: {
+    include: {
+      lotissement: {
+        include: {
+          titleType: { select: { id: true, code: true, label: true } },
+        },
+      },
+    },
+  },
   property: true,
-  convention: true,
+  convention: { include: { _count: { select: { terrains: true } } } },
   template: true,
   emittedBy: { select: { id: true, firstName: true, lastName: true, matricule: true } },
   documents: { where: { deletedAt: null }, orderBy: { uploadedAt: 'desc' as const } },

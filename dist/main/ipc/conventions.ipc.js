@@ -37,6 +37,7 @@ const conventionBaseSchema = zod_1.z.object({
     deposit: zod_1.z.number().optional(),
     agencyFees: zod_1.z.number().optional(),
     charges: zod_1.z.number().optional(),
+    fraisOuvertureDossier: zod_1.z.number().optional(),
     paymentDay: zod_1.z.number().int().min(1).max(31).optional(),
     paymentMethod: zod_1.z.enum(['ESPECE', 'CHEQUE', 'TRANSFERT', 'VIREMENT', 'MOBILE_MONEY', 'NON_DEFINI']).default('ESPECE'),
     paymentModalites: zod_1.z.enum(['CASH', 'SUR_3_MOIS', 'SUR_6_MOIS', 'SUR_9_MOIS', 'SUR_12_MOIS', 'SUR_24_MOIS', 'SUR_36_MOIS', 'SUR_48_MOIS', 'SUR_60_MOIS', 'SUR_PLUS_60_MOIS']).default('CASH'),
@@ -148,7 +149,14 @@ const linksIncludeDetail = {
         include: {
             terrain: {
                 include: {
-                    lotissement: { select: { id: true, reference: true, nom: true, ville: true } },
+                    lotissement: {
+                        select: {
+                            id: true, reference: true, nom: true,
+                            commune: true, ville: true, pays: true,
+                            titleNumber: true,
+                            titleType: { select: { id: true, code: true, label: true } },
+                        },
+                    },
                     owner: { select: { id: true, firstName: true, lastName: true, companyName: true } },
                 },
             },
@@ -223,8 +231,8 @@ function registerConventionsIPC() {
                 where: { id, deletedAt: null },
                 include: {
                     ...linksIncludeDetail,
-                    client: true,
-                    secondaryClient: true,
+                    client: { include: { idType: { select: { id: true, code: true, label: true } } } },
+                    secondaryClient: { include: { idType: { select: { id: true, code: true, label: true } } } },
                     parentConvention: { select: { id: true, reference: true, type: true, status: true } },
                     amendments: {
                         where: { deletedAt: null },
@@ -288,6 +296,7 @@ function registerConventionsIPC() {
                     deposit: isTerrain ? null : toDecimal(d.deposit),
                     agencyFees: isTerrain ? null : toDecimal(d.agencyFees),
                     charges: toDecimal(d.charges),
+                    fraisOuvertureDossier: toDecimal(d.fraisOuvertureDossier),
                     paymentDay: d.paymentDay,
                     paymentMethod: d.paymentMethod,
                     paymentModalites: d.paymentModalites,

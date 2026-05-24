@@ -10,6 +10,7 @@ const fs_1 = __importDefault(require("fs"));
 const path_1 = __importDefault(require("path"));
 const zod_1 = require("zod");
 const auth_service_1 = require("../services/auth.service");
+const db_service_1 = require("../services/db.service");
 const logger_1 = __importDefault(require("../utils/logger"));
 const settings_service_1 = require("../services/settings.service");
 const storage_service_1 = require("../services/storage.service");
@@ -532,6 +533,209 @@ function registerSettingsIPC() {
                 ? `video/${ext === 'mov' ? 'quicktime' : ext}`
                 : `image/${ext === 'jpg' ? 'jpeg' : ext || 'png'}`;
             return { success: true, data: { base64: buf.toString('base64'), mimeType: mime } };
+        }
+        catch (err) {
+            return { success: false, error: err.message };
+        }
+    });
+    // ── Types de pièces d'identité ──────────────────────────────────────────────
+    /** Liste les types de pièces d'identité (lecture ouverte à tout utilisateur connecté). */
+    electron_1.ipcMain.handle('settings:listIdTypes', async (_event, { token, includeInactive = false }) => {
+        try {
+            const session = (0, auth_service_1.getSession)(token);
+            if (!session)
+                return { success: false, error: 'Session expirée' };
+            const db = (0, db_service_1.getDb)();
+            const data = await db.idDocumentType.findMany({
+                where: {
+                    deletedAt: null,
+                    ...(includeInactive ? {} : { isActive: true }),
+                },
+                orderBy: [{ isDefault: 'desc' }, { label: 'asc' }],
+            });
+            return { success: true, data };
+        }
+        catch (err) {
+            logger_1.default.error('settings:listIdTypes', err.message);
+            return { success: false, error: err.message };
+        }
+    });
+    const idTypeCreateSchema = zod_1.z.object({
+        code: zod_1.z.string().min(1, 'Code requis').regex(/^[A-Z0-9_]+$/i, 'Code invalide (lettres, chiffres, underscore)'),
+        label: zod_1.z.string().min(1, 'Libellé requis'),
+        isDefault: zod_1.z.boolean().optional(),
+        isActive: zod_1.z.boolean().optional(),
+    });
+    /** Crée un nouveau type de pièce d'identité (ADMIN). */
+    electron_1.ipcMain.handle('settings:createIdType', async (_event, { token, payload }) => {
+        try {
+            const session = (0, auth_service_1.getSession)(token);
+            if (!session)
+                return { success: false, error: 'Session expirée' };
+            (0, auth_service_1.checkRole)(session, ADMIN_ROLES);
+            const parsed = idTypeCreateSchema.safeParse(payload);
+            if (!parsed.success)
+                return { success: false, error: parsed.error.issues.map((i) => i.message).join(', ') };
+            const db = (0, db_service_1.getDb)();
+            const data = parsed.data;
+            // Un seul type par défaut : on retire le flag des autres si demandé.
+            if (data.isDefault) {
+                await db.idDocumentType.updateMany({ where: { isDefault: true }, data: { isDefault: false } });
+            }
+            const created = await db.idDocumentType.create({ data: { ...data, code: data.code.toUpperCase() } });
+            return { success: true, data: created };
+        }
+        catch (err) {
+            return { success: false, error: err.message };
+        }
+    });
+    const idTypeUpdateSchema = zod_1.z.object({
+        code: zod_1.z.string().min(1).regex(/^[A-Z0-9_]+$/i).optional(),
+        label: zod_1.z.string().min(1).optional(),
+        isDefault: zod_1.z.boolean().optional(),
+        isActive: zod_1.z.boolean().optional(),
+    });
+    /** Met à jour un type de pièce d'identité (ADMIN). */
+    electron_1.ipcMain.handle('settings:updateIdType', async (_event, { token, id, payload }) => {
+        try {
+            const session = (0, auth_service_1.getSession)(token);
+            if (!session)
+                return { success: false, error: 'Session expirée' };
+            (0, auth_service_1.checkRole)(session, ADMIN_ROLES);
+            const parsed = idTypeUpdateSchema.safeParse(payload);
+            if (!parsed.success)
+                return { success: false, error: parsed.error.issues.map((i) => i.message).join(', ') };
+            const db = (0, db_service_1.getDb)();
+            const data = { ...parsed.data, ...(parsed.data.code ? { code: parsed.data.code.toUpperCase() } : {}) };
+            if (data.isDefault) {
+                await db.idDocumentType.updateMany({
+                    where: { isDefault: true, NOT: { id: Number(id) } },
+                    data: { isDefault: false },
+                });
+            }
+            const updated = await db.idDocumentType.update({ where: { id: Number(id) }, data });
+            return { success: true, data: updated };
+        }
+        catch (err) {
+            return { success: false, error: err.message };
+        }
+    });
+    /** Archive (soft delete) un type de pièce d'identité (ADMIN). */
+    electron_1.ipcMain.handle('settings:deleteIdType', async (_event, { token, id }) => {
+        try {
+            const session = (0, auth_service_1.getSession)(token);
+            if (!session)
+                return { success: false, error: 'Session expirée' };
+            (0, auth_service_1.checkRole)(session, ADMIN_ROLES);
+            const db = (0, db_service_1.getDb)();
+            const target = await db.idDocumentType.findUnique({ where: { id: Number(id) } });
+            if (!target)
+                return { success: false, error: 'Type introuvable' };
+            if (target.isDefault)
+                return { success: false, error: 'Impossible de supprimer le type par défaut' };
+            await db.idDocumentType.update({ where: { id: Number(id) }, data: { deletedAt: new Date(), isActive: false } });
+            return { success: true };
+        }
+        catch (err) {
+            return { success: false, error: err.message };
+        }
+    });
+    // ── Natures de titres de lotissement ────────────────────────────────────────
+    /** Liste les natures de titres (lecture ouverte à tout utilisateur connecté). */
+    electron_1.ipcMain.handle('settings:listTitleTypes', async (_event, { token, includeInactive = false }) => {
+        try {
+            const session = (0, auth_service_1.getSession)(token);
+            if (!session)
+                return { success: false, error: 'Session expirée' };
+            const db = (0, db_service_1.getDb)();
+            const data = await db.lotissementTitleType.findMany({
+                where: {
+                    deletedAt: null,
+                    ...(includeInactive ? {} : { isActive: true }),
+                },
+                orderBy: [{ isDefault: 'desc' }, { label: 'asc' }],
+            });
+            return { success: true, data };
+        }
+        catch (err) {
+            logger_1.default.error('settings:listTitleTypes', err.message);
+            return { success: false, error: err.message };
+        }
+    });
+    const titleTypeCreateSchema = zod_1.z.object({
+        code: zod_1.z.string().min(1, 'Code requis').regex(/^[A-Z0-9_]+$/i, 'Code invalide'),
+        label: zod_1.z.string().min(1, 'Libellé requis'),
+        isDefault: zod_1.z.boolean().optional(),
+        isActive: zod_1.z.boolean().optional(),
+    });
+    electron_1.ipcMain.handle('settings:createTitleType', async (_event, { token, payload }) => {
+        try {
+            const session = (0, auth_service_1.getSession)(token);
+            if (!session)
+                return { success: false, error: 'Session expirée' };
+            (0, auth_service_1.checkRole)(session, ADMIN_ROLES);
+            const parsed = titleTypeCreateSchema.safeParse(payload);
+            if (!parsed.success)
+                return { success: false, error: parsed.error.issues.map((i) => i.message).join(', ') };
+            const db = (0, db_service_1.getDb)();
+            const data = parsed.data;
+            if (data.isDefault) {
+                await db.lotissementTitleType.updateMany({ where: { isDefault: true }, data: { isDefault: false } });
+            }
+            const created = await db.lotissementTitleType.create({ data: { ...data, code: data.code.toUpperCase() } });
+            return { success: true, data: created };
+        }
+        catch (err) {
+            return { success: false, error: err.message };
+        }
+    });
+    const titleTypeUpdateSchema = zod_1.z.object({
+        code: zod_1.z.string().min(1).regex(/^[A-Z0-9_]+$/i).optional(),
+        label: zod_1.z.string().min(1).optional(),
+        isDefault: zod_1.z.boolean().optional(),
+        isActive: zod_1.z.boolean().optional(),
+    });
+    electron_1.ipcMain.handle('settings:updateTitleType', async (_event, { token, id, payload }) => {
+        try {
+            const session = (0, auth_service_1.getSession)(token);
+            if (!session)
+                return { success: false, error: 'Session expirée' };
+            (0, auth_service_1.checkRole)(session, ADMIN_ROLES);
+            const parsed = titleTypeUpdateSchema.safeParse(payload);
+            if (!parsed.success)
+                return { success: false, error: parsed.error.issues.map((i) => i.message).join(', ') };
+            const db = (0, db_service_1.getDb)();
+            const data = { ...parsed.data, ...(parsed.data.code ? { code: parsed.data.code.toUpperCase() } : {}) };
+            if (data.isDefault) {
+                await db.lotissementTitleType.updateMany({
+                    where: { isDefault: true, NOT: { id: Number(id) } },
+                    data: { isDefault: false },
+                });
+            }
+            const updated = await db.lotissementTitleType.update({ where: { id: Number(id) }, data });
+            return { success: true, data: updated };
+        }
+        catch (err) {
+            return { success: false, error: err.message };
+        }
+    });
+    electron_1.ipcMain.handle('settings:deleteTitleType', async (_event, { token, id }) => {
+        try {
+            const session = (0, auth_service_1.getSession)(token);
+            if (!session)
+                return { success: false, error: 'Session expirée' };
+            (0, auth_service_1.checkRole)(session, ADMIN_ROLES);
+            const db = (0, db_service_1.getDb)();
+            const target = await db.lotissementTitleType.findUnique({ where: { id: Number(id) } });
+            if (!target)
+                return { success: false, error: 'Type introuvable' };
+            if (target.isDefault)
+                return { success: false, error: 'Impossible de supprimer le type par défaut' };
+            await db.lotissementTitleType.update({
+                where: { id: Number(id) },
+                data: { deletedAt: new Date(), isActive: false },
+            });
+            return { success: true };
         }
         catch (err) {
             return { success: false, error: err.message };

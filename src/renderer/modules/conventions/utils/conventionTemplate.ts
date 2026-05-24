@@ -21,12 +21,15 @@ export const CONVENTION_VARIABLE_GROUPS: VariableGroup[] = [
       { token: 'convention.statut', label: 'Statut' },
       { token: 'convention.dateDebut', label: 'Date de début' },
       { token: 'convention.dateFin', label: 'Date de fin' },
+      { token: 'convention.delai', label: 'Délai (durée)' },
       { token: 'convention.dateSignature', label: 'Date de signature' },
+      { token: 'convention.nombreTerrains', label: 'Nombre de terrains rattachés' },
       { token: 'convention.prixVente', label: 'Prix de vente' },
       { token: 'convention.apportInitial', label: 'Apport initial' },
       { token: 'convention.loyer', label: 'Loyer mensuel' },
       { token: 'convention.caution', label: 'Caution' },
       { token: 'convention.honoraires', label: "Honoraires d'agence" },
+      { token: 'convention.fraisOuvertureDossier', label: "Frais d'ouverture de dossier" },
       { token: 'convention.modalitesPaiement', label: 'Modalités de paiement' },
       { token: 'convention.modePaiement', label: 'Mode de paiement' },
       { token: 'convention.nombreEcheances', label: "Nombre d'échéances" },
@@ -49,7 +52,9 @@ export const CONVENTION_VARIABLE_GROUPS: VariableGroup[] = [
       { token: 'client.email', label: 'E-mail' },
       { token: 'client.adresse', label: 'Adresse' },
       { token: 'client.ville', label: 'Ville' },
-      { token: 'client.pieceIdentite', label: "Pièce d'identité" },
+      { token: 'client.pays', label: 'Pays' },
+      { token: 'client.typePieceIdentite', label: "Type de pièce d'identité" },
+      { token: 'client.pieceIdentite', label: "Numéro pièce d'identité" },
       { token: 'client.nationalite', label: 'Nationalité' },
       { token: 'client.dateNaissance', label: 'Date de naissance' },
       { token: 'client.lieuNaissance', label: 'Lieu de naissance' },
@@ -60,6 +65,7 @@ export const CONVENTION_VARIABLE_GROUPS: VariableGroup[] = [
     items: [
       { token: 'souscripteur.nomComplet', label: 'Nom complet' },
       { token: 'souscripteur.telephone', label: 'Téléphone' },
+      { token: 'souscripteur.pays', label: 'Pays' },
     ],
   },
   {
@@ -71,7 +77,13 @@ export const CONVENTION_VARIABLE_GROUPS: VariableGroup[] = [
       { token: 'terrain.superficie', label: 'Superficie (m²)' },
       { token: 'terrain.prixVente', label: 'Prix de vente du terrain' },
       { token: 'terrain.titreFoncier', label: 'Titre foncier' },
-      { token: 'terrain.lotissement', label: 'Lotissement' },
+      { token: 'terrain.lotissement', label: 'Lotissement (nom)' },
+      { token: 'lotissement.nom', label: 'Nom du lotissement' },
+      { token: 'lotissement.commune', label: 'Commune du lotissement' },
+      { token: 'lotissement.ville', label: 'Ville du lotissement' },
+      { token: 'lotissement.pays', label: 'Pays du lotissement' },
+      { token: 'lotissement.natureTitre', label: 'Nature du titre sollicité (lotissement)' },
+      { token: 'lotissement.numeroTitre', label: 'Numéro du titre obtenu (lotissement)' },
     ],
   },
   {
@@ -117,6 +129,21 @@ function clientName(cl: any): string {
   return cl.type === 'INDIVIDUEL'
     ? `${cl.lastName ?? ''} ${cl.firstName ?? ''}`.trim()
     : (cl.entreprise ?? '');
+}
+
+/** Calcule un libellé de délai (« 12 mois », « 18 mois », etc.) à partir des dates. */
+function delayLabel(startVal?: string | Date | null, endVal?: string | Date | null): string {
+  if (!startVal || !endVal) return '';
+  const s = new Date(startVal);
+  const e = new Date(endVal);
+  if (isNaN(s.getTime()) || isNaN(e.getTime())) return '';
+  const months = (e.getUTCFullYear() - s.getUTCFullYear()) * 12 + (e.getUTCMonth() - s.getUTCMonth());
+  // Si l'écart correspond à un nombre exact de mois, retourne « N mois ».
+  if (months > 0 && e.getUTCDate() === s.getUTCDate()) return `${months} mois`;
+  // Sinon, retombe sur un nombre de jours.
+  const days = Math.round((e.getTime() - s.getTime()) / 86_400_000);
+  if (days > 0) return `${days} jour${days > 1 ? 's' : ''}`;
+  return '';
 }
 
 /** Construit un tableau HTML de l'échéancier de vente à partir des échéances d'une convention. */
@@ -166,12 +193,15 @@ export function resolveConventionVariables(c: any): Record<string, string> {
     'convention.statut': STATUS_LABELS[c.status] ?? c.status ?? '',
     'convention.dateDebut': date(c.startDate),
     'convention.dateFin': date(c.endDate),
+    'convention.delai': delayLabel(c.startDate, c.endDate),
     'convention.dateSignature': date(c.signedAt),
+    'convention.nombreTerrains': String(terrains.length),
     'convention.prixVente': money(c.saleAmount),
     'convention.apportInitial': money(c.apportInitial),
     'convention.loyer': money(c.rentAmount),
     'convention.caution': money(c.deposit),
     'convention.honoraires': money(c.agencyFees),
+    'convention.fraisOuvertureDossier': money(c.fraisOuvertureDossier),
     'convention.modalitesPaiement': MODALITES_LABELS[c.paymentModalites] ?? c.paymentModalites ?? '',
     'convention.modePaiement': METHOD_LABELS[c.paymentMethod] ?? c.paymentMethod ?? '',
     'convention.nombreEcheances': c.installmentCount != null ? String(c.installmentCount) : '',
@@ -184,12 +214,15 @@ export function resolveConventionVariables(c: any): Record<string, string> {
     'client.email': c.client?.email ?? '',
     'client.adresse': c.client?.address ?? '',
     'client.ville': c.client?.city ?? '',
+    'client.pays': c.client?.country ?? '',
+    'client.typePieceIdentite': c.client?.idType?.label ?? '',
     'client.pieceIdentite': c.client?.idNumber ?? '',
     'client.nationalite': c.client?.nationality ?? '',
     'client.dateNaissance': date(c.client?.birthDate),
     'client.lieuNaissance': c.client?.birthPlace ?? '',
     'souscripteur.nomComplet': clientName(c.secondaryClient),
     'souscripteur.telephone': c.secondaryClient?.phone ?? c.secondaryClient?.mobile ?? '',
+    'souscripteur.pays': c.secondaryClient?.country ?? '',
     // Terrains : virgule pour les champs courts, retour à la ligne pour l'adresse / lotissement.
     'terrain.reference': joinComma(terrains.map((t) => t.reference)),
     'terrain.ilot': joinComma(terrains.map((t) => t.numeroIlot)),
@@ -198,6 +231,12 @@ export function resolveConventionVariables(c: any): Record<string, string> {
     'terrain.prixVente': joinComma(terrains.map((t) => (t.prixVente != null ? formatCurrency(Number(t.prixVente)) : ''))),
     'terrain.titreFoncier': joinComma(terrains.map((t) => t.titreFoncier)),
     'terrain.lotissement': joinComma(terrains.map((t) => t.lotissement?.nom)),
+    'lotissement.nom': joinComma(terrains.map((t) => t.lotissement?.nom)),
+    'lotissement.commune': joinComma(terrains.map((t) => t.lotissement?.commune)),
+    'lotissement.ville': joinComma(terrains.map((t) => t.lotissement?.ville)),
+    'lotissement.pays': joinComma(terrains.map((t) => t.lotissement?.pays)),
+    'lotissement.natureTitre': joinComma(terrains.map((t) => t.lotissement?.titleType?.label)),
+    'lotissement.numeroTitre': joinComma(terrains.map((t) => t.lotissement?.titleNumber)),
     // Biens : virgule pour les références, retour à la ligne pour les adresses (plus lisible).
     'bien.reference': joinComma(properties.map((p) => p.reference)),
     'bien.adresse': joinBreak(properties.map((p) => p.address)),

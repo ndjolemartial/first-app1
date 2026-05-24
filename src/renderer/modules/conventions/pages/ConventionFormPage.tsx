@@ -56,7 +56,7 @@ const schema = z.object({
   type: z.enum(['RENTAL_UNFURNISHED', 'RENTAL_FURNISHED', 'SALE', 'MANAGEMENT', 'COMMERCIAL_LEASE', 'SOUSCRIPTION', 'AVENANT', 'RESILIATION']),
   status: z.enum(['BROUILLON', 'ACTIVE', 'EXPIRE', 'TERMINER', 'ANNULE', 'ATTENTE_SIGNATURE']).default('BROUILLON'),
   startDate: z.string().min(1, 'Date de début requise'),
-  endDate: z.string().optional(),
+  endDate: z.string().min(1, 'Délai requis : choisissez une durée ou saisissez la date de fin'),
   signedAt: z.string().optional(),
   rentAmount: optionalNumber,
   saleAmount: optionalNumber,
@@ -64,6 +64,7 @@ const schema = z.object({
   deposit: optionalNumber,
   agencyFees: optionalNumber,
   charges: optionalNumber,
+  fraisOuvertureDossier: optionalNumber,
   paymentDay: optionalDay,
   paymentMethod: z.enum(['ESPECE', 'CHEQUE', 'TRANSFERT', 'VIREMENT', 'MOBILE_MONEY', 'NON_DEFINI']).default('ESPECE'),
   paymentModalites: z.enum(['CASH', 'SUR_3_MOIS', 'SUR_6_MOIS', 'SUR_9_MOIS', 'SUR_12_MOIS', 'SUR_24_MOIS', 'SUR_36_MOIS', 'SUR_48_MOIS', 'SUR_60_MOIS', 'SUR_PLUS_60_MOIS']).default('CASH'),
@@ -379,6 +380,7 @@ export default function ConventionFormPage() {
       assetType: 'TERRAIN', type: 'SOUSCRIPTION', status: 'BROUILLON',
       paymentMethod: 'ESPECE', paymentModalites: 'CASH',
       propertyIds: [], terrainIds: [],
+      fraisOuvertureDossier: 100000,
     },
   });
 
@@ -618,6 +620,7 @@ export default function ConventionFormPage() {
         deposit: c.deposit ? Number(c.deposit) : undefined,
         agencyFees: c.agencyFees ? Number(c.agencyFees) : undefined,
         charges: c.charges ? Number(c.charges) : undefined,
+        fraisOuvertureDossier: c.fraisOuvertureDossier ? Number(c.fraisOuvertureDossier) : undefined,
         indexType: c.indexType ?? '',
         notes: c.notes ?? '',
       });
@@ -835,7 +838,7 @@ export default function ConventionFormPage() {
           <div className="grid grid-cols-2 gap-4 mt-4">
             <Input label="Date de début *" type="date" error={errors.startDate?.message} {...register('startDate')} />
             <Select
-              label="Délai de la convention"
+              label="Délai de la convention *"
               options={DURATION_OPTIONS}
               value={durationMonths}
               onChange={(e) => setDurationMonths(e.target.value)}
@@ -844,8 +847,9 @@ export default function ConventionFormPage() {
           <div className="grid grid-cols-2 gap-4 mt-4">
             <div>
               <Input
-                label="Date de fin"
+                label="Date de fin *"
                 type="date"
+                error={errors.endDate?.message}
                 {...register('endDate', { onChange: () => setDurationMonths('') })}
               />
               {durationMonths && (
@@ -945,6 +949,17 @@ export default function ConventionFormPage() {
               )}
             </>
           )}
+
+          {/* Frais d'ouverture de dossier — applicable à toutes les conventions */}
+          <div className="mt-4 border-t border-slate-100 pt-4">
+            <Input
+              label="Frais d'ouverture de dossier (FCFA)"
+              type="number"
+              step="1000"
+              placeholder="100 000"
+              {...register('fraisOuvertureDossier')}
+            />
+          </div>
         </Card>
 
         {/* Notes */}

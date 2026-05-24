@@ -14,7 +14,9 @@ const ownerSchema = zod_1.z.object({
     // Particulier
     firstName: zod_1.z.string().optional(),
     lastName: zod_1.z.string().optional(),
+    nationality: zod_1.z.string().optional(),
     idNumber: zod_1.z.string().optional(),
+    idTypeId: zod_1.z.number().int().positive().nullable().optional(),
     // Entreprise
     companyName: zod_1.z.string().optional(),
     registreCommerce: zod_1.z.string().optional(),
@@ -22,6 +24,7 @@ const ownerSchema = zod_1.z.object({
     legalRepLastName: zod_1.z.string().optional(),
     legalRepPhone: zod_1.z.string().optional(),
     legalRepIdNumber: zod_1.z.string().optional(),
+    legalRepIdTypeId: zod_1.z.number().int().positive().nullable().optional(),
     // Commun
     email: zod_1.z.string().email().optional().or(zod_1.z.literal('')),
     phone: zod_1.z.string().optional(),
@@ -102,6 +105,8 @@ function registerOwnersIPC() {
                     },
                     documents: { orderBy: { uploadedAt: 'desc' } },
                     activities: { orderBy: { createdAt: 'desc' }, take: 20 },
+                    idType: { select: { id: true, code: true, label: true } },
+                    legalRepIdType: { select: { id: true, code: true, label: true } },
                 },
             });
             if (!owner)

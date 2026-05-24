@@ -30,6 +30,7 @@ const clientSchema = zod_1.z.object({
     birthDate: zod_1.z.string().datetime().optional(),
     birthPlace: zod_1.z.string().optional(),
     idNumber: zod_1.z.string().optional(),
+    idTypeId: zod_1.z.number().int().positive().nullable().optional(),
     fatherFirstName: zod_1.z.string().optional(),
     fatherLastName: zod_1.z.string().optional(),
     motherFirstName: zod_1.z.string().optional(),
@@ -191,6 +192,7 @@ function registerClientsIPC() {
                     prospect: { select: { id: true, status: true, assignedToId: true } },
                     assignedTo: { select: USER_BRIEF_SELECT },
                     referrer: { select: REFERRER_BRIEF_SELECT },
+                    idType: { select: { id: true, code: true, label: true } },
                 },
             });
             if (!client)

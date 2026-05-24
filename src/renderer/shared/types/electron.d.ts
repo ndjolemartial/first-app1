@@ -413,6 +413,16 @@ interface Window {
         Promise<IpcResponse<{ relativePath: string; type: 'image' | 'video' }>>;
       getSlideshowMediaData: (token: string, relativePath: string) =>
         Promise<IpcResponse<{ base64: string; mimeType: string }>>;
+      // Types de pièces d'identité (catalogue extensible)
+      listIdTypes: (token: string, includeInactive?: boolean) => Promise<IpcResponse<any[]>>;
+      createIdType: (token: string, payload: object) => Promise<IpcResponse<any>>;
+      updateIdType: (token: string, id: number, payload: object) => Promise<IpcResponse<any>>;
+      deleteIdType: (token: string, id: number) => Promise<IpcResponse>;
+      // Natures de titres de lotissement
+      listTitleTypes: (token: string, includeInactive?: boolean) => Promise<IpcResponse<any[]>>;
+      createTitleType: (token: string, payload: object) => Promise<IpcResponse<any>>;
+      updateTitleType: (token: string, id: number, payload: object) => Promise<IpcResponse<any>>;
+      deleteTitleType: (token: string, id: number) => Promise<IpcResponse>;
     };
     budget: {
       getDashboard: (token: string) => Promise<IpcResponse<any>>;

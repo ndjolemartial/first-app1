@@ -26,6 +26,7 @@ const clientSchema = z.object({
   birthDate: z.string().datetime().optional(),
   birthPlace: z.string().optional(),
   idNumber: z.string().optional(),
+  idTypeId: z.number().int().positive().nullable().optional(),
   fatherFirstName: z.string().optional(),
   fatherLastName: z.string().optional(),
   motherFirstName: z.string().optional(),
@@ -196,6 +197,7 @@ export function registerClientsIPC(): void {
           prospect: { select: { id: true, status: true, assignedToId: true } },
           assignedTo: { select: USER_BRIEF_SELECT },
           referrer:   { select: REFERRER_BRIEF_SELECT },
+          idType:     { select: { id: true, code: true, label: true } },
         },
       });
       if (!client) return { success: false, error: 'Client introuvable' };

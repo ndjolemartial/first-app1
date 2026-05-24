@@ -305,6 +305,16 @@ const settings = {
     updateSlideshow: (token, items) => api.invoke('settings:updateSlideshow', { token, items }),
     uploadSlideshowMedia: (token, payload) => api.invoke('settings:uploadSlideshowMedia', { token, payload }),
     getSlideshowMediaData: (token, relativePath) => api.invoke('settings:getSlideshowMediaData', { token, relativePath }),
+    // Types de pièces d'identité (catalogue extensible)
+    listIdTypes: (token, includeInactive = false) => api.invoke('settings:listIdTypes', { token, includeInactive }),
+    createIdType: (token, payload) => api.invoke('settings:createIdType', { token, payload }),
+    updateIdType: (token, id, payload) => api.invoke('settings:updateIdType', { token, id, payload }),
+    deleteIdType: (token, id) => api.invoke('settings:deleteIdType', { token, id }),
+    // Natures de titres de lotissement
+    listTitleTypes: (token, includeInactive = false) => api.invoke('settings:listTitleTypes', { token, includeInactive }),
+    createTitleType: (token, payload) => api.invoke('settings:createTitleType', { token, payload }),
+    updateTitleType: (token, id, payload) => api.invoke('settings:updateTitleType', { token, id, payload }),
+    deleteTitleType: (token, id) => api.invoke('settings:deleteTitleType', { token, id }),
 };
 // Documents
 const documents = {

@@ -15,6 +15,7 @@ import {
   useClientAssignableUsers, useClientReferrers,
 } from '../hooks/useClients';
 import { useCountries } from '../../../shared/hooks/useCountries';
+import { useIdTypes } from '../../../shared/hooks/useIdTypes';
 import { useAuthStore } from '../../../shared/stores/auth.store';
 import { Save, Upload, X, FileText } from 'lucide-react';
 
@@ -38,6 +39,7 @@ const schema = z.object({
   country: z.string().optional(),
   nationality: z.string().optional(),
   idNumber: z.string().optional(),
+  idTypeId: z.string().optional(),
   birthDate: z.string().optional(),
   birthPlace: z.string().optional(),
   fatherFirstName: z.string().optional(),
@@ -118,7 +120,7 @@ export default function ClientFormPage() {
   const [existingIdDoc, setExistingIdDoc] = useState<{ name: string; size: number } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const { register, handleSubmit, reset, watch, control, formState: { errors, isSubmitting } } = useForm<FormData>({
+  const { register, handleSubmit, reset, watch, control, setValue, formState: { errors, isSubmitting } } = useForm<FormData>({
     resolver: zodResolver(schema),
     defaultValues: {
       type: 'INDIVIDUEL', country: 'CI', status: 'ACTIF',
@@ -130,8 +132,23 @@ export default function ClientFormPage() {
   const { data: countriesRes } = useCountries();
   const countryOptions = (countriesRes?.data ?? []).map((c) => ({ value: c.isoCode, label: c.name }));
 
+  const { data: idTypesRes } = useIdTypes();
+  const idTypes = idTypesRes?.success ? (idTypesRes.data as any[]) ?? [] : [];
+  const idTypeOptions = [
+    { value: '', label: '— Aucun —' },
+    ...idTypes.map((t) => ({ value: String(t.id), label: t.label })),
+  ];
+
   const watchType = watch('type');
   useEffect(() => setType(watchType as any), [watchType]);
+
+  // En mode création, pré-sélectionne le type de pièce marqué isDefault.
+  useEffect(() => {
+    if (isEdit) return;
+    const def = idTypes.find((t) => t.isDefault);
+    if (def) setValue('idTypeId', String(def.id));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [idTypes.length, isEdit]);
 
   useEffect(() => {
     if (isEdit && res?.data) {
@@ -156,6 +173,7 @@ export default function ClientFormPage() {
         country:              c.country ?? 'CI',
         nationality:          c.nationality ?? '',
         idNumber:             c.idNumber ?? '',
+        idTypeId:             c.idTypeId != null ? String(c.idTypeId) : '',
         // `<input type="date">` n'accepte que le format YYYY-MM-DD.
         birthDate:            c.birthDate ? new Date(c.birthDate).toISOString().slice(0, 10) : '',
         birthPlace:           c.birthPlace ?? '',
@@ -214,7 +232,7 @@ export default function ClientFormPage() {
   const onSubmit = async (data: FormData) => {
     // Convertit les sélecteurs d'affectation (chaînes) en number|null|undefined.
     // Si l'utilisateur n'a pas le droit d'affecter, on retire ces champs du payload.
-    const { assignedToId, referrerId, ...rest } = data;
+    const { assignedToId, referrerId, idTypeId, ...rest } = data;
     const payload: any = { ...rest };
     // Convertit YYYY-MM-DD en ISO datetime attendu par le schéma Zod du back-end.
     if (payload.birthDate) {
@@ -222,6 +240,7 @@ export default function ClientFormPage() {
     } else {
       delete payload.birthDate;
     }
+    payload.idTypeId = idTypeId ? Number(idTypeId) : null;
     if (canAssign) {
       payload.assignedToId = assignedToId ? Number(assignedToId) : null;
       payload.referrerId   = referrerId   ? Number(referrerId)   : null;
@@ -256,7 +275,8 @@ export default function ClientFormPage() {
                 <Input label="Nom" {...register('lastName')} />
                 <Input label="Prénom" {...register('firstName')} />
               </div>
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-3 gap-4">
+                <Select label="Type de pièce d'identité" options={idTypeOptions} {...register('idTypeId')} />
                 <Input label="Numéro pièce d'identité" {...register('idNumber')} />
                 <Input label="Nationalité" {...register('nationality')} />
               </div>

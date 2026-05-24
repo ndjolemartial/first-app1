@@ -12,6 +12,7 @@ import Textarea from '../../../shared/components/ui/Textarea';
 import Card from '../../../shared/components/ui/Card';
 import { useOwner, useCreateOwner, useUpdateOwner } from '../hooks/useOwners';
 import { useCountries } from '../../../shared/hooks/useCountries';
+import { useIdTypes } from '../../../shared/hooks/useIdTypes';
 import { useAuthStore } from '../../../shared/stores/auth.store';
 import { Save, Upload, X, FileText } from 'lucide-react';
 
@@ -20,7 +21,9 @@ const schema = z.object({
   // Particulier
   firstName: z.string().optional(),
   lastName: z.string().optional(),
+  nationality: z.string().optional(),
   idNumber: z.string().optional(),
+  idTypeId: z.string().optional(),
   // Entreprise
   companyName: z.string().optional(),
   registreCommerce: z.string().optional(),
@@ -28,6 +31,7 @@ const schema = z.object({
   legalRepLastName: z.string().optional(),
   legalRepPhone: z.string().optional(),
   legalRepIdNumber: z.string().optional(),
+  legalRepIdTypeId: z.string().optional(),
   // Commun
   email: z.string().email('Email invalide').optional().or(z.literal('')),
   phone: z.string().optional(),
@@ -135,7 +139,7 @@ export default function OwnerFormPage() {
   const [existingRc, setExistingRc] = useState<string | null>(null);
   const rcRef = useRef<HTMLInputElement>(null);
 
-  const { register, handleSubmit, reset, watch, control, formState: { errors, isSubmitting } } = useForm<FormData>({
+  const { register, handleSubmit, reset, watch, control, setValue, formState: { errors, isSubmitting } } = useForm<FormData>({
     resolver: zodResolver(schema),
     defaultValues: { type: 'INDIVIDUEL', country: 'CI' },
   });
@@ -143,13 +147,25 @@ export default function OwnerFormPage() {
   const { data: countriesRes } = useCountries();
   const countryOptions = (countriesRes?.data ?? []).map((c) => ({ value: c.isoCode, label: c.name }));
 
+  const { data: idTypesRes } = useIdTypes();
+  const idTypes = idTypesRes?.success ? (idTypesRes.data as any[]) ?? [] : [];
+  const idTypeOptions = [
+    { value: '', label: '— Aucun —' },
+    ...idTypes.map((t) => ({ value: String(t.id), label: t.label })),
+  ];
+
   const watchType = watch('type');
   useEffect(() => setType(watchType as any), [watchType]);
 
   useEffect(() => {
     if (isEdit && res?.data) {
       const o = res.data;
-      reset({ ...o });
+      // Coercer les FK numériques en chaînes pour les Select.
+      reset({
+        ...o,
+        idTypeId:         o.idTypeId         != null ? String(o.idTypeId)         : '',
+        legalRepIdTypeId: o.legalRepIdTypeId != null ? String(o.legalRepIdTypeId) : '',
+      });
       setType(o.type);
       const docs: any[] = o.documents ?? [];
       setExistingIdDoc(docs.find((d: any) => d.category === 'piece_identite')?.name ?? null);
@@ -157,6 +173,17 @@ export default function OwnerFormPage() {
       setExistingRc(docs.find((d: any) => d.category === 'registre_commerce')?.name ?? null);
     }
   }, [res, isEdit, reset]);
+
+  // En mode création, pré-sélectionne le type de pièce marqué isDefault.
+  useEffect(() => {
+    if (isEdit) return;
+    const def = idTypes.find((t) => t.isDefault);
+    if (def) {
+      setValue('idTypeId',         String(def.id));
+      setValue('legalRepIdTypeId', String(def.id));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [idTypes.length, isEdit]);
 
   function makeFileHandler(
     setFile: (f: File | null) => void,
@@ -210,9 +237,16 @@ export default function OwnerFormPage() {
   }
 
   const onSubmit = async (data: FormData) => {
+    // Coercer les FK de types de pièces (chaîne du Select) en number|null.
+    const { idTypeId, legalRepIdTypeId, ...rest } = data;
+    const payload: any = {
+      ...rest,
+      idTypeId:         idTypeId         ? Number(idTypeId)         : null,
+      legalRepIdTypeId: legalRepIdTypeId ? Number(legalRepIdTypeId) : null,
+    };
     let r: any;
     if (isEdit) {
-      r = await update.mutateAsync({ id: Number(id), payload: data });
+      r = await update.mutateAsync({ id: Number(id), payload });
       if (r.success) {
         const oid = Number(id);
         await Promise.all([
@@ -222,7 +256,7 @@ export default function OwnerFormPage() {
         ]);
       }
     } else {
-      r = await create.mutateAsync(data);
+      r = await create.mutateAsync(payload);
       if (r.success) {
         const oid = r.data.id;
         await Promise.all([
@@ -258,7 +292,11 @@ export default function OwnerFormPage() {
                   <Input label="Nom" {...register('lastName')} />
                   <Input label="Prénom" {...register('firstName')} />
                 </div>
-                <Input label="Numéro pièce d'identité" placeholder="CI/Passeport/…" {...register('idNumber')} />
+                <Input label="Nationalité" placeholder="ex : Ivoirienne" {...register('nationality')} />
+                <div className="grid grid-cols-2 gap-4">
+                  <Select label="Type de pièce d'identité" options={idTypeOptions} {...register('idTypeId')} />
+                  <Input label="Numéro pièce d'identité" placeholder="CI/Passeport/…" {...register('idNumber')} />
+                </div>
                 <DocUploadField
                   label="Pièce d'identité scannée"
                   existingName={existingIdDoc}
@@ -285,7 +323,10 @@ export default function OwnerFormPage() {
                       <Input label="Prénom" {...register('legalRepFirstName')} />
                     </div>
                     <Input label="Contact (téléphone/email)" {...register('legalRepPhone')} />
-                    <Input label="Numéro pièce d'identité" placeholder="CI/Passeport/…" {...register('legalRepIdNumber')} />
+                    <div className="grid grid-cols-2 gap-4">
+                      <Select label="Type de pièce d'identité" options={idTypeOptions} {...register('legalRepIdTypeId')} />
+                      <Input label="Numéro pièce d'identité" placeholder="CI/Passeport/…" {...register('legalRepIdNumber')} />
+                    </div>
                     <DocUploadField
                       label="Pièce d'identité du représentant légal"
                       existingName={existingRepIdDoc}

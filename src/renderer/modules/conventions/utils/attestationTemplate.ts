@@ -22,7 +22,9 @@ export const ATTESTATION_VARIABLE_GROUPS: VariableGroup[] = [
       { token: 'client.email', label: 'E-mail' },
       { token: 'client.adresse', label: 'Adresse' },
       { token: 'client.ville', label: 'Ville' },
-      { token: 'client.pieceIdentite', label: "Pièce d'identité" },
+      { token: 'client.pays', label: 'Pays' },
+      { token: 'client.typePieceIdentite', label: "Type de pièce d'identité" },
+      { token: 'client.pieceIdentite', label: "Numéro pièce d'identité" },
       { token: 'client.nationalite', label: 'Nationalité' },
       { token: 'client.dateNaissance', label: 'Date de naissance' },
       { token: 'client.lieuNaissance', label: 'Lieu de naissance' },
@@ -34,7 +36,9 @@ export const ATTESTATION_VARIABLE_GROUPS: VariableGroup[] = [
       { token: 'cedant.nomComplet', label: 'Nom complet du cédant' },
       { token: 'cedant.civilite', label: 'Civilité' },
       { token: 'cedant.telephone', label: 'Téléphone' },
-      { token: 'cedant.pieceIdentite', label: "Pièce d'identité" },
+      { token: 'cedant.pays', label: 'Pays' },
+      { token: 'cedant.typePieceIdentite', label: "Type de pièce d'identité" },
+      { token: 'cedant.pieceIdentite', label: "Numéro pièce d'identité" },
       { token: 'cedant.dateNaissance', label: 'Date de naissance' },
       { token: 'cedant.lieuNaissance', label: 'Lieu de naissance' },
     ],
@@ -48,7 +52,13 @@ export const ATTESTATION_VARIABLE_GROUPS: VariableGroup[] = [
       { token: 'terrain.superficie', label: 'Superficie (m²)' },
       { token: 'terrain.prixVente', label: 'Prix de vente du terrain' },
       { token: 'terrain.titreFoncier', label: 'Titre foncier' },
-      { token: 'terrain.lotissement', label: 'Lotissement' },
+      { token: 'terrain.lotissement', label: 'Lotissement (nom)' },
+      { token: 'lotissement.nom', label: 'Nom du lotissement' },
+      { token: 'lotissement.commune', label: 'Commune du lotissement' },
+      { token: 'lotissement.ville', label: 'Ville du lotissement' },
+      { token: 'lotissement.pays', label: 'Pays du lotissement' },
+      { token: 'lotissement.natureTitre', label: 'Nature du titre sollicité (lotissement)' },
+      { token: 'lotissement.numeroTitre', label: 'Numéro du titre obtenu (lotissement)' },
     ],
   },
   {
@@ -65,6 +75,9 @@ export const ATTESTATION_VARIABLE_GROUPS: VariableGroup[] = [
     items: [
       { token: 'convention.reference', label: 'Référence' },
       { token: 'convention.dateSignature', label: 'Date de signature' },
+      { token: 'convention.delai', label: 'Délai (durée)' },
+      { token: 'convention.nombreTerrains', label: 'Nombre de terrains rattachés' },
+      { token: 'convention.fraisOuvertureDossier', label: "Frais d'ouverture de dossier" },
     ],
   },
   {
@@ -90,6 +103,19 @@ function clientName(cl: any): string {
     : (cl.entreprise ?? '');
 }
 
+/** Calcule un libellé de délai (« 12 mois », « 18 mois », etc.) à partir des dates. */
+function delayLabel(startVal?: string | Date | null, endVal?: string | Date | null): string {
+  if (!startVal || !endVal) return '';
+  const s = new Date(startVal);
+  const e = new Date(endVal);
+  if (isNaN(s.getTime()) || isNaN(e.getTime())) return '';
+  const months = (e.getUTCFullYear() - s.getUTCFullYear()) * 12 + (e.getUTCMonth() - s.getUTCMonth());
+  if (months > 0 && e.getUTCDate() === s.getUTCDate()) return `${months} mois`;
+  const days = Math.round((e.getTime() - s.getTime()) / 86_400_000);
+  if (days > 0) return `${days} jour${days > 1 ? 's' : ''}`;
+  return '';
+}
+
 /** Résout les variables {{token}} à partir d'une attestation chargée avec ses relations. */
 export function resolveAttestationVariables(a: any): Record<string, string> {
   if (!a) return {};
@@ -107,6 +133,8 @@ export function resolveAttestationVariables(a: any): Record<string, string> {
     'client.email': a.client?.email ?? '',
     'client.adresse': a.client?.address ?? '',
     'client.ville': a.client?.city ?? '',
+    'client.pays': a.client?.country ?? '',
+    'client.typePieceIdentite': a.client?.idType?.label ?? '',
     'client.pieceIdentite': a.client?.idNumber ?? '',
     'client.nationalite': a.client?.nationality ?? '',
     'client.dateNaissance': date(a.client?.birthDate),
@@ -114,6 +142,8 @@ export function resolveAttestationVariables(a: any): Record<string, string> {
     'cedant.nomComplet': clientName(a.secondaryClient),
     'cedant.civilite': a.secondaryClient?.civilite ?? '',
     'cedant.telephone': a.secondaryClient?.phone ?? a.secondaryClient?.mobile ?? '',
+    'cedant.pays': a.secondaryClient?.country ?? '',
+    'cedant.typePieceIdentite': a.secondaryClient?.idType?.label ?? '',
     'cedant.pieceIdentite': a.secondaryClient?.idNumber ?? '',
     'cedant.dateNaissance': date(a.secondaryClient?.birthDate),
     'cedant.lieuNaissance': a.secondaryClient?.birthPlace ?? '',
@@ -124,12 +154,23 @@ export function resolveAttestationVariables(a: any): Record<string, string> {
     'terrain.prixVente': money(a.terrain?.prixVente),
     'terrain.titreFoncier': a.terrain?.titreFoncier ?? '',
     'terrain.lotissement': a.terrain?.lotissement?.nom ?? '',
+    'lotissement.nom': a.terrain?.lotissement?.nom ?? '',
+    'lotissement.commune': a.terrain?.lotissement?.commune ?? '',
+    'lotissement.ville': a.terrain?.lotissement?.ville ?? '',
+    'lotissement.pays': a.terrain?.lotissement?.pays ?? '',
+    'lotissement.natureTitre': a.terrain?.lotissement?.titleType?.label ?? '',
+    'lotissement.numeroTitre': a.terrain?.lotissement?.titleNumber ?? '',
     'bien.reference': a.property?.reference ?? '',
     'bien.adresse': a.property?.address ?? '',
     'bien.ville': a.property?.city ?? '',
     'bien.superficie': a.property?.surface != null ? String(a.property.surface) : '',
     'convention.reference': a.convention?.reference ?? '',
     'convention.dateSignature': date(a.convention?.signedAt),
+    'convention.delai': delayLabel(a.convention?.startDate, a.convention?.endDate),
+    'convention.nombreTerrains': a.convention?._count?.terrains != null
+      ? String(a.convention._count.terrains)
+      : '',
+    'convention.fraisOuvertureDossier': money(a.convention?.fraisOuvertureDossier),
     'agent.nomComplet': a.emittedBy ? `${a.emittedBy.lastName ?? ''} ${a.emittedBy.firstName ?? ''}`.trim() : '',
     'date.aujourdhui': formatDate(new Date()),
   };

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { Building2, HardDrive, Mail, MessageSquare, Images, FileText, FileSignature, Award, Briefcase, Tags, Landmark } from 'lucide-react';
+import { Building2, HardDrive, Mail, MessageSquare, Images, FileText, FileSignature, Award, Briefcase, Tags, Landmark, IdCard, Layers } from 'lucide-react';
 import PageLayout from '../../../shared/components/layout/PageLayout';
 import Card from '../../../shared/components/ui/Card';
 import { clsx } from 'clsx';
@@ -13,6 +13,8 @@ import InvoiceTemplatesSettingsTab     from '../components/InvoiceTemplatesSetti
 import ConventionTemplatesSettingsTab  from '../components/ConventionTemplatesSettingsTab';
 import AttestationTemplatesSettingsTab from '../components/AttestationTemplatesSettingsTab';
 import ProjectTypesSettingsTab         from '../components/ProjectTypesSettingsTab';
+import IdDocumentTypesSettingsTab      from '../components/IdDocumentTypesSettingsTab';
+import LotissementTitleTypesSettingsTab from '../components/LotissementTitleTypesSettingsTab';
 import TreasuryCategoriesSettingsTab   from '../components/TreasuryCategoriesSettingsTab';
 import TreasuryAccountsSettingsTab     from '../components/TreasuryAccountsSettingsTab';
 
@@ -26,6 +28,8 @@ type TabKey =
   | 'conventionTemplates'
   | 'attestationTemplates'
   | 'projectTypes'
+  | 'idDocumentTypes'
+  | 'lotissementTitleTypes'
   | 'treasuryAccounts'
   | 'treasuryCategories';
 
@@ -39,6 +43,8 @@ const TABS: Array<{ key: TabKey; label: string; icon: React.ReactNode }> = [
   { key: 'conventionTemplates',  label: 'Modèles de conventions',  icon: <FileSignature className="h-4 w-4" /> },
   { key: 'attestationTemplates', label: "Modèles d'attestations",  icon: <Award className="h-4 w-4" /> },
   { key: 'projectTypes',         label: 'Types de projets',        icon: <Briefcase className="h-4 w-4" /> },
+  { key: 'idDocumentTypes',      label: "Types de pièces d'identité", icon: <IdCard className="h-4 w-4" /> },
+  { key: 'lotissementTitleTypes', label: 'Natures de titres de lotissement', icon: <Layers className="h-4 w-4" /> },
   { key: 'treasuryAccounts',     label: "Comptes d'opérations",    icon: <Landmark className="h-4 w-4" /> },
   { key: 'treasuryCategories',   label: "Objets d'opération",      icon: <Tags className="h-4 w-4" /> },
 ];
@@ -104,6 +110,8 @@ export default function SettingsPage() {
           {active === 'conventionTemplates'  && <ConventionTemplatesSettingsTab />}
           {active === 'attestationTemplates' && <AttestationTemplatesSettingsTab />}
           {active === 'projectTypes'         && <ProjectTypesSettingsTab />}
+          {active === 'idDocumentTypes'      && <IdDocumentTypesSettingsTab />}
+          {active === 'lotissementTitleTypes' && <LotissementTitleTypesSettingsTab />}
           {active === 'treasuryAccounts'     && <TreasuryAccountsSettingsTab />}
           {active === 'treasuryCategories'   && <TreasuryCategoriesSettingsTab />}
         </div>

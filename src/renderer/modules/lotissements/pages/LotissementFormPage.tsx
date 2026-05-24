@@ -12,6 +12,7 @@ import Textarea from '../../../shared/components/ui/Textarea';
 import Card from '../../../shared/components/ui/Card';
 import { useLotissement, useCreateLotissement, useUpdateLotissement } from '../hooks/useLotissements';
 import { useCountries } from '../../../shared/hooks/useCountries';
+import { useTitleTypes } from '../../../shared/hooks/useTitleTypes';
 import { Save } from 'lucide-react';
 
 const schema = z.object({
@@ -26,6 +27,8 @@ const schema = z.object({
   statut: z.enum(['EN_COURS_LOTISSEMENT', 'EN_COURS', 'OUVERT', 'PARTIELLEMENT_VENDU', 'COMPLET', 'FERME']),
   description: z.string().optional(),
   fraisDemarchesAcdStandard: z.coerce.number().nonnegative().optional().or(z.literal('')),
+  titleTypeId: z.string().optional(),
+  titleNumber: z.string().optional(),
 });
 
 type FormData = z.infer<typeof schema>;
@@ -47,13 +50,20 @@ export default function LotissementFormPage() {
   const create = useCreateLotissement();
   const update = useUpdateLotissement();
 
-  const { register, handleSubmit, reset, control, formState: { errors, isSubmitting } } = useForm<z.input<typeof schema>, any, FormData>({
+  const { register, handleSubmit, reset, control, setValue, formState: { errors, isSubmitting } } = useForm<z.input<typeof schema>, any, FormData>({
     resolver: zodResolver(schema),
     defaultValues: { statut: 'EN_COURS_LOTISSEMENT', pays: 'CI' },
   });
 
   const { data: countriesRes } = useCountries();
   const countryOptions = (countriesRes?.data ?? []).map((c) => ({ value: c.isoCode, label: c.name }));
+
+  const { data: titleTypesRes } = useTitleTypes();
+  const titleTypes = titleTypesRes?.success ? (titleTypesRes.data as any[]) ?? [] : [];
+  const titleTypeOptions = [
+    { value: '', label: '— Aucun —' },
+    ...titleTypes.map((t) => ({ value: String(t.id), label: t.label })),
+  ];
 
   useEffect(() => {
     if (isEdit && res?.data) {
@@ -65,16 +75,28 @@ export default function LotissementFormPage() {
         surface: l.surface ?? ('' as any),
         nombreParcelles: l.nombreParcelles ?? ('' as any),
         fraisDemarchesAcdStandard: l.fraisDemarchesAcdStandard ?? ('' as any),
+        titleTypeId: l.titleTypeId != null ? String(l.titleTypeId) : '',
+        titleNumber: l.titleNumber ?? '',
       });
     }
   }, [res, isEdit, reset]);
 
+  // En mode création, pré-sélectionne la nature de titre marquée isDefault.
+  useEffect(() => {
+    if (isEdit) return;
+    const def = titleTypes.find((t) => t.isDefault);
+    if (def) setValue('titleTypeId', String(def.id));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [titleTypes.length, isEdit]);
+
   const onSubmit = async (data: FormData) => {
-    const payload = {
-      ...data,
-      surface: data.surface === '' ? undefined : data.surface,
-      nombreParcelles: data.nombreParcelles === '' ? undefined : data.nombreParcelles,
-      fraisDemarchesAcdStandard: data.fraisDemarchesAcdStandard === '' ? null : data.fraisDemarchesAcdStandard,
+    const { titleTypeId, ...rest } = data;
+    const payload: any = {
+      ...rest,
+      surface: rest.surface === '' ? undefined : rest.surface,
+      nombreParcelles: rest.nombreParcelles === '' ? undefined : rest.nombreParcelles,
+      fraisDemarchesAcdStandard: rest.fraisDemarchesAcdStandard === '' ? null : rest.fraisDemarchesAcdStandard,
+      titleTypeId: titleTypeId ? Number(titleTypeId) : null,
     };
     let r: any;
     if (isEdit) r = await update.mutateAsync({ id: Number(id), payload });
@@ -116,6 +138,10 @@ export default function LotissementFormPage() {
             <div className="grid grid-cols-2 gap-4">
               <Input label="Surface totale (m²)" type="number" step="0.01" {...register('surface')} />
               <Input label="Nombre de parcelles" type="number" {...register('nombreParcelles')} />
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <Select label="Nature du titre sollicité" options={titleTypeOptions} {...register('titleTypeId')} />
+              <Input label="Numéro du titre obtenu" placeholder="Ex : AP-2024-0123" {...register('titleNumber')} />
             </div>
           </div>
 

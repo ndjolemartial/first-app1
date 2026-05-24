@@ -24,6 +24,9 @@ const lotissementSchema = zod_1.z.object({
     longitude: zod_1.z.coerce.number().optional(),
     // Montant standard des frais de démarches ACD applicable sur ce lotissement.
     fraisDemarchesAcdStandard: zod_1.z.coerce.number().nonnegative().optional().nullable(),
+    // Nature du titre administratif sollicité (référentiel) et numéro du titre obtenu.
+    titleTypeId: zod_1.z.coerce.number().int().positive().nullable().optional(),
+    titleNumber: zod_1.z.string().optional(),
 });
 // Module Lotissements : réservé aux MANAGER+ (ACCOUNTANT inclus via checkRole).
 // AGENT et READONLY n'ont aucun accès au module.
@@ -103,6 +106,7 @@ function registerLotissementsIPC() {
                         orderBy: { reference: 'asc' },
                     },
                     documents: { orderBy: { uploadedAt: 'desc' } },
+                    titleType: { select: { id: true, code: true, label: true } },
                 },
             });
             if (!lot)
