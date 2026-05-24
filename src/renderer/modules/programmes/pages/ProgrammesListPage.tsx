@@ -9,11 +9,12 @@ import Select from '../../../shared/components/ui/Select';
 import Pagination from '../../../shared/components/ui/Pagination';
 import { SkeletonTable } from '../../../shared/components/ui/Skeleton';
 import EmptyState from '../../../shared/components/ui/EmptyState';
-import { useProgrammes } from '../hooks/useProgrammes';
+import { useProgrammes, useProgrammesStatusStats } from '../hooks/useProgrammes';
 import { formatDate } from '../../../shared/utils/format';
 import ExportMenu, { ExportColumn } from '../../../shared/components/ExportMenu';
+import StatusRecap, { type StatusRecapItem } from '../../../shared/components/ui/StatusRecap';
 import { useAuthStore } from '../../../shared/stores/auth.store';
-import { PlusCircle, Eye, Edit, Building } from 'lucide-react';
+import { PlusCircle, Eye, Edit, Building, Lightbulb, HardHat, Megaphone, PackageCheck, Archive } from 'lucide-react';
 
 const TYPE_OPTIONS = [
   { value: '', label: 'Tous les types' },
@@ -53,6 +54,14 @@ export const PROGRAMME_STATUT_LABEL: Record<string, string> = {
   CLOTURE: 'Clôturé',
 };
 
+const STATUT_RECAP_ITEMS: StatusRecapItem[] = [
+  { key: 'EN_PROJET',            label: 'En projet',     icon: Lightbulb,    iconBg: 'bg-slate-100',   iconColor: 'text-slate-600',   activeColor: 'text-slate-800' },
+  { key: 'EN_CONSTRUCTION',      label: 'Construction',  icon: HardHat,      iconBg: 'bg-amber-100',   iconColor: 'text-amber-600',   activeColor: 'text-amber-700' },
+  { key: 'EN_COMMERCIALISATION', label: 'Commercial.',   icon: Megaphone,    iconBg: 'bg-sky-100',     iconColor: 'text-sky-600',     activeColor: 'text-sky-700' },
+  { key: 'LIVRE',                label: 'Livrés',        icon: PackageCheck, iconBg: 'bg-emerald-100', iconColor: 'text-emerald-600', activeColor: 'text-emerald-700' },
+  { key: 'CLOTURE',              label: 'Clôturés',      icon: Archive,      iconBg: 'bg-red-100',     iconColor: 'text-red-600',     activeColor: 'text-red-700' },
+];
+
 const EXPORT_COLUMNS: ExportColumn[] = [
   { header: 'Référence', cell: (p) => p.reference },
   { header: 'Nom',       cell: (p) => p.nom },
@@ -76,6 +85,12 @@ export default function ProgrammesListPage() {
   const [statut, setStatut] = useState('');
   const filters = { search: search || undefined, type: type || undefined, statut: statut || undefined };
   const { data, isLoading } = useProgrammes(filters, page, 20);
+  // Stats : mêmes filtres SAUF le statut.
+  const { data: statsRes } = useProgrammesStatusStats({
+    search: search || undefined,
+    type: type || undefined,
+  });
+  const stats = statsRes?.success ? statsRes.data : undefined;
 
   const filterSummary = [
     search && `Recherche : "${search}"`,
@@ -122,6 +137,16 @@ export default function ProgrammesListPage() {
             onChange={(e) => { setStatut(e.target.value); setPage(1); }} />
         </div>
       </Card>
+
+      <div className="mb-4">
+        <StatusRecap
+          items={STATUT_RECAP_ITEMS}
+          stats={stats}
+          total={stats?.total}
+          activeKey={statut}
+          onSelect={(k) => { setStatut(k); setPage(1); }}
+        />
+      </div>
 
       <Card padding={false}>
         {isLoading ? (

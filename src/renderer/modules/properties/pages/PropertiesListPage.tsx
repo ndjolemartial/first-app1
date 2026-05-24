@@ -9,11 +9,12 @@ import Select from '../../../shared/components/ui/Select';
 import Pagination from '../../../shared/components/ui/Pagination';
 import { SkeletonTable } from '../../../shared/components/ui/Skeleton';
 import EmptyState from '../../../shared/components/ui/EmptyState';
-import { useProperties } from '../hooks/useProperties';
+import { useProperties, usePropertiesStatusStats } from '../hooks/useProperties';
 import { formatCurrency } from '../../../shared/utils/format';
 import ExportMenu, { ExportColumn } from '../../../shared/components/ExportMenu';
+import StatusRecap, { type StatusRecapItem } from '../../../shared/components/ui/StatusRecap';
 import { useAuthStore } from '../../../shared/stores/auth.store';
-import { Plus, Eye, Edit, Building2 } from 'lucide-react';
+import { Plus, Eye, Edit, Building2, CheckCircle2, BookmarkCheck, Clock, BadgeCheck, KeyRound, Wrench, Ban } from 'lucide-react';
 
 /** Rôles habilités à créer/modifier un bien. */
 const WRITE_ROLES = new Set(['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ACCOUNTANT', 'ASSISTANTE_DIRECTION']);
@@ -32,35 +33,48 @@ const TYPE_OPTIONS = [
 const STATUS_OPTIONS = [
   { value: '', label: 'Tous les statuts' },
   { value: 'DISPONIBLE', label: 'Disponible' },
-  { value: 'INDISPONIBLE', label: 'Indisponible' },
-  { value: 'EN_LOCATION', label: 'En location' },
-  { value: 'SOLDE', label: 'Soldé' },
+  { value: 'RESERVE', label: 'Réservé' },
   { value: 'SOUS_OPTION', label: 'Sous option' },
+  { value: 'VENDU', label: 'Vendu' },
+  { value: 'EN_LOCATION', label: 'En location' },
   { value: 'EN_RENOVATION', label: 'En rénovation' },
+  { value: 'INDISPONIBLE', label: 'Indisponible' },
 ];
 
 const STATUS_VARIANT: Record<string, 'success' | 'info' | 'warning' | 'danger' | 'default' | 'purple'> = {
   DISPONIBLE: 'success',
-  INDISPONIBLE: 'danger',
-  EN_LOCATION: 'info',
-  SOLDE: 'default',
+  RESERVE: 'warning',
   SOUS_OPTION: 'warning',
+  VENDU: 'default',
+  EN_LOCATION: 'info',
   EN_RENOVATION: 'purple',
+  INDISPONIBLE: 'danger',
 };
 
 const STATUS_LABEL: Record<string, string> = {
   DISPONIBLE: 'Disponible',
-  INDISPONIBLE: 'Indisponible',
-  EN_LOCATION: 'En location',
-  SOLDE: 'Soldé',
+  RESERVE: 'Réservé',
   SOUS_OPTION: 'Sous option',
+  VENDU: 'Vendu',
+  EN_LOCATION: 'En location',
   EN_RENOVATION: 'En rénovation',
+  INDISPONIBLE: 'Indisponible',
 };
 
 const TYPE_LABEL: Record<string, string> = {
   APARTEMENT: 'Appartement', DUPLEX: 'Duplex',
   VILLA: 'Villa', STUDIO: 'Studio', BUREAU: 'Bureau', PARKING: 'Parking', AUTRE: 'Autre',
 };
+
+const STATUS_RECAP_ITEMS: StatusRecapItem[] = [
+  { key: 'DISPONIBLE',    label: 'Disponibles',   icon: CheckCircle2,  iconBg: 'bg-emerald-100', iconColor: 'text-emerald-600', activeColor: 'text-emerald-700' },
+  { key: 'RESERVE',       label: 'Réservés',      icon: BookmarkCheck, iconBg: 'bg-amber-100',   iconColor: 'text-amber-600',   activeColor: 'text-amber-700' },
+  { key: 'SOUS_OPTION',   label: 'Sous option',   icon: Clock,         iconBg: 'bg-sky-100',     iconColor: 'text-sky-600',     activeColor: 'text-sky-700' },
+  { key: 'VENDU',         label: 'Vendus',        icon: BadgeCheck,    iconBg: 'bg-slate-200',   iconColor: 'text-slate-700',   activeColor: 'text-slate-800' },
+  { key: 'EN_LOCATION',   label: 'En location',   icon: KeyRound,      iconBg: 'bg-blue-100',    iconColor: 'text-blue-600',    activeColor: 'text-blue-700' },
+  { key: 'EN_RENOVATION', label: 'En rénovation', icon: Wrench,        iconBg: 'bg-purple-100',  iconColor: 'text-purple-600',  activeColor: 'text-purple-700' },
+  { key: 'INDISPONIBLE',  label: 'Indisponibles', icon: Ban,           iconBg: 'bg-red-100',     iconColor: 'text-red-600',     activeColor: 'text-red-700' },
+];
 
 const EXPORT_COLUMNS: ExportColumn[] = [
   { header: 'Référence',     cell: (p) => p.reference },
@@ -96,6 +110,12 @@ export default function PropertiesListPage() {
     status: status || undefined,
   };
   const { data, isLoading } = useProperties(filters, page, 20);
+  // Stats : mêmes filtres SAUF le statut (sinon une seule colonne serait non nulle).
+  const { data: statsRes } = usePropertiesStatusStats({
+    search: search || undefined,
+    type: type || undefined,
+  });
+  const stats = statsRes?.success ? statsRes.data : undefined;
 
   const filterSummary = [
     search && `Recherche : "${search}"`,
@@ -143,6 +163,16 @@ export default function PropertiesListPage() {
             onChange={(e) => { setStatus(e.target.value); setPage(1); }} />
         </div>
       </Card>
+
+      <div className="mb-4">
+        <StatusRecap
+          items={STATUS_RECAP_ITEMS}
+          stats={stats}
+          total={stats?.total}
+          activeKey={status}
+          onSelect={(k) => { setStatus(k); setPage(1); }}
+        />
+      </div>
 
       <Card padding={false}>
         {isLoading ? (

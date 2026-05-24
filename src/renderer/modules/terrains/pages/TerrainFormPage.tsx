@@ -46,6 +46,36 @@ const schema = z.object({
     .optional()
     .refine((v) => !v || (Number.isFinite(Number(v)) && Number(v) >= -180 && Number(v) <= 180), 'Longitude entre -180 et 180'),
   description: z.string().optional(),
+  // Frais de démarches ACD (option client).
+  acdDemarchesEnabled: z.boolean().optional(),
+  acdDemarchesAmount: z.coerce.number().nonnegative().optional().or(z.literal('')),
+  acdDemarchesStartDate: z.string().optional(),
+  acdDemarchesInstallmentCount: z.coerce.number().int().positive().optional().or(z.literal('')),
+}).superRefine((d, ctx) => {
+  // Règle métier : un terrain en RESERVE / VENDU / SOUS_OPTION doit avoir un attributaire.
+  if (['RESERVE', 'VENDU', 'SOUS_OPTION'].includes(d.statut) && (d.clientId === '' || d.clientId == null)) {
+    ctx.addIssue({
+      code: 'custom',
+      path: ['clientId'],
+      message: 'Un attributaire est requis pour ce statut (Réservé, Vendu, Sous option).',
+    });
+  }
+  // Règle métier : si l'option ACD est activée, le montant, la date de début
+  // et le nombre d'échéances sont obligatoires (et un attributaire doit exister).
+  if (d.acdDemarchesEnabled) {
+    if (d.acdDemarchesAmount === '' || d.acdDemarchesAmount == null || Number(d.acdDemarchesAmount) <= 0) {
+      ctx.addIssue({ code: 'custom', path: ['acdDemarchesAmount'], message: 'Montant requis.' });
+    }
+    if (!d.acdDemarchesStartDate) {
+      ctx.addIssue({ code: 'custom', path: ['acdDemarchesStartDate'], message: 'Date de début requise.' });
+    }
+    if (d.acdDemarchesInstallmentCount === '' || d.acdDemarchesInstallmentCount == null || Number(d.acdDemarchesInstallmentCount) < 1) {
+      ctx.addIssue({ code: 'custom', path: ['acdDemarchesInstallmentCount'], message: 'Nombre d\'échéances ≥ 1 requis.' });
+    }
+    if (d.clientId === '' || d.clientId == null) {
+      ctx.addIssue({ code: 'custom', path: ['clientId'], message: "Un attributaire est requis pour activer les frais de démarches ACD." });
+    }
+  }
 });
 
 type FormData = z.infer<typeof schema>;
@@ -53,8 +83,8 @@ type FormData = z.infer<typeof schema>;
 const STATUT_OPTIONS = [
   { value: 'DISPONIBLE', label: 'Disponible' },
   { value: 'RESERVE', label: 'Réservé' },
-  { value: 'VENDU', label: 'Vendu' },
   { value: 'SOUS_OPTION', label: 'Sous option' },
+  { value: 'VENDU', label: 'Vendu' },
 ];
 
 type ScanKey = 'adu' | 'attribution' | 'cession' | 'dm' | 'tf' | 'acd' | 'compulsoires' | 'dossier_technique';
@@ -155,7 +185,7 @@ export default function TerrainFormPage() {
   const defaultLotissementId = searchParams.get('lotissementId') ?? '';
   const defaultProgrammeId = searchParams.get('programmeId') ?? '';
 
-  const { register, handleSubmit, reset, setValue, control, formState: { errors, isSubmitting } } = useForm<
+  const { register, handleSubmit, reset, setValue, watch, control, formState: { errors, isSubmitting } } = useForm<
     z.input<typeof schema>,
     any,
     FormData
@@ -169,9 +199,38 @@ export default function TerrainFormPage() {
     },
   });
 
+  // Un terrain DISPONIBLE n'a pas d'attributaire — on masque le champ et on
+  // vide silencieusement la valeur pour ne pas envoyer un client résiduel.
+  const watchStatut = watch('statut');
+  const showAttributaire = watchStatut !== 'DISPONIBLE';
+  useEffect(() => {
+    if (!showAttributaire) {
+      setValue('clientId', '' as any, { shouldValidate: false });
+    }
+  }, [showAttributaire, setValue]);
+
+  // Pré-remplissage automatique du montant des frais de démarches ACD à partir
+  // du lotissement sélectionné, lorsque l'option est activée et qu'aucun
+  // montant n'a encore été saisi sur ce terrain.
+  const watchAcdEnabled = watch('acdDemarchesEnabled');
+  const watchAcdAmount = watch('acdDemarchesAmount');
+  const watchLotissementId = watch('lotissementId');
+  useEffect(() => {
+    if (!watchAcdEnabled) return;
+    if (watchAcdAmount !== '' && watchAcdAmount != null) return;
+    const lot = (lotsRes?.data ?? []).find((l: any) => Number(l.id) === Number(watchLotissementId));
+    const standard = lot?.fraisDemarchesAcdStandard;
+    if (standard != null && Number(standard) > 0) {
+      setValue('acdDemarchesAmount', Number(standard) as any, { shouldValidate: false });
+    }
+  }, [watchAcdEnabled, watchLotissementId, lotsRes, setValue, watchAcdAmount]);
+
   useEffect(() => {
     if (isEdit && res?.data) {
       const t = res.data;
+      // Coercion des null Prisma en '' pour les champs `z.string().optional()` :
+      // Zod n'accepte pas null sur un string optional, sinon handleSubmit échoue
+      // silencieusement et RHF focus le premier champ "invalide".
       reset({
         ...t,
         clientId: t.clientId ?? ('' as any),
@@ -180,6 +239,22 @@ export default function TerrainFormPage() {
         prixVente: t.prixVente ?? ('' as any),
         latitude: t.latitude != null ? String(t.latitude) : '',
         longitude: t.longitude != null ? String(t.longitude) : '',
+        numeroIlot: t.numeroIlot ?? '',
+        numeroParcelle: t.numeroParcelle ?? '',
+        numeroADU: t.numeroADU ?? '',
+        numeroAttestationAttribution: t.numeroAttestationAttribution ?? '',
+        numeroAttestationCession: t.numeroAttestationCession ?? '',
+        numeroDM: t.numeroDM ?? '',
+        titreFoncier: t.titreFoncier ?? '',
+        numeroACD: t.numeroACD ?? '',
+        description: t.description ?? '',
+        acdDemarchesEnabled: !!t.acdDemarchesEnabled,
+        acdDemarchesAmount: t.acdDemarchesAmount ?? ('' as any),
+        // L'<input type="date"> attend une chaîne ISO YYYY-MM-DD.
+        acdDemarchesStartDate: t.acdDemarchesStartDate
+          ? new Date(t.acdDemarchesStartDate).toISOString().slice(0, 10)
+          : '',
+        acdDemarchesInstallmentCount: t.acdDemarchesInstallmentCount ?? ('' as any),
       });
     }
   }, [res, isEdit, reset]);
@@ -222,6 +297,10 @@ export default function TerrainFormPage() {
       prixVente: data.prixVente === '' ? null : data.prixVente,
       latitude: data.latitude ? Number(data.latitude) : null,
       longitude: data.longitude ? Number(data.longitude) : null,
+      acdDemarchesEnabled: !!data.acdDemarchesEnabled,
+      acdDemarchesAmount: data.acdDemarchesAmount === '' ? null : data.acdDemarchesAmount,
+      acdDemarchesStartDate: data.acdDemarchesStartDate ? new Date(data.acdDemarchesStartDate).toISOString() : null,
+      acdDemarchesInstallmentCount: data.acdDemarchesInstallmentCount === '' ? null : data.acdDemarchesInstallmentCount,
     };
     let r: any;
     if (isEdit) r = await update.mutateAsync({ id: Number(id), payload });
@@ -283,6 +362,61 @@ export default function TerrainFormPage() {
                 </label>
               </div>
             </div>
+            {/* Attributaire — affiché uniquement si statut ≠ DISPONIBLE */}
+            {showAttributaire && (
+              <FormSearchSelect
+                control={control}
+                name="clientId"
+                label="Attributaire (obligatoire pour Réservé / Vendu / Sous option)"
+                options={clientOptions}
+                error={errors.clientId?.message}
+              />
+            )}
+          </div>
+
+          {/* Frais de démarches ACD */}
+          <div className="border-t border-slate-200 pt-4 space-y-3">
+            <h3 className="text-sm font-semibold text-slate-700">Frais de démarches ACD</h3>
+            <p className="text-xs text-slate-500">
+              Cocher cette option si le client confie les démarches ACD à l'entreprise. Ces frais sont
+              indépendants du prix du terrain et des frais de dossier. La génération des factures se fait
+              ensuite depuis la fiche du terrain.
+            </p>
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input type="checkbox" className="h-4 w-4 rounded" {...register('acdDemarchesEnabled')} />
+              <span className="text-sm font-medium text-slate-700">
+                Le client confie les démarches ACD à l'entreprise
+              </span>
+            </label>
+            {watchAcdEnabled && (
+              <div className="grid grid-cols-3 gap-4 pl-6">
+                <Input
+                  label="Montant (FCFA)"
+                  type="number"
+                  step="1"
+                  min="0"
+                  placeholder="Pré-rempli depuis le lotissement"
+                  error={(errors as any).acdDemarchesAmount?.message}
+                  {...register('acdDemarchesAmount')}
+                />
+                <Input
+                  label="Date de début"
+                  type="date"
+                  error={(errors as any).acdDemarchesStartDate?.message}
+                  {...register('acdDemarchesStartDate')}
+                />
+                <Input
+                  label="Nombre d'échéances"
+                  type="number"
+                  step="1"
+                  min="1"
+                  placeholder="1 = comptant"
+                  helper="1 pour un paiement comptant, N pour un échelonnement mensuel"
+                  error={(errors as any).acdDemarchesInstallmentCount?.message}
+                  {...register('acdDemarchesInstallmentCount')}
+                />
+              </div>
+            )}
           </div>
 
           {/* Localisation GPS */}
@@ -431,15 +565,6 @@ export default function TerrainFormPage() {
             </div>
           </div>
 
-          {/* Attributaire */}
-          <div className="border-t border-slate-200 pt-4">
-            <FormSearchSelect
-              control={control}
-              name="clientId"
-              label="Client (si déjà attribué)"
-              options={clientOptions}
-            />
-          </div>
 
           <Textarea label="Description / Notes" rows={3} {...register('description')} />
 

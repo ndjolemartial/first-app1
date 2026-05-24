@@ -78,11 +78,11 @@ const SOURCE_LABEL: Record<string, string> = {
 // ── Colonnes d'export ───────────────────────────────────────────────────────────
 
 const formatUserName = (u: any): string =>
-  u ? `${u.firstName ?? ''} ${u.lastName ?? ''}`.trim() : '';
+  u ? `${u.lastName ?? ''} ${u.firstName ?? ''}`.trim() : '';
 
 const EXPORT_COLUMNS: ExportColumn[] = [
-  { header: 'Prénom',           cell: (p) => p.firstName },
   { header: 'Nom',              cell: (p) => p.lastName },
+  { header: 'Prénom',           cell: (p) => p.firstName },
   { header: 'Email',            cell: (p) => p.email },
   { header: 'Téléphone',        cell: (p) => p.phone },
   { header: 'Mobile',           cell: (p) => p.mobile },
@@ -280,7 +280,7 @@ export default function ProspectsListPage() {
                           {p.firstName?.[0]}{p.lastName?.[0]}
                         </div>
                         <div>
-                          <p className="font-medium text-slate-900">{p.firstName} {p.lastName}</p>
+                          <p className="font-medium text-slate-900">{p.lastName} {p.firstName}</p>
                           {p.email && <p className="text-xs text-slate-400">{p.email}</p>}
                         </div>
                       </div>

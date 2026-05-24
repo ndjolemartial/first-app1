@@ -33,6 +33,6 @@ export function fullName(
   lastName?: string | null,
   fallback = '—'
 ): string {
-  const parts = [firstName, lastName].filter(Boolean);
+  const parts = [lastName, firstName].filter(Boolean);
   return parts.length > 0 ? parts.join(' ') : fallback;
 }

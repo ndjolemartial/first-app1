@@ -45,6 +45,15 @@ export function useUpdateProgramme() {
   });
 }
 
+export function useProgrammesStatusStats(filters: object = {}) {
+  // Clé préfixée par 'programmes' afin que les invalidations existantes
+  // (create/update/delete) rafraîchissent aussi les stats.
+  return useQuery({
+    queryKey: ['programmes', 'status-stats', filters],
+    queryFn: () => ipc().statusStats(token(), filters),
+  });
+}
+
 export function useDeleteProgramme() {
   const qc = useQueryClient();
   return useMutation({

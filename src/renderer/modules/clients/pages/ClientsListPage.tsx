@@ -41,15 +41,15 @@ const STATUS_VARIANT: Record<string, 'success' | 'danger' | 'purple' | 'warning'
 };
 
 const EXPORT_COLUMNS: ExportColumn[] = [
-  { header: 'Nom / Entreprise', cell: (c) => (c.type === 'INDIVIDUEL' ? `${c.firstName ?? ''} ${c.lastName ?? ''}`.trim() : c.entreprise) },
+  { header: 'Nom / Entreprise', cell: (c) => (c.type === 'INDIVIDUEL' ? `${c.lastName ?? ''} ${c.firstName ?? ''}`.trim() : c.entreprise) },
   { header: 'Type',             cell: (c) => (c.type === 'INDIVIDUEL' ? 'Particulier' : 'Entreprise') },
   { header: 'Téléphone',        cell: (c) => c.phone },
   { header: 'Mobile',           cell: (c) => c.mobile },
   { header: 'Email',            cell: (c) => c.email },
   { header: 'Ville',            cell: (c) => c.city },
   { header: 'Conventions',      cell: (c) => c._count?.conventions ?? 0 },
-  { header: 'Affecté à',        cell: (c) => c.assignedTo ? `${c.assignedTo.firstName ?? ''} ${c.assignedTo.lastName ?? ''}`.trim() : '' },
-  { header: 'Apporteur',        cell: (c) => c.referrer ? (c.referrer.companyName ?? `${c.referrer.firstName ?? ''} ${c.referrer.lastName ?? ''}`.trim()) : '' },
+  { header: 'Affecté à',        cell: (c) => c.assignedTo ? `${c.assignedTo.lastName ?? ''} ${c.assignedTo.firstName ?? ''}`.trim() : '' },
+  { header: 'Apporteur',        cell: (c) => c.referrer ? (c.referrer.companyName ?? `${c.referrer.lastName ?? ''} ${c.referrer.firstName ?? ''}`.trim()) : '' },
   { header: 'Statut',           cell: (c) => STATUS_OPTIONS.find((o) => o.value === c.status)?.label ?? c.status },
   { header: 'Créé le',          cell: (c) => formatDate(c.createdAt) },
 ];
@@ -148,7 +148,7 @@ export default function ClientsListPage() {
                         </div>
                         <div>
                           <p className="font-medium text-slate-900">
-                            {c.type === 'INDIVIDUEL' ? `${c.firstName ?? ''} ${c.lastName ?? ''}`.trim() : c.entreprise}
+                            {c.type === 'INDIVIDUEL' ? `${c.lastName ?? ''} ${c.firstName ?? ''}`.trim() : c.entreprise}
                           </p>
                         </div>
                       </div>
@@ -165,11 +165,11 @@ export default function ClientsListPage() {
                     <td className="px-4 py-3 text-slate-600">{c.city ?? '—'}</td>
                     <td className="px-4 py-3 text-slate-500">
                       {c.assignedTo ? (
-                        <p className="text-slate-700">{`${c.assignedTo.firstName ?? ''} ${c.assignedTo.lastName ?? ''}`.trim()}</p>
+                        <p className="text-slate-700">{`${c.assignedTo.lastName ?? ''} ${c.assignedTo.firstName ?? ''}`.trim()}</p>
                       ) : <p className="text-slate-400">—</p>}
                       {c.referrer && (
                         <p className="text-xs">
-                          Apporteur : {c.referrer.companyName ?? `${c.referrer.firstName ?? ''} ${c.referrer.lastName ?? ''}`.trim()}
+                          Apporteur : {c.referrer.companyName ?? `${c.referrer.lastName ?? ''} ${c.referrer.firstName ?? ''}`.trim()}
                         </p>
                       )}
                     </td>

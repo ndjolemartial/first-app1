@@ -21,8 +21,10 @@ const propertyBaseSchema = z.object({
   // Origine du bien : propriétaire OU programme immobilier (jamais les deux).
   ownerId: z.number().int().positive().nullable().optional(),
   programmeId: z.number().int().positive().nullable().optional(),
+  // Client rattaché (visible quand le statut n'est pas DISPONIBLE).
+  clientId: z.number().int().positive().nullable().optional(),
   type: z.enum(['APARTEMENT', 'DUPLEX', 'VILLA', 'STUDIO', 'BUREAU', 'PARKING', 'AUTRE']),
-  status: z.enum(['DISPONIBLE', 'INDISPONIBLE', 'EN_LOCATION', 'SOLDE', 'SOUS_OPTION', 'EN_RENOVATION']).default('DISPONIBLE'),
+  status: z.enum(['DISPONIBLE', 'RESERVE', 'SOUS_OPTION', 'VENDU', 'EN_LOCATION', 'EN_RENOVATION', 'INDISPONIBLE']).default('DISPONIBLE'),
   address: z.string().min(1),
   addressLine2: z.string().optional(),
   city: z.string().min(1),
@@ -58,7 +60,19 @@ const SOURCE_ERROR = {
   path: ['programmeId'],
 };
 
-const propertyCreateSchema = propertyBaseSchema.refine(exclusiveSource, SOURCE_ERROR);
+/** Statuts pour lesquels un client rattaché est obligatoire. */
+const STATUS_REQUIRING_CLIENT = ['RESERVE', 'SOUS_OPTION', 'VENDU', 'EN_LOCATION'] as const;
+type StatusRequiringClient = (typeof STATUS_REQUIRING_CLIENT)[number];
+function statusNeedsClient(s: string | undefined | null): s is StatusRequiringClient {
+  return !!s && (STATUS_REQUIRING_CLIENT as readonly string[]).includes(s);
+}
+
+const propertyCreateSchema = propertyBaseSchema
+  .refine(exclusiveSource, SOURCE_ERROR)
+  .refine((d) => !statusNeedsClient(d.status) || !!d.clientId, {
+    message: 'Un client doit être rattaché pour ce statut',
+    path: ['clientId'],
+  });
 const propertyUpdateSchema = propertyBaseSchema.partial().refine(exclusiveSource, SOURCE_ERROR);
 
 /**
@@ -115,7 +129,8 @@ export function registerPropertiesIPC(): void {
           include: {
             owner: { select: { id: true, firstName: true, lastName: true, companyName: true } },
             programme: { select: { id: true, reference: true, nom: true } },
-            _count: { select: { conventions: { where: { deletedAt: null } } } },
+            client: { select: { id: true, type: true, firstName: true, lastName: true, entreprise: true } },
+            _count: { select: { conventionLinks: { where: { convention: { deletedAt: null } } } } },
           },
         }),
         db.property.count({ where }),
@@ -138,12 +153,17 @@ export function registerPropertiesIPC(): void {
         include: {
           owner: true,
           programme: true,
-          conventions: {
-            where: { deletedAt: null },
+          client: { select: { id: true, type: true, firstName: true, lastName: true, entreprise: true, email: true, phone: true } },
+          conventionLinks: {
+            where: { convention: { deletedAt: null } },
             include: {
-              client: { select: { id: true, firstName: true, lastName: true, entreprise: true, type: true } },
+              convention: {
+                include: {
+                  client: { select: { id: true, firstName: true, lastName: true, entreprise: true, type: true } },
+                },
+              },
             },
-            orderBy: { createdAt: 'desc' },
+            orderBy: { convention: { createdAt: 'desc' } },
           },
           photos: { orderBy: { order: 'asc' } },
           documents: { orderBy: { uploadedAt: 'desc' } },
@@ -170,10 +190,13 @@ export function registerPropertiesIPC(): void {
       const db = getDb();
       const reference = await nextReference(db);
       const d = parsed.data;
+      // Un bien DISPONIBLE ne peut pas avoir de client rattaché.
+      const effectiveClientId = d.status === 'DISPONIBLE' ? null : (d.clientId ?? null);
       const createData: any = {
         reference,
         ownerId: d.ownerId ?? null,
         programmeId: d.programmeId ?? null,
+        clientId: effectiveClientId,
         type: d.type,
         status: d.status,
         address: d.address,
@@ -221,6 +244,18 @@ export function registerPropertiesIPC(): void {
       const d2 = parsed.data;
       const updateData: any = { ...d2 };
       if (d2.amenities !== undefined) updateData.amenities = JSON.stringify(d2.amenities);
+      // Vide automatiquement le client si le statut repasse à DISPONIBLE.
+      if (d2.status === 'DISPONIBLE') updateData.clientId = null;
+      // Vérifie qu'un client reste rattaché pour les statuts qui l'exigent
+      // (en fusionnant l'état actuel avec la mise à jour partielle).
+      if (d2.status && statusNeedsClient(d2.status)) {
+        const nextClientId = d2.clientId !== undefined
+          ? d2.clientId
+          : (await db.property.findUnique({ where: { id }, select: { clientId: true } }))?.clientId ?? null;
+        if (!nextClientId) {
+          return { success: false, error: 'Un client doit être rattaché pour ce statut' };
+        }
+      }
       const property = await db.property.update({ where: { id, deletedAt: null }, data: updateData });
       return ser({ success: true, data: property });
     } catch (error: any) {
@@ -241,16 +276,72 @@ export function registerPropertiesIPC(): void {
     }
   });
 
+  ipcMain.handle('properties:statusStats', async (_event, { token, filters = {} }: any) => {
+    try {
+      const session = getSession(token);
+      if (!session) return { success: false, error: 'Session expirée' };
+      checkRole(session, READ_ROLES);
+      const db = getDb();
+      const where: any = { deletedAt: null };
+      if (filters.type) where.type = filters.type;
+      if (filters.ownerId) where.ownerId = filters.ownerId;
+      if (filters.programmeId) where.programmeId = filters.programmeId;
+      if (!hasFullView(session.role)) where.status = 'DISPONIBLE';
+      if (filters.city) where.city = { contains: filters.city };
+      if (filters.search) {
+        where.OR = [
+          { reference: { contains: filters.search } },
+          { address: { contains: filters.search } },
+          { city: { contains: filters.search } },
+          { description: { contains: filters.search } },
+          { owner: { firstName: { contains: filters.search } } },
+          { owner: { lastName: { contains: filters.search } } },
+          { owner: { companyName: { contains: filters.search } } },
+          { programme: { nom: { contains: filters.search } } },
+          { programme: { reference: { contains: filters.search } } },
+        ];
+      }
+      const rows = await db.property.groupBy({
+        by: ['status'],
+        where,
+        _count: { _all: true },
+      });
+      const stats: Record<string, number> = {
+        DISPONIBLE: 0, RESERVE: 0, SOUS_OPTION: 0, VENDU: 0,
+        EN_LOCATION: 0, EN_RENOVATION: 0, INDISPONIBLE: 0,
+      };
+      let total = 0;
+      for (const r of rows) {
+        const n = r._count?._all ?? 0;
+        stats[r.status as string] = n;
+        total += n;
+      }
+      return { success: true, data: { ...stats, total } };
+    } catch (error: any) {
+      return { success: false, error: error.message };
+    }
+  });
+
   ipcMain.handle('properties:updateStatus', async (_event, { token, id, status }: any) => {
     try {
       const session = getSession(token);
       if (!session) return { success: false, error: 'Session expirée' };
       checkRole(session, WRITE_ROLES);
       const db = getDb();
+      // Refuse les statuts qui exigent un client si aucun n'est rattaché.
+      if (statusNeedsClient(status)) {
+        const existing = await db.property.findUnique({ where: { id }, select: { clientId: true } });
+        if (!existing?.clientId) {
+          return { success: false, error: 'Un client doit être rattaché pour ce statut' };
+        }
+      }
+      // Le passage en DISPONIBLE supprime automatiquement le client rattaché.
+      const data: any = { status };
+      if (status === 'DISPONIBLE') data.clientId = null;
       const property = await db.property.update({
         where: { id, deletedAt: null },
-        data: { status },
-        select: { id: true, status: true },
+        data,
+        select: { id: true, status: true, clientId: true },
       });
       return ser({ success: true, data: property });
     } catch (error: any) {

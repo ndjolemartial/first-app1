@@ -11,7 +11,8 @@ const WRITE_ROLES = ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ACCOUNTANT'];
 
 /** Types de facture pris en charge pour l'assignation d'un modèle par défaut. */
 export const INVOICE_TYPES = [
-  'VENTE', 'ECHEANCE_VENTE', 'FRAIS_AGENCE', 'FRAIS_DE_GESTION', 'AVANCE', 'CAUTION', 'OTHER',
+  'VENTE', 'ECHEANCE_VENTE', 'FRAIS_AGENCE', 'FRAIS_DE_GESTION', 'FRAIS_DEMARCHES_ACD',
+  'AVANCE', 'CAUTION', 'OTHER',
 ] as const;
 
 /** Préfixe des clés AppSetting de correspondance type de facture → modèle. */

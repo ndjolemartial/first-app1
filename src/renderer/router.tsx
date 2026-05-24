@@ -37,9 +37,13 @@ import PropertyDetailPage from './modules/properties/pages/PropertyDetailPage';
 import ConventionsListPage from './modules/conventions/pages/ConventionsListPage';
 import ConventionFormPage from './modules/conventions/pages/ConventionFormPage';
 import ConventionDetailPage from './modules/conventions/pages/ConventionDetailPage';
-import ConventionTemplatesListPage from './modules/conventions/pages/ConventionTemplatesListPage';
 import ConventionTemplateFormPage from './modules/conventions/pages/ConventionTemplateFormPage';
 import ConventionDocumentPage from './modules/conventions/pages/ConventionDocumentPage';
+import AttestationTemplateFormPage from './modules/conventions/pages/AttestationTemplateFormPage';
+import AttestationsListPage from './modules/conventions/pages/AttestationsListPage';
+import AttestationFormPage from './modules/conventions/pages/AttestationFormPage';
+import AttestationDetailPage from './modules/conventions/pages/AttestationDetailPage';
+import AttestationDocumentPage from './modules/conventions/pages/AttestationDocumentPage';
 
 // Communication
 import CommunicationPage from './modules/communication/pages/CommunicationPage';
@@ -64,7 +68,6 @@ import InvoicesListPage from './modules/accounting/pages/InvoicesListPage';
 import InvoiceFormPage from './modules/accounting/pages/InvoiceFormPage';
 import InvoiceDetailPage from './modules/accounting/pages/InvoiceDetailPage';
 import InstallmentsPage from './modules/accounting/pages/InstallmentsPage';
-import InvoiceTemplatesPage from './modules/accounting/pages/InvoiceTemplatesPage';
 
 // Lotissements
 import LotissementsListPage from './modules/lotissements/pages/LotissementsListPage';
@@ -80,6 +83,11 @@ import TerrainDetailPage from './modules/terrains/pages/TerrainDetailPage';
 import ProgrammesListPage from './modules/programmes/pages/ProgrammesListPage';
 import ProgrammeFormPage from './modules/programmes/pages/ProgrammeFormPage';
 import ProgrammeDetailPage from './modules/programmes/pages/ProgrammeDetailPage';
+
+// Projets
+import ProjectsListPage from './modules/projects/pages/ProjectsListPage';
+import ProjectFormPage from './modules/projects/pages/ProjectFormPage';
+import ProjectDetailPage from './modules/projects/pages/ProjectDetailPage';
 
 // Commissions
 import CommissionsDashboardPage from './modules/commissions/pages/CommissionsDashboardPage';
@@ -101,7 +109,6 @@ import TreasuryDashboardPage from './modules/treasury/pages/TreasuryDashboardPag
 import AccountFormPage from './modules/treasury/pages/AccountFormPage';
 import AccountDetailPage from './modules/treasury/pages/AccountDetailPage';
 import OperationFormPage from './modules/treasury/pages/OperationFormPage';
-import CategoriesPage from './modules/treasury/pages/CategoriesPage';
 
 // Dashboard placeholder
 import DashboardPage from './modules/dashboard/DashboardPage';
@@ -182,9 +189,16 @@ export const router = createHashRouter([
             children: [
               { path: 'conventions', element: <ConventionsListPage /> },
               { path: 'conventions/new', element: <ConventionFormPage /> },
-              { path: 'conventions/templates', element: <ConventionTemplatesListPage /> },
               { path: 'conventions/templates/new', element: <ConventionTemplateFormPage /> },
               { path: 'conventions/templates/:id/edit', element: <ConventionTemplateFormPage /> },
+              // Attestations (modèles puis attestations émises) — routes plus spécifiques en premier
+              { path: 'conventions/attestation-templates/new', element: <AttestationTemplateFormPage /> },
+              { path: 'conventions/attestation-templates/:id/edit', element: <AttestationTemplateFormPage /> },
+              { path: 'conventions/attestations', element: <AttestationsListPage /> },
+              { path: 'conventions/attestations/new', element: <AttestationFormPage /> },
+              { path: 'conventions/attestations/:id', element: <AttestationDetailPage /> },
+              { path: 'conventions/attestations/:id/edit', element: <AttestationFormPage /> },
+              { path: 'conventions/attestations/:id/document', element: <AttestationDocumentPage /> },
               { path: 'conventions/:id', element: <ConventionDetailPage /> },
               { path: 'conventions/:id/edit', element: <ConventionFormPage /> },
               { path: 'conventions/:id/document', element: <ConventionDocumentPage /> },
@@ -244,6 +258,17 @@ export const router = createHashRouter([
             ],
           },
 
+          // Projets — réservé aux MANAGER+ (ACCOUNTANT inclus). AGENT/READONLY n'ont pas accès.
+          {
+            element: <RoleGuard allowedRoles={['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ACCOUNTANT', 'ASSISTANTE_DIRECTION']} />,
+            children: [
+              { path: 'projects', element: <ProjectsListPage /> },
+              { path: 'projects/new', element: <ProjectFormPage /> },
+              { path: 'projects/:id', element: <ProjectDetailPage /> },
+              { path: 'projects/:id/edit', element: <ProjectFormPage /> },
+            ],
+          },
+
           // Accounting — réservé aux MANAGER+ (ACCOUNTANT inclus). AGENT/READONLY n'ont pas accès.
           // ASSISTANTE_DIRECTION est explicitement exclue de ce module.
           {
@@ -254,7 +279,6 @@ export const router = createHashRouter([
               { path: 'accounting/invoices/new', element: <InvoiceFormPage /> },
               { path: 'accounting/invoices/:id', element: <InvoiceDetailPage /> },
               { path: 'accounting/installments', element: <InstallmentsPage /> },
-              { path: 'accounting/invoice-templates', element: <InvoiceTemplatesPage /> },
             ],
           },
 
@@ -288,7 +312,6 @@ export const router = createHashRouter([
               { path: 'treasury/accounts/:id', element: <AccountDetailPage /> },
               { path: 'treasury/accounts/:id/edit', element: <AccountFormPage /> },
               { path: 'treasury/operations/new', element: <OperationFormPage /> },
-              { path: 'treasury/categories', element: <CategoriesPage /> },
             ],
           },
 

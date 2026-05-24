@@ -3,7 +3,7 @@ import { clsx } from 'clsx';
 import {
   LayoutDashboard, Users, UserSearch, UserCheck, Home, Building2,
   FileText, Calculator, MessageSquare, CalendarClock, Archive, Settings,
-  Map, Landmark, Percent, Wallet, Building, PiggyBank,
+  Map, Landmark, Percent, Wallet, Building, PiggyBank, Briefcase,
 } from 'lucide-react';
 import { useAuthStore } from '../../stores/auth.store';
 
@@ -24,7 +24,7 @@ const navItems: NavItem[] = [
   { label: 'Terrains', to: '/terrains', icon: <Landmark className="h-5 w-5" /> },
   { label: 'Programmes immobiliers', to: '/programmes', icon: <Building className="h-5 w-5" />, roles: ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ACCOUNTANT', 'ASSISTANTE_DIRECTION'] },
   { label: 'Biens', to: '/properties', icon: <Building2 className="h-5 w-5" /> },
-  { label: 'Conventions', to: '/conventions', icon: <FileText className="h-5 w-5" />, roles: ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ACCOUNTANT', 'ASSISTANTE_DIRECTION'] },
+  { label: 'Conventions / Attestations', to: '/conventions', icon: <FileText className="h-5 w-5" />, roles: ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ACCOUNTANT', 'ASSISTANTE_DIRECTION'] },
   { label: 'Commissions', to: '/commissions', icon: <Percent className="h-5 w-5" />, roles: ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ACCOUNTANT', 'ASSISTANTE_DIRECTION', 'AGENT', 'READONLY'] },
   { label: 'Comptabilité', to: '/accounting', icon: <Calculator className="h-5 w-5" />, roles: ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ACCOUNTANT'] },
   { label: 'Trésorerie', to: '/treasury', icon: <Wallet className="h-5 w-5" />, roles: ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ACCOUNTANT', 'READONLY'] },
@@ -32,6 +32,7 @@ const navItems: NavItem[] = [
   { label: 'Communication', to: '/communication', icon: <MessageSquare className="h-5 w-5" /> },
   { label: 'CRM', to: '/crm', icon: <CalendarClock className="h-5 w-5" /> },
   { label: 'Archivage', to: '/archiving', icon: <Archive className="h-5 w-5" />, roles: ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ACCOUNTANT', 'ASSISTANTE_DIRECTION'] },
+  { label: 'Projets', to: '/projects', icon: <Briefcase className="h-5 w-5" />, roles: ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ACCOUNTANT', 'ASSISTANTE_DIRECTION'] },
   { label: 'Paramètres', to: '/settings', icon: <Settings className="h-5 w-5" />, roles: ['SUPER_ADMIN', 'ADMIN'] },
 ];
 

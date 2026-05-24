@@ -1,14 +1,16 @@
 import { clsx } from 'clsx';
 
-interface CardProps {
+interface CardProps extends React.HTMLAttributes<HTMLDivElement> {
   children: React.ReactNode;
-  className?: string;
   padding?: boolean;
 }
 
-export default function Card({ children, className, padding = true }: CardProps) {
+export default function Card({ children, className, padding = true, ...rest }: CardProps) {
   return (
-    <div className={clsx('bg-white rounded-xl border border-slate-200 shadow-sm', padding && 'p-6', className)}>
+    <div
+      className={clsx('bg-white rounded-xl border border-slate-200 shadow-sm', padding && 'p-6', className)}
+      {...rest}
+    >
       {children}
     </div>
   );

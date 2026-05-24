@@ -32,6 +32,39 @@ function checkAccountingRole(session: { role: string }, allowedRoles: string[]):
 /** Sérialise pour l'IPC : les Decimal Prisma ne sont pas clonables par Electron. */
 const ser = <T>(v: T): T => JSON.parse(JSON.stringify(v));
 
+/**
+ * Synchronise les rappels CRM (type RAPPEL) rattachés à une facture en
+ * fonction du nouveau statut de cette dernière. Utilisé partout où une
+ * facture change de statut (paiement, annulation, réintégration).
+ *
+ * - PAYEE                                  → activités EN_ATTENTE → TRAITE
+ * - ANNULEE                                → activités EN_ATTENTE → ANNULE
+ * - BROUILLON / ENVOYEE / EN_RETARD / PARTIEL → activités ANNULE/TRAITE → EN_ATTENTE
+ */
+async function syncInvoiceActivities(
+  db: ReturnType<typeof getDb>,
+  invoiceId: number,
+  newStatus: string,
+): Promise<void> {
+  if (newStatus === 'PAYEE') {
+    await db.crmActivity.updateMany({
+      where: { invoiceId, status: 'EN_ATTENTE' },
+      data: { status: 'TRAITE', completedAt: new Date() },
+    });
+  } else if (newStatus === 'ANNULEE') {
+    await db.crmActivity.updateMany({
+      where: { invoiceId, status: 'EN_ATTENTE' },
+      data: { status: 'ANNULE' },
+    });
+  } else {
+    // Réactivation : seuls les rappels effectivement clos sont remis en attente.
+    await db.crmActivity.updateMany({
+      where: { invoiceId, status: { in: ['ANNULE', 'TRAITE'] } },
+      data: { status: 'EN_ATTENTE', completedAt: null },
+    });
+  }
+}
+
 const invoiceItemSchema = z.object({
   description: z.string().min(1),
   quantity: z.number().positive(),
@@ -39,7 +72,7 @@ const invoiceItemSchema = z.object({
 });
 
 const invoiceSchema = z.object({
-  type: z.enum(['VENTE', 'ECHEANCE_VENTE', 'FRAIS_AGENCE', 'FRAIS_DE_GESTION', 'AVANCE', 'CAUTION', 'OTHER']),
+  type: z.enum(['VENTE', 'ECHEANCE_VENTE', 'FRAIS_AGENCE', 'FRAIS_DE_GESTION', 'FRAIS_DEMARCHES_ACD', 'AVANCE', 'CAUTION', 'OTHER']),
   clientId: z.number().int().optional(),
   conventionId: z.number().int().optional(),
   taxRate: z.number().min(0).max(100).default(0),
@@ -118,10 +151,11 @@ async function computeRevenue(
 
 const INVOICE_TYPE_LABEL: Record<string, string> = {
   VENTE: 'Vente', ECHEANCE_VENTE: 'Échéance de vente', FRAIS_AGENCE: "Frais d'agence",
-  FRAIS_DE_GESTION: 'Frais de gestion', AVANCE: 'Avance', CAUTION: 'Caution', OTHER: 'Autre',
+  FRAIS_DE_GESTION: 'Frais de gestion', FRAIS_DEMARCHES_ACD: 'Frais de démarches ACD',
+  AVANCE: 'Avance', CAUTION: 'Caution', OTHER: 'Autre',
 };
 const INVOICE_STATUS_LABEL: Record<string, string> = {
-  BROUILLON: 'Brouillon', ENVOYEE: 'Envoyée', PAYEE: 'Payée',
+  BROUILLON: 'Brouillon', ENVOYEE: 'Validée', PAYEE: 'Payée',
   PARTIEL: 'Partiellement payée', EN_RETARD: 'En retard', ANNULEE: 'Annulée',
 };
 
@@ -180,7 +214,7 @@ function buildInvoiceHtml(inv: any, tpl: any): string {
 
   const c = inv.client;
   const clientName = c
-    ? (c.type === 'INDIVIDUEL' ? `${c.firstName ?? ''} ${c.lastName ?? ''}`.trim() : (c.entreprise ?? ''))
+    ? (c.type === 'INDIVIDUEL' ? `${c.lastName ?? ''} ${c.firstName ?? ''}`.trim() : (c.entreprise ?? ''))
     : '—';
   const clientLines: string[] = c
     ? [c.address, [c.postalCode, c.city].filter(Boolean).join(' '), c.country, c.phone, c.email].filter(Boolean)
@@ -295,8 +329,9 @@ export function registerAccountingIPC(): void {
       });
 
       const [
-        paidInvoicesCount,
+        paidInvoicesAgg,
         overdueAgg,
+        unpaidInstallmentsAgg,
         upcomingInstallments,
         overdueInstallments,
         recentInvoices,
@@ -304,8 +339,13 @@ export function registerAccountingIPC(): void {
         partialInvoices,
         partialPayments,
       ] = await Promise.all([
-        db.invoice.count({ where: { deletedAt: null, status: 'PAYEE' } }),
+        db.invoice.aggregate({ where: { deletedAt: null, status: 'PAYEE' }, _count: true, _sum: { total: true } }),
         db.saleInstallment.aggregate({ where: { status: 'EN_RETARD' }, _count: true, _sum: { amount: true } }),
+        db.saleInstallment.aggregate({
+          where: { status: { in: ['EN_ATTENTE', 'A_REGLER', 'EN_RETARD'] } },
+          _count: true,
+          _sum: { amount: true },
+        }),
         db.saleInstallment.findMany({
           where: { status: { in: ['EN_ATTENTE', 'A_REGLER'] }, dueDate: { gte: now } },
           orderBy: { dueDate: 'asc' },
@@ -379,9 +419,12 @@ export function registerAccountingIPC(): void {
       return ser({
         success: true,
         data: {
-          paidInvoicesCount,
+          paidInvoicesCount: paidInvoicesAgg._count,
+          paidInvoicesAmount: Number(paidInvoicesAgg._sum.total ?? 0),
           unpaidCount,
           unpaidAmount,
+          unpaidInstallmentsCount: unpaidInstallmentsAgg._count,
+          unpaidInstallmentsAmount: Number(unpaidInstallmentsAgg._sum.amount ?? 0),
           overdueInstallmentsCount: overdueAgg._count,
           overdueInstallmentsAmount: Number(overdueAgg._sum.amount ?? 0),
           revenueChart,
@@ -437,7 +480,33 @@ export function registerAccountingIPC(): void {
 
       // CA = encaissements de la période (paiements, y compris partiels).
       const { revenue, count } = await computeRevenue(db, start, end);
-      return { success: true, data: { revenue, count, label } };
+
+      // Détail par type de facture (utilisé dans l'infobulle au survol).
+      const [paymentsByType, directByType] = await Promise.all([
+        db.payment.findMany({
+          where: { paidAt: { gte: start, lt: end }, invoice: { deletedAt: null } },
+          select: { amount: true, invoice: { select: { type: true } } },
+        }),
+        db.invoice.findMany({
+          where: {
+            deletedAt: null,
+            status: 'PAYEE',
+            paidAt: { gte: start, lt: end },
+            payments: { none: {} },
+          },
+          select: { total: true, type: true },
+        }),
+      ]);
+      const byType: Record<string, number> = {};
+      for (const p of paymentsByType) {
+        const t = p.invoice?.type ?? 'OTHER';
+        byType[t] = (byType[t] ?? 0) + Number(p.amount);
+      }
+      for (const inv of directByType) {
+        byType[inv.type] = (byType[inv.type] ?? 0) + Number(inv.total);
+      }
+
+      return { success: true, data: { revenue, count, label, byType } };
     } catch (error: any) {
       logger.error('accounting:getRevenue error', error.message);
       return { success: false, error: error.message };
@@ -454,7 +523,8 @@ export function registerAccountingIPC(): void {
       const db = getDb();
       const where: any = { deletedAt: null };
       if (filters.type) where.type = filters.type;
-      if (filters.status) where.status = filters.status;
+      if (filters.unpaid) where.status = { in: ['ENVOYEE', 'EN_RETARD', 'PARTIEL'] };
+      else if (filters.status) where.status = filters.status;
       if (filters.clientId) where.clientId = filters.clientId;
       if (filters.conventionId) where.conventionId = filters.conventionId;
       if (filters.search) {
@@ -488,6 +558,51 @@ export function registerAccountingIPC(): void {
     }
   });
 
+  // Récapitulatif du nombre de factures par type, en respectant les autres
+  // filtres actifs (status, search, clientId, conventionId). Le filtre `type`
+  // est volontairement ignoré ici : les compteurs doivent rester comparables.
+  ipcMain.handle('accounting:getInvoiceTypeStats', async (_event, { token, filters = {} }: any) => {
+    try {
+      const session = getSession(token);
+      if (!session) return { success: false, error: 'Session expirée' };
+      checkAccountingRole(session, READ_ROLES);
+      const db = getDb();
+      const where: any = { deletedAt: null };
+      if (filters.unpaid) where.status = { in: ['ENVOYEE', 'EN_RETARD', 'PARTIEL'] };
+      else if (filters.status) where.status = filters.status;
+      if (filters.clientId) where.clientId = filters.clientId;
+      if (filters.conventionId) where.conventionId = filters.conventionId;
+      if (filters.search) {
+        where.OR = [
+          { reference: { contains: filters.search } },
+          { notes: { contains: filters.search } },
+          { client: { firstName: { contains: filters.search } } },
+          { client: { lastName: { contains: filters.search } } },
+          { client: { entreprise: { contains: filters.search } } },
+        ];
+      }
+      const rows = await db.invoice.groupBy({
+        by: ['type'],
+        where,
+        _count: { _all: true },
+      });
+      const stats: Record<string, number> = {
+        VENTE: 0, ECHEANCE_VENTE: 0, FRAIS_AGENCE: 0, FRAIS_DE_GESTION: 0,
+        FRAIS_DEMARCHES_ACD: 0, AVANCE: 0, CAUTION: 0, OTHER: 0,
+      };
+      let total = 0;
+      for (const r of rows) {
+        const n = r._count?._all ?? 0;
+        stats[r.type as string] = n;
+        total += n;
+      }
+      return { success: true, data: { ...stats, total } };
+    } catch (error: any) {
+      logger.error('accounting:getInvoiceTypeStats error', error.message);
+      return { success: false, error: error.message };
+    }
+  });
+
   ipcMain.handle('accounting:getInvoiceById', async (_event, { token, id }: any) => {
     try {
       const session = getSession(token);
@@ -498,7 +613,23 @@ export function registerAccountingIPC(): void {
         where: { id, deletedAt: null },
         include: {
           client: true,
-          convention: { include: { property: { select: { id: true, reference: true, address: true, city: true } } } },
+          convention: {
+            include: {
+              properties: {
+                orderBy: { order: 'asc' },
+                include: { property: { select: { id: true, reference: true, address: true, city: true } } },
+              },
+              terrains: {
+                orderBy: { order: 'asc' },
+                include: { terrain: { select: { id: true, reference: true, numeroIlot: true, numeroParcelle: true } } },
+              },
+            },
+          },
+          // Rattachement direct au terrain (factures de frais de démarches ACD).
+          terrain: {
+            select: { id: true, reference: true, numeroIlot: true, numeroParcelle: true,
+              lotissement: { select: { id: true, reference: true, nom: true } } },
+          },
           items: true,
           payments: { orderBy: { paidAt: 'desc' } },
         },
@@ -574,8 +705,64 @@ export function registerAccountingIPC(): void {
         data: { status, ...(status === 'PAYEE' && { paidAt: new Date() }) },
         select: { id: true, status: true, reference: true },
       });
+      await syncInvoiceActivities(db, id, status);
       return ser({ success: true, data: invoice });
     } catch (error: any) {
+      return { success: false, error: error.message };
+    }
+  });
+
+  // Réintègre une facture annulée. Le statut cible est calculé en fonction
+  // des paiements et de la date d'échéance, pour préserver la cohérence :
+  //   - payée intégralement      → PAYEE (paidAt restauré)
+  //   - paiement partiel         → PARTIEL
+  //   - aucun paiement, échue    → EN_RETARD
+  //   - aucun paiement, à venir  → BROUILLON
+  ipcMain.handle('accounting:reinstateInvoice', async (_event, { token, id }: any) => {
+    try {
+      const session = getSession(token);
+      if (!session) return { success: false, error: 'Session expirée' };
+      checkAccountingRole(session, WRITE_ROLES);
+      const db = getDb();
+      const invoice = await db.invoice.findUnique({
+        where: { id, deletedAt: null },
+        include: { payments: { select: { amount: true, paidAt: true } } },
+      });
+      if (!invoice) return { success: false, error: 'Facture introuvable' };
+      if (invoice.status !== 'ANNULEE') {
+        return { success: false, error: "Seule une facture annulée peut être réintégrée." };
+      }
+      const totalPaid = invoice.payments.reduce((s, p) => s + Number(p.amount), 0);
+      const total = Number(invoice.total);
+      let nextStatus: 'PAYEE' | 'PARTIEL' | 'EN_RETARD' | 'BROUILLON';
+      let nextPaidAt: Date | null = null;
+      if (totalPaid >= total && total > 0) {
+        nextStatus = 'PAYEE';
+        // paidAt = dernière date de règlement
+        const latest = invoice.payments
+          .map((p) => p.paidAt)
+          .sort((a, b) => b.getTime() - a.getTime())[0];
+        nextPaidAt = latest ?? new Date();
+      } else if (totalPaid > 0) {
+        nextStatus = 'PARTIEL';
+      } else if (new Date(invoice.dueDate).getTime() < Date.now()) {
+        nextStatus = 'EN_RETARD';
+      } else {
+        nextStatus = 'BROUILLON';
+      }
+      const updated = await db.invoice.update({
+        where: { id },
+        data: {
+          status: nextStatus,
+          paidAt: nextStatus === 'PAYEE' ? nextPaidAt : null,
+        },
+        select: { id: true, status: true, reference: true },
+      });
+      await syncInvoiceActivities(db, id, updated.status);
+      logger.info(`Facture réintégrée: ${updated.reference} → ${updated.status}`);
+      return ser({ success: true, data: updated });
+    } catch (error: any) {
+      logger.error('accounting:reinstateInvoice error', error.message);
       return { success: false, error: error.message };
     }
   });
@@ -649,6 +836,12 @@ export function registerAccountingIPC(): void {
         }
         return created;
       });
+
+      // Synchronise les rappels CRM liés à la facture (TRAITE si PAYEE).
+      // Statut PARTIEL : on laisse les rappels actifs (échéance non soldée).
+      if (newStatus === 'PAYEE') {
+        await syncInvoiceActivities(db, d.invoiceId, 'PAYEE');
+      }
 
       logger.info(`Payment recorded: invoice=${d.invoiceId} amount=${d.amount}`);
       return ser({ success: true, data: payment });
@@ -740,8 +933,61 @@ export function registerAccountingIPC(): void {
             select: {
               id: true,
               reference: true,
+              assetType: true,
               client: { select: { id: true, firstName: true, lastName: true, entreprise: true, type: true } },
-              property: { select: { id: true, reference: true, address: true, city: true } },
+              properties: {
+                orderBy: { order: 'asc' },
+                select: { property: { select: { id: true, reference: true, address: true, city: true } } },
+              },
+              terrains: {
+                orderBy: { order: 'asc' },
+                select: { terrain: { select: { id: true, reference: true, numeroIlot: true, numeroParcelle: true } } },
+              },
+            },
+          },
+        },
+      });
+      return ser({ success: true, data, total: data.length });
+    } catch (error: any) {
+      return { success: false, error: error.message };
+    }
+  });
+
+  // Toutes les échéances impayées (en attente + à régler + en retard).
+  // Auto-promeut les échues encore en attente vers EN_RETARD avant lecture.
+  ipcMain.handle('accounting:getUnpaidInstallments', async (_event, { token }: any) => {
+    try {
+      const session = getSession(token);
+      if (!session) return { success: false, error: 'Session expirée' };
+      checkAccountingRole(session, READ_ROLES);
+      const db = getDb();
+
+      await db.saleInstallment.updateMany({
+        where: {
+          status: { in: ['EN_ATTENTE', 'A_REGLER'] },
+          dueDate: { lt: new Date() },
+        },
+        data: { status: 'EN_RETARD' },
+      });
+
+      const data = await db.saleInstallment.findMany({
+        where: { status: { in: ['EN_ATTENTE', 'A_REGLER', 'EN_RETARD'] } },
+        orderBy: { dueDate: 'asc' },
+        include: {
+          convention: {
+            select: {
+              id: true,
+              reference: true,
+              assetType: true,
+              client: { select: { id: true, firstName: true, lastName: true, entreprise: true, type: true } },
+              properties: {
+                orderBy: { order: 'asc' },
+                select: { property: { select: { id: true, reference: true, address: true, city: true } } },
+              },
+              terrains: {
+                orderBy: { order: 'asc' },
+                select: { terrain: { select: { id: true, reference: true, numeroIlot: true, numeroParcelle: true } } },
+              },
             },
           },
         },
@@ -774,8 +1020,16 @@ export function registerAccountingIPC(): void {
             select: {
               id: true,
               reference: true,
+              assetType: true,
               client: { select: { id: true, firstName: true, lastName: true, entreprise: true, type: true } },
-              property: { select: { id: true, reference: true, address: true, city: true } },
+              properties: {
+                orderBy: { order: 'asc' },
+                select: { property: { select: { id: true, reference: true, address: true, city: true } } },
+              },
+              terrains: {
+                orderBy: { order: 'asc' },
+                select: { terrain: { select: { id: true, reference: true, numeroIlot: true, numeroParcelle: true } } },
+              },
             },
           },
         },
@@ -847,8 +1101,16 @@ export function registerAccountingIPC(): void {
             select: {
               id: true,
               reference: true,
+              assetType: true,
               client: { select: { id: true, firstName: true, lastName: true, entreprise: true, type: true } },
-              property: { select: { id: true, reference: true, address: true, city: true } },
+              properties: {
+                orderBy: { order: 'asc' },
+                select: { property: { select: { id: true, reference: true, address: true, city: true } } },
+              },
+              terrains: {
+                orderBy: { order: 'asc' },
+                select: { terrain: { select: { id: true, reference: true, numeroIlot: true, numeroParcelle: true } } },
+              },
             },
           },
         },
@@ -981,8 +1243,16 @@ export function registerAccountingIPC(): void {
             select: {
               id: true,
               reference: true,
+              assetType: true,
               client: { select: { id: true, firstName: true, lastName: true, entreprise: true, type: true } },
-              property: { select: { id: true, reference: true, address: true, city: true } },
+              properties: {
+                orderBy: { order: 'asc' },
+                select: { property: { select: { id: true, reference: true, address: true, city: true } } },
+              },
+              terrains: {
+                orderBy: { order: 'asc' },
+                select: { terrain: { select: { id: true, reference: true, numeroIlot: true, numeroParcelle: true } } },
+              },
             },
           },
         },
@@ -1062,7 +1332,14 @@ export function registerAccountingIPC(): void {
           orderBy: { createdAt: 'desc' },
           include: {
             client: { select: { id: true, firstName: true, lastName: true, entreprise: true, type: true } },
-            property: { select: { id: true, reference: true, address: true, city: true } },
+            properties: {
+              orderBy: { order: 'asc' },
+              include: { property: { select: { id: true, reference: true, address: true, city: true } } },
+            },
+            terrains: {
+              orderBy: { order: 'asc' },
+              include: { terrain: { select: { id: true, reference: true, numeroIlot: true, numeroParcelle: true } } },
+            },
             installments: { select: { status: true, amount: true } },
           },
         }),

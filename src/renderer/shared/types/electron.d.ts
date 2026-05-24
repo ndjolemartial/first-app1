@@ -81,6 +81,7 @@ interface Window {
       update: (token: string, id: number, payload: object) => Promise<IpcResponse<any>>;
       delete: (token: string, id: number) => Promise<IpcResponse>;
       updateStatus: (token: string, id: number, status: string) => Promise<IpcResponse<any>>;
+      statusStats: (token: string, filters?: object) => Promise<IpcResponse<Record<string, number>>>;
     };
     conventions: {
       list: (token: string, filters?: object, page?: number, limit?: number) => Promise<IpcResponse<any[]>>;
@@ -90,6 +91,12 @@ interface Window {
       delete: (token: string, id: number) => Promise<IpcResponse>;
       generateInstallments: (token: string, id: number) => Promise<IpcResponse<any[]>>;
       getInstallments: (token: string, conventionId: number) => Promise<IpcResponse<any[]>>;
+      updateInstallments: (
+        token: string,
+        conventionId: number,
+        installments: { id: number; dueDate: string; amount: number }[],
+      ) => Promise<IpcResponse<any[]>>;
+      statusStats: (token: string, filters?: object) => Promise<IpcResponse<Record<string, number>>>;
     };
     conventionTemplates: {
       list: (token: string, filters?: object, page?: number, limit?: number) => Promise<IpcResponse<any[]>>;
@@ -97,6 +104,21 @@ interface Window {
       create: (token: string, payload: object) => Promise<IpcResponse<any>>;
       update: (token: string, id: number, payload: object) => Promise<IpcResponse<any>>;
       delete: (token: string, id: number) => Promise<IpcResponse>;
+    };
+    attestationTemplates: {
+      list: (token: string, filters?: object, page?: number, limit?: number) => Promise<IpcResponse<any[]>>;
+      getById: (token: string, id: number) => Promise<IpcResponse<any>>;
+      create: (token: string, payload: object) => Promise<IpcResponse<any>>;
+      update: (token: string, id: number, payload: object) => Promise<IpcResponse<any>>;
+      delete: (token: string, id: number) => Promise<IpcResponse>;
+    };
+    attestations: {
+      list: (token: string, filters?: object, page?: number, limit?: number) => Promise<IpcResponse<any[]>>;
+      getById: (token: string, id: number) => Promise<IpcResponse<any>>;
+      create: (token: string, payload: object) => Promise<IpcResponse<any>>;
+      update: (token: string, id: number, payload: object) => Promise<IpcResponse<any>>;
+      delete: (token: string, id: number) => Promise<IpcResponse>;
+      typeStats: (token: string, filters?: object) => Promise<IpcResponse<Record<string, number>>>;
     };
     communication: {
       listTemplates: (token: string, channel?: string) => Promise<IpcResponse<any[]>>;
@@ -167,6 +189,7 @@ interface Window {
       create: (token: string, payload: object) => Promise<IpcResponse<any>>;
       update: (token: string, id: number, payload: object) => Promise<IpcResponse<any>>;
       delete: (token: string, id: number) => Promise<IpcResponse>;
+      statusStats: (token: string, filters?: object) => Promise<IpcResponse<Record<string, number>>>;
     };
     terrains: {
       list: (token: string, filters?: object, page?: number, limit?: number) => Promise<IpcResponse<any[]>>;
@@ -175,6 +198,14 @@ interface Window {
       update: (token: string, id: number, payload: object) => Promise<IpcResponse<any>>;
       updateStatut: (token: string, id: number, statut: string) => Promise<IpcResponse<any>>;
       delete: (token: string, id: number) => Promise<IpcResponse>;
+      statusStats: (token: string, filters?: object) => Promise<IpcResponse<Record<string, number>>>;
+      generateAcdInvoices: (token: string, id: number) => Promise<IpcResponse<{ count: number }>>;
+      cancelAcdInvoices: (token: string, id: number) => Promise<IpcResponse<{ cancelled: number }>>;
+      updateAcdInvoices: (
+        token: string,
+        terrainId: number,
+        invoices: { id: number; dueDate: string; amount: number }[],
+      ) => Promise<IpcResponse<any[]>>;
     };
     programmes: {
       list: (token: string, filters?: object, page?: number, limit?: number) => Promise<IpcResponse<any[]>>;
@@ -182,6 +213,19 @@ interface Window {
       create: (token: string, payload: object) => Promise<IpcResponse<any>>;
       update: (token: string, id: number, payload: object) => Promise<IpcResponse<any>>;
       delete: (token: string, id: number) => Promise<IpcResponse>;
+      statusStats: (token: string, filters?: object) => Promise<IpcResponse<Record<string, number>>>;
+    };
+    projects: {
+      list: (token: string, filters?: object, page?: number, limit?: number) => Promise<IpcResponse<any[]>>;
+      getById: (token: string, id: number) => Promise<IpcResponse<any>>;
+      create: (token: string, payload: object) => Promise<IpcResponse<any>>;
+      update: (token: string, id: number, payload: object) => Promise<IpcResponse<any>>;
+      delete: (token: string, id: number) => Promise<IpcResponse>;
+      statusStats: (token: string, filters?: object) => Promise<IpcResponse<Record<string, number>>>;
+      listTypes: (token: string, includeInactive?: boolean) => Promise<IpcResponse<any[]>>;
+      createType: (token: string, payload: object) => Promise<IpcResponse<any>>;
+      updateType: (token: string, id: number, payload: object) => Promise<IpcResponse<any>>;
+      deleteType: (token: string, id: number) => Promise<IpcResponse>;
     };
     geo: {
       resolveMapLink: (
@@ -223,13 +267,16 @@ interface Window {
       getRevenue: (
         token: string,
         period: string,
-      ) => Promise<IpcResponse<{ revenue: number; count: number; label: string }>>;
+      ) => Promise<IpcResponse<{ revenue: number; count: number; label: string; byType: Record<string, number> }>>;
       getInvoices: (token: string, filters?: object, page?: number, limit?: number) => Promise<IpcResponse<any[]>>;
+      getInvoiceTypeStats: (token: string, filters?: object) => Promise<IpcResponse<Record<string, number>>>;
       getInvoiceById: (token: string, id: number) => Promise<IpcResponse<any>>;
       createInvoice: (token: string, payload: object) => Promise<IpcResponse<any>>;
       updateInvoiceStatus: (token: string, id: number, status: string) => Promise<IpcResponse<any>>;
+      reinstateInvoice: (token: string, id: number) => Promise<IpcResponse<{ id: number; status: string; reference: string }>>;
       addPayment: (token: string, invoiceId: number, payload: object) => Promise<IpcResponse<any>>;
       getOverdueInstallments: (token: string) => Promise<IpcResponse<any[]>>;
+      getUnpaidInstallments: (token: string) => Promise<IpcResponse<any[]>>;
       getUpcomingInstallments: (token: string, days?: number) => Promise<IpcResponse<any[]>>;
       getPaidInstallments: (token: string, year?: number, semester?: number) => Promise<IpcResponse<any[]>>;
       getCancelledInstallments: (token: string) => Promise<IpcResponse<any[]>>;
@@ -272,6 +319,18 @@ interface Window {
       createOperation: (token: string, payload: object) => Promise<IpcResponse<any>>;
       updateOperation: (token: string, id: number, payload: object) => Promise<IpcResponse<any>>;
       deleteOperation: (token: string, id: number) => Promise<IpcResponse>;
+      getEntityCashflow: (
+        token: string,
+        entityType: 'PROJECT' | 'LOTISSEMENT' | 'PROGRAMME',
+        entityId: number,
+        limit?: number,
+      ) => Promise<IpcResponse<{
+        operations: any[];
+        totalEntree: number;
+        totalSortie: number;
+        net: number;
+        count: number;
+      }>>;
       listCategories: (token: string, filters?: object) => Promise<IpcResponse<any[]>>;
       createCategory: (token: string, payload: object) => Promise<IpcResponse<any>>;
       updateCategory: (token: string, id: number, payload: object) => Promise<IpcResponse<any>>;

@@ -123,8 +123,8 @@ export default function UserFormPage() {
             <Input label="Fonction" placeholder="Ex: Agent commercial" error={errors.fonction?.message} {...register('fonction')} />
           </div>
           <div className="grid grid-cols-2 gap-4">
-            <Input label="Prénom" required error={errors.firstName?.message} {...register('firstName')} />
             <Input label="Nom" required error={errors.lastName?.message} {...register('lastName')} />
+            <Input label="Prénom" required error={errors.firstName?.message} {...register('firstName')} />
           </div>
           <div className="grid grid-cols-2 gap-4">
             <Input label="Matricule" required error={errors.matricule?.message} {...register('matricule')} />

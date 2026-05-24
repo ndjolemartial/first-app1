@@ -25,6 +25,7 @@ const schema = z.object({
   promoteur: z.string().optional(),
   statut: z.enum(['EN_COURS_LOTISSEMENT', 'EN_COURS', 'OUVERT', 'PARTIELLEMENT_VENDU', 'COMPLET', 'FERME']),
   description: z.string().optional(),
+  fraisDemarchesAcdStandard: z.coerce.number().nonnegative().optional().or(z.literal('')),
 });
 
 type FormData = z.infer<typeof schema>;
@@ -55,7 +56,17 @@ export default function LotissementFormPage() {
   const countryOptions = (countriesRes?.data ?? []).map((c) => ({ value: c.isoCode, label: c.name }));
 
   useEffect(() => {
-    if (isEdit && res?.data) reset({ ...res.data });
+    if (isEdit && res?.data) {
+      const l = res.data as any;
+      // Coercion des null Prisma en '' pour les champs `optional()`
+      // (sinon Zod plante silencieusement et handleSubmit n'appelle jamais onSubmit).
+      reset({
+        ...l,
+        surface: l.surface ?? ('' as any),
+        nombreParcelles: l.nombreParcelles ?? ('' as any),
+        fraisDemarchesAcdStandard: l.fraisDemarchesAcdStandard ?? ('' as any),
+      });
+    }
   }, [res, isEdit, reset]);
 
   const onSubmit = async (data: FormData) => {
@@ -63,6 +74,7 @@ export default function LotissementFormPage() {
       ...data,
       surface: data.surface === '' ? undefined : data.surface,
       nombreParcelles: data.nombreParcelles === '' ? undefined : data.nombreParcelles,
+      fraisDemarchesAcdStandard: data.fraisDemarchesAcdStandard === '' ? null : data.fraisDemarchesAcdStandard,
     };
     let r: any;
     if (isEdit) r = await update.mutateAsync({ id: Number(id), payload });
@@ -105,6 +117,23 @@ export default function LotissementFormPage() {
               <Input label="Surface totale (m²)" type="number" step="0.01" {...register('surface')} />
               <Input label="Nombre de parcelles" type="number" {...register('nombreParcelles')} />
             </div>
+          </div>
+
+          {/* Frais de démarches ACD */}
+          <div className="border-t border-slate-200 pt-4 space-y-2">
+            <h3 className="text-sm font-semibold text-slate-700">Frais de démarches ACD</h3>
+            <p className="text-xs text-slate-500">
+              Montant standard appliqué lorsqu'un client confie les démarches ACD à l'entreprise sur un
+              terrain de ce lotissement. Pré-rempli sur chaque terrain et modifiable au cas par cas.
+            </p>
+            <Input
+              label="Montant standard (FCFA)"
+              type="number"
+              step="1"
+              min="0"
+              placeholder="Ex: 500 000"
+              {...register('fraisDemarchesAcdStandard')}
+            />
           </div>
 
           <Textarea label="Description / Notes" rows={3} {...register('description')} />

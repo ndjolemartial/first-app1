@@ -6,20 +6,24 @@ import Card from '../../../shared/components/ui/Card';
 import { SkeletonTable } from '../../../shared/components/ui/Skeleton';
 import LocationMap from '../../../shared/components/LocationMap';
 import { useProperty, useUpdatePropertyStatus, useDeleteProperty } from '../hooks/useProperties';
+import { toast } from '../../../shared/components/ui/Toast';
 import ConfirmDialog from '../../../shared/components/ui/ConfirmDialog';
 import { formatDate, formatCurrency } from '../../../shared/utils/format';
 import { Edit, Trash2, Building2, FileText, User } from 'lucide-react';
 import { useState } from 'react';
 
 const STATUS_VARIANT: Record<string, 'success' | 'info' | 'warning' | 'danger' | 'default' | 'purple'> = {
-  DISPONIBLE: 'success', INDISPONIBLE: 'danger', EN_LOCATION: 'info',
-  SOLDE: 'default', SOUS_OPTION: 'warning', EN_RENOVATION: 'purple',
+  DISPONIBLE: 'success', RESERVE: 'warning', SOUS_OPTION: 'warning', VENDU: 'default',
+  EN_LOCATION: 'info', EN_RENOVATION: 'purple', INDISPONIBLE: 'danger',
 };
 
 const STATUS_LABEL: Record<string, string> = {
-  DISPONIBLE: 'Disponible', INDISPONIBLE: 'Indisponible', EN_LOCATION: 'En location',
-  SOLDE: 'Soldé', SOUS_OPTION: 'Sous option', EN_RENOVATION: 'En rénovation',
+  DISPONIBLE: 'Disponible', RESERVE: 'Réservé', SOUS_OPTION: 'Sous option', VENDU: 'Vendu',
+  EN_LOCATION: 'En location', EN_RENOVATION: 'En rénovation', INDISPONIBLE: 'Indisponible',
 };
+
+/** Statuts pour lesquels un client doit être rattaché. */
+const STATUS_REQUIRING_CLIENT = new Set(['RESERVE', 'SOUS_OPTION', 'VENDU', 'EN_LOCATION']);
 
 const CONVENTION_STATUS_VARIANT: Record<string, 'success' | 'info' | 'warning' | 'danger' | 'default'> = {
   ACTIVE: 'success', BROUILLON: 'info', ATTENTE_SIGNATURE: 'warning',
@@ -160,46 +164,53 @@ export default function PropertyDetailPage() {
           />
 
           {/* Conventions liées */}
-          <Card>
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="font-semibold text-slate-800 flex items-center gap-2">
-                <FileText className="h-4 w-4 text-slate-500" /> Conventions ({p.conventions?.length ?? 0})
-              </h3>
-              <Button size="sm" onClick={() => navigate('/conventions/new')}>Nouvelle convention</Button>
-            </div>
-            {p.conventions?.length === 0 ? (
-              <p className="text-slate-400 text-sm">Aucune convention pour ce bien.</p>
-            ) : (
-              <table className="w-full text-sm">
-                <thead className="bg-slate-50">
-                  <tr>
-                    <th className="text-left px-3 py-2 font-medium text-slate-600">Référence</th>
-                    <th className="text-left px-3 py-2 font-medium text-slate-600">Type</th>
-                    <th className="text-left px-3 py-2 font-medium text-slate-600">Client</th>
-                    <th className="text-left px-3 py-2 font-medium text-slate-600">Début</th>
-                    <th className="text-left px-3 py-2 font-medium text-slate-600">Statut</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {p.conventions?.map((c: any) => (
-                    <tr key={c.id} className="hover:bg-slate-50 cursor-pointer" onClick={() => navigate(`/conventions/${c.id}`)}>
-                      <td className="px-3 py-2 font-medium text-slate-900">{c.reference}</td>
-                      <td className="px-3 py-2 text-slate-600">{TYPE_LABEL[c.type] ?? c.type}</td>
-                      <td className="px-3 py-2 text-slate-600">
-                        {c.client?.type === 'INDIVIDUEL'
-                          ? `${c.client?.firstName ?? ''} ${c.client?.lastName ?? ''}`.trim()
-                          : c.client?.entreprise ?? '—'}
-                      </td>
-                      <td className="px-3 py-2 text-slate-600">{formatDate(c.startDate)}</td>
-                      <td className="px-3 py-2">
-                        <Badge variant={CONVENTION_STATUS_VARIANT[c.status] ?? 'default'}>{c.status}</Badge>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            )}
-          </Card>
+          {(() => {
+            const linkedConventions: any[] = (p.conventionLinks ?? [])
+              .map((l: any) => l.convention)
+              .filter(Boolean);
+            return (
+              <Card>
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="font-semibold text-slate-800 flex items-center gap-2">
+                    <FileText className="h-4 w-4 text-slate-500" /> Conventions ({linkedConventions.length})
+                  </h3>
+                  <Button size="sm" onClick={() => navigate('/conventions/new')}>Nouvelle convention</Button>
+                </div>
+                {linkedConventions.length === 0 ? (
+                  <p className="text-slate-400 text-sm">Aucune convention pour ce bien.</p>
+                ) : (
+                  <table className="w-full text-sm">
+                    <thead className="bg-slate-50">
+                      <tr>
+                        <th className="text-left px-3 py-2 font-medium text-slate-600">Référence</th>
+                        <th className="text-left px-3 py-2 font-medium text-slate-600">Type</th>
+                        <th className="text-left px-3 py-2 font-medium text-slate-600">Client</th>
+                        <th className="text-left px-3 py-2 font-medium text-slate-600">Début</th>
+                        <th className="text-left px-3 py-2 font-medium text-slate-600">Statut</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {linkedConventions.map((c: any) => (
+                        <tr key={c.id} className="hover:bg-slate-50 cursor-pointer" onClick={() => navigate(`/conventions/${c.id}`)}>
+                          <td className="px-3 py-2 font-medium text-slate-900">{c.reference}</td>
+                          <td className="px-3 py-2 text-slate-600">{TYPE_LABEL[c.type] ?? c.type}</td>
+                          <td className="px-3 py-2 text-slate-600">
+                            {c.client?.type === 'INDIVIDUEL'
+                              ? `${c.client?.firstName ?? ''} ${c.client?.lastName ?? ''}`.trim()
+                              : c.client?.entreprise ?? '—'}
+                          </td>
+                          <td className="px-3 py-2 text-slate-600">{formatDate(c.startDate)}</td>
+                          <td className="px-3 py-2">
+                            <Badge variant={CONVENTION_STATUS_VARIANT[c.status] ?? 'default'}>{c.status}</Badge>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+              </Card>
+            );
+          })()}
         </div>
 
         {/* Colonne latérale */}
@@ -254,17 +265,43 @@ export default function PropertyDetailPage() {
             )}
           </Card>
 
+          {/* Client rattaché */}
+          {p.client && (
+            <Card>
+              <h3 className="font-semibold text-slate-800 mb-3 flex items-center gap-2">
+                <User className="h-4 w-4 text-slate-500" /> Client rattaché
+              </h3>
+              <p className="font-medium text-slate-900">
+                {p.client.type === 'ENTREPRISE'
+                  ? p.client.entreprise ?? '—'
+                  : `${p.client.firstName ?? ''} ${p.client.lastName ?? ''}`.trim() || '—'}
+              </p>
+              {p.client.phone && <p className="text-sm text-slate-500">{p.client.phone}</p>}
+              {p.client.email && <p className="text-sm text-slate-500">{p.client.email}</p>}
+              <Button variant="ghost" size="sm" className="mt-2 -ml-2"
+                onClick={() => navigate(`/clients/${p.client.id}`)}>
+                Voir le profil →
+              </Button>
+            </Card>
+          )}
+
           {/* Statut rapide */}
           <Card>
             <h3 className="font-semibold text-slate-800 mb-3">Changer le statut</h3>
             <div className="flex flex-col gap-2">
-              {['DISPONIBLE', 'INDISPONIBLE', 'SOUS_OPTION', 'EN_RENOVATION'].map((s) => (
+              {['DISPONIBLE', 'RESERVE', 'SOUS_OPTION', 'VENDU', 'EN_RENOVATION', 'INDISPONIBLE'].map((s) => (
                 <Button
                   key={s}
                   variant={p.status === s ? 'secondary' : 'ghost'}
                   size="sm"
                   disabled={p.status === s}
-                  onClick={() => updateStatus.mutate({ id: Number(id), status: s })}
+                  onClick={() => {
+                    if (STATUS_REQUIRING_CLIENT.has(s) && !p.client) {
+                      toast.error('Rattachez d\'abord un client via la page d\'édition pour ce statut');
+                      return;
+                    }
+                    updateStatus.mutate({ id: Number(id), status: s });
+                  }}
                 >
                   {STATUS_LABEL[s]}
                 </Button>

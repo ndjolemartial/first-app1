@@ -10,8 +10,8 @@ import { formatDate, formatCurrency } from '../../../shared/utils/format';
 import { Edit, Trash2, Home, Building2, FileText, ExternalLink } from 'lucide-react';
 
 const PROPERTY_STATUS_VARIANT: Record<string, any> = {
-  DISPONIBLE: 'success', INDISPONIBLE: 'danger', EN_LOCATION: 'info',
-  SOLDE: 'default', SOUS_OPTION: 'warning', EN_RENOVATION: 'warning',
+  DISPONIBLE: 'success', RESERVE: 'warning', SOUS_OPTION: 'warning', VENDU: 'default',
+  EN_LOCATION: 'info', EN_RENOVATION: 'warning', INDISPONIBLE: 'danger',
 };
 
 const DOC_CATEGORY_LABEL: Record<string, string> = {
@@ -54,7 +54,7 @@ export default function OwnerDetailPage() {
   }
 
   const displayName = o.type === 'INDIVIDUEL'
-    ? `${o.firstName ?? ''} ${o.lastName ?? ''}`.trim()
+    ? `${o.lastName ?? ''} ${o.firstName ?? ''}`.trim()
     : o.companyName ?? '—';
 
   const docs: any[] = o.documents ?? [];
@@ -161,8 +161,8 @@ export default function OwnerDetailPage() {
             <dl className="space-y-3 text-sm">
               {[
                 ['Registre de commerce', o.registreCommerce ?? '—'],
-                ['Prénom', o.legalRepFirstName ?? '—'],
                 ['Nom', o.legalRepLastName ?? '—'],
+                ['Prénom', o.legalRepFirstName ?? '—'],
                 ['Contact', o.legalRepPhone ?? '—'],
                 ["N° pièce d'identité", o.legalRepIdNumber ?? '—'],
               ].map(([label, value]) => (

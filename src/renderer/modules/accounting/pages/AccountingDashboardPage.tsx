@@ -10,7 +10,7 @@ import { formatCurrency, formatDate } from '../../../shared/utils/format';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
 } from 'recharts';
-import { TrendingUp, AlertCircle, Clock, FileText, CheckCircle, Printer } from 'lucide-react';
+import { TrendingUp, AlertCircle, Clock, FileText, CheckCircle, Printer, ListTodo } from 'lucide-react';
 
 const MONTH_LABELS: Record<string, string> = {
   '01': 'Jan', '02': 'Fév', '03': 'Mar', '04': 'Avr',
@@ -31,6 +31,12 @@ const REVENUE_PERIOD_OPTIONS = [
   { value: 'semester', label: 'ce semestre' },
   { value: 'year', label: 'cette année' },
 ];
+
+const INVOICE_TYPE_LABEL: Record<string, string> = {
+  VENTE: 'Vente', ECHEANCE_VENTE: 'Échéance vente', FRAIS_AGENCE: "Frais d'agence",
+  FRAIS_DE_GESTION: 'Frais de gestion', FRAIS_DEMARCHES_ACD: 'Frais démarches ACD',
+  AVANCE: 'Avance', CAUTION: 'Caution', OTHER: 'Autre',
+};
 
 export default function AccountingDashboardPage() {
   const navigate = useNavigate();
@@ -58,6 +64,9 @@ export default function AccountingDashboardPage() {
           <Button variant="secondary" onClick={() => navigate('/accounting/installments')}>
             Échéances
           </Button>
+          <Button onClick={() => navigate('/accounting/invoices')}>
+            Factures
+          </Button>
           <Button onClick={() => navigate('/accounting/invoices/new')}>
             Nouvelle facture
           </Button>
@@ -65,61 +74,150 @@ export default function AccountingDashboardPage() {
       }
     >
       {/* KPI Cards */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-        <Card className="flex items-center gap-4">
-          <div className="rounded-xl bg-green-50 p-3">
-            <TrendingUp className="h-6 w-6 text-green-600" />
-          </div>
-          <div className="min-w-0">
-            <div className="flex items-center gap-1.5 mb-0.5">
-              <span className="text-xs text-slate-500">Chiffre d'affaires</span>
-              <select
-                value={revenuePeriod}
-                onChange={(e) => setRevenuePeriod(e.target.value)}
-                className="text-xs text-slate-500 bg-transparent border border-slate-200 rounded px-1 py-0.5 focus:outline-none focus:ring-1 focus:ring-blue-500"
-              >
-                {REVENUE_PERIOD_OPTIONS.map((o) => (
-                  <option key={o.value} value={o.value}>{o.label}</option>
-                ))}
-              </select>
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-4 mb-6">
+        <Card padding={false} className="p-4 flex flex-col h-full relative group">
+          <div className="flex items-center gap-2 mb-3 min-w-0">
+            <div className="rounded-lg bg-green-50 p-2 shrink-0">
+              <TrendingUp className="h-4 w-4 text-green-600" />
             </div>
-            <p className="text-xl font-bold text-slate-900">
-              {formatCurrency(revenueRes?.data?.revenue ?? 0)}
+            <span className="text-xs font-semibold uppercase tracking-wide text-slate-500 truncate">
+              Chiffre d'affaires
+            </span>
+          </div>
+          <p className="text-lg font-bold text-slate-900 tabular-nums tracking-tight break-words leading-tight">
+            {formatCurrency(revenueRes?.data?.revenue ?? 0)}
+          </p>
+          <div className="flex items-center justify-between gap-2 mt-2">
+            <select
+              value={revenuePeriod}
+              onChange={(e) => setRevenuePeriod(e.target.value)}
+              className="text-xs text-slate-500 bg-transparent border border-slate-200 rounded px-1 py-0.5 focus:outline-none focus:ring-1 focus:ring-blue-500"
+            >
+              {REVENUE_PERIOD_OPTIONS.map((o) => (
+                <option key={o.value} value={o.value}>{o.label}</option>
+              ))}
+            </select>
+            <span className="text-xs text-slate-400 truncate">
+              {revenueRes?.data?.count ?? 0} encaissement(s)
+            </span>
+          </div>
+
+          {/* Détails au survol — répartition par type de facture */}
+          <div className="hidden group-hover:block absolute left-0 right-0 top-full mt-2 z-20 bg-white border border-slate-200 rounded-xl shadow-lg p-4 min-w-[260px]">
+            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 mb-2">
+              {revenueRes?.data?.label ?? 'Détails'}
             </p>
-            {revenueRes?.data?.label && (
-              <p className="text-xs text-slate-400">
-                {revenueRes.data.label} · {revenueRes.data.count ?? 0} encaissement(s)
-              </p>
-            )}
+            <div className="flex items-center justify-between pb-2 mb-2 border-b border-slate-100">
+              <span className="text-xs text-slate-500">Total encaissé</span>
+              <span className="text-sm font-bold text-slate-900 tabular-nums">
+                {formatCurrency(revenueRes?.data?.revenue ?? 0)}
+              </span>
+            </div>
+            <div className="flex items-center justify-between mb-3">
+              <span className="text-xs text-slate-500">Encaissements</span>
+              <span className="text-xs font-medium text-slate-700">
+                {revenueRes?.data?.count ?? 0}
+              </span>
+            </div>
+            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 mb-1.5">
+              Par type
+            </p>
+            {(() => {
+              const byType = (revenueRes?.data?.byType ?? {}) as Record<string, number>;
+              const entries = Object.entries(byType).filter(([, v]) => Number(v) > 0);
+              if (entries.length === 0) {
+                return <p className="text-xs text-slate-400">Aucun encaissement sur la période.</p>;
+              }
+              return (
+                <ul className="space-y-1">
+                  {entries.map(([type, amount]) => (
+                    <li key={type} className="flex items-center justify-between gap-2 text-xs">
+                      <span className="text-slate-600 truncate">{INVOICE_TYPE_LABEL[type] ?? type}</span>
+                      <span className="font-medium text-slate-900 tabular-nums whitespace-nowrap">
+                        {formatCurrency(Number(amount))}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              );
+            })()}
           </div>
         </Card>
-        <Card className="flex items-center gap-4">
-          <div className="rounded-xl bg-blue-50 p-3">
-            <CheckCircle className="h-6 w-6 text-blue-600" />
+        <Card
+          padding={false}
+          className="p-4 flex flex-col h-full cursor-pointer hover:shadow-md hover:border-blue-200 transition-all"
+          onClick={() => navigate('/accounting/invoices?status=PAYEE')}
+          title="Voir les factures payées"
+        >
+          <div className="flex items-center gap-2 mb-3 min-w-0">
+            <div className="rounded-lg bg-blue-50 p-2 shrink-0">
+              <CheckCircle className="h-4 w-4 text-blue-600" />
+            </div>
+            <span className="text-xs font-semibold uppercase tracking-wide text-slate-500 truncate">
+              Factures payées
+            </span>
           </div>
-          <div>
-            <p className="text-xs text-slate-500 mb-0.5">Factures payées</p>
-            <p className="text-xl font-bold text-slate-900">{d.paidInvoicesCount ?? 0}</p>
-          </div>
+          <p className="text-lg font-bold text-slate-900 tabular-nums tracking-tight break-words leading-tight">
+            {formatCurrency(d.paidInvoicesAmount ?? 0)}
+          </p>
+          <p className="text-xs text-slate-400 mt-2">{d.paidInvoicesCount ?? 0} facture(s)</p>
         </Card>
-        <Card className="flex items-center gap-4">
-          <div className="rounded-xl bg-orange-50 p-3">
-            <FileText className="h-6 w-6 text-orange-600" />
+        <Card
+          padding={false}
+          className="p-4 flex flex-col h-full cursor-pointer hover:shadow-md hover:border-orange-200 transition-all"
+          onClick={() => navigate('/accounting/invoices?status=UNPAID')}
+          title="Voir les factures impayées"
+        >
+          <div className="flex items-center gap-2 mb-3 min-w-0">
+            <div className="rounded-lg bg-orange-50 p-2 shrink-0">
+              <FileText className="h-4 w-4 text-orange-600" />
+            </div>
+            <span className="text-xs font-semibold uppercase tracking-wide text-slate-500 truncate">
+              Impayés
+            </span>
           </div>
-          <div>
-            <p className="text-xs text-slate-500 mb-0.5">Impayés</p>
-            <p className="text-xl font-bold text-slate-900">{formatCurrency(d.unpaidAmount ?? 0)}</p>
-            <p className="text-xs text-slate-400">{d.unpaidCount ?? 0} facture(s)</p>
-          </div>
+          <p className="text-lg font-bold text-slate-900 tabular-nums tracking-tight break-words leading-tight">
+            {formatCurrency(d.unpaidAmount ?? 0)}
+          </p>
+          <p className="text-xs text-slate-400 mt-2">{d.unpaidCount ?? 0} facture(s)</p>
         </Card>
-        <Card className="flex items-center gap-4">
-          <div className="rounded-xl bg-red-50 p-3">
-            <AlertCircle className="h-6 w-6 text-red-600" />
+        <Card
+          padding={false}
+          className="p-4 flex flex-col h-full cursor-pointer hover:shadow-md hover:border-amber-200 transition-all"
+          onClick={() => navigate('/accounting/installments?tab=unpaid')}
+          title="Voir toutes les échéances impayées"
+        >
+          <div className="flex items-center gap-2 mb-3 min-w-0">
+            <div className="rounded-lg bg-amber-50 p-2 shrink-0">
+              <ListTodo className="h-4 w-4 text-amber-600" />
+            </div>
+            <span className="text-xs font-semibold uppercase tracking-wide text-slate-500 truncate">
+              Échéances totales
+            </span>
           </div>
-          <div>
-            <p className="text-xs text-slate-500 mb-0.5">Échéances en retard</p>
-            <p className="text-xl font-bold text-slate-900">{d.overdueInstallmentsCount ?? 0}</p>
+          <p className="text-lg font-bold text-slate-900 tabular-nums tracking-tight break-words leading-tight">
+            {formatCurrency(d.unpaidInstallmentsAmount ?? 0)}
+          </p>
+          <p className="text-xs text-slate-400 mt-2">{d.unpaidInstallmentsCount ?? 0} échéance(s)</p>
+        </Card>
+        <Card
+          padding={false}
+          className="p-4 flex flex-col h-full cursor-pointer hover:shadow-md hover:border-red-200 transition-all"
+          onClick={() => navigate('/accounting/installments?tab=overdue')}
+          title="Voir les échéances en retard"
+        >
+          <div className="flex items-center gap-2 mb-3 min-w-0">
+            <div className="rounded-lg bg-red-50 p-2 shrink-0">
+              <AlertCircle className="h-4 w-4 text-red-600" />
+            </div>
+            <span className="text-xs font-semibold uppercase tracking-wide text-slate-500 truncate">
+              Échéances en retard
+            </span>
           </div>
+          <p className="text-lg font-bold text-slate-900 tabular-nums tracking-tight break-words leading-tight">
+            {formatCurrency(d.overdueInstallmentsAmount ?? 0)}
+          </p>
+          <p className="text-xs text-slate-400 mt-2">{d.overdueInstallmentsCount ?? 0} échéance(s)</p>
         </Card>
       </div>
 
@@ -252,7 +350,7 @@ export default function AccountingDashboardPage() {
                   ? `${inv.client?.firstName ?? ''} ${inv.client?.lastName ?? ''}`.trim()
                   : (inv.client?.entreprise ?? '—');
                 const STATUS_LABEL: Record<string, string> = {
-                  BROUILLON: 'Brouillon', ENVOYEE: 'Envoyée', PAYEE: 'Payée',
+                  BROUILLON: 'Brouillon', ENVOYEE: 'Validée', PAYEE: 'Payée',
                   PARTIEL: 'Partiel', EN_RETARD: 'En retard', ANNULEE: 'Annulée',
                 };
                 const STATUS_VARIANT: Record<string, 'success' | 'info' | 'warning' | 'danger' | 'default'> = {

@@ -51,6 +51,8 @@ export const CONVENTION_VARIABLE_GROUPS: VariableGroup[] = [
       { token: 'client.ville', label: 'Ville' },
       { token: 'client.pieceIdentite', label: "Pièce d'identité" },
       { token: 'client.nationalite', label: 'Nationalité' },
+      { token: 'client.dateNaissance', label: 'Date de naissance' },
+      { token: 'client.lieuNaissance', label: 'Lieu de naissance' },
     ],
   },
   {
@@ -113,7 +115,7 @@ const METHOD_LABELS: Record<string, string> = {
 function clientName(cl: any): string {
   if (!cl) return '';
   return cl.type === 'INDIVIDUEL'
-    ? `${cl.firstName ?? ''} ${cl.lastName ?? ''}`.trim()
+    ? `${cl.lastName ?? ''} ${cl.firstName ?? ''}`.trim()
     : (cl.entreprise ?? '');
 }
 
@@ -151,6 +153,13 @@ export function resolveConventionVariables(c: any): Record<string, string> {
   if (!c) return {};
   const money = (v: any) => (v != null && v !== '' ? formatCurrency(Number(v)) : '');
   const date = (v: any) => (v ? formatDate(v) : '');
+  // Liste des terrains / biens rattachés (table pivot) — concaténation lisible des champs.
+  const terrains: any[] = (c.terrains ?? []).map((l: any) => l.terrain).filter(Boolean);
+  const properties: any[] = (c.properties ?? []).map((l: any) => l.property).filter(Boolean);
+  const joinComma = (xs: (string | null | undefined)[]) =>
+    xs.filter((x) => x != null && x !== '').join(', ');
+  const joinBreak = (xs: (string | null | undefined)[]) =>
+    xs.filter((x) => x != null && x !== '').join('<br>');
   return {
     'convention.reference': c.reference ?? '',
     'convention.type': TYPE_LABELS[c.type] ?? c.type ?? '',
@@ -177,20 +186,24 @@ export function resolveConventionVariables(c: any): Record<string, string> {
     'client.ville': c.client?.city ?? '',
     'client.pieceIdentite': c.client?.idNumber ?? '',
     'client.nationalite': c.client?.nationality ?? '',
+    'client.dateNaissance': date(c.client?.birthDate),
+    'client.lieuNaissance': c.client?.birthPlace ?? '',
     'souscripteur.nomComplet': clientName(c.secondaryClient),
     'souscripteur.telephone': c.secondaryClient?.phone ?? c.secondaryClient?.mobile ?? '',
-    'terrain.reference': c.terrain?.reference ?? '',
-    'terrain.ilot': c.terrain?.numeroIlot ?? '',
-    'terrain.parcelle': c.terrain?.numeroParcelle ?? '',
-    'terrain.superficie': c.terrain?.surface != null ? String(c.terrain.surface) : '',
-    'terrain.prixVente': money(c.terrain?.prixVente),
-    'terrain.titreFoncier': c.terrain?.titreFoncier ?? '',
-    'terrain.lotissement': c.terrain?.lotissement?.nom ?? '',
-    'bien.reference': c.property?.reference ?? '',
-    'bien.adresse': c.property?.address ?? '',
-    'bien.ville': c.property?.city ?? '',
-    'bien.superficie': c.property?.surface != null ? String(c.property.surface) : '',
-    'agent.nomComplet': c.agent ? `${c.agent.firstName ?? ''} ${c.agent.lastName ?? ''}`.trim() : '',
+    // Terrains : virgule pour les champs courts, retour à la ligne pour l'adresse / lotissement.
+    'terrain.reference': joinComma(terrains.map((t) => t.reference)),
+    'terrain.ilot': joinComma(terrains.map((t) => t.numeroIlot)),
+    'terrain.parcelle': joinComma(terrains.map((t) => t.numeroParcelle)),
+    'terrain.superficie': joinComma(terrains.map((t) => (t.surface != null ? String(t.surface) : ''))),
+    'terrain.prixVente': joinComma(terrains.map((t) => (t.prixVente != null ? formatCurrency(Number(t.prixVente)) : ''))),
+    'terrain.titreFoncier': joinComma(terrains.map((t) => t.titreFoncier)),
+    'terrain.lotissement': joinComma(terrains.map((t) => t.lotissement?.nom)),
+    // Biens : virgule pour les références, retour à la ligne pour les adresses (plus lisible).
+    'bien.reference': joinComma(properties.map((p) => p.reference)),
+    'bien.adresse': joinBreak(properties.map((p) => p.address)),
+    'bien.ville': joinComma(properties.map((p) => p.city)),
+    'bien.superficie': joinComma(properties.map((p) => (p.surface != null ? String(p.surface) : ''))),
+    'agent.nomComplet': c.agent ? `${c.agent.lastName ?? ''} ${c.agent.firstName ?? ''}`.trim() : '',
     'date.aujourdhui': formatDate(new Date()),
   };
 }

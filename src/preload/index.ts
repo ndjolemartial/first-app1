@@ -90,6 +90,8 @@ const properties = {
   delete: (token: string, id: number) => api.invoke('properties:delete', { token, id }),
   updateStatus: (token: string, id: number, status: string) =>
     api.invoke('properties:updateStatus', { token, id, status }),
+  statusStats: (token: string, filters?: object) =>
+    api.invoke('properties:statusStats', { token, filters }),
 };
 
 // Conventions
@@ -104,6 +106,10 @@ const conventions = {
     api.invoke('conventions:generateInstallments', { token, id }),
   getInstallments: (token: string, conventionId: number) =>
     api.invoke('conventions:getInstallments', { token, conventionId }),
+  updateInstallments: (token: string, conventionId: number, installments: { id: number; dueDate: string; amount: number }[]) =>
+    api.invoke('conventions:updateInstallments', { token, conventionId, installments }),
+  statusStats: (token: string, filters?: object) =>
+    api.invoke('conventions:statusStats', { token, filters }),
 };
 
 // Modèles de convention
@@ -117,19 +123,48 @@ const conventionTemplates = {
   delete: (token: string, id: number) => api.invoke('conventionTemplates:delete', { token, id }),
 };
 
+// Modèles d'attestation
+const attestationTemplates = {
+  list: (token: string, filters?: object, page?: number, limit?: number) =>
+    api.invoke('attestationTemplates:list', { token, filters, page, limit }),
+  getById: (token: string, id: number) => api.invoke('attestationTemplates:getById', { token, id }),
+  create: (token: string, payload: object) => api.invoke('attestationTemplates:create', { token, payload }),
+  update: (token: string, id: number, payload: object) =>
+    api.invoke('attestationTemplates:update', { token, id, payload }),
+  delete: (token: string, id: number) => api.invoke('attestationTemplates:delete', { token, id }),
+};
+
+// Attestations émises
+const attestations = {
+  list: (token: string, filters?: object, page?: number, limit?: number) =>
+    api.invoke('attestations:list', { token, filters, page, limit }),
+  getById: (token: string, id: number) => api.invoke('attestations:getById', { token, id }),
+  create: (token: string, payload: object) => api.invoke('attestations:create', { token, payload }),
+  update: (token: string, id: number, payload: object) =>
+    api.invoke('attestations:update', { token, id, payload }),
+  delete: (token: string, id: number) => api.invoke('attestations:delete', { token, id }),
+  typeStats: (token: string, filters?: object) =>
+    api.invoke('attestations:typeStats', { token, filters }),
+};
+
 // Accounting
 const accounting = {
   getDashboard: (token: string) => api.invoke('accounting:getDashboard', { token }),
   getRevenue: (token: string, period: string) => api.invoke('accounting:getRevenue', { token, period }),
   getInvoices: (token: string, filters?: object, page?: number, limit?: number) =>
     api.invoke('accounting:getInvoices', { token, filters, page, limit }),
+  getInvoiceTypeStats: (token: string, filters?: object) =>
+    api.invoke('accounting:getInvoiceTypeStats', { token, filters }),
   getInvoiceById: (token: string, id: number) => api.invoke('accounting:getInvoiceById', { token, id }),
   createInvoice: (token: string, payload: object) => api.invoke('accounting:createInvoice', { token, payload }),
   updateInvoiceStatus: (token: string, id: number, status: string) =>
     api.invoke('accounting:updateInvoiceStatus', { token, id, status }),
+  reinstateInvoice: (token: string, id: number) =>
+    api.invoke('accounting:reinstateInvoice', { token, id }),
   addPayment: (token: string, invoiceId: number, payload: object) =>
     api.invoke('accounting:addPayment', { token, invoiceId, payload }),
   getOverdueInstallments: (token: string) => api.invoke('accounting:getOverdueInstallments', { token }),
+  getUnpaidInstallments: (token: string) => api.invoke('accounting:getUnpaidInstallments', { token }),
   getUpcomingInstallments: (token: string, days?: number) =>
     api.invoke('accounting:getUpcomingInstallments', { token, days }),
   getPaidInstallments: (token: string, year?: number, semester?: number) =>
@@ -218,6 +253,8 @@ const lotissements = {
   create: (token: string, payload: object) => api.invoke('lotissements:create', { token, payload }),
   update: (token: string, id: number, payload: object) => api.invoke('lotissements:update', { token, id, payload }),
   delete: (token: string, id: number) => api.invoke('lotissements:delete', { token, id }),
+  statusStats: (token: string, filters?: object) =>
+    api.invoke('lotissements:statusStats', { token, filters }),
 };
 
 // Terrains
@@ -229,6 +266,14 @@ const terrains = {
   update: (token: string, id: number, payload: object) => api.invoke('terrains:update', { token, id, payload }),
   updateStatut: (token: string, id: number, statut: string) => api.invoke('terrains:updateStatut', { token, id, statut }),
   delete: (token: string, id: number) => api.invoke('terrains:delete', { token, id }),
+  statusStats: (token: string, filters?: object) =>
+    api.invoke('terrains:statusStats', { token, filters }),
+  generateAcdInvoices: (token: string, id: number) =>
+    api.invoke('terrains:generateAcdInvoices', { token, id }),
+  cancelAcdInvoices: (token: string, id: number) =>
+    api.invoke('terrains:cancelAcdInvoices', { token, id }),
+  updateAcdInvoices: (token: string, terrainId: number, invoices: { id: number; dueDate: string; amount: number }[]) =>
+    api.invoke('terrains:updateAcdInvoices', { token, terrainId, invoices }),
 };
 
 // Programmes immobiliers
@@ -239,6 +284,30 @@ const programmes = {
   create: (token: string, payload: object) => api.invoke('programmes:create', { token, payload }),
   update: (token: string, id: number, payload: object) => api.invoke('programmes:update', { token, id, payload }),
   delete: (token: string, id: number) => api.invoke('programmes:delete', { token, id }),
+  statusStats: (token: string, filters?: object) =>
+    api.invoke('programmes:statusStats', { token, filters }),
+};
+
+// Projets
+const projects = {
+  list: (token: string, filters?: object, page?: number, limit?: number) =>
+    api.invoke('projects:list', { token, filters, page, limit }),
+  getById: (token: string, id: number) => api.invoke('projects:getById', { token, id }),
+  create: (token: string, payload: object) => api.invoke('projects:create', { token, payload }),
+  update: (token: string, id: number, payload: object) =>
+    api.invoke('projects:update', { token, id, payload }),
+  delete: (token: string, id: number) => api.invoke('projects:delete', { token, id }),
+  statusStats: (token: string, filters?: object) =>
+    api.invoke('projects:statusStats', { token, filters }),
+  // Catalogue des types de projets
+  listTypes: (token: string, includeInactive = false) =>
+    api.invoke('projects:listTypes', { token, includeInactive }),
+  createType: (token: string, payload: object) =>
+    api.invoke('projects:createType', { token, payload }),
+  updateType: (token: string, id: number, payload: object) =>
+    api.invoke('projects:updateType', { token, id, payload }),
+  deleteType: (token: string, id: number) =>
+    api.invoke('projects:deleteType', { token, id }),
 };
 
 // Géolocalisation
@@ -327,6 +396,12 @@ const treasury = {
   updateOperation: (token: string, id: number, payload: object) =>
     api.invoke('treasury:updateOperation', { token, id, payload }),
   deleteOperation: (token: string, id: number) => api.invoke('treasury:deleteOperation', { token, id }),
+  getEntityCashflow: (
+    token: string,
+    entityType: 'PROJECT' | 'LOTISSEMENT' | 'PROGRAMME',
+    entityId: number,
+    limit?: number,
+  ) => api.invoke('treasury:getEntityCashflow', { token, entityType, entityId, limit }),
   listCategories: (token: string, filters?: object) =>
     api.invoke('treasury:listCategories', { token, filters }),
   createCategory: (token: string, payload: object) => api.invoke('treasury:createCategory', { token, payload }),
@@ -426,4 +501,4 @@ const documents = {
   pathForFile: (file: File) => webUtils.getPathForFile(file),
 };
 
-contextBridge.exposeInMainWorld('electron', { auth, users, prospects, clients, owners, properties, conventions, conventionTemplates, accounting, communication, crm, archiving, documents, lotissements, terrains, programmes, geo, countries, commissions, exporter, invoiceTemplates, treasury, budget, dashboard, settings });
+contextBridge.exposeInMainWorld('electron', { auth, users, prospects, clients, owners, properties, conventions, conventionTemplates, attestationTemplates, attestations, accounting, communication, crm, archiving, documents, lotissements, terrains, programmes, projects, geo, countries, commissions, exporter, invoiceTemplates, treasury, budget, dashboard, settings });

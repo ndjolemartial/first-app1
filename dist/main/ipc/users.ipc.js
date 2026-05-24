@@ -15,10 +15,18 @@ const createUserSchema = zod_1.z.object({
     firstName: zod_1.z.string().min(1),
     lastName: zod_1.z.string().min(1),
     email: zod_1.z.string().email(),
+    login: zod_1.z.string().optional(),
     password: zod_1.z.string().min(6),
-    role: zod_1.z.enum(['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'AGENT', 'ACCOUNTANT', 'READONLY']),
+    role: zod_1.z.enum(['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ACCOUNTANT', 'ASSISTANTE_DIRECTION', 'AGENT', 'READONLY']),
     phone: zod_1.z.string().optional(),
     mobile: zod_1.z.string().optional(),
+    fonction: zod_1.z.string().optional(),
+    idNumber: zod_1.z.string().optional(),
+    civilite: zod_1.z.enum(['MONSIEUR', 'MADAME', 'MADEMOISELLE']).optional(),
+    statutConjugal: zod_1.z.enum(['CELIBATAIRE', 'MARIEE', 'CONCUBINAGE']).optional(),
+    hireDate: zod_1.z.string().optional(),
+    cnpsNumber: zod_1.z.string().optional(),
+    residence: zod_1.z.string().optional(),
 });
 const updateUserSchema = createUserSchema
     .omit({ password: true })
@@ -80,8 +88,10 @@ function registerUsersIPC() {
                 where: { id, deletedAt: null },
                 select: {
                     id: true, uuid: true, matricule: true, firstName: true, lastName: true,
-                    email: true, role: true, isActive: true, avatar: true, phone: true,
-                    mobile: true, lastLoginAt: true, createdAt: true, updatedAt: true,
+                    email: true, login: true, role: true, isActive: true, avatar: true, phone: true,
+                    mobile: true, fonction: true, idNumber: true, civilite: true,
+                    statutConjugal: true, hireDate: true, cnpsNumber: true, residence: true,
+                    lastLoginAt: true, createdAt: true, updatedAt: true,
                 },
             });
             if (!user)
@@ -102,9 +112,10 @@ function registerUsersIPC() {
             if (!parsed.success)
                 return { success: false, error: parsed.error.format() };
             const db = (0, db_service_1.getDb)();
-            const hashed = await (0, crypto_1.hashPassword)(parsed.data.password);
+            const { password, hireDate, ...rest } = parsed.data;
+            const hashed = await (0, crypto_1.hashPassword)(password);
             const user = await db.user.create({
-                data: { ...parsed.data, password: hashed },
+                data: { ...rest, password: hashed, hireDate: hireDate ? new Date(hireDate) : null },
                 select: {
                     id: true, uuid: true, matricule: true, firstName: true, lastName: true,
                     email: true, role: true, isActive: true,
@@ -127,9 +138,13 @@ function registerUsersIPC() {
             if (!parsed.success)
                 return { success: false, error: parsed.error.format() };
             const db = (0, db_service_1.getDb)();
+            const { hireDate, ...rest } = parsed.data;
+            const data = { ...rest };
+            if (hireDate !== undefined)
+                data.hireDate = hireDate ? new Date(hireDate) : null;
             const user = await db.user.update({
                 where: { id, deletedAt: null },
-                data: parsed.data,
+                data,
                 select: {
                     id: true, uuid: true, firstName: true, lastName: true, email: true,
                     role: true, isActive: true,

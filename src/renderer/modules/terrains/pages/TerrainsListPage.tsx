@@ -9,12 +9,13 @@ import Select from '../../../shared/components/ui/Select';
 import Pagination from '../../../shared/components/ui/Pagination';
 import { SkeletonTable } from '../../../shared/components/ui/Skeleton';
 import EmptyState from '../../../shared/components/ui/EmptyState';
-import { useTerrains } from '../hooks/useTerrains';
+import { useTerrains, useTerrainsStatusStats } from '../hooks/useTerrains';
 import { useLotissements } from '../../lotissements/hooks/useLotissements';
 import { formatDate, formatCurrency } from '../../../shared/utils/format';
 import ExportMenu, { ExportColumn } from '../../../shared/components/ExportMenu';
+import StatusRecap, { type StatusRecapItem } from '../../../shared/components/ui/StatusRecap';
 import { useAuthStore } from '../../../shared/stores/auth.store';
-import { PlusCircle, Eye, Edit, Landmark } from 'lucide-react';
+import { PlusCircle, Eye, Edit, Landmark, CheckCircle2, BookmarkCheck, BadgeCheck, Clock } from 'lucide-react';
 
 /** Rôles habilités à créer/modifier un terrain. */
 const WRITE_ROLES = new Set(['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ACCOUNTANT', 'ASSISTANTE_DIRECTION']);
@@ -23,8 +24,8 @@ const STATUT_OPTIONS = [
   { value: '', label: 'Tous les statuts' },
   { value: 'DISPONIBLE', label: 'Disponible' },
   { value: 'RESERVE', label: 'Réservé' },
-  { value: 'VENDU', label: 'Vendu' },
   { value: 'SOUS_OPTION', label: 'Sous option' },
+  { value: 'VENDU', label: 'Vendu' },
 ];
 
 const STATUT_VARIANT: Record<string, any> = {
@@ -35,9 +36,16 @@ const STATUT_LABEL: Record<string, string> = {
   DISPONIBLE: 'Disponible', RESERVE: 'Réservé', VENDU: 'Vendu', SOUS_OPTION: 'Sous option',
 };
 
+const STATUT_RECAP_ITEMS: StatusRecapItem[] = [
+  { key: 'DISPONIBLE',  label: 'Disponibles', icon: CheckCircle2,   iconBg: 'bg-emerald-100', iconColor: 'text-emerald-600', activeColor: 'text-emerald-700' },
+  { key: 'RESERVE',     label: 'Réservés',    icon: BookmarkCheck,  iconBg: 'bg-amber-100',   iconColor: 'text-amber-600',   activeColor: 'text-amber-700' },
+  { key: 'SOUS_OPTION', label: 'Sous option', icon: Clock,          iconBg: 'bg-sky-100',     iconColor: 'text-sky-600',     activeColor: 'text-sky-700' },
+  { key: 'VENDU',       label: 'Vendus',      icon: BadgeCheck,     iconBg: 'bg-slate-200',   iconColor: 'text-slate-700',   activeColor: 'text-slate-800' },
+];
+
 const EXPORT_COLUMNS: ExportColumn[] = [
   { header: 'Référence',     cell: (t) => t.reference },
-  { header: 'Lotissement',   cell: (t) => (t.lotissement ? `${t.lotissement.reference} — ${t.lotissement.nom}` : '') },
+  { header: 'Lotissement',   cell: (t) => t.lotissement?.nom ?? '' },
   { header: 'Îlot',          cell: (t) => t.numeroIlot },
   { header: 'Parcelle',      cell: (t) => t.numeroParcelle },
   { header: 'Surface (m²)',  cell: (t) => t.surface ?? '' },
@@ -64,6 +72,12 @@ export default function TerrainsListPage() {
   };
   const { data, isLoading } = useTerrains(filters, page, 20);
   const { data: lotsRes } = useLotissements({}, 1, 200);
+  // Le récap utilise les mêmes filtres SAUF le statut (sinon on n'aurait qu'une colonne non nulle).
+  const { data: statsRes } = useTerrainsStatusStats({
+    search: search || undefined,
+    lotissementId: lotissementId || undefined,
+  });
+  const stats = statsRes?.success ? statsRes.data : undefined;
 
   const terrains: any[] = data?.data ?? [];
   const total: number = data?.total ?? 0;
@@ -117,6 +131,16 @@ export default function TerrainsListPage() {
         </div>
       </Card>
 
+      <div className="mb-4">
+        <StatusRecap
+          items={STATUT_RECAP_ITEMS}
+          stats={stats}
+          total={stats?.total}
+          activeKey={statut}
+          onSelect={(k) => { setStatut(k); setPage(1); }}
+        />
+      </div>
+
       <Card padding={false}>
         {isLoading ? (
           <div className="p-6"><SkeletonTable rows={8} /></div>
@@ -130,6 +154,7 @@ export default function TerrainsListPage() {
             <table className="w-full text-sm">
               <thead className="bg-slate-50 border-b border-slate-200">
                 <tr>
+                  <th className="text-left px-4 py-3 font-medium text-slate-600">Référence</th>
                   <th className="text-left px-4 py-3 font-medium text-slate-600">Lotissement</th>
                   <th className="text-left px-4 py-3 font-medium text-slate-600">Îlot</th>
                   <th className="text-left px-4 py-3 font-medium text-slate-600">Lot</th>
@@ -151,13 +176,11 @@ export default function TerrainsListPage() {
                     : '—';
                   return (
                     <tr key={t.id} className="hover:bg-slate-50 transition-colors">
+                      <td className="px-4 py-3 font-medium text-slate-900 text-xs">{t.reference}</td>
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-2">
                           <Landmark className="h-4 w-4 text-slate-400 shrink-0" />
-                          <div>
-                            <p className="font-medium text-slate-900 text-xs">{t.lotissement?.reference}</p>
-                            <p className="text-xs text-slate-500">{t.lotissement?.nom}</p>
-                          </div>
+                          <span className="text-slate-700 text-xs">{t.lotissement?.nom ?? '—'}</span>
                         </div>
                       </td>
                       <td className="px-4 py-3 text-slate-600">{t.numeroIlot ?? '—'}</td>

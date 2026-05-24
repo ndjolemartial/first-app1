@@ -7,17 +7,21 @@ import Card from '../../../shared/components/ui/Card';
 import Select from '../../../shared/components/ui/Select';
 import ConfirmDialog from '../../../shared/components/ui/ConfirmDialog';
 import LocationMap from '../../../shared/components/LocationMap';
-import { useTerrain, useDeleteTerrain, useUpdateTerrainStatut } from '../hooks/useTerrains';
+import {
+  useTerrain, useDeleteTerrain, useUpdateTerrainStatut,
+  useGenerateAcdInvoices, useCancelAcdInvoices,
+} from '../hooks/useTerrains';
 import { useAuthStore } from '../../../shared/stores/auth.store';
 import { formatDate, formatCurrency } from '../../../shared/utils/format';
 import { toast } from '../../../shared/components/ui/Toast';
-import { Edit, Trash2, MapPin, Landmark, CheckCircle, FileText, ExternalLink, User, Building } from 'lucide-react';
+import EditAcdInvoicesModal from '../components/EditAcdInvoicesModal';
+import { Edit, Trash2, MapPin, Landmark, CheckCircle, FileText, ExternalLink, User, Building, Receipt, PencilLine } from 'lucide-react';
 
 const STATUT_OPTIONS = [
   { value: 'DISPONIBLE', label: 'Disponible' },
   { value: 'RESERVE', label: 'Réservé' },
-  { value: 'VENDU', label: 'Vendu' },
   { value: 'SOUS_OPTION', label: 'Sous option' },
+  { value: 'VENDU', label: 'Vendu' },
 ];
 
 const STATUT_VARIANT: Record<string, any> = {
@@ -26,6 +30,26 @@ const STATUT_VARIANT: Record<string, any> = {
 
 const STATUT_LABEL: Record<string, string> = {
   DISPONIBLE: 'Disponible', RESERVE: 'Réservé', VENDU: 'Vendu', SOUS_OPTION: 'Sous option',
+};
+
+const CONVENTION_TYPE_LABEL: Record<string, string> = {
+  RENTAL_UNFURNISHED: 'Location non meublée', RENTAL_FURNISHED: 'Location meublée',
+  SALE: 'Vente', MANAGEMENT: 'Gestion', COMMERCIAL_LEASE: 'Bail commercial',
+  SOUSCRIPTION: 'Souscription', AVENANT: 'Avenant', RESILIATION: 'Résiliation',
+};
+
+const CONVENTION_STATUS_VARIANT: Record<string, any> = {
+  ACTIVE: 'success', BROUILLON: 'info', ATTENTE_SIGNATURE: 'warning',
+  EXPIRE: 'danger', TERMINER: 'default', ANNULE: 'danger',
+};
+
+const INVOICE_STATUS_VARIANT: Record<string, any> = {
+  BROUILLON: 'default', ENVOYEE: 'info', PAYEE: 'success',
+  PARTIEL: 'warning', EN_RETARD: 'danger', ANNULEE: 'default',
+};
+const INVOICE_STATUS_LABEL: Record<string, string> = {
+  BROUILLON: 'Brouillon', ENVOYEE: 'Validée', PAYEE: 'Payée',
+  PARTIEL: 'Partielle', EN_RETARD: 'En retard', ANNULEE: 'Annulée',
 };
 
 const OFFICIAL_DOCS: Array<{ category: string; numberField: string; label: string }> = [
@@ -46,7 +70,11 @@ export default function TerrainDetailPage() {
   const { data: res, isLoading } = useTerrain(Number(id));
   const deleteTerrain = useDeleteTerrain();
   const updateStatut = useUpdateTerrainStatut();
+  const generateAcd = useGenerateAcdInvoices();
+  const cancelAcd = useCancelAcdInvoices();
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [confirmCancelAcd, setConfirmCancelAcd] = useState(false);
+  const [showEditAcdInvoices, setShowEditAcdInvoices] = useState(false);
   const [openingDoc, setOpeningDoc] = useState<number | null>(null);
 
   const t = res?.data;
@@ -255,6 +283,173 @@ export default function TerrainDetailPage() {
           </Card>
         )}
 
+        {/* Frais de démarches ACD */}
+        {t.acdDemarchesEnabled && (() => {
+          const acdInvoices: any[] = (t.invoices ?? []).filter((i: any) => i.type === 'FRAIS_DEMARCHES_ACD');
+          const activeInvoices = acdInvoices.filter((i: any) => i.status !== 'ANNULEE');
+          const totalEmis = activeInvoices.reduce((s: number, i: any) => s + Number(i.total ?? 0), 0);
+          const totalPaid = activeInvoices.reduce(
+            (s: number, i: any) => s + (i.payments ?? []).reduce((p: number, x: any) => p + Number(x.amount ?? 0), 0),
+            0,
+          );
+          const remaining = totalEmis - totalPaid;
+          const amount = Number(t.acdDemarchesAmount ?? 0);
+          const count = t.acdDemarchesInstallmentCount ?? 0;
+          const hasActiveInvoices = activeInvoices.length > 0;
+          return (
+            <Card>
+              <h3 className="font-semibold text-slate-700 mb-4 flex items-center gap-2">
+                <Receipt className="h-4 w-4" /> Frais de démarches ACD
+              </h3>
+              <div className="grid grid-cols-2 gap-4 mb-4 text-sm">
+                <dl className="space-y-2">
+                  {[
+                    ['Montant retenu', amount > 0 ? formatCurrency(amount) : '—'],
+                    ['Modalité', count === 1 ? 'Comptant' : count > 1 ? `${count} échéances mensuelles` : '—'],
+                    ['Date de début', t.acdDemarchesStartDate ? formatDate(t.acdDemarchesStartDate) : '—'],
+                  ].map(([label, value]) => (
+                    <div key={label} className="flex justify-between">
+                      <dt className="text-slate-500">{label}</dt>
+                      <dd className="font-medium text-slate-900">{value}</dd>
+                    </div>
+                  ))}
+                </dl>
+                <dl className="space-y-2">
+                  {[
+                    ['Factures actives', String(activeInvoices.length)],
+                    ['Total encaissé', formatCurrency(totalPaid)],
+                    ['Reste dû', formatCurrency(remaining)],
+                  ].map(([label, value]) => (
+                    <div key={label} className="flex justify-between">
+                      <dt className="text-slate-500">{label}</dt>
+                      <dd className="font-medium text-slate-900">{value}</dd>
+                    </div>
+                  ))}
+                </dl>
+              </div>
+
+              {/* Tableau des factures ACD */}
+              {acdInvoices.length > 0 && (
+                <div className="overflow-x-auto mb-4">
+                  <table className="w-full text-sm">
+                    <thead className="bg-slate-50">
+                      <tr>
+                        <th className="text-left px-3 py-2 font-medium text-slate-600">Référence</th>
+                        <th className="text-left px-3 py-2 font-medium text-slate-600">Échéance</th>
+                        <th className="text-right px-3 py-2 font-medium text-slate-600">Montant</th>
+                        <th className="text-right px-3 py-2 font-medium text-slate-600">Payé</th>
+                        <th className="text-left px-3 py-2 font-medium text-slate-600">Statut</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {acdInvoices.map((inv: any) => {
+                        const paid = (inv.payments ?? []).reduce((s: number, p: any) => s + Number(p.amount ?? 0), 0);
+                        return (
+                          <tr key={inv.id} className="hover:bg-slate-50 cursor-pointer"
+                            onClick={() => navigate(`/accounting/invoices/${inv.id}`)}>
+                            <td className="px-3 py-2 font-medium text-slate-900">{inv.reference}</td>
+                            <td className="px-3 py-2 text-slate-600">{formatDate(inv.dueDate)}</td>
+                            <td className="px-3 py-2 text-right text-slate-600">{formatCurrency(Number(inv.total))}</td>
+                            <td className="px-3 py-2 text-right text-slate-600">{formatCurrency(paid)}</td>
+                            <td className="px-3 py-2">
+                              <Badge variant={INVOICE_STATUS_VARIANT[inv.status] ?? 'default'}>
+                                {INVOICE_STATUS_LABEL[inv.status] ?? inv.status}
+                              </Badge>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+
+              {/* Actions */}
+              <div className="flex gap-3 pt-2 border-t border-slate-100">
+                {!hasActiveInvoices && (
+                  <Button
+                    size="sm"
+                    loading={generateAcd.isPending}
+                    onClick={() => generateAcd.mutate(Number(id))}
+                    icon={<Receipt className="h-4 w-4" />}
+                  >
+                    Générer les factures
+                  </Button>
+                )}
+                {hasActiveInvoices && (
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    icon={<PencilLine className="h-4 w-4" />}
+                    onClick={() => setShowEditAcdInvoices(true)}
+                  >
+                    Modifier les échéances
+                  </Button>
+                )}
+                {hasActiveInvoices && (
+                  <Button
+                    size="sm"
+                    variant="danger"
+                    loading={cancelAcd.isPending}
+                    onClick={() => setConfirmCancelAcd(true)}
+                  >
+                    Annuler les factures non payées
+                  </Button>
+                )}
+                <p className="text-xs text-slate-500 self-center">
+                  {!hasActiveInvoices
+                    ? 'Aucune facture active. Générer pour créer les appels de fonds selon les modalités saisies.'
+                    : 'Ajustez les dates et montants via « Modifier les échéances ». Annulez pour changer le nombre d\'échéances.'}
+                </p>
+              </div>
+            </Card>
+          );
+        })()}
+
+        {/* Conventions liées */}
+        {(() => {
+          const linkedConventions: any[] = (t.conventionLinks ?? [])
+            .map((l: any) => l.convention)
+            .filter(Boolean);
+          if (linkedConventions.length === 0) return null;
+          return (
+            <Card>
+              <h3 className="font-semibold text-slate-700 mb-4 flex items-center gap-2">
+                <FileText className="h-4 w-4" /> Conventions liées ({linkedConventions.length})
+              </h3>
+              <table className="w-full text-sm">
+                <thead className="bg-slate-50">
+                  <tr>
+                    <th className="text-left px-3 py-2 font-medium text-slate-600">Référence</th>
+                    <th className="text-left px-3 py-2 font-medium text-slate-600">Type</th>
+                    <th className="text-left px-3 py-2 font-medium text-slate-600">Client</th>
+                    <th className="text-left px-3 py-2 font-medium text-slate-600">Début</th>
+                    <th className="text-left px-3 py-2 font-medium text-slate-600">Statut</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {linkedConventions.map((c: any) => (
+                    <tr key={c.id} className="hover:bg-slate-50 cursor-pointer"
+                      onClick={() => navigate(`/conventions/${c.id}`)}>
+                      <td className="px-3 py-2 font-medium text-slate-900">{c.reference}</td>
+                      <td className="px-3 py-2 text-slate-600">{CONVENTION_TYPE_LABEL[c.type] ?? c.type}</td>
+                      <td className="px-3 py-2 text-slate-600">
+                        {c.client?.type === 'INDIVIDUEL'
+                          ? `${c.client?.firstName ?? ''} ${c.client?.lastName ?? ''}`.trim()
+                          : c.client?.entreprise ?? '—'}
+                      </td>
+                      <td className="px-3 py-2 text-slate-600">{formatDate(c.startDate)}</td>
+                      <td className="px-3 py-2">
+                        <Badge variant={CONVENTION_STATUS_VARIANT[c.status] ?? 'default'}>{c.status}</Badge>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </Card>
+          );
+        })()}
+
         {t.description && (
           <Card>
             <h3 className="font-semibold text-slate-700 mb-2">Description</h3>
@@ -272,6 +467,26 @@ export default function TerrainDetailPage() {
         message={`Supprimer le terrain ${t.reference} ?`}
         confirmLabel="Supprimer"
       />
+
+      <ConfirmDialog
+        open={confirmCancelAcd}
+        onClose={() => setConfirmCancelAcd(false)}
+        onConfirm={async () => { await cancelAcd.mutateAsync(Number(id)); setConfirmCancelAcd(false); }}
+        loading={cancelAcd.isPending}
+        title="Annuler les factures ACD non payées"
+        message="Les factures BROUILLON, ENVOYEE et EN_RETARD passeront au statut ANNULEE. Les factures déjà payées ne seront pas modifiées."
+        confirmLabel="Annuler les factures"
+      />
+
+      {t.acdDemarchesEnabled && t.acdDemarchesAmount && (
+        <EditAcdInvoicesModal
+          open={showEditAcdInvoices}
+          onClose={() => setShowEditAcdInvoices(false)}
+          terrainId={Number(id)}
+          invoices={(t.invoices ?? []).filter((i: any) => i.type === 'FRAIS_DEMARCHES_ACD')}
+          acdDemarchesAmount={Number(t.acdDemarchesAmount)}
+        />
+      )}
     </PageLayout>
   );
 }

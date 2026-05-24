@@ -24,6 +24,7 @@ const clientSchema = z.object({
   country: z.string().default('CI'),
   nationality: z.string().optional(),
   birthDate: z.string().datetime().optional(),
+  birthPlace: z.string().optional(),
   idNumber: z.string().optional(),
   fatherFirstName: z.string().optional(),
   fatherLastName: z.string().optional(),
@@ -100,6 +101,9 @@ function stripEmpty(obj: Record<string, unknown>): Record<string, unknown> {
   );
 }
 
+/** Sérialise les objets Prisma (notamment Decimal) pour le canal IPC. */
+const ser = <T>(v: T): T => JSON.parse(JSON.stringify(v));
+
 /**
  * Enregistre les handlers IPC pour la gestion des clients.
  */
@@ -174,7 +178,16 @@ export function registerClientsIPC(): void {
         include: {
           conventions: {
             where: { deletedAt: null },
-            include: { property: { select: { reference: true, address: true, city: true } } },
+            include: {
+              properties: {
+                orderBy: { order: 'asc' },
+                include: { property: { select: { reference: true, address: true, city: true } } },
+              },
+              terrains: {
+                orderBy: { order: 'asc' },
+                include: { terrain: { select: { reference: true, numeroIlot: true, numeroParcelle: true } } },
+              },
+            },
             orderBy: { createdAt: 'desc' },
           },
           documents: { orderBy: { uploadedAt: 'desc' } },
@@ -195,7 +208,7 @@ export function registerClientsIPC(): void {
         if (!visible) return { success: false, error: 'Client inaccessible' };
       }
 
-      return { success: true, data: client };
+      return { success: true, data: ser(client) };
     } catch (error: any) {
       return { success: false, error: error.message };
     }

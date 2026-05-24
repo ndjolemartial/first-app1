@@ -1,6 +1,5 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import PageLayout from '../../../shared/components/layout/PageLayout';
 import Button from '../../../shared/components/ui/Button';
 import Badge from '../../../shared/components/ui/Badge';
 import Card from '../../../shared/components/ui/Card';
@@ -8,7 +7,10 @@ import Select from '../../../shared/components/ui/Select';
 import { SkeletonTable } from '../../../shared/components/ui/Skeleton';
 import EmptyState from '../../../shared/components/ui/EmptyState';
 import ConfirmDialog from '../../../shared/components/ui/ConfirmDialog';
-import { useConventionTemplates, useDeleteConventionTemplate } from '../hooks/useConventionTemplates';
+import {
+  useConventionTemplates,
+  useDeleteConventionTemplate,
+} from '../../conventions/hooks/useConventionTemplates';
 import { formatDate } from '../../../shared/utils/format';
 import { Plus, Edit, Trash2, FileText } from 'lucide-react';
 
@@ -23,7 +25,7 @@ const TYPE_OPTIONS = [
   ...Object.entries(TYPE_LABEL).map(([value, label]) => ({ value, label })),
 ];
 
-export default function ConventionTemplatesListPage() {
+export default function ConventionTemplatesSettingsTab() {
   const navigate = useNavigate();
   const [type, setType] = useState('');
   const { data, isLoading } = useConventionTemplates({ type: type || undefined });
@@ -38,16 +40,14 @@ export default function ConventionTemplatesListPage() {
   };
 
   return (
-    <PageLayout
-      title="Modèles de conventions"
-      breadcrumbs={[{ label: 'Conventions', to: '/conventions' }, { label: 'Modèles' }]}
-      actions={
+    <div className="space-y-4">
+      <div className="flex justify-end">
         <Button icon={<Plus className="h-4 w-4" />} onClick={() => navigate('/conventions/templates/new')}>
           Nouveau modèle
         </Button>
-      }
-    >
-      <Card className="mb-4 flex flex-wrap gap-3 items-end">
+      </div>
+
+      <Card className="flex flex-wrap gap-3 items-end">
         <div className="w-56">
           <Select label="Type de convention" options={TYPE_OPTIONS} value={type}
             onChange={(e) => setType(e.target.value)} />
@@ -114,6 +114,6 @@ export default function ConventionTemplatesListPage() {
         onConfirm={handleDelete}
         onClose={() => setToDelete(null)}
       />
-    </PageLayout>
+    </div>
   );
 }

@@ -255,8 +255,8 @@ export default function OwnerFormPage() {
             {type === 'INDIVIDUEL' && (
               <div className="space-y-4">
                 <div className="grid grid-cols-2 gap-4">
-                  <Input label="Prénom" {...register('firstName')} />
                   <Input label="Nom" {...register('lastName')} />
+                  <Input label="Prénom" {...register('firstName')} />
                 </div>
                 <Input label="Numéro pièce d'identité" placeholder="CI/Passeport/…" {...register('idNumber')} />
                 <DocUploadField
@@ -281,8 +281,8 @@ export default function OwnerFormPage() {
                   <h3 className="text-sm font-semibold text-slate-700 mb-4">Représentant légal</h3>
                   <div className="space-y-4">
                     <div className="grid grid-cols-2 gap-4">
-                      <Input label="Prénom" {...register('legalRepFirstName')} />
                       <Input label="Nom" {...register('legalRepLastName')} />
+                      <Input label="Prénom" {...register('legalRepFirstName')} />
                     </div>
                     <Input label="Contact (téléphone/email)" {...register('legalRepPhone')} />
                     <Input label="Numéro pièce d'identité" placeholder="CI/Passeport/…" {...register('legalRepIdNumber')} />

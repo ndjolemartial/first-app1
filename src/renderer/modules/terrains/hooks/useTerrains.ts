@@ -53,8 +53,20 @@ export function useUpdateTerrainStatut() {
       if (res.success) {
         qc.invalidateQueries({ queryKey: ['terrains'] });
         qc.invalidateQueries({ queryKey: ['terrain', id] });
+        toast.success('Statut du terrain mis à jour');
+      } else {
+        toast.error(String(res.error));
       }
     },
+  });
+}
+
+export function useTerrainsStatusStats(filters: object = {}) {
+  // Clé préfixée par 'terrains' afin que les invalidations existantes
+  // (create/update/delete/updateStatut) rafraîchissent aussi les stats.
+  return useQuery({
+    queryKey: ['terrains', 'status-stats', filters],
+    queryFn: () => ipc().statusStats(token(), filters),
   });
 }
 
@@ -65,6 +77,48 @@ export function useDeleteTerrain() {
     onSuccess: (res) => {
       if (res.success) { qc.invalidateQueries({ queryKey: ['terrains'] }); toast.success('Terrain supprimé'); }
       else toast.error(String(res.error));
+    },
+  });
+}
+
+export function useGenerateAcdInvoices() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: number) => ipc().generateAcdInvoices(token(), id),
+    onSuccess: (res, id) => {
+      if (res.success) {
+        qc.invalidateQueries({ queryKey: ['terrain', id] });
+        qc.invalidateQueries({ queryKey: ['invoices'] });
+        toast.success(`${res.data?.count ?? 0} facture(s) générée(s)`);
+      } else toast.error(String(res.error));
+    },
+  });
+}
+
+export function useCancelAcdInvoices() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: number) => ipc().cancelAcdInvoices(token(), id),
+    onSuccess: (res, id) => {
+      if (res.success) {
+        qc.invalidateQueries({ queryKey: ['terrain', id] });
+        qc.invalidateQueries({ queryKey: ['invoices'] });
+        toast.success(`${res.data?.cancelled ?? 0} facture(s) annulée(s)`);
+      } else toast.error(String(res.error));
+    },
+  });
+}
+
+export function useUpdateAcdInvoices() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ terrainId, invoices }: { terrainId: number; invoices: { id: number; dueDate: string; amount: number }[] }) =>
+      ipc().updateAcdInvoices(token(), terrainId, invoices),
+    onSuccess: (res, { terrainId }) => {
+      if (res.success) {
+        qc.invalidateQueries({ queryKey: ['terrain', terrainId] });
+        qc.invalidateQueries({ queryKey: ['invoices'] });
+      }
     },
   });
 }

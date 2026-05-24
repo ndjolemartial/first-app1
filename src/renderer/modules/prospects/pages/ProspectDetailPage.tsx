@@ -20,7 +20,7 @@ const ASSIGN_ROLES = new Set(['SUPER_ADMIN', 'ADMIN', 'MANAGER']);
 /** Conversion prospect→client : AD est explicitement exclue (réduite au niveau AGENT sur ce module). */
 const CONVERT_ROLES = new Set(['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ACCOUNTANT']);
 const formatUserName = (u: any): string =>
-  u ? `${u.firstName ?? ''} ${u.lastName ?? ''}`.trim() : '';
+  u ? `${u.lastName ?? ''} ${u.firstName ?? ''}`.trim() : '';
 
 // ── Constantes ────────────────────────────────────────────────────────────────
 
@@ -87,7 +87,7 @@ export default function ProspectDetailPage() {
   const p = res?.data;
   if (isLoading || !p) return null;
 
-  const displayName = `${p.firstName} ${p.lastName}`.trim();
+  const displayName = `${p.lastName} ${p.firstName}`.trim();
   const isConverted = p.status === 'CONVERTI';
 
   return (

@@ -45,6 +45,15 @@ export function useUpdateLotissement() {
   });
 }
 
+export function useLotissementsStatusStats(filters: object = {}) {
+  // Clé préfixée par 'lotissements' afin que les invalidations existantes
+  // (create/update/delete) rafraîchissent aussi les stats.
+  return useQuery({
+    queryKey: ['lotissements', 'status-stats', filters],
+    queryFn: () => ipc().statusStats(token(), filters),
+  });
+}
+
 export function useDeleteLotissement() {
   const qc = useQueryClient();
   return useMutation({

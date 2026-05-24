@@ -23,6 +23,20 @@ const TYPE_OPTIONS = [
   { value: 'RESILIATION', label: 'Résiliation' },
 ];
 
+const AMENDMENT_NATURE_OPTIONS = [
+  { value: '', label: '— Toutes natures (générique) —' },
+  { value: 'PROLONGATION_DELAI', label: 'Avenant de prolongation de délai' },
+  { value: 'TRANSFERT_PROPRIETE', label: 'Avenant de transfert de propriété' },
+  { value: 'TRANSFERT_SITE', label: 'Avenant de transfert de site / changement de lot' },
+];
+
+const SOUSCRIPTION_NATURE_OPTIONS = [
+  { value: '', label: '— Toutes natures (générique) —' },
+  { value: 'STANDARD', label: 'Convention de souscription' },
+  { value: 'AVEC_ACD', label: 'Convention de souscription avec ACD' },
+  { value: 'FINANCEMENT_PROJET', label: 'Convention de financement sur projet' },
+];
+
 export default function ConventionTemplateFormPage() {
   const { id } = useParams<{ id?: string }>();
   const isEdit = !!id;
@@ -33,6 +47,8 @@ export default function ConventionTemplateFormPage() {
 
   const [name, setName] = useState('');
   const [type, setType] = useState('SALE');
+  const [amendmentType, setAmendmentType] = useState('');
+  const [souscriptionType, setSouscriptionType] = useState('');
   const [isDefault, setIsDefault] = useState(false);
   const [header, setHeader] = useState('');
   const [body, setBody] = useState('');
@@ -49,6 +65,8 @@ export default function ConventionTemplateFormPage() {
       const t = res.data;
       setName(t.name ?? '');
       setType(t.type ?? 'SALE');
+      setAmendmentType(t.amendmentType ?? '');
+      setSouscriptionType(t.souscriptionType ?? '');
       setIsDefault(!!t.isDefault);
       setHeader(t.header ?? '');
       setBody(t.body ?? '');
@@ -67,12 +85,14 @@ export default function ConventionTemplateFormPage() {
     const payload = {
       name: name.trim(), type, isDefault, header, body, footer,
       headerWidth, footerWidth, headerHeight, footerHeight,
+      amendmentType: type === 'AVENANT' ? (amendmentType || undefined) : undefined,
+      souscriptionType: type === 'SOUSCRIPTION' ? (souscriptionType || undefined) : undefined,
     };
     const r = isEdit
       ? await update.mutateAsync({ id: Number(id), payload })
       : await create.mutateAsync(payload);
     setSaving(false);
-    if (r.success) navigate('/conventions/templates');
+    if (r.success) navigate('/settings?tab=conventionTemplates');
     else setError(typeof r.error === 'string' ? r.error : 'Échec de l\'enregistrement');
   };
 
@@ -80,8 +100,8 @@ export default function ConventionTemplateFormPage() {
     <PageLayout
       title={isEdit ? 'Modifier le modèle' : 'Nouveau modèle de convention'}
       breadcrumbs={[
-        { label: 'Conventions', to: '/conventions' },
-        { label: 'Modèles', to: '/conventions/templates' },
+        { label: 'Paramètres', to: '/settings' },
+        { label: 'Modèles de conventions', to: '/settings?tab=conventionTemplates' },
         { label: isEdit ? 'Modifier' : 'Nouveau' },
       ]}
     >
@@ -94,6 +114,24 @@ export default function ConventionTemplateFormPage() {
             <Select label="Type de convention *" options={TYPE_OPTIONS} value={type}
               onChange={(e) => setType(e.target.value)} />
           </div>
+          {type === 'AVENANT' && (
+            <div className="mt-4">
+              <Select label="Nature de l'avenant" options={AMENDMENT_NATURE_OPTIONS}
+                value={amendmentType} onChange={(e) => setAmendmentType(e.target.value)} />
+              <p className="text-xs text-slate-500 mt-1">
+                Laissez vide pour un modèle générique applicable à toutes les natures d'avenant.
+              </p>
+            </div>
+          )}
+          {type === 'SOUSCRIPTION' && (
+            <div className="mt-4">
+              <Select label="Nature de la souscription" options={SOUSCRIPTION_NATURE_OPTIONS}
+                value={souscriptionType} onChange={(e) => setSouscriptionType(e.target.value)} />
+              <p className="text-xs text-slate-500 mt-1">
+                Laissez vide pour un modèle générique applicable à toutes les natures de souscription.
+              </p>
+            </div>
+          )}
           <label className="flex items-center gap-2 mt-4 text-sm text-slate-700 cursor-pointer">
             <input type="checkbox" checked={isDefault} onChange={(e) => setIsDefault(e.target.checked)}
               className="h-4 w-4 rounded border-slate-300 text-blue-600" />
@@ -163,7 +201,7 @@ export default function ConventionTemplateFormPage() {
         {error && <p className="text-sm text-red-600">{error}</p>}
 
         <div className="flex justify-end gap-3 pb-8">
-          <Button variant="secondary" type="button" onClick={() => navigate('/conventions/templates')}>
+          <Button variant="secondary" type="button" onClick={() => navigate('/settings?tab=conventionTemplates')}>
             Annuler
           </Button>
           <Button type="button" loading={saving} icon={<Save className="h-4 w-4" />} onClick={handleSave}>

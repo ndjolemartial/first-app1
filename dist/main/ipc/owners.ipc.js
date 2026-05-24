@@ -35,8 +35,12 @@ const ownerSchema = zod_1.z.object({
     compte_contribuable: zod_1.z.string().optional(),
     notes: zod_1.z.string().optional(),
 });
-const WRITE_ROLES = ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'AGENT'];
-const READ_ROLES = [...WRITE_ROLES, 'ACCOUNTANT', 'READONLY'];
+// Module Propriétaires : réservé aux MANAGER+ (ACCOUNTANT inclus via checkRole).
+// AGENT et READONLY n'ont aucun accès au module.
+const WRITE_ROLES = ['SUPER_ADMIN', 'ADMIN', 'MANAGER'];
+const READ_ROLES = ['SUPER_ADMIN', 'ADMIN', 'MANAGER'];
+/** Sérialise les objets Prisma (notamment Decimal) pour le canal IPC. */
+const ser = (v) => JSON.parse(JSON.stringify(v));
 /**
  * Enregistre les handlers IPC pour la gestion des propriétaires.
  */
@@ -102,7 +106,7 @@ function registerOwnersIPC() {
             });
             if (!owner)
                 return { success: false, error: 'Propriétaire introuvable' };
-            return { success: true, data: owner };
+            return { success: true, data: ser(owner) };
         }
         catch (error) {
             return { success: false, error: error.message };
@@ -173,17 +177,17 @@ function registerOwnersIPC() {
             const properties = await db.property.findMany({
                 where: { ownerId: id, deletedAt: null },
                 include: {
-                    contracts: {
-                        where: { deletedAt: null, status: 'ACTIVE' },
-                        select: { rentAmount: true, type: true },
+                    conventionLinks: {
+                        where: { convention: { deletedAt: null, status: 'ACTIVE' } },
+                        select: { convention: { select: { rentAmount: true, type: true } } },
                     },
                 },
             });
             const totalRentIncome = properties.reduce((sum, p) => {
-                const rent = p.contracts.reduce((s, c) => s + Number(c.rentAmount ?? 0), 0);
+                const rent = p.conventionLinks.reduce((s, l) => s + Number(l.convention.rentAmount ?? 0), 0);
                 return sum + rent;
             }, 0);
-            return { success: true, data: { properties, totalRentIncome } };
+            return { success: true, data: ser({ properties, totalRentIncome }) };
         }
         catch (error) {
             return { success: false, error: error.message };

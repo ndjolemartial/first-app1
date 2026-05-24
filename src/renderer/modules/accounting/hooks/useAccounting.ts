@@ -28,6 +28,16 @@ export function useInvoices(filters: object = {}, page = 1, limit = 20) {
   });
 }
 
+export function useInvoiceTypeStats(filters: object = {}) {
+  const token = useAuthStore((s) => s.token)!;
+  // Clé préfixée par 'invoices' pour bénéficier des invalidations existantes
+  // (create / update / pay…). Le filtre `type` est ignoré côté backend.
+  return useQuery({
+    queryKey: ['invoices', 'type-stats', filters],
+    queryFn: () => ipc.getInvoiceTypeStats(token, filters),
+  });
+}
+
 export function useInvoice(id: number) {
   const token = useAuthStore((s) => s.token)!;
   return useQuery({
@@ -56,6 +66,27 @@ export function useUpdateInvoiceStatus() {
   });
 }
 
+/**
+ * Réintègre une facture annulée. Le statut cible (BROUILLON / EN_RETARD /
+ * PARTIEL / PAYEE) est calculé côté serveur en fonction des paiements et de
+ * la date d'échéance, pour préserver la cohérence comptable.
+ */
+export function useReinstateInvoice() {
+  const token = useAuthStore((s) => s.token)!;
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: number) => ipc.reinstateInvoice(token, id),
+    onSuccess: (res) => {
+      if (res.success) {
+        qc.invalidateQueries({ queryKey: ['invoices'] });
+        // Rafraîchit aussi la fiche terrain (factures ACD rattachées).
+        qc.invalidateQueries({ queryKey: ['terrain'] });
+        toast.success(`Facture réintégrée — statut: ${res.data?.status ?? ''}`);
+      } else toast.error(typeof res.error === 'string' ? res.error : 'Erreur de réintégration');
+    },
+  });
+}
+
 export function useAddPayment() {
   const token = useAuthStore((s) => s.token)!;
   const qc = useQueryClient();
@@ -71,6 +102,14 @@ export function useOverdueInstallments() {
   return useQuery({
     queryKey: ['installments', 'overdue'],
     queryFn: () => ipc.getOverdueInstallments(token),
+  });
+}
+
+export function useUnpaidInstallments() {
+  const token = useAuthStore((s) => s.token)!;
+  return useQuery({
+    queryKey: ['installments', 'unpaid'],
+    queryFn: () => ipc.getUnpaidInstallments(token),
   });
 }
 

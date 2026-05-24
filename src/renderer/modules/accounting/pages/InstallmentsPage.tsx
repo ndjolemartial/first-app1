@@ -10,6 +10,7 @@ import ConfirmDialog from '../../../shared/components/ui/ConfirmDialog';
 import {
   useOverdueInstallments,
   useUpcomingInstallments,
+  useUnpaidInstallments,
   usePaidInstallments,
   useCancelledInstallments,
   usePayInstallment,
@@ -20,9 +21,9 @@ import {
 import { formatCurrency, formatDate } from '../../../shared/utils/format';
 import ExportMenu, { ExportColumn } from '../../../shared/components/ExportMenu';
 import TreasuryAccountFields from '../../../shared/components/TreasuryAccountFields';
-import { AlertCircle, Clock, CreditCard, CheckCircle2, Ban, Search, Printer } from 'lucide-react';
+import { AlertCircle, Clock, CreditCard, CheckCircle2, Ban, Search, Printer, ListTodo } from 'lucide-react';
 
-type TabKey = 'upcoming' | 'overdue' | 'paid' | 'cancelled';
+type TabKey = 'upcoming' | 'overdue' | 'unpaid' | 'paid' | 'cancelled';
 
 const PAYMENT_METHOD_OPTIONS = [
   { value: 'ESPECE', label: 'Espèces' },
@@ -274,9 +275,10 @@ export default function InstallmentsPage() {
   const tabParam = searchParams.get('tab');
   const initialTab: TabKey =
     tabParam === 'overdue' ? 'overdue'
-      : tabParam === 'paid' ? 'paid'
-        : tabParam === 'cancelled' ? 'cancelled'
-          : 'upcoming';
+      : tabParam === 'unpaid' ? 'unpaid'
+        : tabParam === 'paid' ? 'paid'
+          : tabParam === 'cancelled' ? 'cancelled'
+            : 'upcoming';
   const [activeTab, setActiveTab] = useState<TabKey>(initialTab);
   const [days, setDays] = useState(30);
   const [paidYear, setPaidYear] = useState(0);
@@ -287,6 +289,7 @@ export default function InstallmentsPage() {
 
   const { data: upcomingRes, isLoading: upcomingLoading, refetch: refetchUpcoming } = useUpcomingInstallments(days);
   const { data: overdueRes, isLoading: overdueLoading, refetch: refetchOverdue } = useOverdueInstallments();
+  const { data: unpaidRes, isLoading: unpaidLoading, refetch: refetchUnpaid } = useUnpaidInstallments();
   const { data: paidRes, isLoading: paidLoading, refetch: refetchPaid } = usePaidInstallments(paidYear, paidSemester);
   const { data: cancelledRes, isLoading: cancelledLoading } = useCancelledInstallments();
   const cancelInstallment = useCancelInstallment();
@@ -296,11 +299,13 @@ export default function InstallmentsPage() {
   // Recherche appliquée à l'onglet courant : client, convention, date d'échéance ou montant.
   const upcoming = (upcomingRes?.data ?? []).filter((i: any) => matchInstallment(i, search));
   const overdue = (overdueRes?.data ?? []).filter((i: any) => matchInstallment(i, search));
+  const unpaid = (unpaidRes?.data ?? []).filter((i: any) => matchInstallment(i, search));
   const paid = (paidRes?.data ?? []).filter((i: any) => matchInstallment(i, search));
   const cancelled = (cancelledRes?.data ?? []).filter((i: any) => matchInstallment(i, search));
   const paidTotal = paid.reduce((s: number, i: any) => s + Number(i.amount), 0);
   const upcomingTotal = upcoming.reduce((s: number, i: any) => s + Number(i.amount), 0);
   const overdueTotal = overdue.reduce((s: number, i: any) => s + Number(i.amount), 0);
+  const unpaidTotal = unpaid.reduce((s: number, i: any) => s + Number(i.amount), 0);
   const cancelledTotal = cancelled.reduce((s: number, i: any) => s + Number(i.amount), 0);
   const paidFilterLabel =
     paidYear === 0
@@ -319,14 +324,17 @@ export default function InstallmentsPage() {
       ? [`Solde à venir — ${upcoming.length} échéance(s)`, '', '', '', formatCurrency(upcomingTotal), '']
       : activeTab === 'overdue'
         ? [`Solde en retard — ${overdue.length} échéance(s)`, '', '', '', formatCurrency(overdueTotal), '']
-        : activeTab === 'paid'
-          ? [`Solde encaissé — ${paid.length} échéance(s)`, '', '', '', formatCurrency(paidTotal), '']
-          : [`Total annulé — ${cancelled.length} échéance(s)`, '', '', '', formatCurrency(cancelledTotal), ''];
+        : activeTab === 'unpaid'
+          ? [`Total impayé — ${unpaid.length} échéance(s)`, '', '', '', formatCurrency(unpaidTotal), '']
+          : activeTab === 'paid'
+            ? [`Solde encaissé — ${paid.length} échéance(s)`, '', '', '', formatCurrency(paidTotal), '']
+            : [`Total annulé — ${cancelled.length} échéance(s)`, '', '', '', formatCurrency(cancelledTotal), ''];
 
   const handlePaySuccess = () => {
     setPayingInstallment(null);
     refetchUpcoming();
     refetchOverdue();
+    refetchUnpaid();
     refetchPaid();
   };
 
@@ -349,14 +357,16 @@ export default function InstallmentsPage() {
           fileName={
             activeTab === 'upcoming' ? 'echeances-a-venir'
               : activeTab === 'overdue' ? 'echeances-en-retard'
-                : activeTab === 'paid' ? 'echeances-payees'
-                  : 'echeances-annulees'
+                : activeTab === 'unpaid' ? 'echeances-impayees'
+                  : activeTab === 'paid' ? 'echeances-payees'
+                    : 'echeances-annulees'
           }
           title={
             activeTab === 'upcoming' ? 'Échéances de vente à venir'
               : activeTab === 'overdue' ? 'Échéances de vente en retard'
-                : activeTab === 'paid' ? 'Échéances de vente payées'
-                  : 'Échéances de vente annulées'
+                : activeTab === 'unpaid' ? 'Échéances de vente impayées'
+                  : activeTab === 'paid' ? 'Échéances de vente payées'
+                    : 'Échéances de vente annulées'
           }
           subtitle={
             activeTab === 'upcoming' ? upcomingPeriodLabel
@@ -368,8 +378,9 @@ export default function InstallmentsPage() {
           fetchRows={async () => (
             activeTab === 'upcoming' ? upcoming
               : activeTab === 'overdue' ? overdue
-                : activeTab === 'paid' ? paid
-                  : cancelled
+                : activeTab === 'unpaid' ? unpaid
+                  : activeTab === 'paid' ? paid
+                    : cancelled
           )}
         />
       }
@@ -411,6 +422,19 @@ export default function InstallmentsPage() {
           {overdue.length > 0 && (
             <span className="ml-1 bg-red-100 text-red-700 rounded-full px-2 py-0.5 text-xs font-semibold">
               {overdue.length}
+            </span>
+          )}
+        </button>
+        <button
+          onClick={() => setActiveTab('unpaid')}
+          className={`px-4 py-2 text-sm font-medium rounded-md transition-colors flex items-center gap-2 ${
+            activeTab === 'unpaid' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+          }`}
+        >
+          <ListTodo className="h-4 w-4" /> Toutes impayées
+          {unpaid.length > 0 && (
+            <span className="ml-1 bg-amber-100 text-amber-700 rounded-full px-2 py-0.5 text-xs font-semibold">
+              {unpaid.length}
             </span>
           )}
         </button>
@@ -494,6 +518,31 @@ export default function InstallmentsPage() {
                 Solde en retard — {overdue.length} échéance(s)
               </span>
               <span className="text-lg font-bold text-red-600">{formatCurrency(overdueTotal)}</span>
+            </div>
+          )}
+        </Card>
+      )}
+
+      {/* Unpaid Tab — toutes les échéances impayées (en attente + à régler + en retard) */}
+      {activeTab === 'unpaid' && (
+        <Card>
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="font-semibold text-slate-800 flex items-center gap-2">
+              <ListTodo className="h-4 w-4 text-amber-600" /> Toutes les échéances impayées
+            </h3>
+          </div>
+          <InstallmentTable
+            installments={unpaid}
+            isLoading={unpaidLoading}
+            onPay={setPayingInstallment}
+            onCancel={setCancelTarget}
+          />
+          {!unpaidLoading && unpaid.length > 0 && (
+            <div className="mt-4 pt-3 border-t border-slate-200 flex items-center justify-between">
+              <span className="text-sm text-slate-600">
+                Total impayé — {unpaid.length} échéance(s)
+              </span>
+              <span className="text-lg font-bold text-amber-700">{formatCurrency(unpaidTotal)}</span>
             </div>
           )}
         </Card>

@@ -71,12 +71,12 @@ export default function ClientDetailPage() {
   }
 
   const formatUserName = (u: any) =>
-    u ? `${u.firstName ?? ''} ${u.lastName ?? ''}`.trim() || u.email : '';
+    u ? `${u.lastName ?? ''} ${u.firstName ?? ''}`.trim() || u.email : '';
   const formatReferrerName = (r: any) =>
-    r ? (r.companyName ?? `${r.firstName ?? ''} ${r.lastName ?? ''}`.trim()) : '';
+    r ? (r.companyName ?? `${r.lastName ?? ''} ${r.firstName ?? ''}`.trim()) : '';
 
   const displayName = c.type === 'INDIVIDUEL'
-    ? `${c.firstName ?? ''} ${c.lastName ?? ''}`.trim()
+    ? `${c.lastName ?? ''} ${c.firstName ?? ''}`.trim()
     : c.entreprise ?? '—';
 
   return (
@@ -129,6 +129,12 @@ export default function ClientDetailPage() {
               {[
                 ...(c.type === 'INDIVIDUEL' && c.statutConjugal
                   ? [['Statut conjugal', { CELIBATAIRE: 'Célibataire', MARIEE: 'Marié(e)', CONCUBINAGE: 'Concubinage' }[c.statutConjugal as string] ?? c.statutConjugal]]
+                  : []),
+                ...(c.type === 'INDIVIDUEL' && c.birthDate
+                  ? [['Date de naissance', formatDate(c.birthDate)]]
+                  : []),
+                ...(c.type === 'INDIVIDUEL' && c.birthPlace
+                  ? [['Lieu de naissance', c.birthPlace]]
                   : []),
                 ['Téléphone', c.phone ?? '—'],
                 ['Mobile', c.mobile ?? '—'],

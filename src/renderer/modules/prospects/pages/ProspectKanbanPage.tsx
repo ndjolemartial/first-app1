@@ -7,7 +7,7 @@ import { formatCurrency } from '../../../shared/utils/format';
 import { UserPlus, List, Eye, Phone, ArrowRight, UserCircle2 } from 'lucide-react';
 
 const formatUserName = (u: any): string =>
-  u ? `${u.firstName ?? ''} ${u.lastName ?? ''}`.trim() : '';
+  u ? `${u.lastName ?? ''} ${u.firstName ?? ''}`.trim() : '';
 
 // ── Configuration des colonnes ─────────────────────────────────────────────────
 
@@ -103,7 +103,7 @@ export default function ProspectKanbanPage() {
                           className="font-medium text-sm text-slate-900 leading-tight cursor-pointer hover:text-blue-600"
                           onClick={() => navigate(`/prospects/${p.id}`)}
                         >
-                          {p.firstName} {p.lastName}
+                          {p.lastName} {p.firstName}
                         </p>
                         <Button
                           variant="ghost"

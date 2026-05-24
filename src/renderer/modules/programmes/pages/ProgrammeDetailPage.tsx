@@ -9,14 +9,15 @@ import { useProgramme, useDeleteProgramme } from '../hooks/useProgrammes';
 import { PROGRAMME_STATUT_VARIANT, PROGRAMME_STATUT_LABEL, PROGRAMME_TYPE_LABEL } from './ProgrammesListPage';
 import { formatDate, formatCurrency } from '../../../shared/utils/format';
 import { Edit, Trash2, Building, Building2, Landmark } from 'lucide-react';
+import EntityCashflowSection from '../../treasury/components/EntityCashflowSection';
 
 const PROPERTY_TYPE_LABEL: Record<string, string> = {
   APARTEMENT: 'Appartement', DUPLEX: 'Duplex', VILLA: 'Villa',
   STUDIO: 'Studio', BUREAU: 'Bureau', PARKING: 'Parking', AUTRE: 'Autre',
 };
 const PROPERTY_STATUS_VARIANT: Record<string, any> = {
-  DISPONIBLE: 'success', INDISPONIBLE: 'danger', EN_LOCATION: 'info',
-  SOLDE: 'default', SOUS_OPTION: 'warning', EN_RENOVATION: 'purple',
+  DISPONIBLE: 'success', RESERVE: 'warning', SOUS_OPTION: 'warning', VENDU: 'default',
+  EN_LOCATION: 'info', EN_RENOVATION: 'purple', INDISPONIBLE: 'danger',
 };
 const TERRAIN_STATUT_VARIANT: Record<string, any> = {
   DISPONIBLE: 'success', RESERVE: 'warning', VENDU: 'default', SOUS_OPTION: 'info',
@@ -156,6 +157,13 @@ export default function ProgrammeDetailPage() {
             </div>
           )}
         </Card>
+
+        {/* Flux de trésorerie rattaché à ce programme */}
+        <EntityCashflowSection
+          entityType="PROGRAMME"
+          entityId={Number(id)}
+          newOperationQuery={`?programmeId=${id}`}
+        />
 
         {/* Terrains rattachés */}
         <Card>

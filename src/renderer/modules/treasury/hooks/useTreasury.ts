@@ -101,6 +101,25 @@ export function useDeleteTreasuryOperation() {
   });
 }
 
+/* ─── Flux de trésorerie d'une entité analytique ──────────────────── */
+
+/**
+ * Récupère les opérations de trésorerie rattachées à un projet, un lotissement
+ * ou un programme immobilier ainsi que les totaux entrées/sorties/solde net.
+ */
+export function useEntityCashflow(
+  entityType: 'PROJECT' | 'LOTISSEMENT' | 'PROGRAMME',
+  entityId: number,
+  limit = 100,
+) {
+  const token = useAuthStore((s) => s.token)!;
+  return useQuery({
+    queryKey: ['treasury', 'entity-cashflow', entityType, entityId, limit],
+    queryFn: () => ipc.getEntityCashflow(token, entityType, entityId, limit),
+    enabled: entityId > 0,
+  });
+}
+
 /* ─── Objets d'opération (comptes comptables) ─────────────────────── */
 
 export function useTreasuryCategories(filters: object = {}) {

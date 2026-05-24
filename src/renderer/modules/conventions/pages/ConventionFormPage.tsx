@@ -1,13 +1,14 @@
 import { useNavigate, useParams } from 'react-router-dom';
 import { useEffect, useRef, useState } from 'react';
-import { useForm } from 'react-hook-form';
+import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
+import { X } from 'lucide-react';
 import PageLayout from '../../../shared/components/layout/PageLayout';
 import Button from '../../../shared/components/ui/Button';
 import Input from '../../../shared/components/ui/Input';
 import Select from '../../../shared/components/ui/Select';
-import { FormSearchSelect } from '../../../shared/components/ui/SearchSelect';
+import { FormSearchSelect, default as SearchSelect, type SearchSelectOption } from '../../../shared/components/ui/SearchSelect';
 import Textarea from '../../../shared/components/ui/Textarea';
 import Card from '../../../shared/components/ui/Card';
 import { useConvention, useConventions, useCreateConvention, useUpdateConvention } from '../hooks/useConventions';
@@ -22,6 +23,9 @@ const optionalId = z.preprocess(
   z.number().int().positive().optional(),
 );
 
+/** Tableau d'identifiants (biens ou terrains rattachés). */
+const idArray = z.array(z.number().int().positive()).default([]);
+
 /** Nombre optionnel : une chaîne vide est traitée comme « non renseigné » (et non comme 0). */
 const optionalNumber = z.preprocess(
   (v) => (v === '' || v === undefined || v === null ? undefined : Number(v)),
@@ -35,14 +39,18 @@ const optionalDay = z.preprocess(
 
 const schema = z.object({
   assetType: z.enum(['PROPERTY', 'TERRAIN']).default('TERRAIN'),
-  propertyId: optionalId,
-  terrainId: optionalId,
+  propertyIds: idArray,
+  terrainIds: idArray,
   clientId: z.coerce.number().int().positive('Client principal requis'),
   secondaryClientId: optionalId,
   parentConventionId: optionalId,
   amendmentType: z.preprocess(
     (v) => (v === '' || v === undefined || v === null ? undefined : v),
     z.enum(['PROLONGATION_DELAI', 'TRANSFERT_PROPRIETE', 'TRANSFERT_SITE']).optional(),
+  ),
+  souscriptionType: z.preprocess(
+    (v) => (v === '' || v === undefined || v === null ? undefined : v),
+    z.enum(['STANDARD', 'AVEC_ACD', 'FINANCEMENT_PROJET']).optional(),
   ),
   type: z.enum(['RENTAL_UNFURNISHED', 'RENTAL_FURNISHED', 'SALE', 'MANAGEMENT', 'COMMERCIAL_LEASE', 'SOUSCRIPTION', 'AVENANT', 'RESILIATION']),
   status: z.enum(['BROUILLON', 'ACTIVE', 'EXPIRE', 'TERMINER', 'ANNULE', 'ATTENTE_SIGNATURE']).default('BROUILLON'),
@@ -62,11 +70,11 @@ const schema = z.object({
   firstInstallmentDate: z.string().optional(),
   notes: z.string().optional(),
 }).superRefine((d, ctx) => {
-  if (d.assetType === 'PROPERTY' && !d.propertyId) {
-    ctx.addIssue({ code: 'custom', path: ['propertyId'], message: 'Bien immobilier requis' });
+  if (d.assetType === 'PROPERTY' && (!d.propertyIds || d.propertyIds.length === 0)) {
+    ctx.addIssue({ code: 'custom', path: ['propertyIds'], message: 'Sélectionnez au moins un bien immobilier' });
   }
-  if (d.assetType === 'TERRAIN' && !d.terrainId) {
-    ctx.addIssue({ code: 'custom', path: ['terrainId'], message: 'Terrain requis' });
+  if (d.assetType === 'TERRAIN' && (!d.terrainIds || d.terrainIds.length === 0)) {
+    ctx.addIssue({ code: 'custom', path: ['terrainIds'], message: 'Sélectionnez au moins un terrain' });
   }
   if (d.secondaryClientId && d.secondaryClientId === d.clientId) {
     ctx.addIssue({
@@ -89,13 +97,20 @@ const schema = z.object({
       message: 'Précisez la nature de l\'avenant',
     });
   }
+  if (d.type === 'SOUSCRIPTION' && !d.souscriptionType) {
+    ctx.addIssue({
+      code: 'custom',
+      path: ['souscriptionType'],
+      message: 'Précisez la nature de la souscription',
+    });
+  }
 });
 
 type FormData = z.infer<typeof schema>;
 
 const ASSET_TYPE_OPTIONS = [
-  { value: 'PROPERTY', label: 'Un bien immobilier' },
-  { value: 'TERRAIN', label: 'Un terrain' },
+  { value: 'TERRAIN', label: 'Des terrains' },
+  { value: 'PROPERTY', label: 'Des biens immobiliers' },
 ];
 
 const PROPERTY_TYPE_OPTIONS = [
@@ -113,8 +128,14 @@ const TERRAIN_TYPE_OPTIONS = [
   { value: 'RESILIATION', label: 'Résiliation' },
 ];
 
-/** Types de convention de terrain nécessitant un terrain encore disponible. */
-const TERRAIN_AVAILABLE_TYPES = ['SOUSCRIPTION', 'SALE'];
+/** Types de convention de terrain n'exigeant pas un pré-rattachement client (le terrain est encore DISPONIBLE — la convention acte la réservation). */
+const TERRAIN_DISPONIBLE_TYPES = ['SOUSCRIPTION'];
+
+/** Statuts de terrain considérés comme « engagés à un client » (pré-rattachement requis). */
+const TERRAIN_ENGAGED_STATUTS = ['RESERVE', 'VENDU', 'SOUS_OPTION'];
+
+/** Statuts de bien considérés comme « engagés à un client » (pré-rattachement requis). */
+const PROPERTY_ENGAGED_STATUTS = ['RESERVE', 'VENDU', 'SOUS_OPTION', 'EN_LOCATION', 'INDISPONIBLE'];
 
 /** Types de convention liés à une convention initiale/précédente. */
 const AMENDMENT_TYPES = ['AVENANT', 'RESILIATION'];
@@ -124,6 +145,13 @@ const AMENDMENT_NATURE_OPTIONS = [
   { value: 'PROLONGATION_DELAI', label: 'Avenant de prolongation de délai' },
   { value: 'TRANSFERT_PROPRIETE', label: 'Avenant de transfert de propriété' },
   { value: 'TRANSFERT_SITE', label: 'Avenant de transfert de site / changement de lot' },
+];
+
+const SOUSCRIPTION_NATURE_OPTIONS = [
+  { value: '', label: '— Choisir la nature —' },
+  { value: 'STANDARD', label: 'Convention de souscription' },
+  { value: 'AVEC_ACD', label: 'Convention de souscription avec ACD' },
+  { value: 'FINANCEMENT_PROJET', label: 'Convention de financement sur projet' },
 ];
 
 const TYPE_LABELS: Record<string, string> = {
@@ -238,6 +266,75 @@ function buildInstallments(
   return rows;
 }
 
+/**
+ * Sélecteur multiple : affiche les éléments sélectionnés en chips (suppression au clic)
+ * et propose un SearchSelect pour ajouter un nouvel élément. Les options déjà
+ * sélectionnées sont retirées du sélecteur d'ajout.
+ */
+function MultiAssetSelect({
+  label,
+  options,
+  values,
+  onChange,
+  error,
+  onAdd,
+}: {
+  label: string;
+  options: SearchSelectOption[];
+  values: number[];
+  onChange: (next: number[]) => void;
+  error?: string;
+  onAdd?: (addedId: number) => void;
+}) {
+  const selectedSet = new Set(values.map(String));
+  const remainingOptions: SearchSelectOption[] = [
+    { value: '', label: '— Ajouter un élément —' },
+    ...options.filter((o) => o.value !== '' && !selectedSet.has(o.value)),
+  ];
+  const labelByValue = new Map(options.filter((o) => o.value !== '').map((o) => [o.value, o.label]));
+  return (
+    <div className="flex flex-col gap-1">
+      <label className="text-sm font-medium text-slate-700">
+        {label}
+        <span className="text-red-500 ml-1">*</span>
+      </label>
+      {values.length === 0 ? (
+        <p className="text-sm text-slate-400">Aucun élément sélectionné.</p>
+      ) : (
+        <div className="flex flex-wrap gap-2">
+          {values.map((v) => (
+            <span
+              key={v}
+              className="inline-flex items-center gap-1 rounded-full bg-blue-50 border border-blue-200 px-3 py-1 text-sm text-blue-700"
+            >
+              <span className="break-all">{labelByValue.get(String(v)) ?? `#${v}`}</span>
+              <button
+                type="button"
+                aria-label="Retirer"
+                onClick={() => onChange(values.filter((x) => x !== v))}
+                className="ml-1 rounded-full p-0.5 text-blue-500 hover:bg-blue-100 hover:text-red-500"
+              >
+                <X className="h-3 w-3" />
+              </button>
+            </span>
+          ))}
+        </div>
+      )}
+      <SearchSelect
+        options={remainingOptions}
+        value=""
+        onChange={(v) => {
+          const num = Number(v);
+          if (!v || !Number.isFinite(num)) return;
+          onChange([...values, num]);
+          onAdd?.(num);
+        }}
+      />
+      {error && <p className="text-xs text-red-500">{error}</p>}
+    </div>
+  );
+}
+
 export default function ConventionFormPage() {
   const { id } = useParams<{ id?: string }>();
   const isEdit = !!id;
@@ -255,6 +352,9 @@ export default function ConventionFormPage() {
   const [submitError, setSubmitError] = useState('');
   const [installmentRows, setInstallmentRows] = useState<{ dueDate: string; amount: string }[]>([]);
   const skipInstallmentGenRef = useRef(false);
+  // Mémorise le clientId courant pour ne réinitialiser la sélection terrain/bien
+  // qu'à un VRAI changement (et pas au pré-remplissage initial en édition).
+  const prevClientIdRef = useRef<number | null>(null);
 
   const clientOptions = [
     { value: '', label: '— Choisir un client —' },
@@ -263,14 +363,6 @@ export default function ConventionFormPage() {
       label: c.type === 'INDIVIDUEL'
         ? `${c.firstName ?? ''} ${c.lastName ?? ''}`.trim()
         : (c.entreprise ?? ''),
-    })),
-  ];
-
-  const propertyOptions = [
-    { value: '', label: '— Choisir un bien —' },
-    ...(propertiesRes?.data ?? []).map((p: any) => ({
-      value: String(p.id),
-      label: `${p.reference} — ${p.address}, ${p.city}`,
     })),
   ];
 
@@ -286,18 +378,24 @@ export default function ConventionFormPage() {
 
   const { register, handleSubmit, reset, watch, setValue, control, formState: { errors, isSubmitting } } = useForm<z.input<typeof schema>, any, FormData>({
     resolver: zodResolver(schema),
-    defaultValues: { assetType: 'TERRAIN', type: 'SOUSCRIPTION', status: 'BROUILLON', paymentMethod: 'ESPECE', paymentModalites: 'CASH' },
+    defaultValues: {
+      assetType: 'TERRAIN', type: 'SOUSCRIPTION', status: 'BROUILLON',
+      paymentMethod: 'ESPECE', paymentModalites: 'CASH',
+      propertyIds: [], terrainIds: [],
+    },
   });
 
   const watchType = watch('type');
   const watchModalites = watch('paymentModalites');
   const watchAssetType = watch('assetType');
   const watchStartDate = watch('startDate');
-  const watchTerrainId = watch('terrainId');
+  const watchTerrainIds = watch('terrainIds') ?? [];
+  const watchClientId = watch('clientId');
   const watchInstallmentCount = watch('installmentCount');
   const watchSignedAt = watch('signedAt');
   const watchSaleAmount = watch('saleAmount');
   const watchApport = watch('apportInitial');
+  const clientIdNum = Number(watchClientId) || 0;
 
   const installmentCount = watchModalites === 'SUR_PLUS_60_MOIS'
     ? (Number(watchInstallmentCount) || 0)
@@ -319,19 +417,42 @@ export default function ConventionFormPage() {
 
   const typeOptions = watchAssetType === 'TERRAIN' ? TERRAIN_TYPE_OPTIONS : PROPERTY_TYPE_OPTIONS;
 
-  // Terrains proposés selon le type de convention : disponibles pour Souscription/Vente,
-  // déjà engagés (réservé/vendu/sous-option) pour Avenant/Résiliation.
-  const terrainStatutFilter = TERRAIN_AVAILABLE_TYPES.includes(watchType)
-    ? ['DISPONIBLE']
-    : ['RESERVE', 'VENDU', 'SOUS_OPTION'];
-  const editingTerrain: any = isEdit ? res?.data?.terrain : null;
-  const filteredTerrains = (terrainsRes?.data ?? []).filter(
-    (t: any) => terrainStatutFilter.includes(t.statut),
-  );
-  // Conserve le terrain déjà rattaché même s'il ne correspond plus au filtre courant.
-  if (editingTerrain && !filteredTerrains.some((t: any) => t.id === editingTerrain.id)) {
-    filteredTerrains.unshift(editingTerrain);
+  // Règle métier : pour SOUSCRIPTION de terrain, la convention acte la réservation —
+  // on propose tous les terrains DISPONIBLES. Pour les autres types (SALE/AVENANT/
+  // RESILIATION), le terrain doit avoir été préalablement assigné au client choisi
+  // (clientId + statut engagé) depuis la fiche terrain.
+  const terrainStrictByClient = !TERRAIN_DISPONIBLE_TYPES.includes(watchType);
+  // Terrains déjà rattachés en édition — conservés en option même hors filtre courant.
+  const editingTerrains: any[] = isEdit
+    ? (res?.data?.terrains ?? []).map((l: any) => l.terrain)
+    : [];
+  const filteredTerrains = (terrainsRes?.data ?? []).filter((t: any) => {
+    if (terrainStrictByClient) {
+      return TERRAIN_ENGAGED_STATUTS.includes(t.statut)
+        && clientIdNum > 0
+        && Number(t.clientId) === clientIdNum;
+    }
+    // Non-strict : terrains DISPONIBLES + terrains déjà rattachés au client courant.
+    if (t.statut === 'DISPONIBLE') return true;
+    if (clientIdNum > 0 && Number(t.clientId) === clientIdNum) return true;
+    return false;
+  });
+  // Réinjecte les terrains déjà rattachés en édition pour ne pas les masquer si
+  // leur statut a évolué — mais en filtrage strict, seulement s'ils restent
+  // attribués au client courant (sinon ils n'ont plus rien à faire ici).
+  for (const t of editingTerrains) {
+    if (!t) continue;
+    if (terrainStrictByClient && Number(t.clientId) !== clientIdNum) continue;
+    if (!filteredTerrains.some((x: any) => x.id === t.id)) {
+      filteredTerrains.unshift(t);
+    }
   }
+  // Tri : les terrains déjà rattachés au client courant remontent en tête.
+  filteredTerrains.sort((a: any, b: any) => {
+    const aOwned = clientIdNum > 0 && Number(a.clientId) === clientIdNum ? 1 : 0;
+    const bOwned = clientIdNum > 0 && Number(b.clientId) === clientIdNum ? 1 : 0;
+    return bOwned - aOwned;
+  });
   const terrainOptions = [
     { value: '', label: '— Choisir un terrain —' },
     ...filteredTerrains.map((t: any) => {
@@ -339,22 +460,70 @@ export default function ConventionFormPage() {
         t.numeroIlot ? `Îlot ${t.numeroIlot}` : '',
         t.numeroParcelle ? `Lot ${t.numeroParcelle}` : '',
       ].filter(Boolean).join(', ');
+      const isClientOwned = clientIdNum > 0 && Number(t.clientId) === clientIdNum;
       return {
         value: String(t.id),
         label: `${t.reference} — ${t.lotissement?.nom ?? ''}`.trim() + (loc ? ` (${loc})` : ''),
+        highlighted: isClientOwned,
       };
     }),
   ];
 
-  // Avenant / résiliation : convention initiale ou précédente, parmi les conventions du même terrain.
+  // Biens immobiliers : pour une nouvelle convention (RENTAL/SALE/MANAGEMENT/
+  // COMMERCIAL_LEASE), on propose les biens DISPONIBLES — la convention acte
+  // l'engagement. Pour AVENANT/RESILIATION, pré-rattachement client obligatoire.
+  const propertyStrictByClient = AMENDMENT_TYPES.includes(watchType);
+  const editingProperties: any[] = isEdit
+    ? (res?.data?.properties ?? []).map((l: any) => l.property)
+    : [];
+  const filteredProperties = (propertiesRes?.data ?? []).filter((p: any) => {
+    if (propertyStrictByClient) {
+      return PROPERTY_ENGAGED_STATUTS.includes(p.status)
+        && clientIdNum > 0
+        && Number(p.clientId) === clientIdNum;
+    }
+    // Non-strict : biens DISPONIBLES + biens déjà rattachés au client courant.
+    if (p.status === 'DISPONIBLE') return true;
+    if (clientIdNum > 0 && Number(p.clientId) === clientIdNum) return true;
+    return false;
+  });
+  for (const p of editingProperties) {
+    if (!p) continue;
+    if (propertyStrictByClient && Number(p.clientId) !== clientIdNum) continue;
+    if (!filteredProperties.some((x: any) => x.id === p.id)) {
+      filteredProperties.unshift(p);
+    }
+  }
+  // Tri : les biens déjà rattachés au client courant remontent en tête.
+  filteredProperties.sort((a: any, b: any) => {
+    const aOwned = clientIdNum > 0 && Number(a.clientId) === clientIdNum ? 1 : 0;
+    const bOwned = clientIdNum > 0 && Number(b.clientId) === clientIdNum ? 1 : 0;
+    return bOwned - aOwned;
+  });
+  const filteredPropertyOptions = [
+    { value: '', label: '— Choisir un bien —' },
+    ...filteredProperties.map((p: any) => {
+      const isClientOwned = clientIdNum > 0 && Number(p.clientId) === clientIdNum;
+      return {
+        value: String(p.id),
+        label: `${p.reference} — ${p.address}, ${p.city}`,
+        highlighted: isClientOwned,
+      };
+    }),
+  ];
+
+  // Avenant / résiliation : convention initiale ou précédente, parmi les conventions
+  // partageant au moins un terrain avec la sélection courante.
   const isAmendment = AMENDMENT_TYPES.includes(watchType);
+  const selectedTerrainIdSet = new Set(watchTerrainIds.map(String));
   const parentConventionOptions = [
     { value: '', label: '— Choisir la convention —' },
     ...(conventionsRes?.data ?? [])
-      .filter((co: any) =>
-        co.id !== Number(id)
-        && co.terrainId != null
-        && String(co.terrainId) === String(watchTerrainId))
+      .filter((co: any) => {
+        if (co.id === Number(id)) return false;
+        const coTerrainIds: string[] = (co.terrains ?? []).map((l: any) => String(l.terrain?.id ?? l.terrainId));
+        return coTerrainIds.some((tid) => selectedTerrainIdSet.has(tid));
+      })
       .map((co: any) => {
         const cn = co.client?.type === 'INDIVIDUEL'
           ? `${co.client?.firstName ?? ''} ${co.client?.lastName ?? ''}`.trim()
@@ -383,6 +552,23 @@ export default function ConventionFormPage() {
   useEffect(() => {
     setIsInstallment(watchModalites !== 'CASH');
   }, [watchModalites]);
+
+  // Vide la sélection terrain/bien quand l'utilisateur change de client principal,
+  // mais uniquement pour les types de convention en mode strict (clientId obligatoire) —
+  // sinon la sélection sur biens/terrains DISPONIBLES reste valide quel que soit le client.
+  // Le pré-remplissage initial (edit mode) ne déclenche pas la purge : on enregistre
+  // d'abord le clientId d'amorçage, on ne réagit qu'aux changements suivants.
+  useEffect(() => {
+    if (prevClientIdRef.current === null) {
+      prevClientIdRef.current = clientIdNum;
+      return;
+    }
+    if (prevClientIdRef.current !== clientIdNum) {
+      prevClientIdRef.current = clientIdNum;
+      if (terrainStrictByClient) setValue('terrainIds', [], { shouldValidate: false });
+      if (propertyStrictByClient) setValue('propertyIds', [], { shouldValidate: false });
+    }
+  }, [clientIdNum, setValue, terrainStrictByClient, propertyStrictByClient]);
 
   // Calcule la date de fin à partir de la date de début et du délai choisi.
   useEffect(() => {
@@ -413,15 +599,21 @@ export default function ConventionFormPage() {
   useEffect(() => {
     if (isEdit && res?.data) {
       const c = res.data;
+      const propIds: number[] = (c.properties ?? []).map((l: any) => Number(l.property?.id ?? l.propertyId)).filter(Boolean);
+      const terrIds: number[] = (c.terrains ?? []).map((l: any) => Number(l.terrain?.id ?? l.terrainId)).filter(Boolean);
+      // Coercion des null Prisma en '' / undefined pour les champs optional :
+      // Zod n'accepte pas null sur un string/enum optional, sinon handleSubmit
+      // échoue silencieusement et RHF focus le premier champ "invalide".
       reset({
         ...c,
         assetType: c.assetType ?? 'PROPERTY',
-        propertyId: c.propertyId ?? undefined,
-        terrainId: c.terrainId ?? undefined,
+        propertyIds: propIds,
+        terrainIds: terrIds,
         clientId: c.clientId,
         secondaryClientId: c.secondaryClientId ?? undefined,
         parentConventionId: c.parentConventionId ?? undefined,
         amendmentType: c.amendmentType ?? undefined,
+        souscriptionType: c.souscriptionType ?? undefined,
         startDate: toDateInput(c.startDate),
         endDate: toDateInput(c.endDate),
         signedAt: toDateInput(c.signedAt),
@@ -431,6 +623,8 @@ export default function ConventionFormPage() {
         deposit: c.deposit ? Number(c.deposit) : undefined,
         agencyFees: c.agencyFees ? Number(c.agencyFees) : undefined,
         charges: c.charges ? Number(c.charges) : undefined,
+        indexType: c.indexType ?? '',
+        notes: c.notes ?? '',
       });
       // Pré-sélectionne le délai si la date de fin correspond à un nombre de mois exact
       const derived = monthsBetween(c.startDate, c.endDate);
@@ -448,6 +642,16 @@ export default function ConventionFormPage() {
     }
   }, [res, isEdit, reset]);
 
+  // Quand on ajoute un terrain, on cumule son prix de vente dans saleAmount.
+  const onTerrainAdded = (terrainId: number) => {
+    const t = filteredTerrains.find((x: any) => x.id === terrainId);
+    const price = Number(t?.prixVente);
+    if (Number.isFinite(price) && price > 0) {
+      const current = Number(watchSaleAmount) || 0;
+      setValue('saleAmount', current + price, { shouldValidate: true });
+    }
+  };
+
   const onInvalid = () => {
     setSubmitError('Certains champs obligatoires sont manquants ou invalides — vérifiez le formulaire.');
   };
@@ -456,17 +660,19 @@ export default function ConventionFormPage() {
     setSubmitError('');
     try {
     const payload: any = { ...data };
-    // N'envoie que les champs correspondant au type de rattachement choisi
+    // N'envoie que les identifiants correspondant au type de rattachement choisi
     if (payload.assetType === 'TERRAIN') {
-      delete payload.propertyId;
+      delete payload.propertyIds;
     } else {
-      delete payload.terrainId;
+      delete payload.terrainIds;
       delete payload.secondaryClientId;
     }
     // La convention liée ne concerne que les avenants et résiliations
     if (!AMENDMENT_TYPES.includes(payload.type)) delete payload.parentConventionId;
     // La nature de l'avenant ne concerne que les avenants
     if (payload.type !== 'AVENANT') delete payload.amendmentType;
+    // La nature de la souscription ne concerne que les souscriptions
+    if (payload.type !== 'SOUSCRIPTION') delete payload.souscriptionType;
     // Échéancier : vente par échéances uniquement
     if (isSale && payload.paymentModalites !== 'CASH') {
       payload.installments = installmentRows
@@ -517,31 +723,6 @@ export default function ConventionFormPage() {
           <h3 className="text-base font-semibold text-slate-800 mb-4">Rattachement de la convention</h3>
           <div className="space-y-4">
             <Select label="La convention porte sur *" options={ASSET_TYPE_OPTIONS} {...register('assetType')} />
-            {watchAssetType === 'TERRAIN' ? (
-              <FormSearchSelect
-                control={control}
-                name="terrainId"
-                label="Terrain *"
-                options={terrainOptions}
-                error={errors.terrainId?.message}
-                onValueChange={(v) => {
-                  // Reprend le prix de vente saisi lors de la création du terrain
-                  const t = filteredTerrains.find((x: any) => String(x.id) === v);
-                  const price = Number(t?.prixVente);
-                  if (Number.isFinite(price) && price > 0) {
-                    setValue('saleAmount', price, { shouldValidate: true });
-                  }
-                }}
-              />
-            ) : (
-              <FormSearchSelect
-                control={control}
-                name="propertyId"
-                label="Bien immobilier *"
-                options={propertyOptions}
-                error={errors.propertyId?.message}
-              />
-            )}
             <FormSearchSelect
               control={control}
               name="clientId"
@@ -549,6 +730,60 @@ export default function ConventionFormPage() {
               options={clientOptions}
               error={errors.clientId?.message}
             />
+            {watchAssetType === 'TERRAIN' ? (
+              <>
+                <Controller
+                  control={control}
+                  name="terrainIds"
+                  render={({ field }) => (
+                    <MultiAssetSelect
+                      label="Terrains rattachés"
+                      options={terrainOptions}
+                      values={(field.value ?? []) as number[]}
+                      onChange={field.onChange}
+                      onAdd={onTerrainAdded}
+                      error={errors.terrainIds?.message as string | undefined}
+                    />
+                  )}
+                />
+                {terrainStrictByClient && clientIdNum === 0 && (
+                  <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-3 py-2">
+                    Sélectionnez d'abord le client principal pour afficher les terrains qui lui sont déjà attribués.
+                  </p>
+                )}
+                {terrainStrictByClient && clientIdNum > 0 && filteredTerrains.length === 0 && (
+                  <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-3 py-2">
+                    Aucun terrain n'est rattaché à ce client. Assignez d'abord un terrain (statut réservé / vendu / sous option) au client depuis la fiche terrain.
+                  </p>
+                )}
+              </>
+            ) : (
+              <>
+                <Controller
+                  control={control}
+                  name="propertyIds"
+                  render={({ field }) => (
+                    <MultiAssetSelect
+                      label="Biens immobiliers rattachés"
+                      options={filteredPropertyOptions}
+                      values={(field.value ?? []) as number[]}
+                      onChange={field.onChange}
+                      error={errors.propertyIds?.message as string | undefined}
+                    />
+                  )}
+                />
+                {propertyStrictByClient && clientIdNum === 0 && (
+                  <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-3 py-2">
+                    Sélectionnez d'abord le client principal pour afficher les biens qui lui sont déjà attribués.
+                  </p>
+                )}
+                {propertyStrictByClient && clientIdNum > 0 && filteredProperties.length === 0 && (
+                  <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-3 py-2">
+                    Aucun bien n'est rattaché à ce client. Assignez d'abord un bien (statut réservé / vendu / sous option / en location / indisponible) au client depuis la fiche bien.
+                  </p>
+                )}
+              </>
+            )}
             {watchAssetType === 'TERRAIN' && (
               <FormSearchSelect
                 control={control}
@@ -578,6 +813,16 @@ export default function ConventionFormPage() {
               />
             </div>
           )}
+          {watchType === 'SOUSCRIPTION' && (
+            <div className="mt-4">
+              <Select
+                label="Nature de la souscription *"
+                options={SOUSCRIPTION_NATURE_OPTIONS}
+                error={errors.souscriptionType?.message}
+                {...register('souscriptionType')}
+              />
+            </div>
+          )}
           {isAmendment && (
             <div className="mt-4">
               <FormSearchSelect
@@ -588,7 +833,7 @@ export default function ConventionFormPage() {
                 error={errors.parentConventionId?.message}
               />
               <p className="text-xs text-slate-500 mt-1">
-                Conventions rattachées au terrain sélectionné.
+                Conventions partageant au moins un terrain avec la sélection courante.
               </p>
             </div>
           )}
@@ -638,9 +883,9 @@ export default function ConventionFormPage() {
             <>
               {watchAssetType === 'TERRAIN' ? (
                 <div>
-                  <Input label="Prix de vente (FCFA)" type="number" step="1000" {...register('saleAmount')} />
+                  <Input label="Prix de vente total (FCFA)" type="number" step="1000" {...register('saleAmount')} />
                   <p className="text-xs text-slate-500 mt-1">
-                    Repris automatiquement du terrain sélectionné — modifiable si nécessaire.
+                    Cumulé automatiquement à partir des terrains ajoutés — modifiable si nécessaire.
                   </p>
                 </div>
               ) : (

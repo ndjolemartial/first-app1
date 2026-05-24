@@ -23,7 +23,12 @@ const activitySchema = zod_1.z.object({
     clientId: zod_1.z.number().int().positive().optional(),
     ownerId: zod_1.z.number().int().positive().optional(),
     propertyId: zod_1.z.number().int().positive().optional(),
-    contractId: zod_1.z.number().int().positive().optional(),
+    conventionId: zod_1.z.number().int().positive().optional(),
+    lotissementId: zod_1.z.number().int().positive().optional(),
+    terrainId: zod_1.z.number().int().positive().optional(),
+    programmeId: zod_1.z.number().int().positive().optional(),
+    invoiceId: zod_1.z.number().int().positive().optional(),
+    installmentId: zod_1.z.number().int().positive().optional(),
 });
 function registerCrmIPC() {
     electron_1.ipcMain.handle('crm:listActivities', async (_event, { token, filters = {}, page = 1, limit = 30 }) => {
@@ -46,8 +51,8 @@ function registerCrmIPC() {
                 where.prospectId = filters.prospectId;
             if (filters.propertyId)
                 where.propertyId = filters.propertyId;
-            if (filters.contractId)
-                where.contractId = filters.contractId;
+            if (filters.conventionId)
+                where.conventionId = filters.conventionId;
             if (filters.dueBefore)
                 where.dueDate = { ...(where.dueDate ?? {}), lte: new Date(filters.dueBefore) };
             if (filters.dueAfter)
@@ -70,7 +75,12 @@ function registerCrmIPC() {
                         prospect: { select: { id: true, firstName: true, lastName: true } },
                         owner: { select: { id: true, firstName: true, lastName: true, companyName: true } },
                         property: { select: { id: true, reference: true, address: true } },
-                        contract: { select: { id: true, reference: true } },
+                        convention: { select: { id: true, reference: true } },
+                        lotissement: { select: { id: true, reference: true, nom: true } },
+                        terrain: { select: { id: true, reference: true } },
+                        programme: { select: { id: true, reference: true, nom: true } },
+                        invoice: { select: { id: true, reference: true } },
+                        installment: { select: { id: true, installmentNumber: true, convention: { select: { reference: true } } } },
                     },
                 }),
                 db.crmActivity.count({ where }),
@@ -97,7 +107,12 @@ function registerCrmIPC() {
                     prospect: { select: { id: true, firstName: true, lastName: true } },
                     owner: { select: { id: true, firstName: true, lastName: true, companyName: true } },
                     property: { select: { id: true, reference: true, address: true } },
-                    contract: { select: { id: true, reference: true } },
+                    convention: { select: { id: true, reference: true } },
+                    lotissement: { select: { id: true, reference: true, nom: true } },
+                    terrain: { select: { id: true, reference: true } },
+                    programme: { select: { id: true, reference: true, nom: true } },
+                    invoice: { select: { id: true, reference: true } },
+                    installment: { select: { id: true, installmentNumber: true, convention: { select: { reference: true } } } },
                 },
             });
             if (!activity)
@@ -132,7 +147,12 @@ function registerCrmIPC() {
                     clientId: d.clientId ?? null,
                     ownerId: d.ownerId ?? null,
                     propertyId: d.propertyId ?? null,
-                    contractId: d.contractId ?? null,
+                    conventionId: d.conventionId ?? null,
+                    lotissementId: d.lotissementId ?? null,
+                    terrainId: d.terrainId ?? null,
+                    programmeId: d.programmeId ?? null,
+                    invoiceId: d.invoiceId ?? null,
+                    installmentId: d.installmentId ?? null,
                 },
             });
             logger_1.default.info(`CRM activity created: ${activity.id}`);

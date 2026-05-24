@@ -112,7 +112,15 @@ const commissionInclude = {
       id: true,
       reference: true,
       type: true,
-      property: { select: { id: true, reference: true, address: true, city: true } },
+      assetType: true,
+      properties: {
+        orderBy: { order: 'asc' },
+        select: { property: { select: { id: true, reference: true, address: true, city: true } } },
+      },
+      terrains: {
+        orderBy: { order: 'asc' },
+        select: { terrain: { select: { id: true, reference: true, numeroIlot: true, numeroParcelle: true } } },
+      },
       client: { select: { id: true, firstName: true, lastName: true, entreprise: true, type: true } },
     },
   },

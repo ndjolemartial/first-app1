@@ -108,7 +108,7 @@ export default function UsersListPage() {
                           {user.firstName?.[0]}{user.lastName?.[0]}
                         </div>
                         <div>
-                          <p className="font-medium text-slate-900">{user.firstName} {user.lastName}</p>
+                          <p className="font-medium text-slate-900">{user.lastName} {user.firstName}</p>
                           <p className="text-xs text-slate-500">{user.email}</p>
                         </div>
                       </div>

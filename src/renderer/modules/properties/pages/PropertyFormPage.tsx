@@ -1,6 +1,6 @@
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useEffect, useState } from 'react';
-import { useForm } from 'react-hook-form';
+import { useForm, useWatch } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { clsx } from 'clsx';
@@ -14,17 +14,26 @@ import Card from '../../../shared/components/ui/Card';
 import { useProperty, useCreateProperty, useUpdateProperty } from '../hooks/useProperties';
 import { useOwners } from '../../owners/hooks/useOwners';
 import { useProgrammes } from '../../programmes/hooks/useProgrammes';
+import { useClients } from '../../clients/hooks/useClients';
 import { useCountries } from '../../../shared/hooks/useCountries';
 import { useAuthStore } from '../../../shared/stores/auth.store';
 import MapLinkField from '../../../shared/components/MapLinkField';
 import { Save } from 'lucide-react';
 
+// Statuts pour lesquels un client rattaché est obligatoire.
+const STATUS_REQUIRING_CLIENT = ['RESERVE', 'SOUS_OPTION', 'VENDU', 'EN_LOCATION'] as const;
+type StatusRequiringClient = (typeof STATUS_REQUIRING_CLIENT)[number];
+const statusNeedsClient = (s: string): s is StatusRequiringClient =>
+  (STATUS_REQUIRING_CLIENT as readonly string[]).includes(s);
+
 const schema = z.object({
   // Origine du bien : propriétaire OU programme immobilier (jamais les deux).
   ownerId: z.coerce.number().int().positive().optional().or(z.literal('')),
   programmeId: z.coerce.number().int().positive().optional().or(z.literal('')),
+  // Client rattaché (visible quand le statut ≠ DISPONIBLE).
+  clientId: z.coerce.number().int().positive().optional().or(z.literal('')),
   type: z.enum(['APARTEMENT', 'DUPLEX', 'VILLA', 'STUDIO', 'BUREAU', 'PARKING', 'AUTRE']),
-  status: z.enum(['DISPONIBLE', 'INDISPONIBLE', 'EN_LOCATION', 'SOLDE', 'SOUS_OPTION', 'EN_RENOVATION']).default('DISPONIBLE'),
+  status: z.enum(['DISPONIBLE', 'RESERVE', 'SOUS_OPTION', 'VENDU', 'EN_LOCATION', 'EN_RENOVATION', 'INDISPONIBLE']).default('DISPONIBLE'),
   address: z.string().min(1, 'Adresse requise'),
   addressLine2: z.string().optional(),
   city: z.string().min(1, 'Ville requise'),
@@ -59,6 +68,14 @@ const schema = z.object({
   salePrice: z.coerce.number().optional(),
   charges: z.coerce.number().optional(),
   description: z.string().optional(),
+}).superRefine((data, ctx) => {
+  if (statusNeedsClient(data.status) && !data.clientId) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['clientId'],
+      message: 'Un client doit être rattaché pour ce statut',
+    });
+  }
 });
 
 type FormData = z.infer<typeof schema>;
@@ -82,11 +99,12 @@ const TYPE_OPTIONS = [
 
 const STATUS_OPTIONS = [
   { value: 'DISPONIBLE', label: 'Disponible' },
-  { value: 'INDISPONIBLE', label: 'Indisponible' },
-  { value: 'EN_LOCATION', label: 'En location' },
-  { value: 'SOLDE', label: 'Soldé' },
+  { value: 'RESERVE', label: 'Réservé' },
   { value: 'SOUS_OPTION', label: 'Sous option' },
+  { value: 'VENDU', label: 'Vendu' },
+  { value: 'EN_LOCATION', label: 'En location' },
   { value: 'EN_RENOVATION', label: 'En rénovation' },
+  { value: 'INDISPONIBLE', label: 'Indisponible' },
 ];
 
 const CONDITION_OPTIONS = [
@@ -111,6 +129,7 @@ export default function PropertyFormPage() {
   const update = useUpdateProperty();
   const { data: ownersRes } = useOwners({}, 1, 200);
   const { data: programmesRes } = useProgrammes({}, 1, 200);
+  const { data: clientsRes } = useClients({}, 1, 500);
   const { data: countriesRes } = useCountries();
   const countryOptions = (countriesRes?.data ?? []).map((c) => ({ value: c.isoCode, label: c.name }));
 
@@ -136,6 +155,17 @@ export default function PropertyFormPage() {
     })),
   ];
 
+  const clientOptions = [
+    { value: '', label: '— Choisir un client —' },
+    ...(clientsRes?.data ?? []).map((c: any) => ({
+      value: String(c.id),
+      label:
+        c.type === 'ENTREPRISE'
+          ? c.entreprise ?? ''
+          : `${c.firstName ?? ''} ${c.lastName ?? ''}`.trim(),
+    })),
+  ];
+
   const { register, handleSubmit, reset, setValue, control, formState: { errors, isSubmitting } } = useForm<
     z.input<typeof schema>,
     any,
@@ -148,23 +178,44 @@ export default function PropertyFormPage() {
       country: 'CI',
       ownerId: '',
       programmeId: presetProgrammeId,
+      clientId: '',
     },
   });
+
+  // Statut courant : pilote la visibilité du champ Client.
+  const currentStatus = useWatch({ control, name: 'status' });
+  const showClientField = currentStatus !== 'DISPONIBLE';
+
+  // Vide automatiquement clientId quand le statut repasse à DISPONIBLE.
+  useEffect(() => {
+    if (currentStatus === 'DISPONIBLE') setValue('clientId', '');
+  }, [currentStatus, setValue]);
 
   useEffect(() => {
     if (isEdit && res?.data) {
       const p = res.data;
       setSourceType(p.programmeId ? 'PROGRAMME' : p.ownerId ? 'OWNER' : 'NONE');
+      // Coercion des null Prisma en '' / undefined pour les champs optional :
+      // Zod n'accepte pas null sur un string/enum optional, sinon handleSubmit
+      // échoue silencieusement et RHF focus le premier champ "invalide".
       reset({
         ...p,
         ownerId: p.ownerId ?? '',
         programmeId: p.programmeId ?? '',
+        clientId: p.clientId ?? '',
         surface: p.surface != null ? String(p.surface) : '',
         rentPrice: p.rentPrice ? Number(p.rentPrice) : undefined,
         salePrice: p.salePrice ? Number(p.salePrice) : undefined,
         charges: p.charges ? Number(p.charges) : undefined,
         latitude: p.latitude != null ? String(p.latitude) : '',
         longitude: p.longitude != null ? String(p.longitude) : '',
+        addressLine2: p.addressLine2 ?? '',
+        postalCode: p.postalCode ?? '',
+        garage: p.garage ?? '',
+        cuisine: p.cuisine ?? '',
+        terrasseBalcon: p.terrasseBalcon ?? '',
+        description: p.description ?? '',
+        condition: p.condition ?? undefined,
       });
     }
   }, [res, isEdit, reset]);
@@ -183,6 +234,9 @@ export default function PropertyFormPage() {
     payload.longitude = data.longitude ? Number(data.longitude) : null;
     payload.ownerId = sourceType === 'OWNER' && data.ownerId ? Number(data.ownerId) : null;
     payload.programmeId = sourceType === 'PROGRAMME' && data.programmeId ? Number(data.programmeId) : null;
+    // Client : forcé à null si le statut est DISPONIBLE (cohérence côté serveur aussi).
+    payload.clientId =
+      data.status !== 'DISPONIBLE' && data.clientId ? Number(data.clientId) : null;
     let r;
     if (isEdit) r = await update.mutateAsync({ id: Number(id), payload });
     else r = await create.mutateAsync(payload);
@@ -240,6 +294,17 @@ export default function PropertyFormPage() {
             <Select label="Statut" options={STATUS_OPTIONS} {...register('status')} />
             <Select label="État du bien" options={CONDITION_OPTIONS} {...register('condition')} />
           </div>
+          {showClientField && (
+            <div className="grid grid-cols-2 gap-4 mt-4">
+              <FormSearchSelect
+                control={control}
+                name="clientId"
+                label={statusNeedsClient(currentStatus ?? '') ? 'Client rattaché *' : 'Client rattaché'}
+                options={clientOptions}
+                error={errors.clientId?.message as string | undefined}
+              />
+            </div>
+          )}
         </Card>
 
         {/* Localisation */}

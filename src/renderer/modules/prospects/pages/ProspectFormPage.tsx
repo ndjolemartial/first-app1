@@ -125,16 +125,16 @@ export default function ProspectFormPage() {
           {/* Identité */}
           <div className="grid grid-cols-2 gap-4">
             <Input
-              label="Prénom"
-              required
-              error={errors.firstName?.message}
-              {...register('firstName')}
-            />
-            <Input
               label="Nom"
               required
               error={errors.lastName?.message}
               {...register('lastName')}
+            />
+            <Input
+              label="Prénom"
+              required
+              error={errors.firstName?.message}
+              {...register('firstName')}
             />
           </div>
 

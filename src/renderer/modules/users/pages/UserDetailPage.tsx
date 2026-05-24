@@ -37,8 +37,8 @@ export default function UserDetailPage() {
 
   return (
     <PageLayout
-      title={`${user.firstName} ${user.lastName}`}
-      breadcrumbs={[{ label: 'Utilisateurs', to: '/users' }, { label: `${user.firstName} ${user.lastName}` }]}
+      title={`${user.lastName} ${user.firstName}`}
+      breadcrumbs={[{ label: 'Utilisateurs', to: '/users' }, { label: `${user.lastName} ${user.firstName}` }]}
       actions={
         <div className="flex gap-2">
           <Button variant="secondary" icon={<Power className="h-4 w-4" />}
@@ -62,7 +62,7 @@ export default function UserDetailPage() {
             </div>
             <div className="flex-1">
               <div className="flex items-center gap-3 flex-wrap">
-                <h2 className="text-xl font-bold text-slate-900">{user.firstName} {user.lastName}</h2>
+                <h2 className="text-xl font-bold text-slate-900">{user.lastName} {user.firstName}</h2>
                 <Badge variant={ROLE_VARIANT[user.role]}>{user.role}</Badge>
                 <Badge variant={user.isActive ? 'success' : 'danger'}>{user.isActive ? 'Actif' : 'Inactif'}</Badge>
               </div>

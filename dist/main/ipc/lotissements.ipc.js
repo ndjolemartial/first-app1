@@ -22,9 +22,13 @@ const lotissementSchema = zod_1.z.object({
     description: zod_1.z.string().optional(),
     latitude: zod_1.z.coerce.number().optional(),
     longitude: zod_1.z.coerce.number().optional(),
+    // Montant standard des frais de démarches ACD applicable sur ce lotissement.
+    fraisDemarchesAcdStandard: zod_1.z.coerce.number().nonnegative().optional().nullable(),
 });
-const WRITE_ROLES = ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'AGENT'];
-const READ_ROLES = [...WRITE_ROLES, 'ACCOUNTANT', 'READONLY'];
+// Module Lotissements : réservé aux MANAGER+ (ACCOUNTANT inclus via checkRole).
+// AGENT et READONLY n'ont aucun accès au module.
+const WRITE_ROLES = ['SUPER_ADMIN', 'ADMIN', 'MANAGER'];
+const READ_ROLES = ['SUPER_ADMIN', 'ADMIN', 'MANAGER'];
 const ser = (v) => JSON.parse(JSON.stringify(v));
 /**
  * Génère la prochaine référence LOT-YYYY-NNNN.
@@ -140,6 +144,46 @@ function registerLotissementsIPC() {
             const db = (0, db_service_1.getDb)();
             const lot = await db.lotissement.update({ where: { id, deletedAt: null }, data: parsed.data });
             return ser({ success: true, data: lot });
+        }
+        catch (error) {
+            return { success: false, error: error.message };
+        }
+    });
+    electron_1.ipcMain.handle('lotissements:statusStats', async (_event, { token, filters = {} }) => {
+        try {
+            const session = (0, auth_service_1.getSession)(token);
+            if (!session)
+                return { success: false, error: 'Session expirée' };
+            (0, auth_service_1.checkRole)(session, READ_ROLES);
+            const db = (0, db_service_1.getDb)();
+            const where = { deletedAt: null };
+            if (filters.ville)
+                where.ville = { contains: filters.ville };
+            if (filters.search) {
+                where.OR = [
+                    { nom: { contains: filters.search } },
+                    { reference: { contains: filters.search } },
+                    { commune: { contains: filters.search } },
+                    { quartier: { contains: filters.search } },
+                    { promoteur: { contains: filters.search } },
+                ];
+            }
+            const rows = await db.lotissement.groupBy({
+                by: ['statut'],
+                where,
+                _count: { _all: true },
+            });
+            const stats = {
+                EN_COURS_LOTISSEMENT: 0, EN_COURS: 0, OUVERT: 0,
+                PARTIELLEMENT_VENDU: 0, COMPLET: 0, FERME: 0,
+            };
+            let total = 0;
+            for (const r of rows) {
+                const n = r._count?._all ?? 0;
+                stats[r.statut] = n;
+                total += n;
+            }
+            return { success: true, data: { ...stats, total } };
         }
         catch (error) {
             return { success: false, error: error.message };

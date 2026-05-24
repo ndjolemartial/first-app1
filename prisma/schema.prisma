@@ -54,6 +54,7 @@ model User {
   assignedProspects    Prospect[]          @relation("ProspectAssignedTo")
   createdProspects     Prospect[]          @relation("ProspectCreatedBy")
   assignedClients      Client[]            @relation("ClientAssignedTo")
+  attestationsEmitted  Attestation[]       @relation("AttestationEmittedBy")
 }
 
 enum UserRole {
@@ -138,6 +139,7 @@ model Client {
   country              String     @default("CI")
   nationality          String?
   birthDate            DateTime?
+  birthPlace           String?
   idNumber             String?
   fatherFirstName      String?
   fatherLastName       String?
@@ -163,6 +165,10 @@ model Client {
   activities         CrmActivity[]
   invoices           Invoice[]
   terrains           Terrain[]
+  properties         Property[]    @relation("ClientProperties")
+  attestations          Attestation[] @relation("AttestationClient")
+  attestationsSecondary Attestation[] @relation("AttestationSecondaryClient")
+  projects             Project[]
 }
 
 enum ClientType {
@@ -227,6 +233,7 @@ model Owner {
   terrains   Terrain[]
   documents  Document[]
   activities CrmActivity[]
+  projects   Project[]
 }
 
 // ── LOTISSEMENTS ───────────────────────────────────────────────
@@ -247,13 +254,20 @@ model Lotissement {
   description     String?           @db.Text
   latitude        Float?
   longitude       Float?
+  // Frais de démarches ACD : montant standard applicable lorsqu'un client confie
+  // les démarches ACD à l'entreprise sur un terrain de ce lotissement. Sert de
+  // pré-remplissage sur chaque terrain — la valeur retenue reste modifiable au
+  // niveau du terrain (négociation, remise…).
+  fraisDemarchesAcdStandard Decimal? @db.Decimal(15, 2)
   createdAt       DateTime          @default(now())
   updatedAt       DateTime          @updatedAt
   deletedAt       DateTime?
 
-  terrains   Terrain[]
-  documents  Document[]
-  activities CrmActivity[]
+  terrains            Terrain[]
+  documents           Document[]
+  activities          CrmActivity[]
+  projects            Project[]
+  treasuryOperations  TreasuryOperation[]
 }
 
 enum LotissementStatus {
@@ -292,10 +306,12 @@ model ProgrammeImmobilier {
   updatedAt           DateTime        @updatedAt
   deletedAt           DateTime?
 
-  properties Property[]
-  terrains   Terrain[]
-  documents  Document[]
-  activities CrmActivity[]
+  properties          Property[]
+  terrains            Terrain[]
+  documents           Document[]
+  activities          CrmActivity[]
+  projects            Project[]
+  treasuryOperations  TreasuryOperation[]
 }
 
 enum ProgrammeType {
@@ -337,6 +353,12 @@ model Terrain {
   description    String?       @db.Text
   latitude       Float?
   longitude      Float?
+  // Frais de démarches ACD — option client : prise en charge des démarches ACD
+  // par l'entreprise. Indépendant du prix du terrain et des frais de dossier.
+  acdDemarchesEnabled          Boolean   @default(false)   // Le client a opté pour la prise en charge
+  acdDemarchesAmount           Decimal?  @db.Decimal(15, 2) // Montant retenu (pré-rempli depuis Lotissement, modifiable)
+  acdDemarchesStartDate        DateTime?                    // Date de la 1ʳᵉ échéance (ou paiement comptant si cash)
+  acdDemarchesInstallmentCount Int?                         // 1 = comptant, N > 1 = échelonné (cadence mensuelle)
   createdAt      DateTime      @default(now())
   updatedAt      DateTime      @updatedAt
   deletedAt      DateTime?
@@ -348,7 +370,10 @@ model Terrain {
   documents   Document[]
   photos      TerrainPhoto[]
   activities  CrmActivity[]
-  conventions Convention[]
+  conventionLinks ConventionTerrain[]
+  attestations Attestation[]
+  invoices    Invoice[]
+  projects    Project[]
 }
 
 enum TerrainStatus {
@@ -382,6 +407,10 @@ model Property {
   // programme immobilier (exclusif). Les deux champs peuvent être nuls.
   ownerId       Int?
   programmeId   Int?
+  // Client rattaché au bien : présent uniquement lorsque le bien n'est pas
+  // DISPONIBLE (réservé, sous option, vendu, en location…). Vidé automatiquement
+  // au retour à DISPONIBLE.
+  clientId      Int?
   address       String
   addressLine2  String?
   city          String
@@ -413,10 +442,12 @@ model Property {
 
   owner       Owner?               @relation(fields: [ownerId], references: [id])
   programme   ProgrammeImmobilier? @relation(fields: [programmeId], references: [id])
-  conventions Convention[]
+  client      Client?              @relation("ClientProperties", fields: [clientId], references: [id])
+  conventionLinks ConventionProperty[]
   documents   Document[]
   photos      PropertyPhoto[]
   activities  CrmActivity[]
+  attestations Attestation[]
 }
 
 enum PropertyType {
@@ -431,11 +462,12 @@ enum PropertyType {
 
 enum PropertyStatus {
   DISPONIBLE
-  INDISPONIBLE
-  EN_LOCATION
-  SOLDE
+  RESERVE
   SOUS_OPTION
+  VENDU
+  EN_LOCATION
   EN_RENOVATION
+  INDISPONIBLE
 }
 
 enum PropertyCondition {
@@ -467,12 +499,11 @@ model Convention {
   type                 ConventionType
   status               ConventionStatus @default(BROUILLON)
   assetType            ConventionAssetType @default(PROPERTY)
-  propertyId           Int?
-  terrainId            Int?
   clientId             Int
   secondaryClientId    Int?
   parentConventionId   Int?
   amendmentType        ConventionAmendmentType?
+  souscriptionType     ConventionSouscriptionType?
   agentId              Int?
   startDate            DateTime
   endDate              DateTime?
@@ -497,8 +528,8 @@ model Convention {
   updatedAt            DateTime         @updatedAt
   deletedAt            DateTime?
 
-  property         Property?      @relation(fields: [propertyId], references: [id])
-  terrain          Terrain?       @relation(fields: [terrainId], references: [id])
+  properties       ConventionProperty[]
+  terrains         ConventionTerrain[]
   client           Client         @relation("ConventionClient", fields: [clientId], references: [id])
   secondaryClient  Client?        @relation("ConventionSecondaryClient", fields: [secondaryClientId], references: [id])
   agent            User?          @relation("AgentConventions", fields: [agentId], references: [id])
@@ -510,6 +541,35 @@ model Convention {
   activities   CrmActivity[]
   installments SaleInstallment[]
   commissions  Commission[]
+  attestations Attestation[]
+}
+
+// Liaison Convention ↔ Bien immobilier (une convention peut couvrir plusieurs biens).
+model ConventionProperty {
+  conventionId Int
+  propertyId   Int
+  order        Int      @default(0)
+  createdAt    DateTime @default(now())
+
+  convention Convention @relation(fields: [conventionId], references: [id], onDelete: Cascade)
+  property   Property   @relation(fields: [propertyId], references: [id])
+
+  @@id([conventionId, propertyId])
+  @@index([propertyId])
+}
+
+// Liaison Convention ↔ Terrain (une convention peut couvrir plusieurs terrains).
+model ConventionTerrain {
+  conventionId Int
+  terrainId    Int
+  order        Int      @default(0)
+  createdAt    DateTime @default(now())
+
+  convention Convention @relation(fields: [conventionId], references: [id], onDelete: Cascade)
+  terrain    Terrain    @relation(fields: [terrainId], references: [id])
+
+  @@id([conventionId, terrainId])
+  @@index([terrainId])
 }
 
 enum ConventionType {
@@ -534,12 +594,23 @@ enum ConventionAmendmentType {
   TRANSFERT_SITE
 }
 
+// Sous-type d'une convention de souscription (rempli quand type === SOUSCRIPTION).
+enum ConventionSouscriptionType {
+  STANDARD            // Convention de souscription
+  AVEC_ACD            // Convention de souscription avec ACD
+  FINANCEMENT_PROJET  // Convention de financement sur projet
+}
+
 // Modèle de convention enrichi (texte enrichi HTML : en-tête, corps, pied de page)
 model ConventionTemplate {
   id        Int          @id @default(autoincrement())
   uuid      String       @unique @default(cuid())
   name      String
   type      ConventionType
+  // Nature spécifique (optionnelle) — laisser vide pour un modèle générique
+  // couvrant toutes les natures de ce type de convention.
+  amendmentType    ConventionAmendmentType?
+  souscriptionType ConventionSouscriptionType?
   header      String?    @db.LongText
   body        String     @db.LongText
   footer      String?    @db.LongText
@@ -561,6 +632,70 @@ enum ConventionStatus {
   TERMINER
   ANNULE
   ATTENTE_SIGNATURE
+}
+
+// ── ATTESTATIONS ──────────────────────────────────────────────
+
+// Type d'attestation émise pour un client depuis le module Conventions.
+enum AttestationType {
+  ATTRIBUTION         // Attribution d'un terrain à un client
+  CESSION             // Cession d'un terrain entre deux clients (cédant ≠ cessionnaire)
+  SOLDE               // Solde 0 pour acquisition (frais de dossier inclus)
+  TRANSFERT_PROPRIETE // Transfert de propriété sur un bien/terrain déjà cédé
+}
+
+// Modèle d'attestation enrichi (texte HTML : en-tête, corps, pied de page).
+// Un modèle par défaut peut être défini pour chaque type d'attestation.
+model AttestationTemplate {
+  id           Int             @id @default(autoincrement())
+  uuid         String          @unique @default(cuid())
+  name         String
+  type         AttestationType
+  header       String?         @db.LongText
+  body         String          @db.LongText
+  footer       String?         @db.LongText
+  headerWidth  Int             @default(100)
+  footerWidth  Int             @default(100)
+  headerHeight Int             @default(140)
+  footerHeight Int             @default(140)
+  isActive     Boolean         @default(true)
+  isDefault    Boolean         @default(false)
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
+  deletedAt    DateTime?
+
+  attestations Attestation[]
+}
+
+// Attestation émise pour un client. Référence auto ATT-YYYY-NNNN.
+// Rattachement optionnel à une convention, un terrain ou un bien.
+// Pour une CESSION, secondaryClientId = cédant (différent du clientId/cessionnaire).
+model Attestation {
+  id                Int             @id @default(autoincrement())
+  uuid              String          @unique @default(cuid())
+  reference         String          @unique // Ex: ATT-2026-0007
+  type              AttestationType
+  clientId          Int             // Bénéficiaire (attributaire / cessionnaire / acquéreur)
+  secondaryClientId Int?            // Cédant (CESSION) ou ancien propriétaire (TRANSFERT_PROPRIETE)
+  terrainId         Int?
+  propertyId        Int?
+  conventionId      Int?            // Lien optionnel vers la convention d'origine
+  templateId        Int?            // Modèle utilisé au moment de l'émission
+  emittedAt         DateTime        @default(now())
+  emittedById       Int?
+  amount            Decimal?        @db.Decimal(15, 2) // Montant (utile pour SOLDE notamment)
+  notes             String?         @db.Text
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+  deletedAt         DateTime?
+
+  client          Client               @relation("AttestationClient", fields: [clientId], references: [id])
+  secondaryClient Client?              @relation("AttestationSecondaryClient", fields: [secondaryClientId], references: [id])
+  terrain         Terrain?             @relation(fields: [terrainId], references: [id])
+  property        Property?            @relation(fields: [propertyId], references: [id])
+  convention      Convention?          @relation(fields: [conventionId], references: [id])
+  template        AttestationTemplate? @relation(fields: [templateId], references: [id])
+  emittedBy       User?                @relation("AttestationEmittedBy", fields: [emittedById], references: [id])
 }
 
 enum PaymentMethod {
@@ -595,6 +730,9 @@ model Invoice {
   status       InvoiceStatus @default(BROUILLON)
   clientId     Int?
   conventionId Int?
+  // Rattachement direct à un terrain (utilisé pour les factures de
+  // frais de démarches ACD : ces frais sont indépendants d'une convention).
+  terrainId    Int?
   subtotal     Decimal       @db.Decimal(15, 2)
   taxRate    Decimal       @default(0) @db.Decimal(5, 2)
   taxAmount  Decimal       @db.Decimal(15, 2)
@@ -609,6 +747,7 @@ model Invoice {
 
   client       Client?           @relation(fields: [clientId], references: [id])
   convention   Convention?       @relation(fields: [conventionId], references: [id])
+  terrain      Terrain?          @relation(fields: [terrainId], references: [id])
   items        InvoiceItem[]
   payments     Payment[]
   installments SaleInstallment[]
@@ -620,6 +759,7 @@ enum InvoiceType {
   ECHEANCE_VENTE
   FRAIS_AGENCE
   FRAIS_DE_GESTION
+  FRAIS_DEMARCHES_ACD
   AVANCE
   CAUTION
   OTHER
@@ -730,6 +870,7 @@ model CrmActivity {
   programmeId    Int?
   invoiceId      Int?
   installmentId  Int?
+  projectId      Int?
   createdAt      DateTime       @default(now())
   updatedAt      DateTime       @updatedAt
 
@@ -744,6 +885,7 @@ model CrmActivity {
   programme   ProgrammeImmobilier? @relation(fields: [programmeId], references: [id])
   invoice     Invoice?             @relation(fields: [invoiceId], references: [id])
   installment SaleInstallment?     @relation(fields: [installmentId], references: [id])
+  project     Project?             @relation(fields: [projectId], references: [id])
 }
 
 enum ActivityType {
@@ -842,6 +984,7 @@ model Document {
   lotissementId  Int?
   terrainId      Int?
   programmeId    Int?
+  projectId      Int?
   uploadedAt     DateTime     @default(now())
   updatedAt      DateTime     @updatedAt
   deletedAt      DateTime?
@@ -853,6 +996,7 @@ model Document {
   lotissement      Lotissement?         @relation(fields: [lotissementId], references: [id])
   terrain          Terrain?             @relation(fields: [terrainId], references: [id])
   programme        ProgrammeImmobilier? @relation(fields: [programmeId], references: [id])
+  project          Project?             @relation(fields: [projectId], references: [id])
   documentCategory DocumentCategory?    @relation(fields: [categoryId], references: [id])
   folder           DocumentFolder?      @relation(fields: [folderId], references: [id])
   uploadedBy       User?                @relation("DocumentUploadedBy", fields: [uploadedById], references: [id])
@@ -1190,16 +1334,25 @@ model TreasuryOperation {
   installmentId Int?              // Échéance de vente rattachée (source ECHEANCE)
   commissionId  Int?              // Commission rattachée (source COMMISSION)
   budgetLineId  Int?              // Ligne budgétaire d'imputation (sorties uniquement)
+  // Imputation analytique : une opération peut être rattachée à au plus UNE
+  // entité parmi projet / lotissement / programme immobilier. L'exclusivité est
+  // appliquée en code (validation Zod côté IPC).
+  projectId     Int?              // Projet rattaché
+  lotissementId Int?              // Lotissement rattaché
+  programmeId   Int?              // Programme immobilier rattaché
   createdById   Int?
   notes         String?           @db.Text
   createdAt     DateTime          @default(now())
   updatedAt     DateTime          @updatedAt
   deletedAt     DateTime?
 
-  bankAccount BankAccount       @relation(fields: [bankAccountId], references: [id])
-  category    TreasuryCategory? @relation(fields: [categoryId], references: [id])
-  createdBy   User?             @relation("TreasuryCreatedBy", fields: [createdById], references: [id])
-  budgetLine  BudgetLine?       @relation(fields: [budgetLineId], references: [id])
+  bankAccount BankAccount          @relation(fields: [bankAccountId], references: [id])
+  category    TreasuryCategory?    @relation(fields: [categoryId], references: [id])
+  createdBy   User?                @relation("TreasuryCreatedBy", fields: [createdById], references: [id])
+  budgetLine  BudgetLine?          @relation(fields: [budgetLineId], references: [id])
+  project     Project?             @relation(fields: [projectId], references: [id])
+  lotissement Lotissement?         @relation(fields: [lotissementId], references: [id])
+  programme   ProgrammeImmobilier? @relation(fields: [programmeId], references: [id])
 }
 
 enum TreasurySource {
@@ -1263,4 +1416,95 @@ model BudgetLine {
   budget     Budget              @relation(fields: [budgetId], references: [id])
   manager    User?               @relation("BudgetLineManager", fields: [managerId], references: [id])
   operations TreasuryOperation[]
+}
+
+// ── PROJETS ───────────────────────────────────────────────────
+
+// Catalogue extensible des types de projets (Construction de bâtiments,
+// Bornage, Bitumage, etc.). Géré depuis Paramètres › Types de projets.
+model ProjectType {
+  id          Int       @id @default(autoincrement())
+  code        String    @unique  // Slug stable (ex: CONSTRUCTION_BATIMENTS)
+  label       String             // Libellé d'affichage
+  description String?   @db.Text
+  color       String?            // Couleur hex (ex: #2563EB)
+  isActive    Boolean   @default(true)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  deletedAt   DateTime?
+
+  projects Project[]
+}
+
+// Projet : opération supervisée par l'agence (construction, ouverture de
+// voies, bornage, bitumage…). Référence auto PROJ-YYYY-NNNN. Rattachements
+// optionnels : client commanditaire, propriétaire, terrain, lotissement,
+// programme immobilier.
+model Project {
+  id              Int           @id @default(autoincrement())
+  uuid            String        @unique @default(cuid())
+  reference       String        @unique // Ex: PROJ-2026-0001
+  nom             String
+  typeId          Int           // Type de projet (obligatoire)
+  statut          ProjectStatus @default(EN_PROJET)
+  // Rattachements optionnels
+  clientId        Int?
+  ownerId         Int?
+  terrainId       Int?
+  lotissementId   Int?
+  programmeId     Int?
+  // Localisation
+  adresse         String?
+  commune         String?
+  quartier        String?
+  ville           String?
+  pays            String        @default("CI")
+  latitude        Float?
+  longitude       Float?
+  // Dates & avancement
+  dateDebutPrevu  DateTime?
+  dateDebutReel   DateTime?
+  dateFinPrevue   DateTime?
+  dateFinReelle   DateTime?
+  avancement      Int           @default(0) // Taux d'avancement 0–100 %
+  // Financier
+  budgetPrevu     Decimal?      @db.Decimal(15, 2)
+  budgetRealise   Decimal?      @db.Decimal(15, 2)
+  // Description
+  description     String?       @db.Text
+  notes           String?       @db.Text
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+  deletedAt       DateTime?
+
+  type        ProjectType          @relation(fields: [typeId], references: [id])
+  client      Client?              @relation(fields: [clientId], references: [id])
+  owner       Owner?               @relation(fields: [ownerId], references: [id])
+  terrain     Terrain?             @relation(fields: [terrainId], references: [id])
+  lotissement Lotissement?         @relation(fields: [lotissementId], references: [id])
+  programme   ProgrammeImmobilier? @relation(fields: [programmeId], references: [id])
+  photos      ProjectPhoto[]
+  documents   Document[]
+  activities  CrmActivity[]
+  treasuryOperations TreasuryOperation[]
+}
+
+enum ProjectStatus {
+  EN_PROJET
+  EN_COURS
+  SUSPENDU
+  TERMINE
+  ANNULE
+}
+
+model ProjectPhoto {
+  id        Int      @id @default(autoincrement())
+  projectId Int
+  path      String
+  caption   String?
+  isPrimary Boolean  @default(false)
+  order     Int      @default(0)
+  createdAt DateTime @default(now())
+
+  project Project @relation(fields: [projectId], references: [id])
 }

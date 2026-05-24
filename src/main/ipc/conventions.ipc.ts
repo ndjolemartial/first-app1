@@ -12,12 +12,15 @@ const READ_ROLES  = ['SUPER_ADMIN', 'ADMIN', 'MANAGER'];
 
 const conventionBaseSchema = z.object({
   assetType: z.enum(['PROPERTY', 'TERRAIN']).default('PROPERTY'),
-  propertyId: z.number().int().positive().optional(),
-  terrainId: z.number().int().positive().optional(),
+  // Listes des biens / terrains rattachés à la convention (selon assetType).
+  // Une convention peut couvrir plusieurs biens OU plusieurs terrains.
+  propertyIds: z.array(z.number().int().positive()).optional(),
+  terrainIds: z.array(z.number().int().positive()).optional(),
   clientId: z.number().int().positive(),
   secondaryClientId: z.number().int().positive().optional(),
   parentConventionId: z.number().int().positive().optional(),
   amendmentType: z.enum(['PROLONGATION_DELAI', 'TRANSFERT_PROPRIETE', 'TRANSFERT_SITE']).optional(),
+  souscriptionType: z.enum(['STANDARD', 'AVEC_ACD', 'FINANCEMENT_PROJET']).optional(),
   agentId: z.number().int().optional(),
   type: z.enum(['RENTAL_UNFURNISHED', 'RENTAL_FURNISHED', 'SALE', 'MANAGEMENT', 'COMMERCIAL_LEASE', 'SOUSCRIPTION', 'AVENANT', 'RESILIATION']),
   status: z.enum(['BROUILLON', 'ACTIVE', 'EXPIRE', 'TERMINER', 'ANNULE', 'ATTENTE_SIGNATURE']).default('BROUILLON'),
@@ -55,8 +58,10 @@ const AMENDMENT_TYPES = ['AVENANT', 'RESILIATION'];
 /** Vérifie la cohérence rattachement (bien/terrain) ↔ élément sélectionné et type de convention. */
 const conventionSchema = conventionBaseSchema
   .refine(
-    (d) => (d.assetType === 'TERRAIN' ? !!d.terrainId : !!d.propertyId),
-    { message: 'Sélectionnez le bien immobilier ou le terrain rattaché à la convention' },
+    (d) => (d.assetType === 'TERRAIN'
+      ? (d.terrainIds && d.terrainIds.length > 0)
+      : (d.propertyIds && d.propertyIds.length > 0)),
+    { message: 'Sélectionnez au moins un bien immobilier ou un terrain à rattacher à la convention' },
   )
   .refine(
     (d) => (d.assetType === 'TERRAIN' ? TERRAIN_CONVENTION_TYPES : PROPERTY_CONVENTION_TYPES).includes(d.type),
@@ -69,6 +74,10 @@ const conventionSchema = conventionBaseSchema
   .refine(
     (d) => (d.type === 'AVENANT' ? !!d.amendmentType : true),
     { message: 'Précisez la nature de l\'avenant' },
+  )
+  .refine(
+    (d) => (d.type === 'SOUSCRIPTION' ? !!d.souscriptionType : true),
+    { message: 'Précisez la nature de la souscription' },
   );
 
 const INSTALLMENT_COUNTS: Record<string, number> = {
@@ -125,6 +134,52 @@ async function assertSingleResiliation(
   }
 }
 
+/** Include utilisé pour récupérer les biens et terrains rattachés à une convention en liste. */
+const linksIncludeList = {
+  properties: {
+    orderBy: { order: 'asc' as const },
+    include: {
+      property: { select: { id: true, reference: true, address: true, city: true, type: true } },
+    },
+  },
+  terrains: {
+    orderBy: { order: 'asc' as const },
+    include: {
+      terrain: {
+        select: {
+          id: true, reference: true, numeroIlot: true, numeroParcelle: true,
+          lotissement: { select: { nom: true, ville: true } },
+        },
+      },
+    },
+  },
+};
+
+/** Include utilisé pour la fiche détail d'une convention (relations enrichies). */
+const linksIncludeDetail = {
+  properties: {
+    orderBy: { order: 'asc' as const },
+    include: {
+      property: {
+        include: {
+          owner: { select: { id: true, firstName: true, lastName: true, companyName: true } },
+        },
+      },
+    },
+  },
+  terrains: {
+    orderBy: { order: 'asc' as const },
+    include: {
+      terrain: {
+        include: {
+          lotissement: { select: { id: true, reference: true, nom: true, ville: true } },
+          owner: { select: { id: true, firstName: true, lastName: true, companyName: true } },
+        },
+      },
+    },
+  },
+};
+
 /**
  * Enregistre les handlers IPC pour la gestion des conventions.
  */
@@ -139,8 +194,8 @@ export function registerConventionsIPC(): void {
       if (filters.type) where.type = filters.type;
       if (filters.status) where.status = filters.status;
       if (filters.clientId) where.clientId = filters.clientId;
-      if (filters.propertyId) where.propertyId = filters.propertyId;
-      if (filters.terrainId) where.terrainId = filters.terrainId;
+      if (filters.propertyId) where.properties = { some: { propertyId: Number(filters.propertyId) } };
+      if (filters.terrainId) where.terrains = { some: { terrainId: Number(filters.terrainId) } };
       if (filters.assetType) where.assetType = filters.assetType;
       if (filters.agentId) where.agentId = filters.agentId;
       if (filters.search) {
@@ -149,8 +204,8 @@ export function registerConventionsIPC(): void {
           { notes: { contains: filters.search } },
           { client: { firstName: { contains: filters.search } } },
           { client: { lastName: { contains: filters.search } } },
-          { property: { reference: { contains: filters.search } } },
-          { terrain: { reference: { contains: filters.search } } },
+          { properties: { some: { property: { reference: { contains: filters.search } } } } },
+          { terrains: { some: { terrain: { reference: { contains: filters.search } } } } },
         ];
       }
       const [data, total] = await db.$transaction([
@@ -160,13 +215,7 @@ export function registerConventionsIPC(): void {
           take: limit,
           orderBy: { createdAt: 'desc' },
           include: {
-            property: { select: { id: true, reference: true, address: true, city: true, type: true } },
-            terrain: {
-              select: {
-                id: true, reference: true, numeroIlot: true, numeroParcelle: true,
-                lotissement: { select: { nom: true, ville: true } },
-              },
-            },
+            ...linksIncludeList,
             client: { select: { id: true, firstName: true, lastName: true, entreprise: true, type: true } },
             agent: { select: { id: true, firstName: true, lastName: true } },
           },
@@ -189,13 +238,7 @@ export function registerConventionsIPC(): void {
       const convention = await db.convention.findUnique({
         where: { id, deletedAt: null },
         include: {
-          property: { include: { owner: { select: { id: true, firstName: true, lastName: true, companyName: true } } } },
-          terrain: {
-            include: {
-              lotissement: { select: { id: true, reference: true, nom: true, ville: true } },
-              owner: { select: { id: true, firstName: true, lastName: true, companyName: true } },
-            },
-          },
+          ...linksIncludeDetail,
           client: true,
           secondaryClient: true,
           parentConvention: { select: { id: true, reference: true, type: true, status: true } },
@@ -235,16 +278,17 @@ export function registerConventionsIPC(): void {
       const d = parsed.data;
       const isTerrain = d.assetType === 'TERRAIN';
       await assertSingleResiliation(db, d.type, d.parentConventionId);
+      const propertyIds = isTerrain ? [] : (d.propertyIds ?? []);
+      const terrainIds = isTerrain ? (d.terrainIds ?? []) : [];
       const convention = await db.convention.create({
         data: {
           reference,
           assetType: d.assetType,
-          propertyId: isTerrain ? null : d.propertyId,
-          terrainId: isTerrain ? d.terrainId : null,
           clientId: d.clientId,
           secondaryClientId: isTerrain ? (d.secondaryClientId ?? null) : null,
           parentConventionId: AMENDMENT_TYPES.includes(d.type) ? d.parentConventionId : null,
           amendmentType: d.type === 'AVENANT' ? d.amendmentType : null,
+          souscriptionType: d.type === 'SOUSCRIPTION' ? d.souscriptionType : null,
           agentId: d.agentId,
           type: d.type,
           status: d.status,
@@ -266,21 +310,37 @@ export function registerConventionsIPC(): void {
           firstInstallmentDate: d.firstInstallmentDate ? new Date(d.firstInstallmentDate) : undefined,
           indexType: d.indexType,
           notes: d.notes,
+          properties: propertyIds.length > 0
+            ? { create: propertyIds.map((propertyId, i) => ({ propertyId, order: i })) }
+            : undefined,
+          terrains: terrainIds.length > 0
+            ? { create: terrainIds.map((terrainId, i) => ({ terrainId, order: i })) }
+            : undefined,
         },
       });
       // Met à jour le statut du bien/terrain rattaché si la convention est ACTIVE
       if (d.status === 'ACTIVE') {
-        if (isTerrain && d.terrainId) {
+        if (isTerrain && terrainIds.length > 0) {
           // SALE → VENDU, SOUSCRIPTION → RESERVE, RESILIATION → DISPONIBLE, AVENANT → inchangé
           const terrainStatut: Record<string, 'VENDU' | 'RESERVE' | 'DISPONIBLE'> = {
             SALE: 'VENDU', SOUSCRIPTION: 'RESERVE', RESILIATION: 'DISPONIBLE',
           };
           const nextStatut = terrainStatut[d.type];
           if (nextStatut) {
-            await db.terrain.update({ where: { id: d.terrainId }, data: { statut: nextStatut } });
+            // Pour les transitions vers RESERVE / VENDU, le client principal
+            // de la convention devient l'attributaire des terrains rattachés
+            // (règle métier : un statut non-DISPONIBLE exige un attributaire).
+            // Pour RESILIATION → DISPONIBLE, on détache l'attributaire.
+            const data: any = { statut: nextStatut };
+            if (nextStatut === 'RESERVE' || nextStatut === 'VENDU') {
+              data.clientId = d.clientId;
+            } else if (nextStatut === 'DISPONIBLE') {
+              data.clientId = null;
+            }
+            await db.terrain.updateMany({ where: { id: { in: terrainIds } }, data });
           }
-        } else if (!isTerrain && d.propertyId) {
-          await db.property.update({ where: { id: d.propertyId }, data: { status: 'EN_LOCATION' } });
+        } else if (!isTerrain && propertyIds.length > 0) {
+          await db.property.updateMany({ where: { id: { in: propertyIds } }, data: { status: 'EN_LOCATION' } });
         }
         // Génère automatiquement la commission de l'agent à l'activation
         await autoGenerateConventionCommission(db, convention.id);
@@ -320,33 +380,59 @@ export function registerConventionsIPC(): void {
       const db = getDb();
       const d = parsed.data;
       const data: any = { ...d };
-      delete data.installments; // relation gérée séparément, pas un champ scalaire
+      // Champs traités séparément (relations / dates)
+      delete data.installments;
+      delete data.propertyIds;
+      delete data.terrainIds;
       if (d.startDate) data.startDate = new Date(d.startDate);
       if (d.endDate) data.endDate = new Date(d.endDate);
       if (d.signedAt) data.signedAt = new Date(d.signedAt);
       if (d.firstInstallmentDate) data.firstInstallmentDate = new Date(d.firstInstallmentDate);
-      // Si le rattachement change, neutralise l'élément non sélectionné
+      // Si le rattachement change, neutralise les liens du type non sélectionné
       if (d.assetType === 'TERRAIN') {
-        data.propertyId = null;
         // Une convention de terrain ne porte ni caution ni honoraires d'agence
         data.deposit = null;
         data.agencyFees = null;
       } else if (d.assetType === 'PROPERTY') {
-        data.terrainId = null;
         data.secondaryClientId = null;
       }
       // Le lien vers la convention initiale/précédente est réservé aux avenants et résiliations
       if (d.type && !AMENDMENT_TYPES.includes(d.type)) data.parentConventionId = null;
       // La nature de l'avenant ne s'applique qu'aux avenants
       if (d.type && d.type !== 'AVENANT') data.amendmentType = null;
+      // La nature de la souscription ne s'applique qu'aux souscriptions
+      if (d.type && d.type !== 'SOUSCRIPTION') data.souscriptionType = null;
       if (d.parentConventionId && d.parentConventionId === id) {
         return { success: false, error: 'Une convention ne peut pas être liée à elle-même' };
       }
       await assertSingleResiliation(db, d.type, d.parentConventionId, id);
 
       // Statut avant mise à jour, pour détecter le passage à ACTIVE
-      const before = await db.convention.findUnique({ where: { id }, select: { status: true } });
+      const before = await db.convention.findUnique({
+        where: { id },
+        select: { status: true, assetType: true },
+      });
       const convention = await db.convention.update({ where: { id, deletedAt: null }, data });
+
+      // Remplace les rattachements si une liste est fournie
+      const effectiveAssetType = d.assetType ?? before?.assetType ?? 'PROPERTY';
+      if (d.propertyIds !== undefined || d.assetType === 'TERRAIN') {
+        // Tout passage à TERRAIN supprime les biens ; sinon on remplace selon la liste fournie
+        await db.conventionProperty.deleteMany({ where: { conventionId: id } });
+        if (effectiveAssetType === 'PROPERTY' && d.propertyIds && d.propertyIds.length > 0) {
+          await db.conventionProperty.createMany({
+            data: d.propertyIds.map((propertyId, i) => ({ conventionId: id, propertyId, order: i })),
+          });
+        }
+      }
+      if (d.terrainIds !== undefined || d.assetType === 'PROPERTY') {
+        await db.conventionTerrain.deleteMany({ where: { conventionId: id } });
+        if (effectiveAssetType === 'TERRAIN' && d.terrainIds && d.terrainIds.length > 0) {
+          await db.conventionTerrain.createMany({
+            data: d.terrainIds.map((terrainId, i) => ({ conventionId: id, terrainId, order: i })),
+          });
+        }
+      }
 
       // Remplace l'échéancier si un nouvel échéancier est fourni
       if (d.installments) {
@@ -364,11 +450,88 @@ export function registerConventionsIPC(): void {
         }
       }
 
-      // Génère automatiquement la commission de l'agent lors du passage à ACTIVE
+      // Lors du passage à ACTIVE : applique le statut induit aux biens / terrains
+      // rattachés (mêmes règles que la création), puis génère la commission.
       if (convention.status === 'ACTIVE' && before?.status !== 'ACTIVE') {
+        if (effectiveAssetType === 'TERRAIN') {
+          const links = await db.conventionTerrain.findMany({
+            where: { conventionId: id },
+            select: { terrainId: true },
+          });
+          const ids = links.map((l) => l.terrainId);
+          const terrainStatut: Record<string, 'VENDU' | 'RESERVE' | 'DISPONIBLE'> = {
+            SALE: 'VENDU', SOUSCRIPTION: 'RESERVE', RESILIATION: 'DISPONIBLE',
+          };
+          const nextStatut = terrainStatut[convention.type];
+          if (nextStatut && ids.length > 0) {
+            // Pour les transitions vers RESERVE / VENDU, le client principal
+            // de la convention devient l'attributaire des terrains rattachés.
+            // Pour RESILIATION → DISPONIBLE, on détache l'attributaire.
+            const updateData: any = { statut: nextStatut };
+            if (nextStatut === 'RESERVE' || nextStatut === 'VENDU') {
+              updateData.clientId = convention.clientId;
+            } else if (nextStatut === 'DISPONIBLE') {
+              updateData.clientId = null;
+            }
+            await db.terrain.updateMany({ where: { id: { in: ids } }, data: updateData });
+          }
+        } else {
+          const links = await db.conventionProperty.findMany({
+            where: { conventionId: id },
+            select: { propertyId: true },
+          });
+          const ids = links.map((l) => l.propertyId);
+          if (ids.length > 0) {
+            await db.property.updateMany({ where: { id: { in: ids } }, data: { status: 'EN_LOCATION' } });
+          }
+        }
         await autoGenerateConventionCommission(db, convention.id);
       }
       return ser({ success: true, data: convention });
+    } catch (error: any) {
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle('conventions:statusStats', async (_event, { token, filters = {} }: any) => {
+    try {
+      const session = getSession(token);
+      if (!session) return { success: false, error: 'Session expirée' };
+      checkRole(session, READ_ROLES);
+      const db = getDb();
+      const where: any = { deletedAt: null };
+      if (filters.type) where.type = filters.type;
+      if (filters.clientId) where.clientId = filters.clientId;
+      if (filters.propertyId) where.properties = { some: { propertyId: Number(filters.propertyId) } };
+      if (filters.terrainId) where.terrains = { some: { terrainId: Number(filters.terrainId) } };
+      if (filters.assetType) where.assetType = filters.assetType;
+      if (filters.agentId) where.agentId = filters.agentId;
+      if (filters.search) {
+        where.OR = [
+          { reference: { contains: filters.search } },
+          { notes: { contains: filters.search } },
+          { client: { firstName: { contains: filters.search } } },
+          { client: { lastName: { contains: filters.search } } },
+          { properties: { some: { property: { reference: { contains: filters.search } } } } },
+          { terrains: { some: { terrain: { reference: { contains: filters.search } } } } },
+        ];
+      }
+      const rows = await db.convention.groupBy({
+        by: ['status'],
+        where,
+        _count: { _all: true },
+      });
+      const stats: Record<string, number> = {
+        BROUILLON: 0, ATTENTE_SIGNATURE: 0, ACTIVE: 0,
+        EXPIRE: 0, TERMINER: 0, ANNULE: 0,
+      };
+      let total = 0;
+      for (const r of rows) {
+        const n = r._count?._all ?? 0;
+        stats[r.status as string] = n;
+        total += n;
+      }
+      return { success: true, data: { ...stats, total } };
     } catch (error: any) {
       return { success: false, error: error.message };
     }
@@ -466,6 +629,107 @@ export function registerConventionsIPC(): void {
       });
       return ser({ success: true, data: installments });
     } catch (error: any) {
+      return { success: false, error: error.message };
+    }
+  });
+
+  /**
+   * Met à jour la date d'échéance et/ou le montant d'une ou plusieurs lignes
+   * d'échéances d'une convention. Refuse toute modification d'une ligne payée
+   * et exige que la somme totale (lignes payées + lignes modifiées) corresponde
+   * au montant à financer (saleAmount - apportInitial), à 1 centime près.
+   */
+  ipcMain.handle('conventions:updateInstallments', async (_event, { token, conventionId, installments }: any) => {
+    try {
+      const session = getSession(token);
+      if (!session) return { success: false, error: 'Session expirée' };
+      checkRole(session, WRITE_ROLES);
+      const updateSchema = z.object({
+        conventionId: z.number().int().positive(),
+        installments: z.array(z.object({
+          id: z.number().int().positive(),
+          dueDate: z.string(),
+          amount: z.number().nonnegative(),
+        })).min(1),
+      });
+      const parsed = updateSchema.safeParse({ conventionId, installments });
+      if (!parsed.success) {
+        const msg = parsed.error.issues.map((i) => `${i.path.join('.')} : ${i.message}`).join(' ; ');
+        return { success: false, error: msg };
+      }
+
+      const db = getDb();
+      const convention = await db.convention.findUnique({
+        where: { id: conventionId, deletedAt: null },
+        select: { id: true, saleAmount: true, apportInitial: true },
+      });
+      if (!convention) return { success: false, error: 'Convention introuvable' };
+      if (!convention.saleAmount) return { success: false, error: 'Montant de vente manquant' };
+
+      const existing = await db.saleInstallment.findMany({
+        where: { conventionId },
+        orderBy: { installmentNumber: 'asc' },
+      });
+      if (existing.length === 0) return { success: false, error: 'Aucune échéance à modifier' };
+
+      const updatesById = new Map<number, { dueDate: string; amount: number }>();
+      for (const u of parsed.data.installments) updatesById.set(u.id, { dueDate: u.dueDate, amount: u.amount });
+
+      // Toute ligne modifiée doit appartenir à la convention et ne pas être PAYE
+      for (const u of parsed.data.installments) {
+        const found = existing.find((e) => e.id === u.id);
+        if (!found) return { success: false, error: `Échéance #${u.id} introuvable pour cette convention` };
+        if (found.status === 'PAYE') {
+          return { success: false, error: `L'échéance n°${found.installmentNumber} est payée et ne peut pas être modifiée` };
+        }
+      }
+
+      // Recompose le total final : pour chaque ligne existante, on prend
+      // soit la valeur modifiée, soit le montant actuel (cas des lignes non touchées).
+      const expectedTotal = Number(convention.saleAmount) - Number(convention.apportInitial ?? 0);
+      let newTotal = 0;
+      for (const e of existing) {
+        const u = updatesById.get(e.id);
+        newTotal += u ? u.amount : Number(e.amount);
+      }
+      // Tolérance de 1 centime pour absorber les arrondis flottants
+      if (Math.abs(newTotal - expectedTotal) > 0.01) {
+        return {
+          success: false,
+          error: `Le total des échéances (${newTotal.toFixed(2)}) ne correspond pas au montant à payer (${expectedTotal.toFixed(2)})`,
+        };
+      }
+
+      await db.$transaction(
+        parsed.data.installments.map((u) =>
+          db.saleInstallment.update({
+            where: { id: u.id },
+            data: { dueDate: new Date(u.dueDate), amount: u.amount as any },
+          }),
+        ),
+      );
+
+      // Recalcule la date de dernière échéance et le montant unitaire moyen
+      const refreshed = await db.saleInstallment.findMany({
+        where: { conventionId },
+        orderBy: { installmentNumber: 'asc' },
+      });
+      const lastDue = refreshed.reduce<Date | null>((acc, r) => {
+        const d = new Date(r.dueDate);
+        return !acc || d > acc ? d : acc;
+      }, null);
+      await db.convention.update({
+        where: { id: conventionId },
+        data: {
+          lastInstallmentDate: lastDue ?? undefined,
+          installmentAmount: refreshed.length > 0 ? (Number(refreshed[0].amount) as any) : undefined,
+        },
+      });
+
+      logger.info(`Updated ${parsed.data.installments.length} installments for convention id=${conventionId}`);
+      return ser({ success: true, data: refreshed });
+    } catch (error: any) {
+      logger.error('conventions:updateInstallments error', error.message);
       return { success: false, error: error.message };
     }
   });

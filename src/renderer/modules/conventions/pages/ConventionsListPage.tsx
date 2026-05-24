@@ -9,9 +9,10 @@ import Select from '../../../shared/components/ui/Select';
 import Pagination from '../../../shared/components/ui/Pagination';
 import { SkeletonTable } from '../../../shared/components/ui/Skeleton';
 import EmptyState from '../../../shared/components/ui/EmptyState';
-import { useConventions } from '../hooks/useConventions';
+import { useConventions, useConventionsStatusStats } from '../hooks/useConventions';
 import { formatDate, formatCurrency } from '../../../shared/utils/format';
-import { Plus, Eye, Edit, FileText, LayoutTemplate } from 'lucide-react';
+import StatusRecap, { type StatusRecapItem } from '../../../shared/components/ui/StatusRecap';
+import { Plus, Eye, Edit, FileText, Award, FilePen, Clock, CheckCircle2, CalendarX, PackageCheck, XCircle } from 'lucide-react';
 
 const TYPE_OPTIONS = [
   { value: '', label: 'Tous les types' },
@@ -51,6 +52,15 @@ const TYPE_LABEL: Record<string, string> = {
   SOUSCRIPTION: 'Souscription', AVENANT: 'Avenant', RESILIATION: 'Résiliation',
 };
 
+const STATUS_RECAP_ITEMS: StatusRecapItem[] = [
+  { key: 'BROUILLON',         label: 'Brouillons',    icon: FilePen,       iconBg: 'bg-slate-100',   iconColor: 'text-slate-600',   activeColor: 'text-slate-800' },
+  { key: 'ATTENTE_SIGNATURE', label: 'Attente sign.', icon: Clock,         iconBg: 'bg-amber-100',   iconColor: 'text-amber-600',   activeColor: 'text-amber-700' },
+  { key: 'ACTIVE',            label: 'Actives',       icon: CheckCircle2,  iconBg: 'bg-emerald-100', iconColor: 'text-emerald-600', activeColor: 'text-emerald-700' },
+  { key: 'EXPIRE',            label: 'Expirées',      icon: CalendarX,     iconBg: 'bg-red-100',     iconColor: 'text-red-600',     activeColor: 'text-red-700' },
+  { key: 'TERMINER',          label: 'Terminées',     icon: PackageCheck,  iconBg: 'bg-sky-100',     iconColor: 'text-sky-600',     activeColor: 'text-sky-700' },
+  { key: 'ANNULE',            label: 'Annulées',      icon: XCircle,       iconBg: 'bg-rose-100',    iconColor: 'text-rose-600',    activeColor: 'text-rose-700' },
+];
+
 export default function ConventionsListPage() {
   const navigate = useNavigate();
   const [page, setPage] = useState(1);
@@ -64,6 +74,12 @@ export default function ConventionsListPage() {
     status: status || undefined,
   };
   const { data, isLoading } = useConventions(filters, page, 20);
+  // Stats : mêmes filtres SAUF le statut.
+  const { data: statsRes } = useConventionsStatusStats({
+    search: search || undefined,
+    type: type || undefined,
+  });
+  const stats = statsRes?.success ? statsRes.data : undefined;
   const conventions: any[] = data?.data ?? [];
   const total: number = data?.total ?? 0;
 
@@ -73,9 +89,9 @@ export default function ConventionsListPage() {
       breadcrumbs={[{ label: 'Conventions' }]}
       actions={
         <div className="flex gap-2">
-          <Button variant="secondary" icon={<LayoutTemplate className="h-4 w-4" />}
-            onClick={() => navigate('/conventions/templates')}>
-            Modèles
+          <Button icon={<Award className="h-4 w-4" />}
+            onClick={() => navigate('/conventions/attestations')}>
+            Attestations
           </Button>
           <Button icon={<Plus className="h-4 w-4" />} onClick={() => navigate('/conventions/new')}>
             Nouvelle convention
@@ -97,6 +113,16 @@ export default function ConventionsListPage() {
             onChange={(e) => { setStatus(e.target.value); setPage(1); }} />
         </div>
       </Card>
+
+      <div className="mb-4">
+        <StatusRecap
+          items={STATUS_RECAP_ITEMS}
+          stats={stats}
+          total={stats?.total}
+          activeKey={status}
+          onSelect={(k) => { setStatus(k); setPage(1); }}
+        />
+      </div>
 
       <Card padding={false}>
         {isLoading ? (
@@ -140,17 +166,33 @@ export default function ConventionsListPage() {
                       </td>
                       <td className="px-4 py-3 text-slate-600">{TYPE_LABEL[c.type] ?? c.type}</td>
                       <td className="px-4 py-3">
-                        {c.assetType === 'TERRAIN' ? (
-                          <>
-                            <p className="text-slate-800">{c.terrain?.reference ?? '—'}</p>
-                            <p className="text-xs text-slate-500">Terrain</p>
-                          </>
-                        ) : (
-                          <>
-                            <p className="text-slate-800">{c.property?.reference ?? '—'}</p>
-                            <p className="text-xs text-slate-500">{c.property?.city}</p>
-                          </>
-                        )}
+                        {c.assetType === 'TERRAIN' ? (() => {
+                          const refs = (c.terrains ?? [])
+                            .map((l: any) => l.terrain?.reference)
+                            .filter(Boolean);
+                          const shown = refs.slice(0, 2).join(', ');
+                          const extra = refs.length > 2 ? ` +${refs.length - 2}` : '';
+                          return (
+                            <>
+                              <p className="text-slate-800" title={refs.join(', ')}>{shown || '—'}{extra}</p>
+                              <p className="text-xs text-slate-500">{refs.length > 1 ? `${refs.length} terrains` : 'Terrain'}</p>
+                            </>
+                          );
+                        })() : (() => {
+                          const props = (c.properties ?? []).map((l: any) => l.property).filter(Boolean);
+                          const refs = props.map((p: any) => p.reference);
+                          const shown = refs.slice(0, 2).join(', ');
+                          const extra = refs.length > 2 ? ` +${refs.length - 2}` : '';
+                          const cityLabel = refs.length > 1
+                            ? `${refs.length} biens`
+                            : (props[0]?.city ?? '');
+                          return (
+                            <>
+                              <p className="text-slate-800" title={refs.join(', ')}>{shown || '—'}{extra}</p>
+                              <p className="text-xs text-slate-500">{cityLabel}</p>
+                            </>
+                          );
+                        })()}
                       </td>
                       <td className="px-4 py-3 text-slate-700">{clientName}</td>
                       <td className="px-4 py-3 text-slate-700">

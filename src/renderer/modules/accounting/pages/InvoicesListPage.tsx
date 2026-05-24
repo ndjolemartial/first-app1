@@ -1,25 +1,27 @@
-import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useEffect, useState } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import PageLayout from '../../../shared/components/layout/PageLayout';
 import Button from '../../../shared/components/ui/Button';
 import Badge from '../../../shared/components/ui/Badge';
 import Input from '../../../shared/components/ui/Input';
 import Select from '../../../shared/components/ui/Select';
 import { SkeletonTable } from '../../../shared/components/ui/Skeleton';
-import { useInvoices, usePrintInvoice } from '../hooks/useAccounting';
+import { useInvoices, useInvoiceTypeStats, usePrintInvoice } from '../hooks/useAccounting';
 import { formatCurrency, formatDate } from '../../../shared/utils/format';
 import ExportMenu, { ExportColumn } from '../../../shared/components/ExportMenu';
 import { useAuthStore } from '../../../shared/stores/auth.store';
-import { Plus, Search, Printer, FileText } from 'lucide-react';
+import InvoiceTypeRecap from '../components/InvoiceTypeRecap';
+import { Plus, Search, Printer } from 'lucide-react';
 
 const STATUS_OPTIONS = [
   { value: '', label: 'Tous les statuts' },
   { value: 'BROUILLON', label: 'Brouillon' },
-  { value: 'ENVOYEE', label: 'Envoyée' },
+  { value: 'ENVOYEE', label: 'Validée' },
   { value: 'PAYEE', label: 'Payée' },
   { value: 'PARTIEL', label: 'Partiel' },
   { value: 'EN_RETARD', label: 'En retard' },
   { value: 'ANNULEE', label: 'Annulée' },
+  { value: 'UNPAID', label: 'Impayés (toutes)' },
 ];
 
 const TYPE_OPTIONS = [
@@ -28,6 +30,7 @@ const TYPE_OPTIONS = [
   { value: 'ECHEANCE_VENTE', label: 'Échéance vente' },
   { value: 'FRAIS_AGENCE', label: 'Frais agence' },
   { value: 'FRAIS_DE_GESTION', label: 'Frais de gestion' },
+  { value: 'FRAIS_DEMARCHES_ACD', label: 'Frais démarches ACD' },
   { value: 'AVANCE', label: 'Avance' },
   { value: 'CAUTION', label: 'Caution' },
   { value: 'OTHER', label: 'Autre' },
@@ -38,12 +41,14 @@ const STATUS_VARIANT: Record<string, 'success' | 'info' | 'warning' | 'danger' |
   PARTIEL: 'warning', EN_RETARD: 'danger', ANNULEE: 'default',
 };
 const STATUS_LABEL: Record<string, string> = {
-  BROUILLON: 'Brouillon', ENVOYEE: 'Envoyée', PAYEE: 'Payée',
+  BROUILLON: 'Brouillon', ENVOYEE: 'Validée', PAYEE: 'Payée',
   PARTIEL: 'Partiel', EN_RETARD: 'En retard', ANNULEE: 'Annulée',
+  UNPAID: 'Impayés',
 };
 const TYPE_LABEL: Record<string, string> = {
   VENTE: 'Vente', ECHEANCE_VENTE: 'Échéance vente', FRAIS_AGENCE: 'Frais agence',
-  FRAIS_DE_GESTION: 'Frais gestion', AVANCE: 'Avance', CAUTION: 'Caution', OTHER: 'Autre',
+  FRAIS_DE_GESTION: 'Frais gestion', FRAIS_DEMARCHES_ACD: 'Frais démarches ACD',
+  AVANCE: 'Avance', CAUTION: 'Caution', OTHER: 'Autre',
 };
 
 const EXPORT_COLUMNS: ExportColumn[] = [
@@ -58,17 +63,38 @@ const EXPORT_COLUMNS: ExportColumn[] = [
 
 export default function InvoicesListPage() {
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const token = useAuthStore((s) => s.token)!;
   const printInvoice = usePrintInvoice();
-  const [search, setSearch] = useState('');
-  const [status, setStatus] = useState('');
-  const [type, setType] = useState('');
+  const [search, setSearch] = useState(() => searchParams.get('search') ?? '');
+  const [status, setStatus] = useState(() => searchParams.get('status') ?? '');
+  const [type, setType] = useState(() => searchParams.get('type') ?? '');
   const [page, setPage] = useState(1);
   const limit = 20;
 
+  // Sync URL → state when navigating to this page with new params (e.g. depuis le dashboard).
+  useEffect(() => {
+    setSearch(searchParams.get('search') ?? '');
+    setStatus(searchParams.get('status') ?? '');
+    setType(searchParams.get('type') ?? '');
+    setPage(1);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams]);
+
+  // Sync state → URL pour rendre les filtres partageables / mémorisables.
+  useEffect(() => {
+    const next = new URLSearchParams();
+    if (search) next.set('search', search);
+    if (status) next.set('status', status);
+    if (type) next.set('type', type);
+    setSearchParams(next, { replace: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [search, status, type]);
+
   const filters: any = {};
   if (search) filters.search = search;
-  if (status) filters.status = status;
+  if (status === 'UNPAID') filters.unpaid = true;
+  else if (status) filters.status = status;
   if (type) filters.type = type;
 
   const filterSummary = [
@@ -81,6 +107,14 @@ export default function InvoicesListPage() {
   const invoices = res?.data ?? [];
   const total = res?.total ?? 0;
   const totalPages = Math.ceil(total / limit);
+
+  // Compteurs par type, respectant les autres filtres (search/status) mais pas
+  // le filtre Type lui-même afin que les avatars restent comparables.
+  const typeStatsFilters: any = {};
+  if (search) typeStatsFilters.search = search;
+  if (status === 'UNPAID') typeStatsFilters.unpaid = true;
+  else if (status) typeStatsFilters.status = status;
+  const { data: typeStatsRes, isLoading: typeStatsLoading } = useInvoiceTypeStats(typeStatsFilters);
 
   return (
     <PageLayout
@@ -98,19 +132,20 @@ export default function InvoicesListPage() {
               return r.success ? r.data ?? [] : [];
             }}
           />
-          <Button
-            variant="secondary"
-            icon={<FileText className="h-4 w-4" />}
-            onClick={() => navigate('/accounting/invoice-templates')}
-          >
-            Modèles
-          </Button>
           <Button icon={<Plus className="h-4 w-4" />} onClick={() => navigate('/accounting/invoices/new')}>
             Nouvelle facture
           </Button>
         </div>
       }
     >
+      {/* Récapitulatif par type — avatars cliquables */}
+      <InvoiceTypeRecap
+        stats={typeStatsRes?.data}
+        selectedType={type}
+        onSelect={(t) => { setType(t); setPage(1); }}
+        isLoading={typeStatsLoading}
+      />
+
       {/* Filters */}
       <div className="flex gap-3 mb-6">
         <div className="flex-1 relative">

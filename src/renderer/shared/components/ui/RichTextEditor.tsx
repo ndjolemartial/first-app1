@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
 import {
-  Bold, Italic, Underline, Heading1, Heading2, Pilcrow,
+  Bold, Italic, Underline, Strikethrough, Heading1, Heading2, Pilcrow,
   List, ListOrdered, AlignLeft, AlignCenter, AlignRight, Braces,
-  Baseline, Highlighter, Image as ImageIcon, SquarePlus,
+  Baseline, Highlighter, Image as ImageIcon, SquarePlus, Shapes,
 } from 'lucide-react';
+import ShapeInsertDialog from './ShapeInsertDialog';
 
 interface VariableItem {
   token: string;
@@ -23,14 +24,23 @@ interface RichTextEditorProps {
   minHeight?: number;
 }
 
+/** Tailles de police en points — précision typographique standard. */
 const FONT_SIZES = [
-  { value: '', label: 'Taille' },
-  { value: '2', label: 'Petit' },
-  { value: '3', label: 'Normal' },
-  { value: '4', label: 'Moyen' },
-  { value: '5', label: 'Grand' },
-  { value: '6', label: 'Très grand' },
-  { value: '7', label: 'Énorme' },
+  '8pt', '9pt', '10pt', '11pt', '12pt', '14pt', '16pt', '18pt', '20pt', '24pt', '28pt', '32pt', '36pt', '48pt',
+];
+
+/** Familles de police disponibles. La première valeur correspond à la sortie par défaut. */
+const FONT_FAMILIES: { label: string; value: string }[] = [
+  { label: 'Segoe UI',         value: "'Segoe UI', Arial, sans-serif" },
+  { label: 'Arial',            value: 'Arial, sans-serif' },
+  { label: 'Calibri',          value: 'Calibri, sans-serif' },
+  { label: 'Verdana',          value: 'Verdana, sans-serif' },
+  { label: 'Tahoma',           value: 'Tahoma, sans-serif' },
+  { label: 'Times New Roman',  value: "'Times New Roman', Times, serif" },
+  { label: 'Georgia',          value: 'Georgia, serif' },
+  { label: 'Garamond',         value: 'Garamond, serif' },
+  { label: 'Courier New',      value: "'Courier New', Courier, monospace" },
+  { label: 'Consolas',         value: 'Consolas, monospace' },
 ];
 
 /**
@@ -46,6 +56,7 @@ export default function RichTextEditor({
   const fileRef = useRef<HTMLInputElement>(null);
   const savedRange = useRef<Range | null>(null);
   const [showVars, setShowVars] = useState(false);
+  const [showShape, setShowShape] = useState(false);
 
   // Synchronise le contenu si la valeur change depuis l'extérieur (ex. chargement en édition).
   useEffect(() => {
@@ -96,11 +107,29 @@ export default function RichTextEditor({
     emitChange();
   };
 
-  /** Commande appliquée après restauration de la sélection (couleurs, taille, image). */
+  /** Commande appliquée après restauration de la sélection (couleurs, image, police). */
   const execRestored = (command: string, arg?: string) => {
     restoreSelection();
     document.execCommand('styleWithCSS', false, 'true');
     document.execCommand(command, false, arg);
+    emitChange();
+  };
+
+  /**
+   * Applique une taille de police en points sur la sélection. `execCommand('fontSize')`
+   * n'accepte que les valeurs 1-7 ; on s'en sert comme marqueur et on remplace ensuite
+   * les `<font size="7">` par des `<span style="font-size: Xpt">` pour une taille exacte.
+   */
+  const applyFontSize = (sizePt: string) => {
+    restoreSelection();
+    document.execCommand('styleWithCSS', false, 'true');
+    document.execCommand('fontSize', false, '7');
+    editorRef.current?.querySelectorAll('font[size="7"]').forEach((f) => {
+      const span = document.createElement('span');
+      span.style.fontSize = sizePt;
+      while (f.firstChild) span.appendChild(f.firstChild);
+      f.parentNode?.replaceChild(span, f);
+    });
     emitChange();
   };
 
@@ -119,6 +148,13 @@ export default function RichTextEditor({
       '<div style="border:1px solid #cbd5e1;background:#f8fafc;border-radius:6px;padding:10px;margin:10px 0">'
         + "Saisissez le texte de l'encadré…</div><p><br></p>",
     );
+    emitChange();
+  };
+
+  /** Insère le markup HTML/SVG produit par la modale de forme à la position mémorisée. */
+  const insertShape = (html: string) => {
+    restoreSelection();
+    document.execCommand('insertHTML', false, html);
     emitChange();
   };
 
@@ -156,22 +192,37 @@ export default function RichTextEditor({
   return (
     <div className="border border-slate-300 rounded-lg">
       <div className="flex flex-wrap items-center gap-0.5 border-b border-slate-200 bg-slate-50 px-2 py-1.5">
+        <select
+          title="Police de caractères"
+          defaultValue=""
+          onMouseDown={saveSelection}
+          onChange={(e) => { if (e.target.value) { execRestored('fontName', e.target.value); e.target.value = ''; } }}
+          className="h-8 text-xs text-slate-600 bg-transparent border border-slate-200 rounded px-1 max-w-[110px]"
+        >
+          <option value="">Police</option>
+          {FONT_FAMILIES.map((f) => (
+            <option key={f.label} value={f.value} style={{ fontFamily: f.value }}>{f.label}</option>
+          ))}
+        </select>
+        <select
+          title="Taille du texte"
+          defaultValue=""
+          onMouseDown={saveSelection}
+          onChange={(e) => { if (e.target.value) { applyFontSize(e.target.value); e.target.value = ''; } }}
+          className="h-8 text-xs text-slate-600 bg-transparent border border-slate-200 rounded px-1"
+        >
+          <option value="">Taille</option>
+          {FONT_SIZES.map((s) => <option key={s} value={s}>{s}</option>)}
+        </select>
+        <Sep />
         <Btn title="Gras" onClick={() => exec('bold')}><Bold className="h-4 w-4" /></Btn>
         <Btn title="Italique" onClick={() => exec('italic')}><Italic className="h-4 w-4" /></Btn>
         <Btn title="Souligné" onClick={() => exec('underline')}><Underline className="h-4 w-4" /></Btn>
+        <Btn title="Barré" onClick={() => exec('strikeThrough')}><Strikethrough className="h-4 w-4" /></Btn>
         <Sep />
         <Btn title="Titre 1" onClick={() => exec('formatBlock', '<h1>')}><Heading1 className="h-4 w-4" /></Btn>
         <Btn title="Titre 2" onClick={() => exec('formatBlock', '<h2>')}><Heading2 className="h-4 w-4" /></Btn>
         <Btn title="Paragraphe" onClick={() => exec('formatBlock', '<p>')}><Pilcrow className="h-4 w-4" /></Btn>
-        <select
-          title="Taille du texte"
-          value=""
-          onMouseDown={saveSelection}
-          onChange={(e) => { if (e.target.value) execRestored('fontSize', e.target.value); }}
-          className="h-8 text-xs text-slate-600 bg-transparent border border-slate-200 rounded px-1"
-        >
-          {FONT_SIZES.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
-        </select>
         <Sep />
         <Btn title="Liste à puces" onClick={() => exec('insertUnorderedList')}><List className="h-4 w-4" /></Btn>
         <Btn title="Liste numérotée" onClick={() => exec('insertOrderedList')}><ListOrdered className="h-4 w-4" /></Btn>
@@ -211,6 +262,9 @@ export default function RichTextEditor({
           <ImageIcon className="h-4 w-4" />
         </Btn>
         <Btn title="Insérer un encadré" onClick={insertBox}><SquarePlus className="h-4 w-4" /></Btn>
+        <Btn title="Dessiner une forme" onClick={() => { saveSelection(); setShowShape(true); }}>
+          <Shapes className="h-4 w-4" />
+        </Btn>
         <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={onPickImage} />
 
         {variables && variables.length > 0 && (
@@ -267,6 +321,12 @@ export default function RichTextEditor({
           [&_ul]:list-disc [&_ul]:pl-6 [&_ol]:list-decimal [&_ol]:pl-6
           [&_p]:my-1 [&_img]:max-w-full [&_img]:h-auto [&_img]:rounded
           empty:before:content-[attr(data-placeholder)] empty:before:text-slate-400"
+      />
+
+      <ShapeInsertDialog
+        open={showShape}
+        onClose={() => setShowShape(false)}
+        onInsert={insertShape}
       />
     </div>
   );

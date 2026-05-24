@@ -22,7 +22,7 @@ const TYPE_OPTIONS = [
 ];
 
 const EXPORT_COLUMNS: ExportColumn[] = [
-  { header: 'Nom / Entreprise', cell: (o) => (o.type === 'INDIVIDUEL' ? `${o.firstName ?? ''} ${o.lastName ?? ''}`.trim() : o.companyName) },
+  { header: 'Nom / Entreprise', cell: (o) => (o.type === 'INDIVIDUEL' ? `${o.lastName ?? ''} ${o.firstName ?? ''}`.trim() : o.companyName) },
   { header: 'Type',             cell: (o) => (o.type === 'INDIVIDUEL' ? 'Particulier' : 'Entreprise') },
   { header: 'Téléphone',        cell: (o) => o.phone },
   { header: 'Mobile',           cell: (o) => o.mobile },
@@ -111,7 +111,7 @@ export default function OwnersListPage() {
               <tbody className="divide-y divide-slate-100">
                 {owners.map((o: any) => {
                   const displayName = o.type === 'INDIVIDUEL'
-                    ? `${o.firstName ?? ''} ${o.lastName ?? ''}`.trim()
+                    ? `${o.lastName ?? ''} ${o.firstName ?? ''}`.trim()
                     : o.companyName ?? '—';
                   return (
                     <tr key={o.id} className="hover:bg-slate-50 transition-colors">

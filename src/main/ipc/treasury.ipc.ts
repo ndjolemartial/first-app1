@@ -97,20 +97,36 @@ const categorySchema = z.object({
   isActive: z.boolean().optional(),
 });
 
-const operationSchema = z.object({
-  bankAccountId: z.number().int().positive(),
-  direction: z.enum(['ENTREE', 'SORTIE']),
-  amount: z.number().positive(),
-  operationDate: z.string().datetime().optional(),
-  categoryId: z.number().int().positive().optional(),
-  // Libellé facultatif côté saisie : si absent, on retombe sur le libellé de
-  // l'objet d'opération choisi (cf. handler `treasury:createOperation`).
-  label: z.string().optional(),
-  paymentMethod: z.enum(PAYMENT_METHODS).optional(),
-  paymentRef: z.string().optional(),
-  budgetLineId: z.number().int().positive().nullable().optional(),
-  notes: z.string().optional(),
-});
+const operationSchema = z
+  .object({
+    bankAccountId: z.number().int().positive(),
+    direction: z.enum(['ENTREE', 'SORTIE']),
+    amount: z.number().positive(),
+    operationDate: z.string().datetime().optional(),
+    categoryId: z.number().int().positive().optional(),
+    // Libellé facultatif côté saisie : si absent, on retombe sur le libellé de
+    // l'objet d'opération choisi (cf. handler `treasury:createOperation`).
+    label: z.string().optional(),
+    paymentMethod: z.enum(PAYMENT_METHODS).optional(),
+    paymentRef: z.string().optional(),
+    budgetLineId: z.number().int().positive().nullable().optional(),
+    // Imputation analytique exclusive : au plus un seul des trois.
+    projectId: z.number().int().positive().nullable().optional(),
+    lotissementId: z.number().int().positive().nullable().optional(),
+    programmeId: z.number().int().positive().nullable().optional(),
+    notes: z.string().optional(),
+  })
+  .refine(
+    (d) => {
+      const set = [d.projectId, d.lotissementId, d.programmeId].filter((v) => v != null).length;
+      return set <= 1;
+    },
+    {
+      message:
+        'Une opération ne peut être rattachée qu\'à une seule entité parmi projet, lotissement ou programme immobilier',
+      path: ['projectId'],
+    },
+  );
 
 /* ─── Inclusions Prisma réutilisables ──────────────────────────────── */
 
@@ -126,6 +142,9 @@ const operationInclude = {
       budget: { select: { id: true, reference: true, name: true } },
     },
   },
+  project:     { select: { id: true, reference: true, nom: true } },
+  lotissement: { select: { id: true, reference: true, nom: true } },
+  programme:   { select: { id: true, reference: true, nom: true } },
 } as const;
 
 /** Construit la clause `where` d'une recherche d'opérations à partir des filtres. */
@@ -136,6 +155,10 @@ function buildOperationWhere(filters: any): any {
   if (filters.categoryId) where.categoryId = filters.categoryId;
   if (filters.source) where.source = filters.source;
   if (filters.budgetLineId) where.budgetLineId = filters.budgetLineId;
+  // Imputation analytique
+  if (filters.projectId) where.projectId = Number(filters.projectId);
+  if (filters.lotissementId) where.lotissementId = Number(filters.lotissementId);
+  if (filters.programmeId) where.programmeId = Number(filters.programmeId);
   if (filters.dateFrom || filters.dateTo) {
     where.operationDate = {};
     if (filters.dateFrom) where.operationDate.gte = new Date(filters.dateFrom);
@@ -467,6 +490,20 @@ export function registerTreasuryIPC(): void {
         return { success: false, error: 'Un libellé ou un objet d\'opération est requis' };
       }
 
+      // Imputation analytique : valider l'existence de l'entité rattachée (un seul des trois).
+      if (d.projectId != null) {
+        const exists = await db.project.findFirst({ where: { id: d.projectId, deletedAt: null } });
+        if (!exists) return { success: false, error: 'Projet introuvable' };
+      }
+      if (d.lotissementId != null) {
+        const exists = await db.lotissement.findFirst({ where: { id: d.lotissementId, deletedAt: null } });
+        if (!exists) return { success: false, error: 'Lotissement introuvable' };
+      }
+      if (d.programmeId != null) {
+        const exists = await db.programmeImmobilier.findFirst({ where: { id: d.programmeId, deletedAt: null } });
+        if (!exists) return { success: false, error: 'Programme immobilier introuvable' };
+      }
+
       // Imputation budgétaire : autorisée uniquement sur les sorties, sur une ligne
       // active d'un budget ouvert, par le gestionnaire de la ligne ou un admin.
       if (d.budgetLineId != null) {
@@ -498,6 +535,9 @@ export function registerTreasuryIPC(): void {
         paymentRef: d.paymentRef,
         source: 'MANUEL',
         budgetLineId: d.budgetLineId ?? null,
+        projectId: d.projectId ?? null,
+        lotissementId: d.lotissementId ?? null,
+        programmeId: d.programmeId ?? null,
         createdById: session.userId,
         notes: d.notes,
       });
@@ -514,7 +554,13 @@ export function registerTreasuryIPC(): void {
       const session = getSession(token);
       if (!session) return { success: false, error: 'Session expirée' };
       checkTreasuryRole(session, WRITE_ROLES);
-      const parsed = operationSchema.partial().safeParse(payload);
+      // Sur l'update partiel, on ne peut pas réutiliser le refine du schéma complet.
+      // On le wrappe en mode "passthrough" puis on revalide l'exclusivité après merge
+      // avec l'existant (cf. plus bas).
+      const updateSchema = (operationSchema as any).innerType
+        ? (operationSchema as any).innerType().partial()
+        : (operationSchema as unknown as z.ZodObject<any>).partial();
+      const parsed = updateSchema.safeParse(payload);
       if (!parsed.success) return { success: false, error: parsed.error.format() };
       const d = parsed.data;
       const db = getDb();
@@ -564,6 +610,31 @@ export function registerTreasuryIPC(): void {
         }
       }
 
+      // Imputation analytique : valider l'existence et l'exclusivité (au plus 1).
+      // On calcule la valeur effective après merge entre payload et existant.
+      const effProject     = d.projectId     !== undefined ? d.projectId     : existing.projectId;
+      const effLotissement = d.lotissementId !== undefined ? d.lotissementId : existing.lotissementId;
+      const effProgramme   = d.programmeId   !== undefined ? d.programmeId   : existing.programmeId;
+      const setCount = [effProject, effLotissement, effProgramme].filter((v) => v != null).length;
+      if (setCount > 1) {
+        return {
+          success: false,
+          error: 'Une opération ne peut être rattachée qu\'à une seule entité parmi projet, lotissement ou programme immobilier',
+        };
+      }
+      if (d.projectId != null && d.projectId !== existing.projectId) {
+        const exists = await db.project.findFirst({ where: { id: d.projectId, deletedAt: null } });
+        if (!exists) return { success: false, error: 'Projet introuvable' };
+      }
+      if (d.lotissementId != null && d.lotissementId !== existing.lotissementId) {
+        const exists = await db.lotissement.findFirst({ where: { id: d.lotissementId, deletedAt: null } });
+        if (!exists) return { success: false, error: 'Lotissement introuvable' };
+      }
+      if (d.programmeId != null && d.programmeId !== existing.programmeId) {
+        const exists = await db.programmeImmobilier.findFirst({ where: { id: d.programmeId, deletedAt: null } });
+        if (!exists) return { success: false, error: 'Programme immobilier introuvable' };
+      }
+
       const data: any = { ...d };
       if (d.amount !== undefined) data.amount = d.amount as never;
       if (d.operationDate !== undefined) data.operationDate = new Date(d.operationDate);
@@ -598,6 +669,65 @@ export function registerTreasuryIPC(): void {
       return { success: true };
     } catch (error: any) {
       logger.error('treasury:deleteOperation error', error.message);
+      return { success: false, error: error.message };
+    }
+  });
+
+  /* ─── Flux de trésorerie d'une entité analytique ─────────────────── */
+
+  /**
+   * Retourne la trace des mouvements de trésorerie rattachés à un projet,
+   * un lotissement ou un programme immobilier : opérations détaillées +
+   * totaux entrées/sorties/solde net.
+   */
+  ipcMain.handle('treasury:getEntityCashflow', async (
+    _event,
+    { token, entityType, entityId, limit = 100 }: { token: string; entityType: 'PROJECT' | 'LOTISSEMENT' | 'PROGRAMME'; entityId: number; limit?: number },
+  ) => {
+    try {
+      const session = getSession(token);
+      if (!session) return { success: false, error: 'Session expirée' };
+      checkTreasuryRole(session, READ_ROLES);
+      const db = getDb();
+
+      const where: any = { deletedAt: null };
+      if (entityType === 'PROJECT')     where.projectId     = entityId;
+      else if (entityType === 'LOTISSEMENT') where.lotissementId = entityId;
+      else if (entityType === 'PROGRAMME')   where.programmeId   = entityId;
+      else return { success: false, error: 'Type d\'entité non géré' };
+
+      // Restriction aux comptes visibles par la session.
+      const allowedIds = await accessibleAccountIds(db, session);
+      if (allowedIds !== null) where.bankAccountId = { in: allowedIds };
+
+      const [operations, totals] = await Promise.all([
+        db.treasuryOperation.findMany({
+          where,
+          orderBy: { operationDate: 'desc' },
+          take: limit,
+          include: operationInclude,
+        }),
+        db.treasuryOperation.groupBy({
+          by: ['direction'],
+          where,
+          _sum: { amount: true },
+        }),
+      ]);
+
+      const totalEntree = Number(totals.find((g) => g.direction === 'ENTREE')?._sum.amount ?? 0);
+      const totalSortie = Number(totals.find((g) => g.direction === 'SORTIE')?._sum.amount ?? 0);
+      return ser({
+        success: true,
+        data: {
+          operations,
+          totalEntree,
+          totalSortie,
+          net: totalEntree - totalSortie,
+          count: operations.length,
+        },
+      });
+    } catch (error: any) {
+      logger.error('treasury:getEntityCashflow error', error.message);
       return { success: false, error: error.message };
     }
   });

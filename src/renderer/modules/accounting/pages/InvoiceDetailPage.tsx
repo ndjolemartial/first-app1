@@ -6,22 +6,23 @@ import Button from '../../../shared/components/ui/Button';
 import Badge from '../../../shared/components/ui/Badge';
 import Card from '../../../shared/components/ui/Card';
 import { SkeletonTable } from '../../../shared/components/ui/Skeleton';
-import { useInvoice, useUpdateInvoiceStatus, useAddPayment, usePrintInvoice } from '../hooks/useAccounting';
+import { useInvoice, useUpdateInvoiceStatus, useAddPayment, usePrintInvoice, useReinstateInvoice } from '../hooks/useAccounting';
 import TreasuryAccountFields from '../../../shared/components/TreasuryAccountFields';
 import { formatCurrency, formatDate } from '../../../shared/utils/format';
-import { FileText, User, CreditCard, Plus, Printer } from 'lucide-react';
+import { FileText, User, CreditCard, Plus, Printer, RotateCcw } from 'lucide-react';
 
 const STATUS_VARIANT: Record<string, 'success' | 'info' | 'warning' | 'danger' | 'default'> = {
   BROUILLON: 'default', ENVOYEE: 'info', PAYEE: 'success',
   PARTIEL: 'warning', EN_RETARD: 'danger', ANNULEE: 'default',
 };
 const STATUS_LABEL: Record<string, string> = {
-  BROUILLON: 'Brouillon', ENVOYEE: 'Envoyée', PAYEE: 'Payée',
+  BROUILLON: 'Brouillon', ENVOYEE: 'Validée', PAYEE: 'Payée',
   PARTIEL: 'Partiel', EN_RETARD: 'En retard', ANNULEE: 'Annulée',
 };
 const TYPE_LABEL: Record<string, string> = {
   VENTE: 'Vente', ECHEANCE_VENTE: 'Échéance vente', FRAIS_AGENCE: 'Frais agence',
-  FRAIS_DE_GESTION: 'Frais gestion', AVANCE: 'Avance', CAUTION: 'Caution', OTHER: 'Autre',
+  FRAIS_DE_GESTION: 'Frais gestion', FRAIS_DEMARCHES_ACD: 'Frais démarches ACD',
+  AVANCE: 'Avance', CAUTION: 'Caution', OTHER: 'Autre',
 };
 const PAYMENT_METHOD_OPTIONS = [
   { value: 'ESPECE', label: 'Espèces' },
@@ -42,6 +43,7 @@ export default function InvoiceDetailPage() {
   const navigate = useNavigate();
   const { data: res, isLoading, refetch } = useInvoice(Number(id));
   const updateStatus = useUpdateInvoiceStatus();
+  const reinstateInvoice = useReinstateInvoice();
   const addPayment = useAddPayment();
   const printInvoice = usePrintInvoice();
   const [showPaymentForm, setShowPaymentForm] = useState(false);
@@ -107,7 +109,7 @@ export default function InvoiceDetailPage() {
           {transitions.map((s) => (
             <Button
               key={s}
-              variant={s === 'ANNULEE' ? 'danger' : 'secondary'}
+              variant={s === 'ANNULEE' ? 'danger' : s === 'ENVOYEE' ? 'primary' : 'secondary'}
               size="sm"
               loading={updateStatus.isPending}
               onClick={() => handleStatusChange(s)}
@@ -115,6 +117,20 @@ export default function InvoiceDetailPage() {
               → {STATUS_LABEL[s] ?? s}
             </Button>
           ))}
+          {inv.status === 'ANNULEE' && (
+            <Button
+              variant="secondary"
+              size="sm"
+              icon={<RotateCcw className="h-4 w-4" />}
+              loading={reinstateInvoice.isPending}
+              onClick={async () => {
+                const r = await reinstateInvoice.mutateAsync(Number(id));
+                if (r.success) refetch();
+              }}
+            >
+              Réintégrer
+            </Button>
+          )}
         </div>
       }
     >

@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import PageLayout from '../../../shared/components/layout/PageLayout';
@@ -12,7 +12,8 @@ import { useAccessibleBudgetLines } from '../../budget/hooks/useBudget';
 import { DIRECTION_OPTIONS, PAYMENT_METHOD_OPTIONS, categoryLabel } from '../utils/treasury.utils';
 import { formatCurrency } from '../../../shared/utils/format';
 import { useAuthStore } from '../../../shared/stores/auth.store';
-import { Save } from 'lucide-react';
+import { Save, Briefcase, Map, Building } from 'lucide-react';
+import { clsx } from 'clsx';
 
 interface FormData {
   bankAccountId: string;
@@ -24,7 +25,29 @@ interface FormData {
   paymentMethod: string;
   paymentRef: string;
   budgetLineId: string;
+  imputationKind: 'NONE' | 'PROJECT' | 'LOTISSEMENT' | 'PROGRAMME';
+  projectId: string;
+  lotissementId: string;
+  programmeId: string;
   notes: string;
+}
+
+type SelectOption = { value: string; label: string };
+
+/** Charge une liste IPC au montage et la mappe en options { value, label }. */
+function useEntityOptions(
+  loader: () => Promise<{ success?: boolean; data?: any[] }>,
+  labelOf: (item: any) => string,
+): SelectOption[] {
+  const [options, setOptions] = useState<SelectOption[]>([]);
+  useEffect(() => {
+    loader().then((r) => {
+      const list: any[] = r?.success ? (r.data as any[]) ?? [] : [];
+      setOptions(list.map((i) => ({ value: String(i.id), label: labelOf(i) })));
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  return options;
 }
 
 const today = () => new Date().toISOString().slice(0, 10);
@@ -34,11 +57,36 @@ export default function OperationFormPage() {
   const [searchParams] = useSearchParams();
   const presetAccount = searchParams.get('accountId') ?? '';
   const presetDirection = searchParams.get('direction') ?? '';
+  // Pré-remplissage de l'imputation analytique depuis la page d'origine
+  // (ex : /treasury/operations/new?projectId=12).
+  const presetProjectId     = searchParams.get('projectId') ?? '';
+  const presetLotissementId = searchParams.get('lotissementId') ?? '';
+  const presetProgrammeId   = searchParams.get('programmeId') ?? '';
+  const presetImputation: FormData['imputationKind'] =
+    presetProjectId ? 'PROJECT'
+    : presetLotissementId ? 'LOTISSEMENT'
+    : presetProgrammeId ? 'PROGRAMME'
+    : 'NONE';
 
   const create = useCreateTreasuryOperation();
   const { data: accountsRes } = useTreasuryAccounts({ isActive: 'true' });
   const accounts = accountsRes?.data ?? [];
   const currentUser = useAuthStore((s) => s.user);
+  const token = useAuthStore((s) => s.token)!;
+
+  // Listes pour les selects d'imputation analytique (chargées une fois).
+  const projectOptions = useEntityOptions(
+    () => window.electron.projects.list(token, {}, 1, 500),
+    (p) => `${p.reference} · ${p.nom}`,
+  );
+  const lotissementOptions = useEntityOptions(
+    () => window.electron.lotissements.list(token, {}, 1, 500),
+    (l) => `${l.reference} · ${l.nom}`,
+  );
+  const programmeOptions = useEntityOptions(
+    () => window.electron.programmes.list(token, {}, 1, 500),
+    (p) => `${p.reference} · ${p.nom}`,
+  );
 
   const { register, handleSubmit, watch, setValue, formState: { errors, isSubmitting } } = useForm<FormData>({
     defaultValues: {
@@ -51,6 +99,10 @@ export default function OperationFormPage() {
       paymentMethod: 'ESPECE',
       paymentRef: '',
       budgetLineId: '',
+      imputationKind: presetImputation,
+      projectId: presetProjectId,
+      lotissementId: presetLotissementId,
+      programmeId: presetProgrammeId,
       notes: '',
     },
   });
@@ -81,6 +133,10 @@ export default function OperationFormPage() {
   const apiError = create.data && !create.data.success ? create.data.error : null;
 
   const onSubmit = async (data: FormData) => {
+    // Imputation analytique : on n'envoie qu'UN seul des trois IDs selon le type choisi.
+    const projectId     = data.imputationKind === 'PROJECT'     && data.projectId     ? Number(data.projectId)     : null;
+    const lotissementId = data.imputationKind === 'LOTISSEMENT' && data.lotissementId ? Number(data.lotissementId) : null;
+    const programmeId   = data.imputationKind === 'PROGRAMME'   && data.programmeId   ? Number(data.programmeId)   : null;
     const payload = {
       bankAccountId: Number(data.bankAccountId),
       direction: data.direction,
@@ -93,11 +149,16 @@ export default function OperationFormPage() {
       // Imputation budgétaire : valide uniquement pour les sorties.
       budgetLineId:
         data.direction === 'SORTIE' && data.budgetLineId ? Number(data.budgetLineId) : undefined,
+      projectId,
+      lotissementId,
+      programmeId,
       notes: data.notes || undefined,
     };
     const r = await create.mutateAsync(payload);
     if (r.success) navigate(`/treasury/accounts/${payload.bankAccountId}`);
   };
+
+  const imputationKind = watch('imputationKind');
 
   const accountOptions = accounts.map((a: any) => ({ value: String(a.id), label: a.name }));
   const categoryOptions = categories.map((c: any) => ({ value: String(c.id), label: categoryLabel(c) }));
@@ -183,6 +244,65 @@ export default function OperationFormPage() {
                   </p>
                 </div>
               )}
+
+              {/* ─── Imputation analytique : Projet / Lotissement / Programme ─── */}
+              <div className="border-t border-slate-200 pt-4 space-y-3">
+                <div>
+                  <h3 className="text-sm font-semibold text-slate-700">Imputation analytique</h3>
+                  <p className="text-xs text-slate-500">
+                    Rattachez cette opération à un projet, un lotissement ou un programme immobilier
+                    pour pouvoir tracer le flux de trésorerie associé.
+                  </p>
+                </div>
+                <div className="grid grid-cols-4 gap-2">
+                  {[
+                    { value: 'NONE',        label: 'Aucune',      icon: null },
+                    { value: 'PROJECT',     label: 'Projet',      icon: <Briefcase className="h-4 w-4" /> },
+                    { value: 'LOTISSEMENT', label: 'Lotissement', icon: <Map className="h-4 w-4" /> },
+                    { value: 'PROGRAMME',   label: 'Programme',   icon: <Building className="h-4 w-4" /> },
+                  ].map((opt) => (
+                    <label
+                      key={opt.value}
+                      className={clsx(
+                        'flex items-center justify-center gap-2 rounded-lg border px-3 py-2 text-sm cursor-pointer transition-colors',
+                        imputationKind === opt.value
+                          ? 'border-blue-500 bg-blue-50 text-blue-700 font-medium'
+                          : 'border-slate-200 text-slate-600 hover:border-slate-300',
+                      )}
+                    >
+                      <input
+                        type="radio"
+                        value={opt.value}
+                        className="sr-only"
+                        {...register('imputationKind')}
+                      />
+                      {opt.icon}
+                      {opt.label}
+                    </label>
+                  ))}
+                </div>
+                {imputationKind === 'PROJECT' && (
+                  <Select
+                    label="Projet"
+                    options={[{ value: '', label: '— Choisir un projet —' }, ...projectOptions]}
+                    {...register('projectId')}
+                  />
+                )}
+                {imputationKind === 'LOTISSEMENT' && (
+                  <Select
+                    label="Lotissement"
+                    options={[{ value: '', label: '— Choisir un lotissement —' }, ...lotissementOptions]}
+                    {...register('lotissementId')}
+                  />
+                )}
+                {imputationKind === 'PROGRAMME' && (
+                  <Select
+                    label="Programme immobilier"
+                    options={[{ value: '', label: '— Choisir un programme —' }, ...programmeOptions]}
+                    {...register('programmeId')}
+                  />
+                )}
+              </div>
 
               <div className="border-t border-slate-200 pt-4 space-y-4">
                 <h3 className="text-sm font-semibold text-slate-700">Règlement</h3>

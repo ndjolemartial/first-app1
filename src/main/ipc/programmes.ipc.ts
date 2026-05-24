@@ -162,6 +162,45 @@ export function registerProgrammesIPC(): void {
     }
   });
 
+  ipcMain.handle('programmes:statusStats', async (_event, { token, filters = {} }: any) => {
+    try {
+      const session = getSession(token);
+      if (!session) return { success: false, error: 'Session expirée' };
+      checkRole(session, READ_ROLES);
+      const db = getDb();
+      const where: any = { deletedAt: null };
+      if (filters.type) where.type = filters.type;
+      if (filters.ville) where.ville = { contains: filters.ville };
+      if (filters.search) {
+        where.OR = [
+          { nom: { contains: filters.search } },
+          { reference: { contains: filters.search } },
+          { commune: { contains: filters.search } },
+          { quartier: { contains: filters.search } },
+          { promoteur: { contains: filters.search } },
+        ];
+      }
+      const rows = await db.programmeImmobilier.groupBy({
+        by: ['statut'],
+        where,
+        _count: { _all: true },
+      });
+      const stats: Record<string, number> = {
+        EN_PROJET: 0, EN_CONSTRUCTION: 0, EN_COMMERCIALISATION: 0,
+        LIVRE: 0, CLOTURE: 0,
+      };
+      let total = 0;
+      for (const r of rows) {
+        const n = r._count?._all ?? 0;
+        stats[r.statut as string] = n;
+        total += n;
+      }
+      return { success: true, data: { ...stats, total } };
+    } catch (error: any) {
+      return { success: false, error: error.message };
+    }
+  });
+
   ipcMain.handle('programmes:delete', async (_event, { token, id }: any) => {
     try {
       const session = getSession(token);

@@ -38,6 +38,8 @@ const schema = z.object({
   country: z.string().optional(),
   nationality: z.string().optional(),
   idNumber: z.string().optional(),
+  birthDate: z.string().optional(),
+  birthPlace: z.string().optional(),
   fatherFirstName: z.string().optional(),
   fatherLastName: z.string().optional(),
   motherFirstName: z.string().optional(),
@@ -97,7 +99,7 @@ export default function ClientFormPage() {
     { value: '', label: '— Aucun —' },
     ...((assignableUsersRes?.data ?? []) as any[]).map((u) => ({
       value: String(u.id),
-      label: `${u.firstName ?? ''} ${u.lastName ?? ''}`.trim() || u.email,
+      label: `${u.lastName ?? ''} ${u.firstName ?? ''}`.trim() || u.email,
     })),
   ];
   const referrerOptions = [
@@ -105,8 +107,8 @@ export default function ClientFormPage() {
     ...((referrersRes?.data ?? []) as any[]).map((r) => ({
       value: String(r.id),
       label: r.companyName
-        ? `${r.firstName ?? ''} ${r.lastName ?? ''} (${r.companyName})`.trim()
-        : `${r.firstName ?? ''} ${r.lastName ?? ''}`.trim(),
+        ? `${r.lastName ?? ''} ${r.firstName ?? ''} (${r.companyName})`.trim()
+        : `${r.lastName ?? ''} ${r.firstName ?? ''}`.trim(),
     })),
   ];
 
@@ -134,10 +136,37 @@ export default function ClientFormPage() {
   useEffect(() => {
     if (isEdit && res?.data) {
       const c = res.data;
+      // Zod `.string().optional()` rejette `null` — coercer chaque champ optionnel
+      // venant de Prisma (`String?`) en chaîne vide pour éviter un échec silencieux
+      // de validation qui bloquerait `handleSubmit` sans message d'erreur.
       reset({
-        ...c,
-        assignedToId: c.assignedToId != null ? String(c.assignedToId) : '',
-        referrerId:   c.referrerId   != null ? String(c.referrerId)   : '',
+        type:                 c.type ?? 'INDIVIDUEL',
+        firstName:            c.firstName ?? '',
+        lastName:             c.lastName ?? '',
+        civilite:             c.civilite ?? 'MONSIEUR',
+        statutConjugal:       c.statutConjugal ?? 'CELIBATAIRE',
+        entreprise:           c.entreprise ?? '',
+        registre_de_commerce: c.registre_de_commerce ?? '',
+        compte_contribuable:  c.compte_contribuable ?? '',
+        email:                c.email ?? '',
+        phone:                c.phone ?? '',
+        mobile:               c.mobile ?? '',
+        address:              c.address ?? '',
+        city:                 c.city ?? '',
+        country:              c.country ?? 'CI',
+        nationality:          c.nationality ?? '',
+        idNumber:             c.idNumber ?? '',
+        // `<input type="date">` n'accepte que le format YYYY-MM-DD.
+        birthDate:            c.birthDate ? new Date(c.birthDate).toISOString().slice(0, 10) : '',
+        birthPlace:           c.birthPlace ?? '',
+        fatherFirstName:      c.fatherFirstName ?? '',
+        fatherLastName:       c.fatherLastName ?? '',
+        motherFirstName:      c.motherFirstName ?? '',
+        motherLastName:       c.motherLastName ?? '',
+        notes:                c.notes ?? '',
+        status:               c.status ?? 'ACTIF',
+        assignedToId:         c.assignedToId != null ? String(c.assignedToId) : '',
+        referrerId:           c.referrerId   != null ? String(c.referrerId)   : '',
       });
       setType(c.type);
       const idDoc = c.documents?.find((d: any) => d.category === 'identité');
@@ -187,6 +216,12 @@ export default function ClientFormPage() {
     // Si l'utilisateur n'a pas le droit d'affecter, on retire ces champs du payload.
     const { assignedToId, referrerId, ...rest } = data;
     const payload: any = { ...rest };
+    // Convertit YYYY-MM-DD en ISO datetime attendu par le schéma Zod du back-end.
+    if (payload.birthDate) {
+      payload.birthDate = new Date(`${payload.birthDate}T00:00:00.000Z`).toISOString();
+    } else {
+      delete payload.birthDate;
+    }
     if (canAssign) {
       payload.assignedToId = assignedToId ? Number(assignedToId) : null;
       payload.referrerId   = referrerId   ? Number(referrerId)   : null;
@@ -218,12 +253,16 @@ export default function ClientFormPage() {
                 <Select label="Statut conjugal" options={STATUT_CONJUGAL_OPTIONS} {...register('statutConjugal')} />
               </div>
               <div className="grid grid-cols-2 gap-4">
-                <Input label="Prénom" {...register('firstName')} />
                 <Input label="Nom" {...register('lastName')} />
+                <Input label="Prénom" {...register('firstName')} />
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <Input label="Numéro pièce d'identité" {...register('idNumber')} />
                 <Input label="Nationalité" {...register('nationality')} />
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <Input label="Date de naissance" type="date" {...register('birthDate')} />
+                <Input label="Lieu de naissance" {...register('birthPlace')} />
               </div>
 
               {/* Pièce d'identité scannée */}
@@ -287,12 +326,12 @@ export default function ClientFormPage() {
               <div className="border-t border-slate-100 pt-4">
                 <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-3">Filiation</p>
                 <div className="grid grid-cols-2 gap-4">
-                  <Input label="Prénom du père" {...register('fatherFirstName')} />
                   <Input label="Nom du père" {...register('fatherLastName')} />
+                  <Input label="Prénom du père" {...register('fatherFirstName')} />
                 </div>
                 <div className="grid grid-cols-2 gap-4 mt-4">
-                  <Input label="Prénom de la mère" {...register('motherFirstName')} />
                   <Input label="Nom de la mère" {...register('motherLastName')} />
+                  <Input label="Prénom de la mère" {...register('motherFirstName')} />
                 </div>
               </div>
             </>

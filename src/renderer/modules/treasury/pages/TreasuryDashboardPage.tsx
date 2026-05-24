@@ -12,7 +12,7 @@ import {
 } from '../utils/treasury.utils';
 import { formatCurrency, formatDate } from '../../../shared/utils/format';
 import {
-  Plus, Wallet, ArrowDownCircle, ArrowUpCircle, Landmark, Tags, Banknote,
+  Wallet, ArrowDownCircle, ArrowUpCircle, Landmark, Banknote,
 } from 'lucide-react';
 
 export default function TreasuryDashboardPage() {
@@ -30,25 +30,16 @@ export default function TreasuryDashboardPage() {
       title="Trésorerie"
       breadcrumbs={[{ label: 'Trésorerie' }]}
       actions={
-        <div className="flex gap-2">
-          <Button variant="secondary" icon={<Tags className="h-4 w-4" />} onClick={() => navigate('/treasury/categories')}>
-            Objets d'opération
-          </Button>
-          {canManage && (
-            <>
-              <Button
-                variant="secondary"
-                icon={<Banknote className="h-4 w-4" />}
-                onClick={() => navigate('/treasury/operations/new')}
-              >
-                Nouvelle opération
-              </Button>
-              <Button icon={<Plus className="h-4 w-4" />} onClick={() => navigate('/treasury/accounts/new')}>
-                Nouveau compte
-              </Button>
-            </>
-          )}
-        </div>
+        canManage && (
+          <div className="flex gap-2">
+            <Button
+              icon={<Banknote className="h-4 w-4" />}
+              onClick={() => navigate('/treasury/operations/new')}
+            >
+              Nouvelle opération
+            </Button>
+          </div>
+        )
       }
     >
       {isLoading ? (

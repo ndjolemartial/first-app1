@@ -8,19 +8,48 @@ const electron_1 = require("electron");
 const db_service_1 = require("../services/db.service");
 const auth_service_1 = require("../services/auth.service");
 const commission_service_1 = require("../services/commission.service");
+const treasury_service_1 = require("../services/treasury.service");
 const logger_1 = __importDefault(require("../utils/logger"));
 const zod_1 = require("zod");
-const READ_ROLES = ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ACCOUNTANT', 'READONLY'];
+// Lecture : tous les rôles peuvent consulter le module — la visibilité est
+// ensuite restreinte aux commissions personnelles pour les rôles « simples ».
+const READ_ROLES = ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ACCOUNTANT', 'AGENT', 'READONLY'];
+// Écriture : ADMIN, SUPER_ADMIN, MANAGER, ACCOUNTANT uniquement.
+// ASSISTANTE_DIRECTION est explicitement exclue via checkCommissionWriteRole.
 const WRITE_ROLES = ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ACCOUNTANT'];
 const ADMIN_ROLES = ['SUPER_ADMIN', 'ADMIN'];
+/** Rôles disposant d'une vue globale des commissions (toutes, sans filtre). */
+const FULL_VIEW_ROLES = ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ACCOUNTANT'];
+/**
+ * Rôles autorisés à consulter l'interface Apporteurs d'affaire.
+ * ASSISTANTE_DIRECTION peut consulter (lecture seule) mais pas créer/modifier
+ * — les handlers d'écriture restent passés par `checkCommissionWriteRole`.
+ */
+const REFERRERS_VIEW_ROLES = ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ACCOUNTANT', 'ASSISTANTE_DIRECTION'];
+function hasFullView(role) {
+    return FULL_VIEW_ROLES.includes(role);
+}
+/**
+ * Vérifie le rôle pour les écritures (création, paiement, annulation,
+ * apporteurs). ASSISTANTE_DIRECTION, qui hérite normalement de MANAGER via
+ * `checkRole`, est exclue explicitement pour ce module.
+ */
+function checkCommissionWriteRole(session, allowedRoles) {
+    if (session.role === 'ASSISTANTE_DIRECTION') {
+        throw new Error('Permission insuffisante');
+    }
+    (0, auth_service_1.checkRole)(session, allowedRoles);
+}
+/** Sérialise pour l'IPC : les Decimal Prisma ne sont pas clonables par Electron. */
+const ser = (v) => JSON.parse(JSON.stringify(v));
 const PAYMENT_METHODS = ['ESPECE', 'CHEQUE', 'TRANSFERT', 'VIREMENT', 'MOBILE_MONEY'];
 /* ─── Schémas de validation Zod ────────────────────────────────────── */
 const createCommissionSchema = zod_1.z.object({
-    contractId: zod_1.z.number().int().positive(),
+    conventionId: zod_1.z.number().int().positive(),
     beneficiaryType: zod_1.z.enum(['USER', 'REFERRER']),
     userId: zod_1.z.number().int().positive().optional(),
     referrerId: zod_1.z.number().int().positive().optional(),
-    transactionType: zod_1.z.enum(['VENTE', 'LOCATION', 'FRAIS_DOSSIER']),
+    transactionType: zod_1.z.enum(['VENTE', 'LOCATION', 'SOUSCRIPTION', 'FRAIS_DOSSIER']),
     baseAmount: zod_1.z.number().positive(),
     rate: zod_1.z.number().min(0).max(100),
     notes: zod_1.z.string().optional(),
@@ -31,6 +60,9 @@ const payCommissionSchema = zod_1.z.object({
     paymentRef: zod_1.z.string().optional(),
     paidAt: zod_1.z.string().datetime().optional(),
     notes: zod_1.z.string().optional(),
+    // Trésorerie : compte débité et objet d'opération (facultatifs).
+    bankAccountId: zod_1.z.number().int().positive().optional(),
+    categoryId: zod_1.z.number().int().positive().optional(),
 });
 const cancelCommissionSchema = zod_1.z.object({
     id: zod_1.z.number().int().positive(),
@@ -58,16 +90,24 @@ const settingsSchema = zod_1.z.object({
 });
 /* ─── Inclusions Prisma réutilisables ──────────────────────────────── */
 const commissionInclude = {
-    contract: {
+    convention: {
         select: {
             id: true,
             reference: true,
             type: true,
-            property: { select: { id: true, reference: true, address: true, city: true } },
+            assetType: true,
+            properties: {
+                orderBy: { order: 'asc' },
+                select: { property: { select: { id: true, reference: true, address: true, city: true } } },
+            },
+            terrains: {
+                orderBy: { order: 'asc' },
+                select: { terrain: { select: { id: true, reference: true, numeroIlot: true, numeroParcelle: true } } },
+            },
             client: { select: { id: true, firstName: true, lastName: true, entreprise: true, type: true } },
         },
     },
-    user: { select: { id: true, firstName: true, lastName: true, role: true } },
+    user: { select: { id: true, firstName: true, lastName: true, role: true, fonction: true } },
     referrer: { select: { id: true, firstName: true, lastName: true, companyName: true } },
 };
 /**
@@ -82,26 +122,30 @@ function registerCommissionsIPC() {
                 return { success: false, error: 'Session expirée' };
             (0, auth_service_1.checkRole)(session, READ_ROLES);
             const db = (0, db_service_1.getDb)();
+            // Filtre de visibilité : rôles non privilégiés → uniquement leurs propres commissions.
+            const visibilityWhere = hasFullView(session.role)
+                ? {}
+                : { beneficiaryType: 'USER', userId: session.userId };
             const [aPayer, payee, annuleeCount, grouped, recent, rates] = await Promise.all([
                 db.commission.aggregate({
-                    where: { deletedAt: null, status: 'A_PAYER' },
+                    where: { deletedAt: null, status: 'A_PAYER', ...visibilityWhere },
                     _sum: { amount: true },
                     _count: true,
                 }),
                 db.commission.aggregate({
-                    where: { deletedAt: null, status: 'PAYEE' },
+                    where: { deletedAt: null, status: 'PAYEE', ...visibilityWhere },
                     _sum: { amount: true },
                     _count: true,
                 }),
-                db.commission.count({ where: { deletedAt: null, status: 'ANNULEE' } }),
+                db.commission.count({ where: { deletedAt: null, status: 'ANNULEE', ...visibilityWhere } }),
                 db.commission.groupBy({
                     by: ['beneficiaryType', 'userId', 'referrerId', 'status'],
-                    where: { deletedAt: null, status: { in: ['A_PAYER', 'PAYEE'] } },
+                    where: { deletedAt: null, status: { in: ['A_PAYER', 'PAYEE'] }, ...visibilityWhere },
                     _sum: { amount: true },
                     _count: { _all: true },
                 }),
                 db.commission.findMany({
-                    where: { deletedAt: null },
+                    where: { deletedAt: null, ...visibilityWhere },
                     orderBy: { createdAt: 'desc' },
                     take: 8,
                     include: commissionInclude,
@@ -159,7 +203,7 @@ function registerCommissionsIPC() {
                 entry.totalAmount = entry.aPayerAmount + entry.payeAmount;
             }
             const byBeneficiary = [...recap.values()].sort((a, b) => b.totalAmount - a.totalAmount);
-            return {
+            return ser({
                 success: true,
                 data: {
                     aPayerCount: aPayer._count,
@@ -171,7 +215,7 @@ function registerCommissionsIPC() {
                     recent,
                     settings: rates,
                 },
-            };
+            });
         }
         catch (error) {
             logger_1.default.error('commissions:getDashboard error', error.message);
@@ -197,12 +241,18 @@ function registerCommissionsIPC() {
                 where.userId = filters.userId;
             if (filters.referrerId)
                 where.referrerId = filters.referrerId;
-            if (filters.contractId)
-                where.contractId = filters.contractId;
+            if (filters.conventionId)
+                where.conventionId = filters.conventionId;
+            // Rôles non privilégiés : ne voient que les commissions dont ils sont
+            // bénéficiaires (USER) — pas les commissions d'apporteur.
+            if (!hasFullView(session.role)) {
+                where.beneficiaryType = 'USER';
+                where.userId = session.userId;
+            }
             if (filters.search) {
                 where.OR = [
                     { reference: { contains: filters.search } },
-                    { contract: { reference: { contains: filters.search } } },
+                    { convention: { reference: { contains: filters.search } } },
                     { user: { firstName: { contains: filters.search } } },
                     { user: { lastName: { contains: filters.search } } },
                     { referrer: { firstName: { contains: filters.search } } },
@@ -220,7 +270,7 @@ function registerCommissionsIPC() {
                 }),
                 db.commission.count({ where }),
             ]);
-            return { success: true, data, total };
+            return ser({ success: true, data, total });
         }
         catch (error) {
             logger_1.default.error('commissions:list error', error.message);
@@ -244,7 +294,14 @@ function registerCommissionsIPC() {
             });
             if (!commission || commission.deletedAt)
                 return { success: false, error: 'Commission introuvable' };
-            return { success: true, data: commission };
+            // Contrôle de visibilité pour les rôles non privilégiés : seul le
+            // bénéficiaire utilisateur peut consulter sa propre commission.
+            if (!hasFullView(session.role)) {
+                const isOwner = commission.beneficiaryType === 'USER' && commission.userId === session.userId;
+                if (!isOwner)
+                    return { success: false, error: 'Commission inaccessible' };
+            }
+            return ser({ success: true, data: commission });
         }
         catch (error) {
             return { success: false, error: error.message };
@@ -256,26 +313,28 @@ function registerCommissionsIPC() {
             const session = (0, auth_service_1.getSession)(token);
             if (!session)
                 return { success: false, error: 'Session expirée' };
-            (0, auth_service_1.checkRole)(session, WRITE_ROLES);
+            checkCommissionWriteRole(session, WRITE_ROLES);
             const parsed = createCommissionSchema.safeParse(payload);
             if (!parsed.success)
                 return { success: false, error: parsed.error.format() };
             const d = parsed.data;
             const db = (0, db_service_1.getDb)();
-            const contract = await db.contract.findUnique({
-                where: { id: d.contractId, deletedAt: null },
+            const convention = await db.convention.findUnique({
+                where: { id: d.conventionId, deletedAt: null },
                 select: { id: true, type: true },
             });
-            if (!contract)
-                return { success: false, error: 'Contrat introuvable' };
-            if (!(0, commission_service_1.isCommissionEligibleContract)(contract.type)) {
-                return { success: false, error: 'Ce contrat n\'est pas éligible à une commission (vente ou location uniquement)' };
+            if (!convention)
+                return { success: false, error: 'Convention introuvable' };
+            if (!(0, commission_service_1.isCommissionEligibleConvention)(convention.type)) {
+                return { success: false, error: 'Cette convention n\'est pas éligible à une commission (vente, location ou souscription uniquement)' };
             }
-            // Une commission VENTE/LOCATION doit correspondre au type du contrat ;
-            // une commission FRAIS_DOSSIER est admise quel que soit le contrat éligible.
-            const naturalType = contract.type === 'SALE' ? 'VENTE' : 'LOCATION';
+            // Une commission VENTE/LOCATION/SOUSCRIPTION doit correspondre au type de
+            // la convention ; une commission FRAIS_DOSSIER est admise quelle que soit la convention éligible.
+            const naturalType = convention.type === 'SALE' ? 'VENTE'
+                : convention.type === 'SOUSCRIPTION' ? 'SOUSCRIPTION'
+                    : 'LOCATION';
             if (d.transactionType !== 'FRAIS_DOSSIER' && d.transactionType !== naturalType) {
-                return { success: false, error: 'Le type de commission ne correspond pas au type du contrat' };
+                return { success: false, error: 'Le type de commission ne correspond pas au type de la convention' };
             }
             // Vérifie l'existence du bénéficiaire
             if (d.beneficiaryType === 'USER') {
@@ -293,7 +352,7 @@ function registerCommissionsIPC() {
             const commission = await db.commission.create({
                 data: {
                     reference,
-                    contractId: d.contractId,
+                    conventionId: d.conventionId,
                     beneficiaryType: d.beneficiaryType,
                     userId: d.beneficiaryType === 'USER' ? d.userId : null,
                     referrerId: d.beneficiaryType === 'REFERRER' ? d.referrerId : null,
@@ -308,7 +367,7 @@ function registerCommissionsIPC() {
                 include: commissionInclude,
             });
             logger_1.default.info(`Commission créée: ${commission.reference}`);
-            return { success: true, data: commission };
+            return ser({ success: true, data: commission });
         }
         catch (error) {
             logger_1.default.error('commissions:create error', error.message);
@@ -321,33 +380,62 @@ function registerCommissionsIPC() {
             const session = (0, auth_service_1.getSession)(token);
             if (!session)
                 return { success: false, error: 'Session expirée' };
-            (0, auth_service_1.checkRole)(session, WRITE_ROLES);
+            checkCommissionWriteRole(session, WRITE_ROLES);
             const parsed = payCommissionSchema.safeParse(payload);
             if (!parsed.success)
                 return { success: false, error: parsed.error.format() };
             const d = parsed.data;
             const db = (0, db_service_1.getDb)();
-            const commission = await db.commission.findUnique({ where: { id: d.id }, select: { id: true, status: true, deletedAt: true } });
+            const commission = await db.commission.findUnique({
+                where: { id: d.id },
+                select: { id: true, status: true, deletedAt: true, amount: true, reference: true },
+            });
             if (!commission || commission.deletedAt)
                 return { success: false, error: 'Commission introuvable' };
             if (commission.status === 'PAYEE')
                 return { success: false, error: 'Commission déjà payée' };
             if (commission.status === 'ANNULEE')
                 return { success: false, error: 'Impossible de payer une commission annulée' };
-            const updated = await db.commission.update({
-                where: { id: d.id },
-                data: {
-                    status: 'PAYEE',
-                    paidAt: d.paidAt ? new Date(d.paidAt) : new Date(),
-                    paymentMethod: d.method,
-                    paymentRef: d.paymentRef,
-                    paidById: session.userId,
-                    notes: d.notes,
-                },
-                include: commissionInclude,
+            // Vérifie le compte de trésorerie si le paiement y est rattaché.
+            if (d.bankAccountId) {
+                const account = await db.bankAccount.findUnique({ where: { id: d.bankAccountId } });
+                if (!account || account.deletedAt)
+                    return { success: false, error: 'Compte de trésorerie introuvable' };
+            }
+            const paidAt = d.paidAt ? new Date(d.paidAt) : new Date();
+            const updated = await db.$transaction(async (tx) => {
+                const paid = await tx.commission.update({
+                    where: { id: d.id },
+                    data: {
+                        status: 'PAYEE',
+                        paidAt,
+                        paymentMethod: d.method,
+                        paymentRef: d.paymentRef,
+                        paidById: session.userId,
+                        notes: d.notes,
+                    },
+                    include: commissionInclude,
+                });
+                // Paiement rattaché à un compte → mouvement de trésorerie (sortie).
+                if (d.bankAccountId) {
+                    await (0, treasury_service_1.recordTreasuryOperation)(tx, {
+                        bankAccountId: d.bankAccountId,
+                        direction: 'SORTIE',
+                        amount: Number(commission.amount),
+                        label: `Paiement commission ${commission.reference}`,
+                        operationDate: paidAt,
+                        categoryId: d.categoryId ?? null,
+                        paymentMethod: d.method,
+                        paymentRef: d.paymentRef,
+                        source: 'COMMISSION',
+                        commissionId: d.id,
+                        createdById: session.userId,
+                    });
+                }
+                return paid;
             });
             logger_1.default.info(`Commission payée: id=${d.id} par user=${session.userId}`);
-            return { success: true, data: updated };
+            return ser({ success: true, data: updated });
         }
         catch (error) {
             logger_1.default.error('commissions:pay error', error.message);
@@ -360,7 +448,7 @@ function registerCommissionsIPC() {
             const session = (0, auth_service_1.getSession)(token);
             if (!session)
                 return { success: false, error: 'Session expirée' };
-            (0, auth_service_1.checkRole)(session, WRITE_ROLES);
+            checkCommissionWriteRole(session, WRITE_ROLES);
             const parsed = cancelCommissionSchema.safeParse(payload);
             if (!parsed.success)
                 return { success: false, error: parsed.error.format() };
@@ -382,7 +470,7 @@ function registerCommissionsIPC() {
                 include: commissionInclude,
             });
             logger_1.default.info(`Commission annulée: id=${d.id} par user=${session.userId}`);
-            return { success: true, data: updated };
+            return ser({ success: true, data: updated });
         }
         catch (error) {
             logger_1.default.error('commissions:cancel error', error.message);
@@ -437,7 +525,7 @@ function registerCommissionsIPC() {
                     totals.annuleeCount += 1;
                 }
             }
-            return { success: true, data: { beneficiaryType, beneficiary, commissions, totals } };
+            return ser({ success: true, data: { beneficiaryType, beneficiary, commissions, totals } });
         }
         catch (error) {
             logger_1.default.error('commissions:getBeneficiarySummary error', error.message);
@@ -450,7 +538,9 @@ function registerCommissionsIPC() {
             const session = (0, auth_service_1.getSession)(token);
             if (!session)
                 return { success: false, error: 'Session expirée' };
-            (0, auth_service_1.checkRole)(session, READ_ROLES);
+            // Consultation des apporteurs : ADMIN, SUPER_ADMIN, MANAGER, ACCOUNTANT,
+            // ASSISTANTE_DIRECTION. AGENT et READONLY restent exclus.
+            (0, auth_service_1.checkRole)(session, REFERRERS_VIEW_ROLES);
             const db = (0, db_service_1.getDb)();
             const where = { deletedAt: null };
             if (filters.isActive !== undefined && filters.isActive !== '')
@@ -474,7 +564,7 @@ function registerCommissionsIPC() {
                 }),
                 db.businessReferrer.count({ where }),
             ]);
-            return { success: true, data, total };
+            return ser({ success: true, data, total });
         }
         catch (error) {
             logger_1.default.error('commissions:listReferrers error', error.message);
@@ -486,12 +576,12 @@ function registerCommissionsIPC() {
             const session = (0, auth_service_1.getSession)(token);
             if (!session)
                 return { success: false, error: 'Session expirée' };
-            (0, auth_service_1.checkRole)(session, READ_ROLES);
+            (0, auth_service_1.checkRole)(session, REFERRERS_VIEW_ROLES);
             const db = (0, db_service_1.getDb)();
             const referrer = await db.businessReferrer.findUnique({ where: { id } });
             if (!referrer || referrer.deletedAt)
                 return { success: false, error: 'Apporteur d\'affaire introuvable' };
-            return { success: true, data: referrer };
+            return ser({ success: true, data: referrer });
         }
         catch (error) {
             return { success: false, error: error.message };
@@ -502,7 +592,7 @@ function registerCommissionsIPC() {
             const session = (0, auth_service_1.getSession)(token);
             if (!session)
                 return { success: false, error: 'Session expirée' };
-            (0, auth_service_1.checkRole)(session, WRITE_ROLES);
+            checkCommissionWriteRole(session, WRITE_ROLES);
             const parsed = referrerSchema.safeParse(payload);
             if (!parsed.success)
                 return { success: false, error: parsed.error.format() };
@@ -512,7 +602,7 @@ function registerCommissionsIPC() {
                 data: { ...d, email: d.email || null },
             });
             logger_1.default.info(`Apporteur d'affaire créé: id=${referrer.id}`);
-            return { success: true, data: referrer };
+            return ser({ success: true, data: referrer });
         }
         catch (error) {
             logger_1.default.error('commissions:createReferrer error', error.message);
@@ -524,7 +614,7 @@ function registerCommissionsIPC() {
             const session = (0, auth_service_1.getSession)(token);
             if (!session)
                 return { success: false, error: 'Session expirée' };
-            (0, auth_service_1.checkRole)(session, WRITE_ROLES);
+            checkCommissionWriteRole(session, WRITE_ROLES);
             const parsed = referrerSchema.partial().safeParse(payload);
             if (!parsed.success)
                 return { success: false, error: parsed.error.format() };
@@ -534,7 +624,7 @@ function registerCommissionsIPC() {
             if (d.email !== undefined)
                 data.email = d.email || null;
             const referrer = await db.businessReferrer.update({ where: { id }, data });
-            return { success: true, data: referrer };
+            return ser({ success: true, data: referrer });
         }
         catch (error) {
             logger_1.default.error('commissions:updateReferrer error', error.message);
@@ -546,7 +636,7 @@ function registerCommissionsIPC() {
             const session = (0, auth_service_1.getSession)(token);
             if (!session)
                 return { success: false, error: 'Session expirée' };
-            (0, auth_service_1.checkRole)(session, ADMIN_ROLES);
+            checkCommissionWriteRole(session, ADMIN_ROLES);
             const db = (0, db_service_1.getDb)();
             const activeCommissions = await db.commission.count({
                 where: { referrerId: id, deletedAt: null, status: { not: 'ANNULEE' } },
@@ -575,24 +665,24 @@ function registerCommissionsIPC() {
                 select: { id: true, firstName: true, lastName: true, role: true, matricule: true },
                 orderBy: [{ firstName: 'asc' }, { lastName: 'asc' }],
             });
-            return { success: true, data: users };
+            return ser({ success: true, data: users });
         }
         catch (error) {
             return { success: false, error: error.message };
         }
     });
-    electron_1.ipcMain.handle('commissions:listEligibleContracts', async (_event, { token }) => {
+    electron_1.ipcMain.handle('commissions:listEligibleConventions', async (_event, { token }) => {
         try {
             const session = (0, auth_service_1.getSession)(token);
             if (!session)
                 return { success: false, error: 'Session expirée' };
             (0, auth_service_1.checkRole)(session, READ_ROLES);
             const db = (0, db_service_1.getDb)();
-            const contracts = await db.contract.findMany({
+            const conventions = await db.convention.findMany({
                 where: {
                     deletedAt: null,
                     status: { not: 'ANNULE' },
-                    type: { in: ['SALE', 'RENTAL_UNFURNISHED', 'RENTAL_FURNISHED', 'COMMERCIAL_LEASE'] },
+                    type: { in: ['SALE', 'SOUSCRIPTION', 'RENTAL_UNFURNISHED', 'RENTAL_FURNISHED', 'COMMERCIAL_LEASE'] },
                 },
                 orderBy: { createdAt: 'desc' },
                 select: {
@@ -605,7 +695,7 @@ function registerCommissionsIPC() {
                     property: { select: { id: true, reference: true } },
                 },
             });
-            return { success: true, data: contracts };
+            return ser({ success: true, data: conventions });
         }
         catch (error) {
             return { success: false, error: error.message };
@@ -630,7 +720,7 @@ function registerCommissionsIPC() {
             const session = (0, auth_service_1.getSession)(token);
             if (!session)
                 return { success: false, error: 'Session expirée' };
-            (0, auth_service_1.checkRole)(session, ADMIN_ROLES);
+            checkCommissionWriteRole(session, ADMIN_ROLES);
             const parsed = settingsSchema.safeParse(payload);
             if (!parsed.success)
                 return { success: false, error: parsed.error.format() };

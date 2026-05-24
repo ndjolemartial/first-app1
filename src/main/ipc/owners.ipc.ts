@@ -36,6 +36,9 @@ const ownerSchema = z.object({
 const WRITE_ROLES = ['SUPER_ADMIN', 'ADMIN', 'MANAGER'];
 const READ_ROLES  = ['SUPER_ADMIN', 'ADMIN', 'MANAGER'];
 
+/** Sérialise les objets Prisma (notamment Decimal) pour le canal IPC. */
+const ser = <T>(v: T): T => JSON.parse(JSON.stringify(v));
+
 /**
  * Enregistre les handlers IPC pour la gestion des propriétaires.
  */
@@ -96,7 +99,7 @@ export function registerOwnersIPC(): void {
         },
       });
       if (!owner) return { success: false, error: 'Propriétaire introuvable' };
-      return { success: true, data: owner };
+      return { success: true, data: ser(owner) };
     } catch (error: any) {
       return { success: false, error: error.message };
     }
@@ -159,17 +162,21 @@ export function registerOwnersIPC(): void {
       const properties = await db.property.findMany({
         where: { ownerId: id, deletedAt: null },
         include: {
-          conventions: {
-            where: { deletedAt: null, status: 'ACTIVE' },
-            select: { rentAmount: true, type: true },
+          conventionLinks: {
+            where: { convention: { deletedAt: null, status: 'ACTIVE' } },
+            select: { convention: { select: { rentAmount: true, type: true } } },
           },
         },
       });
       const totalRentIncome = properties.reduce((sum, p) => {
-        const rent = p.conventions.reduce((s, c) => s + Number(c.rentAmount ?? 0), 0);
+        const rent = p.conventionLinks.reduce(
+          (s: number, l: { convention: { rentAmount: unknown } }) =>
+            s + Number(l.convention.rentAmount ?? 0),
+          0,
+        );
         return sum + rent;
       }, 0);
-      return { success: true, data: { properties, totalRentIncome } };
+      return { success: true, data: ser({ properties, totalRentIncome }) };
     } catch (error: any) {
       return { success: false, error: error.message };
     }

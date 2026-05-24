@@ -36,6 +36,10 @@ export interface RecordOperationParams {
   installmentId?: number | null;
   commissionId?: number | null;
   budgetLineId?: number | null;
+  // Imputation analytique : au plus un seul des trois (exclusivité contrôlée par l'appelant).
+  projectId?: number | null;
+  lotissementId?: number | null;
+  programmeId?: number | null;
   createdById?: number | null;
   notes?: string | null;
 }
@@ -65,6 +69,9 @@ export async function recordTreasuryOperation(db: DbOrTx, params: RecordOperatio
       installmentId: params.installmentId ?? null,
       commissionId: params.commissionId ?? null,
       budgetLineId: params.budgetLineId ?? null,
+      projectId: params.projectId ?? null,
+      lotissementId: params.lotissementId ?? null,
+      programmeId: params.programmeId ?? null,
       createdById: params.createdById ?? null,
       notes: params.notes ?? null,
     },

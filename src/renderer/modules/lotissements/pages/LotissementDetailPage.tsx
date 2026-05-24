@@ -8,6 +8,7 @@ import ConfirmDialog from '../../../shared/components/ui/ConfirmDialog';
 import { useLotissement, useDeleteLotissement } from '../hooks/useLotissements';
 import { formatDate, formatCurrency } from '../../../shared/utils/format';
 import { Edit, Trash2, MapPin, Layers } from 'lucide-react';
+import EntityCashflowSection from '../../treasury/components/EntityCashflowSection';
 
 const STATUT_VARIANT: Record<string, any> = {
   EN_COURS: 'warning', OUVERT: 'success', PARTIELLEMENT_VENDU: 'info',
@@ -100,6 +101,9 @@ export default function LotissementDetailPage() {
                 ['Surface totale', lot.surface ? `${lot.surface} m²` : '—'],
                 ['Commune', lot.commune ?? '—'],
                 ['Quartier', lot.quartier ?? '—'],
+                ['Frais de démarches ACD (standard)', lot.fraisDemarchesAcdStandard != null
+                  ? formatCurrency(Number(lot.fraisDemarchesAcdStandard))
+                  : '—'],
                 ['Créé le', formatDate(lot.createdAt)],
               ].map(([label, value]) => (
                 <div key={label} className="flex justify-between">
@@ -165,6 +169,13 @@ export default function LotissementDetailPage() {
             </div>
           </Card>
         )}
+
+        {/* Flux de trésorerie rattaché à ce lotissement */}
+        <EntityCashflowSection
+          entityType="LOTISSEMENT"
+          entityId={Number(id)}
+          newOperationQuery={`?lotissementId=${id}`}
+        />
       </div>
 
       <ConfirmDialog

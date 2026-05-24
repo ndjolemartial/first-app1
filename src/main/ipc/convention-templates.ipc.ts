@@ -15,6 +15,14 @@ const CONVENTION_TYPES = [
 const templateSchema = z.object({
   name: z.string().min(1, 'Nom requis'),
   type: z.enum(CONVENTION_TYPES),
+  amendmentType: z.preprocess(
+    (v) => (v === '' || v === null ? undefined : v),
+    z.enum(['PROLONGATION_DELAI', 'TRANSFERT_PROPRIETE', 'TRANSFERT_SITE']).optional(),
+  ),
+  souscriptionType: z.preprocess(
+    (v) => (v === '' || v === null ? undefined : v),
+    z.enum(['STANDARD', 'AVEC_ACD', 'FINANCEMENT_PROJET']).optional(),
+  ),
   header: z.string().optional(),
   body: z.string().default(''),
   footer: z.string().optional(),
@@ -77,11 +85,19 @@ export function registerConventionTemplatesIPC(): void {
       const parsed = templateSchema.safeParse(payload);
       if (!parsed.success) return { success: false, error: parsed.error.format() };
       const db = getDb();
-      const d = parsed.data;
-      // Un seul modèle par défaut par type de convention
+      const d = { ...parsed.data };
+      // Les sous-types ne s'appliquent qu'à leur type respectif
+      if (d.type !== 'AVENANT') d.amendmentType = undefined;
+      if (d.type !== 'SOUSCRIPTION') d.souscriptionType = undefined;
+      // Un seul modèle par défaut par couple (type, sous-type) — un modèle
+      // sans sous-type couvre toutes les natures de son type.
       if (d.isDefault) {
         await db.conventionTemplate.updateMany({
-          where: { type: d.type, deletedAt: null },
+          where: {
+            type: d.type, deletedAt: null,
+            amendmentType: d.amendmentType ?? null,
+            souscriptionType: d.souscriptionType ?? null,
+          },
           data: { isDefault: false },
         });
       }
@@ -101,10 +117,17 @@ export function registerConventionTemplatesIPC(): void {
       const parsed = templateSchema.partial().safeParse(payload);
       if (!parsed.success) return { success: false, error: parsed.error.format() };
       const db = getDb();
-      const d = parsed.data;
+      const d = { ...parsed.data };
+      // Nettoie les sous-types incohérents avec le type de convention
+      if (d.type && d.type !== 'AVENANT') d.amendmentType = null as any;
+      if (d.type && d.type !== 'SOUSCRIPTION') d.souscriptionType = null as any;
       if (d.isDefault && d.type) {
         await db.conventionTemplate.updateMany({
-          where: { type: d.type, deletedAt: null, id: { not: id } },
+          where: {
+            type: d.type, deletedAt: null, id: { not: id },
+            amendmentType: d.amendmentType ?? null,
+            souscriptionType: d.souscriptionType ?? null,
+          },
           data: { isDefault: false },
         });
       }

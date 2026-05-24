@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -35,6 +35,14 @@ export default function AccountFormPage() {
   const { id } = useParams<{ id?: string }>();
   const isEdit = !!id;
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  // Origine de l'appel : permet d'adapter breadcrumbs + retour selon que l'on
+  // arrive depuis le module Trésorerie ou depuis Paramètres > Comptes d'opérations.
+  const fromSettings = searchParams.get('from') === 'settings';
+  const backTo = fromSettings ? '/settings?tab=treasuryAccounts' : '/treasury';
+  const breadcrumbRoot = fromSettings
+    ? { label: 'Paramètres', to: '/settings?tab=treasuryAccounts' }
+    : { label: 'Trésorerie', to: '/treasury' };
 
   const { data: res } = useTreasuryAccount(isEdit ? Number(id) : 0);
   const create = useCreateTreasuryAccount();
@@ -93,15 +101,15 @@ export default function AccountFormPage() {
     const r = isEdit
       ? await update.mutateAsync({ id: Number(id), payload })
       : await create.mutateAsync(payload);
-    if (r.success) navigate(isEdit ? `/treasury/accounts/${id}` : '/treasury');
+    if (r.success) navigate(isEdit ? `/treasury/accounts/${id}` : backTo);
   };
 
   return (
     <PageLayout
-      title={isEdit ? 'Modifier le compte' : 'Nouveau compte de trésorerie'}
+      title={isEdit ? "Modifier le compte d'opérations" : "Nouveau compte d'opérations"}
       breadcrumbs={[
-        { label: 'Trésorerie', to: '/treasury' },
-        { label: isEdit ? 'Modifier le compte' : 'Nouveau compte' },
+        breadcrumbRoot,
+        { label: isEdit ? "Modifier le compte d'opérations" : "Nouveau compte d'opérations" },
       ]}
     >
       <div className="max-w-2xl mx-auto">
@@ -180,11 +188,11 @@ export default function AccountFormPage() {
             )}
 
             <div className="flex justify-end gap-3 pt-2">
-              <Button variant="secondary" type="button" onClick={() => navigate('/treasury')}>
+              <Button variant="secondary" type="button" onClick={() => navigate(backTo)}>
                 Annuler
               </Button>
               <Button type="submit" loading={isSubmitting} icon={<Save className="h-4 w-4" />}>
-                {isEdit ? 'Enregistrer' : 'Créer le compte'}
+                {isEdit ? 'Enregistrer' : "Créer le compte d'opérations"}
               </Button>
             </div>
           </form>

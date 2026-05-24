@@ -1,5 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useAuthStore } from '../../../shared/stores/auth.store';
+import { toast } from '../../../shared/components/ui/Toast';
 
 const ipc = () => window.electron.properties;
 const token = () => useAuthStore.getState().token!;
@@ -47,14 +48,27 @@ export function useDeleteProperty() {
   });
 }
 
+export function usePropertiesStatusStats(filters: object = {}) {
+  // Clé préfixée par 'properties' afin que les invalidations existantes
+  // (create/update/delete/updateStatus) rafraîchissent aussi les stats.
+  return useQuery({
+    queryKey: ['properties', 'status-stats', filters],
+    queryFn: () => ipc().statusStats(token(), filters),
+  });
+}
+
 export function useUpdatePropertyStatus() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: ({ id, status }: { id: number; status: string }) =>
       ipc().updateStatus(token(), id, status),
-    onSuccess: (_data, { id }) => {
-      qc.invalidateQueries({ queryKey: ['properties'] });
-      qc.invalidateQueries({ queryKey: ['property', id] });
+    onSuccess: (res, { id }) => {
+      if (res?.success) {
+        qc.invalidateQueries({ queryKey: ['properties'] });
+        qc.invalidateQueries({ queryKey: ['property', id] });
+      } else {
+        toast.error(String(res?.error ?? 'Échec de la mise à jour du statut'));
+      }
     },
   });
 }

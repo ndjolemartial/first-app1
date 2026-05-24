@@ -47,6 +47,15 @@ export function useDeleteConvention() {
   });
 }
 
+export function useConventionsStatusStats(filters: object = {}) {
+  // Clé préfixée par 'conventions' afin que les invalidations existantes
+  // (create/update/delete) rafraîchissent aussi les stats.
+  return useQuery({
+    queryKey: ['conventions', 'status-stats', filters],
+    queryFn: () => ipc().statusStats(token(), filters),
+  });
+}
+
 export function useGenerateInstallments() {
   const qc = useQueryClient();
   return useMutation({
@@ -63,5 +72,17 @@ export function useInstallments(conventionId: number) {
     queryKey: ['installments', conventionId],
     queryFn: () => ipc().getInstallments(token(), conventionId),
     enabled: conventionId > 0,
+  });
+}
+
+export function useUpdateInstallments() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ conventionId, installments }: { conventionId: number; installments: { id: number; dueDate: string; amount: number }[] }) =>
+      ipc().updateInstallments(token(), conventionId, installments),
+    onSuccess: (_data, { conventionId }) => {
+      qc.invalidateQueries({ queryKey: ['convention', conventionId] });
+      qc.invalidateQueries({ queryKey: ['installments', conventionId] });
+    },
   });
 }

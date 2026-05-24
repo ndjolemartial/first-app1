@@ -18,6 +18,8 @@ import {
 export interface SearchSelectOption {
   value: string;
   label: string;
+  /** Applique un fond clair à la ligne (ex. élément déjà rattaché au client courant). */
+  highlighted?: boolean;
 }
 
 interface SearchSelectProps {
@@ -255,7 +257,11 @@ export default function SearchSelect({
                   onMouseEnter={() => setHighlight(i)}
                   className={clsx(
                     'flex items-start justify-between gap-2 px-3 py-2 text-sm cursor-pointer',
-                    i === highlight ? 'bg-blue-50 text-blue-700' : 'text-slate-700',
+                    i === highlight
+                      ? 'bg-blue-50 text-blue-700'
+                      : opt.highlighted
+                        ? 'bg-amber-50 text-slate-800'
+                        : 'text-slate-700',
                   )}
                 >
                   <span className="whitespace-normal break-words">{opt.label}</span>

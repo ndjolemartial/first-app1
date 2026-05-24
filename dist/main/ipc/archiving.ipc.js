@@ -9,15 +9,17 @@ const db_service_1 = require("../services/db.service");
 const auth_service_1 = require("../services/auth.service");
 const logger_1 = __importDefault(require("../utils/logger"));
 const zod_1 = require("zod");
-const READ_ROLES = ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'AGENT', 'ACCOUNTANT'];
+// Module Archivage : réservé aux MANAGER+ (ACCOUNTANT inclus via checkRole).
+// AGENT et READONLY n'ont aucun accès au module.
+const READ_ROLES = ['SUPER_ADMIN', 'ADMIN', 'MANAGER'];
 const WRITE_ROLES = ['SUPER_ADMIN', 'ADMIN', 'MANAGER'];
 const RESTORE_ROLES = ['SUPER_ADMIN', 'ADMIN'];
 const archiveSchema = zod_1.z.object({
-    entityType: zod_1.z.enum(['CLIENT', 'PROSPECT', 'OWNER', 'PROPERTY', 'CONTRACT', 'INVOICE', 'DOCUMENT']),
+    entityType: zod_1.z.enum(['CLIENT', 'PROSPECT', 'OWNER', 'PROPERTY', 'CONVENTION', 'INVOICE', 'DOCUMENT']),
     entityId: zod_1.z.number().int().positive(),
     entityRef: zod_1.z.string().min(1),
     snapshot: zod_1.z.record(zod_1.z.string(), zod_1.z.unknown()),
-    reason: zod_1.z.enum(['MANUEL', 'CONTRAT_TERMINE', 'CLIENT_INACTIF', 'BIEN_VENDU', 'POLITIQUE_AUTOMATIQUE', 'DEMANDE_RGPD', 'AUTRE']).default('MANUEL'),
+    reason: zod_1.z.enum(['MANUEL', 'CONVENTION_TERMINEE', 'CLIENT_INACTIF', 'BIEN_VENDU', 'POLITIQUE_AUTOMATIQUE', 'DEMANDE_RGPD', 'AUTRE']).default('MANUEL'),
     reasonDetail: zod_1.z.string().optional(),
     retentionDate: zod_1.z.string().optional(),
     notes: zod_1.z.string().optional(),
@@ -25,7 +27,7 @@ const archiveSchema = zod_1.z.object({
 const policySchema = zod_1.z.object({
     name: zod_1.z.string().min(1),
     description: zod_1.z.string().optional(),
-    entityType: zod_1.z.enum(['CLIENT', 'PROSPECT', 'OWNER', 'PROPERTY', 'CONTRACT', 'INVOICE', 'DOCUMENT']),
+    entityType: zod_1.z.enum(['CLIENT', 'PROSPECT', 'OWNER', 'PROPERTY', 'CONVENTION', 'INVOICE', 'DOCUMENT']),
     triggerCondition: zod_1.z.record(zod_1.z.string(), zod_1.z.unknown()),
     retentionDays: zod_1.z.number().int().positive().optional(),
     isActive: zod_1.z.boolean().default(true),

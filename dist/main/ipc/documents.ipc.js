@@ -7,10 +7,101 @@ exports.registerDocumentsIPC = registerDocumentsIPC;
 const electron_1 = require("electron");
 const path_1 = __importDefault(require("path"));
 const fs_1 = __importDefault(require("fs"));
+const zod_1 = require("zod");
 const db_service_1 = require("../services/db.service");
 const auth_service_1 = require("../services/auth.service");
+const storage_service_1 = require("../services/storage.service");
 const logger_1 = __importDefault(require("../utils/logger"));
 const WRITE_ROLES = ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'AGENT'];
+const READ_ROLES = [...WRITE_ROLES, 'ACCOUNTANT', 'READONLY'];
+const DELETE_ROLES = ['SUPER_ADMIN', 'ADMIN', 'MANAGER'];
+const PREVIEW_MAX_BYTES = 25 * 1024 * 1024;
+/** Classe un type MIME dans un groupe lisible. */
+function typeGroupOf(mime) {
+    if (mime === 'application/pdf')
+        return 'PDF';
+    if (mime.startsWith('image/'))
+        return 'IMAGE';
+    if (mime.startsWith('video/'))
+        return 'VIDEO';
+    if (mime.startsWith('audio/'))
+        return 'AUDIO';
+    if (/word|excel|spreadsheet|presentation|officedocument|ms-office/.test(mime))
+        return 'OFFICE';
+    return 'AUTRE';
+}
+/** Traduit un groupe de type en condition Prisma sur le champ `type` (MIME). */
+function typeGroupWhere(group) {
+    switch (group) {
+        case 'PDF': return { type: 'application/pdf' };
+        case 'IMAGE': return { type: { startsWith: 'image/' } };
+        case 'VIDEO': return { type: { startsWith: 'video/' } };
+        case 'AUDIO': return { type: { startsWith: 'audio/' } };
+        case 'OFFICE': return {
+            OR: ['word', 'excel', 'spreadsheet', 'presentation', 'officedocument']
+                .map((k) => ({ type: { contains: k } })),
+        };
+        default: return {};
+    }
+}
+/** Génère le prochain numéro d'archive ARC-AAAA-NNNN. */
+async function nextNumeroArchive(db) {
+    const year = new Date().getFullYear();
+    const last = await db.document.findFirst({
+        where: { numeroArchive: { startsWith: `ARC-${year}-` } },
+        orderBy: { numeroArchive: 'desc' },
+        select: { numeroArchive: true },
+    });
+    const seq = last?.numeroArchive ? parseInt(last.numeroArchive.split('-')[2], 10) + 1 : 1;
+    return `ARC-${year}-${String(seq).padStart(4, '0')}`;
+}
+/** Enregistre une entrée dans le journal des actions documentaires. */
+async function logAudit(db, documentId, action, userId, detail) {
+    try {
+        await db.documentAuditLog.create({ data: { documentId, action: action, userId, detail } });
+    }
+    catch (e) {
+        logger_1.default.error('documentAuditLog error', e.message);
+    }
+}
+/** Relations incluses dans les listes de documents GED. */
+const docInclude = {
+    documentCategory: { select: { id: true, name: true, color: true } },
+    folder: { select: { id: true, name: true } },
+    uploadedBy: { select: { id: true, firstName: true, lastName: true } },
+    tags: { include: { tag: true } },
+};
+const importSchema = zod_1.z.object({
+    files: zod_1.z.array(zod_1.z.object({
+        sourcePath: zod_1.z.string().optional(),
+        fileData: zod_1.z.string().optional(),
+        originalName: zod_1.z.string().min(1),
+        mimeType: zod_1.z.string().default('application/octet-stream'),
+        size: zod_1.z.number().int().nonnegative().default(0),
+    })).min(1),
+    description: zod_1.z.string().optional(),
+    categoryId: zod_1.z.number().int().positive().optional(),
+    folderId: zod_1.z.number().int().positive().optional(),
+    tagIds: zod_1.z.array(zod_1.z.number().int().positive()).optional(),
+    clientId: zod_1.z.number().int().positive().optional(),
+    ownerId: zod_1.z.number().int().positive().optional(),
+    propertyId: zod_1.z.number().int().positive().optional(),
+    conventionId: zod_1.z.number().int().positive().optional(),
+    terrainId: zod_1.z.number().int().positive().optional(),
+    lotissementId: zod_1.z.number().int().positive().optional(),
+    programmeId: zod_1.z.number().int().positive().optional(),
+});
+const updateGedSchema = zod_1.z.object({
+    name: zod_1.z.string().min(1).optional(),
+    description: zod_1.z.string().optional(),
+    categoryId: zod_1.z.number().int().positive().nullable().optional(),
+    folderId: zod_1.z.number().int().positive().nullable().optional(),
+    tagIds: zod_1.z.array(zod_1.z.number().int().positive()).optional(),
+    isPhysical: zod_1.z.boolean().optional(),
+    physBureau: zod_1.z.string().optional(),
+    physCarton: zod_1.z.string().optional(),
+    physClasseur: zod_1.z.string().optional(),
+});
 /**
  * Enregistre les handlers IPC pour la gestion des documents.
  */
@@ -201,6 +292,541 @@ function registerDocumentsIPC() {
         }
         catch (error) {
             logger_1.default.error('documents:openFile error', error.message);
+            return { success: false, error: error.message };
+        }
+    });
+    // ═══════════════════════════════════════════════════════════════
+    // GED — Gestion Électronique de Documents
+    // ═══════════════════════════════════════════════════════════════
+    electron_1.ipcMain.handle('documents:list', async (_event, { token, filters = {}, page = 1, limit = 24 }) => {
+        try {
+            const session = (0, auth_service_1.getSession)(token);
+            if (!session)
+                return { success: false, error: 'Session expirée' };
+            (0, auth_service_1.checkRole)(session, READ_ROLES);
+            const db = (0, db_service_1.getDb)();
+            const where = { deletedAt: null };
+            if (filters.categoryId)
+                where.categoryId = Number(filters.categoryId);
+            if (filters.folderId)
+                where.folderId = Number(filters.folderId);
+            if (filters.uploadedById)
+                where.uploadedById = Number(filters.uploadedById);
+            if (filters.tagId)
+                where.tags = { some: { tagId: Number(filters.tagId) } };
+            if (filters.dateFrom || filters.dateTo) {
+                where.uploadedAt = {};
+                if (filters.dateFrom)
+                    where.uploadedAt.gte = new Date(filters.dateFrom);
+                if (filters.dateTo)
+                    where.uploadedAt.lte = new Date(`${filters.dateTo}T23:59:59`);
+            }
+            const and = [];
+            if (filters.typeGroup)
+                and.push(typeGroupWhere(filters.typeGroup));
+            if (filters.search) {
+                and.push({
+                    OR: [
+                        { name: { contains: filters.search } },
+                        { numeroArchive: { contains: filters.search } },
+                        { description: { contains: filters.search } },
+                        { ocrText: { contains: filters.search } },
+                    ],
+                });
+            }
+            if (and.length)
+                where.AND = and;
+            const [data, total] = await db.$transaction([
+                db.document.findMany({
+                    where,
+                    skip: (page - 1) * limit,
+                    take: limit,
+                    orderBy: { uploadedAt: 'desc' },
+                    include: docInclude,
+                }),
+                db.document.count({ where }),
+            ]);
+            return { success: true, data, total };
+        }
+        catch (error) {
+            logger_1.default.error('documents:list error', error.message);
+            return { success: false, error: error.message };
+        }
+    });
+    electron_1.ipcMain.handle('documents:getById', async (_event, { token, id }) => {
+        try {
+            const session = (0, auth_service_1.getSession)(token);
+            if (!session)
+                return { success: false, error: 'Session expirée' };
+            (0, auth_service_1.checkRole)(session, READ_ROLES);
+            const db = (0, db_service_1.getDb)();
+            const document = await db.document.findFirst({
+                where: { id: Number(id), deletedAt: null },
+                include: {
+                    ...docInclude,
+                    client: { select: { id: true, firstName: true, lastName: true, entreprise: true, type: true } },
+                    owner: { select: { id: true, firstName: true, lastName: true, companyName: true } },
+                    property: { select: { id: true, reference: true } },
+                    convention: { select: { id: true, reference: true } },
+                    terrain: { select: { id: true, reference: true } },
+                    lotissement: { select: { id: true, reference: true, nom: true } },
+                    programme: { select: { id: true, reference: true, nom: true } },
+                    auditLogs: {
+                        orderBy: { createdAt: 'desc' },
+                        take: 50,
+                        include: { user: { select: { id: true, firstName: true, lastName: true } } },
+                    },
+                },
+            });
+            if (!document)
+                return { success: false, error: 'Document introuvable' };
+            return { success: true, data: document };
+        }
+        catch (error) {
+            return { success: false, error: error.message };
+        }
+    });
+    electron_1.ipcMain.handle('documents:import', async (_event, { token, payload }) => {
+        try {
+            const session = (0, auth_service_1.getSession)(token);
+            if (!session)
+                return { success: false, error: 'Session expirée' };
+            (0, auth_service_1.checkRole)(session, WRITE_ROLES);
+            const parsed = importSchema.safeParse(payload);
+            if (!parsed.success)
+                return { success: false, error: parsed.error.format() };
+            const d = parsed.data;
+            const db = (0, db_service_1.getDb)();
+            const created = [];
+            for (const f of d.files) {
+                const numeroArchive = await nextNumeroArchive(db);
+                let stored;
+                if (f.sourcePath) {
+                    stored = (0, storage_service_1.importGedFile)(f.sourcePath, numeroArchive, f.originalName);
+                }
+                else if (f.fileData) {
+                    stored = (0, storage_service_1.writeGedFile)(Buffer.from(f.fileData, 'base64'), numeroArchive, f.originalName);
+                }
+                else {
+                    return { success: false, error: `Fichier sans source : ${f.originalName}` };
+                }
+                const doc = await db.document.create({
+                    data: {
+                        name: f.originalName,
+                        type: f.mimeType,
+                        path: stored.relativePath,
+                        size: stored.size,
+                        numeroArchive,
+                        description: d.description,
+                        categoryId: d.categoryId ?? null,
+                        folderId: d.folderId ?? null,
+                        uploadedById: session.userId,
+                        clientId: d.clientId ?? null,
+                        ownerId: d.ownerId ?? null,
+                        propertyId: d.propertyId ?? null,
+                        conventionId: d.conventionId ?? null,
+                        terrainId: d.terrainId ?? null,
+                        lotissementId: d.lotissementId ?? null,
+                        programmeId: d.programmeId ?? null,
+                        tags: d.tagIds && d.tagIds.length
+                            ? { create: d.tagIds.map((tagId) => ({ tagId })) }
+                            : undefined,
+                    },
+                });
+                await logAudit(db, doc.id, 'IMPORT', session.userId, `Archivage de « ${f.originalName} »`);
+                created.push(doc);
+            }
+            logger_1.default.info(`GED : ${created.length} document(s) importé(s)`);
+            return { success: true, data: created };
+        }
+        catch (error) {
+            logger_1.default.error('documents:import error', error.message);
+            return { success: false, error: error.message };
+        }
+    });
+    electron_1.ipcMain.handle('documents:update', async (_event, { token, id, payload }) => {
+        try {
+            const session = (0, auth_service_1.getSession)(token);
+            if (!session)
+                return { success: false, error: 'Session expirée' };
+            (0, auth_service_1.checkRole)(session, WRITE_ROLES);
+            const parsed = updateGedSchema.safeParse(payload);
+            if (!parsed.success)
+                return { success: false, error: parsed.error.format() };
+            const d = parsed.data;
+            const db = (0, db_service_1.getDb)();
+            const data = { ...d };
+            delete data.tagIds;
+            if (d.tagIds) {
+                data.tags = { deleteMany: {}, create: d.tagIds.map((tagId) => ({ tagId })) };
+            }
+            const doc = await db.document.update({ where: { id: Number(id) }, data });
+            await logAudit(db, doc.id, 'MODIFICATION', session.userId, 'Mise à jour des métadonnées');
+            return { success: true, data: doc };
+        }
+        catch (error) {
+            return { success: false, error: error.message };
+        }
+    });
+    electron_1.ipcMain.handle('documents:remove', async (_event, { token, id }) => {
+        try {
+            const session = (0, auth_service_1.getSession)(token);
+            if (!session)
+                return { success: false, error: 'Session expirée' };
+            (0, auth_service_1.checkRole)(session, DELETE_ROLES);
+            const db = (0, db_service_1.getDb)();
+            await db.document.update({ where: { id: Number(id) }, data: { deletedAt: new Date() } });
+            await logAudit(db, Number(id), 'SUPPRESSION', session.userId, 'Document mis à la corbeille');
+            return { success: true };
+        }
+        catch (error) {
+            return { success: false, error: error.message };
+        }
+    });
+    electron_1.ipcMain.handle('documents:open', async (_event, { token, id }) => {
+        try {
+            const session = (0, auth_service_1.getSession)(token);
+            if (!session)
+                return { success: false, error: 'Session expirée' };
+            (0, auth_service_1.checkRole)(session, READ_ROLES);
+            const db = (0, db_service_1.getDb)();
+            const doc = await db.document.findUnique({
+                where: { id: Number(id) },
+                select: { id: true, path: true, name: true },
+            });
+            if (!doc)
+                return { success: false, error: 'Document introuvable' };
+            const abs = (0, storage_service_1.resolveStoragePath)(doc.path);
+            if (!fs_1.default.existsSync(abs))
+                return { success: false, error: 'Fichier introuvable sur le disque' };
+            const errMsg = await electron_1.shell.openPath(abs);
+            if (errMsg)
+                return { success: false, error: errMsg };
+            await logAudit(db, doc.id, 'CONSULTATION', session.userId, `Ouverture de « ${doc.name} »`);
+            return { success: true };
+        }
+        catch (error) {
+            return { success: false, error: error.message };
+        }
+    });
+    electron_1.ipcMain.handle('documents:getFileData', async (_event, { token, id }) => {
+        try {
+            const session = (0, auth_service_1.getSession)(token);
+            if (!session)
+                return { success: false, error: 'Session expirée' };
+            (0, auth_service_1.checkRole)(session, READ_ROLES);
+            const db = (0, db_service_1.getDb)();
+            const doc = await db.document.findUnique({
+                where: { id: Number(id) },
+                select: { path: true, type: true, name: true, size: true },
+            });
+            if (!doc)
+                return { success: false, error: 'Document introuvable' };
+            if (doc.size > PREVIEW_MAX_BYTES) {
+                return { success: true, data: { tooLarge: true, mimeType: doc.type, name: doc.name } };
+            }
+            const buf = (0, storage_service_1.readStorageFile)(doc.path);
+            if (!buf)
+                return { success: false, error: 'Fichier introuvable sur le disque' };
+            return { success: true, data: { base64: buf.toString('base64'), mimeType: doc.type, name: doc.name } };
+        }
+        catch (error) {
+            return { success: false, error: error.message };
+        }
+    });
+    // ── Catégories ───────────────────────────────────────────────
+    electron_1.ipcMain.handle('documents:listCategories', async (_event, { token }) => {
+        try {
+            const session = (0, auth_service_1.getSession)(token);
+            if (!session)
+                return { success: false, error: 'Session expirée' };
+            (0, auth_service_1.checkRole)(session, READ_ROLES);
+            const db = (0, db_service_1.getDb)();
+            const data = await db.documentCategory.findMany({
+                where: { deletedAt: null },
+                orderBy: { name: 'asc' },
+                include: { _count: { select: { documents: { where: { deletedAt: null } } } } },
+            });
+            return { success: true, data };
+        }
+        catch (error) {
+            return { success: false, error: error.message };
+        }
+    });
+    electron_1.ipcMain.handle('documents:createCategory', async (_event, { token, payload }) => {
+        try {
+            const session = (0, auth_service_1.getSession)(token);
+            if (!session)
+                return { success: false, error: 'Session expirée' };
+            (0, auth_service_1.checkRole)(session, WRITE_ROLES);
+            const schema = zod_1.z.object({
+                name: zod_1.z.string().min(1),
+                parentId: zod_1.z.number().int().positive().nullable().optional(),
+                color: zod_1.z.string().optional(),
+            });
+            const parsed = schema.safeParse(payload);
+            if (!parsed.success)
+                return { success: false, error: parsed.error.format() };
+            const db = (0, db_service_1.getDb)();
+            const cat = await db.documentCategory.create({ data: parsed.data });
+            return { success: true, data: cat };
+        }
+        catch (error) {
+            return { success: false, error: error.message };
+        }
+    });
+    electron_1.ipcMain.handle('documents:updateCategory', async (_event, { token, id, payload }) => {
+        try {
+            const session = (0, auth_service_1.getSession)(token);
+            if (!session)
+                return { success: false, error: 'Session expirée' };
+            (0, auth_service_1.checkRole)(session, WRITE_ROLES);
+            const schema = zod_1.z.object({
+                name: zod_1.z.string().min(1).optional(),
+                parentId: zod_1.z.number().int().positive().nullable().optional(),
+                color: zod_1.z.string().optional(),
+            });
+            const parsed = schema.safeParse(payload);
+            if (!parsed.success)
+                return { success: false, error: parsed.error.format() };
+            const db = (0, db_service_1.getDb)();
+            const cat = await db.documentCategory.update({ where: { id: Number(id) }, data: parsed.data });
+            return { success: true, data: cat };
+        }
+        catch (error) {
+            return { success: false, error: error.message };
+        }
+    });
+    electron_1.ipcMain.handle('documents:deleteCategory', async (_event, { token, id }) => {
+        try {
+            const session = (0, auth_service_1.getSession)(token);
+            if (!session)
+                return { success: false, error: 'Session expirée' };
+            (0, auth_service_1.checkRole)(session, DELETE_ROLES);
+            const db = (0, db_service_1.getDb)();
+            await db.documentCategory.update({ where: { id: Number(id) }, data: { deletedAt: new Date() } });
+            return { success: true };
+        }
+        catch (error) {
+            return { success: false, error: error.message };
+        }
+    });
+    // ── Dossiers ─────────────────────────────────────────────────
+    electron_1.ipcMain.handle('documents:listFolders', async (_event, { token }) => {
+        try {
+            const session = (0, auth_service_1.getSession)(token);
+            if (!session)
+                return { success: false, error: 'Session expirée' };
+            (0, auth_service_1.checkRole)(session, READ_ROLES);
+            const db = (0, db_service_1.getDb)();
+            const data = await db.documentFolder.findMany({
+                where: { deletedAt: null },
+                orderBy: { name: 'asc' },
+                include: { _count: { select: { documents: { where: { deletedAt: null } } } } },
+            });
+            return { success: true, data };
+        }
+        catch (error) {
+            return { success: false, error: error.message };
+        }
+    });
+    electron_1.ipcMain.handle('documents:createFolder', async (_event, { token, payload }) => {
+        try {
+            const session = (0, auth_service_1.getSession)(token);
+            if (!session)
+                return { success: false, error: 'Session expirée' };
+            (0, auth_service_1.checkRole)(session, WRITE_ROLES);
+            const schema = zod_1.z.object({
+                name: zod_1.z.string().min(1),
+                parentId: zod_1.z.number().int().positive().nullable().optional(),
+            });
+            const parsed = schema.safeParse(payload);
+            if (!parsed.success)
+                return { success: false, error: parsed.error.format() };
+            const db = (0, db_service_1.getDb)();
+            const folder = await db.documentFolder.create({ data: parsed.data });
+            return { success: true, data: folder };
+        }
+        catch (error) {
+            return { success: false, error: error.message };
+        }
+    });
+    electron_1.ipcMain.handle('documents:updateFolder', async (_event, { token, id, payload }) => {
+        try {
+            const session = (0, auth_service_1.getSession)(token);
+            if (!session)
+                return { success: false, error: 'Session expirée' };
+            (0, auth_service_1.checkRole)(session, WRITE_ROLES);
+            const schema = zod_1.z.object({
+                name: zod_1.z.string().min(1).optional(),
+                parentId: zod_1.z.number().int().positive().nullable().optional(),
+            });
+            const parsed = schema.safeParse(payload);
+            if (!parsed.success)
+                return { success: false, error: parsed.error.format() };
+            const db = (0, db_service_1.getDb)();
+            const folder = await db.documentFolder.update({ where: { id: Number(id) }, data: parsed.data });
+            return { success: true, data: folder };
+        }
+        catch (error) {
+            return { success: false, error: error.message };
+        }
+    });
+    electron_1.ipcMain.handle('documents:deleteFolder', async (_event, { token, id }) => {
+        try {
+            const session = (0, auth_service_1.getSession)(token);
+            if (!session)
+                return { success: false, error: 'Session expirée' };
+            (0, auth_service_1.checkRole)(session, DELETE_ROLES);
+            const db = (0, db_service_1.getDb)();
+            await db.documentFolder.update({ where: { id: Number(id) }, data: { deletedAt: new Date() } });
+            return { success: true };
+        }
+        catch (error) {
+            return { success: false, error: error.message };
+        }
+    });
+    // ── Étiquettes ───────────────────────────────────────────────
+    electron_1.ipcMain.handle('documents:listTags', async (_event, { token }) => {
+        try {
+            const session = (0, auth_service_1.getSession)(token);
+            if (!session)
+                return { success: false, error: 'Session expirée' };
+            (0, auth_service_1.checkRole)(session, READ_ROLES);
+            const db = (0, db_service_1.getDb)();
+            const data = await db.tag.findMany({ orderBy: { name: 'asc' } });
+            return { success: true, data };
+        }
+        catch (error) {
+            return { success: false, error: error.message };
+        }
+    });
+    electron_1.ipcMain.handle('documents:createTag', async (_event, { token, payload }) => {
+        try {
+            const session = (0, auth_service_1.getSession)(token);
+            if (!session)
+                return { success: false, error: 'Session expirée' };
+            (0, auth_service_1.checkRole)(session, WRITE_ROLES);
+            const schema = zod_1.z.object({ name: zod_1.z.string().min(1), color: zod_1.z.string().optional() });
+            const parsed = schema.safeParse(payload);
+            if (!parsed.success)
+                return { success: false, error: parsed.error.format() };
+            const db = (0, db_service_1.getDb)();
+            const tag = await db.tag.upsert({
+                where: { name: parsed.data.name },
+                update: {},
+                create: parsed.data,
+            });
+            return { success: true, data: tag };
+        }
+        catch (error) {
+            return { success: false, error: error.message };
+        }
+    });
+    electron_1.ipcMain.handle('documents:updateTag', async (_event, { token, id, payload }) => {
+        try {
+            const session = (0, auth_service_1.getSession)(token);
+            if (!session)
+                return { success: false, error: 'Session expirée' };
+            (0, auth_service_1.checkRole)(session, WRITE_ROLES);
+            const schema = zod_1.z.object({ name: zod_1.z.string().min(1).optional(), color: zod_1.z.string().optional() });
+            const parsed = schema.safeParse(payload);
+            if (!parsed.success)
+                return { success: false, error: parsed.error.format() };
+            const db = (0, db_service_1.getDb)();
+            const tag = await db.tag.update({ where: { id: Number(id) }, data: parsed.data });
+            return { success: true, data: tag };
+        }
+        catch (error) {
+            return { success: false, error: error.message };
+        }
+    });
+    electron_1.ipcMain.handle('documents:deleteTag', async (_event, { token, id }) => {
+        try {
+            const session = (0, auth_service_1.getSession)(token);
+            if (!session)
+                return { success: false, error: 'Session expirée' };
+            (0, auth_service_1.checkRole)(session, DELETE_ROLES);
+            const db = (0, db_service_1.getDb)();
+            const tagId = Number(id);
+            // Détache l'étiquette de tous les documents.
+            await db.documentTag.deleteMany({ where: { tagId } });
+            // L'étiquette n'est supprimée que si elle n'est plus utilisée ailleurs (prospects).
+            const prospectUse = await db.prospectTag.count({ where: { tagId } });
+            if (prospectUse === 0) {
+                await db.tag.delete({ where: { id: tagId } });
+                return { success: true };
+            }
+            return { success: true, data: { kept: true } };
+        }
+        catch (error) {
+            return { success: false, error: error.message };
+        }
+    });
+    // ── Journal & tableau de bord ────────────────────────────────
+    electron_1.ipcMain.handle('documents:listAudit', async (_event, { token, limit = 100 }) => {
+        try {
+            const session = (0, auth_service_1.getSession)(token);
+            if (!session)
+                return { success: false, error: 'Session expirée' };
+            (0, auth_service_1.checkRole)(session, READ_ROLES);
+            const db = (0, db_service_1.getDb)();
+            const data = await db.documentAuditLog.findMany({
+                orderBy: { createdAt: 'desc' },
+                take: limit,
+                include: {
+                    user: { select: { id: true, firstName: true, lastName: true } },
+                    document: { select: { id: true, name: true, numeroArchive: true } },
+                },
+            });
+            return { success: true, data };
+        }
+        catch (error) {
+            return { success: false, error: error.message };
+        }
+    });
+    electron_1.ipcMain.handle('documents:gedDashboard', async (_event, { token }) => {
+        try {
+            const session = (0, auth_service_1.getSession)(token);
+            if (!session)
+                return { success: false, error: 'Session expirée' };
+            (0, auth_service_1.checkRole)(session, READ_ROLES);
+            const db = (0, db_service_1.getDb)();
+            const now = new Date();
+            const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+            const [total, recent, monthCount, physicalCount, uncategorized, types, byCategory] = await db.$transaction([
+                db.document.count({ where: { deletedAt: null } }),
+                db.document.findMany({
+                    where: { deletedAt: null },
+                    orderBy: { uploadedAt: 'desc' },
+                    take: 8,
+                    include: docInclude,
+                }),
+                db.document.count({ where: { deletedAt: null, uploadedAt: { gte: monthStart } } }),
+                db.document.count({ where: { deletedAt: null, isPhysical: true } }),
+                db.document.count({ where: { deletedAt: null, categoryId: null } }),
+                db.document.findMany({ where: { deletedAt: null }, select: { type: true } }),
+                db.documentCategory.findMany({
+                    where: { deletedAt: null },
+                    select: {
+                        id: true, name: true, color: true,
+                        _count: { select: { documents: { where: { deletedAt: null } } } },
+                    },
+                }),
+            ]);
+            const byTypeGroup = { PDF: 0, IMAGE: 0, VIDEO: 0, AUDIO: 0, OFFICE: 0, AUTRE: 0 };
+            for (const t of types)
+                byTypeGroup[typeGroupOf(t.type)]++;
+            return {
+                success: true,
+                data: {
+                    total, recent, monthCount, physicalCount, uncategorized,
+                    byTypeGroup, byCategory, diskBytes: (0, storage_service_1.directorySize)((0, storage_service_1.storageRoot)()),
+                },
+            };
+        }
+        catch (error) {
+            logger_1.default.error('documents:gedDashboard error', error.message);
             return { success: false, error: error.message };
         }
     });

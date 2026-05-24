@@ -13,7 +13,16 @@ import { Printer, FileText } from 'lucide-react';
 
 /** Feuille de style appliquée au document imprimé / exporté en PDF. */
 const PRINT_CSS = `
-@page { size: A4; margin: 18mm; }
+@page {
+  size: A4;
+  margin: 18mm;
+  @bottom-right {
+    content: "Page " counter(page) " / " counter(pages);
+    font-family: 'Segoe UI', Arial, sans-serif;
+    font-size: 8pt;
+    color: #64748b;
+  }
+}
 * { box-sizing: border-box; }
 body { font-family: 'Segoe UI', Arial, sans-serif; font-size: 11.5pt; color: #1e293b; line-height: 1.55; margin: 0; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
 h1 { font-size: 17pt; margin: 8pt 0; }
@@ -26,8 +35,13 @@ ol { list-style: decimal; padding-left: 20pt; }
 .doc-footer { padding-top: 10pt; margin-top: 22pt; font-size: 9pt; color: #475569; }
 `;
 
-/** Imprime un fragment HTML isolé dans un iframe (Chromium permet « Enregistrer en PDF »). */
-function printDocument(innerHtml: string): void {
+/**
+ * Imprime un fragment HTML isolé dans un iframe (Chromium permet « Enregistrer en PDF »).
+ * Le titre passé est utilisé comme nom de fichier par défaut dans le dialogue
+ * de Microsoft Print to PDF : Chromium se sert du `document.title` de la page
+ * parente pour pré-remplir le nom de fichier, on l'écrase donc temporairement.
+ */
+function printDocument(innerHtml: string, title: string): void {
   const iframe = document.createElement('iframe');
   iframe.style.position = 'fixed';
   iframe.style.right = '0';
@@ -39,12 +53,17 @@ function printDocument(innerHtml: string): void {
   const doc = iframe.contentWindow?.document;
   if (!doc) { document.body.removeChild(iframe); return; }
   doc.open();
-  doc.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><style>${PRINT_CSS}</style></head><body>${innerHtml}</body></html>`);
+  doc.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>${title}</title><style>${PRINT_CSS}</style></head><body>${innerHtml}</body></html>`);
   doc.close();
   iframe.contentWindow?.focus();
+  const previousTitle = document.title;
+  document.title = title;
   setTimeout(() => {
     iframe.contentWindow?.print();
-    setTimeout(() => document.body.removeChild(iframe), 1000);
+    setTimeout(() => {
+      document.body.removeChild(iframe);
+      document.title = previousTitle;
+    }, 1000);
   }, 300);
 }
 
@@ -89,7 +108,7 @@ export default function ConventionDocumentPage() {
       ]}
       actions={
         selected && (
-          <Button icon={<Printer className="h-4 w-4" />} onClick={() => printDocument(documentHtml)}>
+          <Button icon={<Printer className="h-4 w-4" />} onClick={() => printDocument(documentHtml, convention.reference)}>
             Imprimer / Exporter PDF
           </Button>
         )
