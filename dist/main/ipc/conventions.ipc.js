@@ -93,6 +93,24 @@ function toDecimal(val) {
  */
 const ser = (v) => JSON.parse(JSON.stringify(v));
 /**
+ * Vérifie que tous les terrains rattachés à une convention proviennent du
+ * même lotissement (règle métier : pas de mélange entre lotissements).
+ * Les terrains sans lotissement sont autorisés à condition que TOUS les
+ * terrains de la convention le soient.
+ */
+async function assertSingleLotissement(db, terrainIds) {
+    if (!terrainIds || terrainIds.length < 2)
+        return;
+    const terrains = await db.terrain.findMany({
+        where: { id: { in: terrainIds } },
+        select: { id: true, reference: true, lotissementId: true },
+    });
+    const lotIds = new Set(terrains.map((t) => t.lotissementId ?? null));
+    if (lotIds.size > 1) {
+        throw new Error('Tous les terrains rattachés à une convention doivent provenir du même lotissement.');
+    }
+}
+/**
  * Vérifie qu'une convention ne possède pas déjà une résiliation.
  * Une convention peut avoir plusieurs avenants mais une seule résiliation.
  */
@@ -274,6 +292,8 @@ function registerConventionsIPC() {
             await assertSingleResiliation(db, d.type, d.parentConventionId);
             const propertyIds = isTerrain ? [] : (d.propertyIds ?? []);
             const terrainIds = isTerrain ? (d.terrainIds ?? []) : [];
+            if (isTerrain)
+                await assertSingleLotissement(db, terrainIds);
             const convention = await db.convention.create({
                 data: {
                     reference,
@@ -430,6 +450,9 @@ function registerConventionsIPC() {
                 }
             }
             if (d.terrainIds !== undefined || d.assetType === 'PROPERTY') {
+                if (effectiveAssetType === 'TERRAIN') {
+                    await assertSingleLotissement(db, d.terrainIds);
+                }
                 await db.conventionTerrain.deleteMany({ where: { conventionId: id } });
                 if (effectiveAssetType === 'TERRAIN' && d.terrainIds && d.terrainIds.length > 0) {
                     await db.conventionTerrain.createMany({

@@ -43,8 +43,8 @@ const STATUS_VARIANT: Record<string, 'success' | 'danger' | 'purple' | 'warning'
 const EXPORT_COLUMNS: ExportColumn[] = [
   { header: 'Nom / Entreprise', cell: (c) => (c.type === 'INDIVIDUEL' ? `${c.lastName ?? ''} ${c.firstName ?? ''}`.trim() : c.entreprise) },
   { header: 'Type',             cell: (c) => (c.type === 'INDIVIDUEL' ? 'Particulier' : 'Entreprise') },
-  { header: 'Téléphone',        cell: (c) => c.phone },
-  { header: 'Mobile',           cell: (c) => c.mobile },
+  { header: 'Téléphone 1',      cell: (c) => c.phone },
+  { header: 'Téléphone 2',      cell: (c) => c.mobile },
   { header: 'Email',            cell: (c) => c.email },
   { header: 'Ville',            cell: (c) => c.city },
   { header: 'Conventions',      cell: (c) => c._count?.conventions ?? 0 },

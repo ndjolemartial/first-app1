@@ -10,7 +10,7 @@ const auth_service_1 = require("../services/auth.service");
 const logger_1 = __importDefault(require("../utils/logger"));
 const zod_1 = require("zod");
 // ── Schéma ───────────────────────────────────────────────────────────────────
-const clientSchema = zod_1.z.object({
+const clientBaseSchema = zod_1.z.object({
     type: zod_1.z.enum(['INDIVIDUEL', 'ENTREPRISE']).default('INDIVIDUEL'),
     firstName: zod_1.z.string().optional(),
     lastName: zod_1.z.string().optional(),
@@ -40,6 +40,24 @@ const clientSchema = zod_1.z.object({
     assignedToId: zod_1.z.number().int().nullable().optional(),
     referrerId: zod_1.z.number().int().nullable().optional(),
 });
+/**
+ * Pour un client particulier (INDIVIDUEL), le type et le numéro de pièce
+ * d'identité sont obligatoires (exigence KYC). La validation est appliquée
+ * sur la création et sur la mise à jour partielle dès lors que le champ
+ * `type` est transmis dans le payload.
+ */
+const requireIdForIndividuel = (data, ctx) => {
+    if (data.type === 'INDIVIDUEL') {
+        if (data.idTypeId == null) {
+            ctx.addIssue({ code: zod_1.z.ZodIssueCode.custom, path: ['idTypeId'], message: 'Type de pièce d’identité requis' });
+        }
+        if (!data.idNumber || String(data.idNumber).trim() === '') {
+            ctx.addIssue({ code: zod_1.z.ZodIssueCode.custom, path: ['idNumber'], message: 'Numéro de pièce d’identité requis' });
+        }
+    }
+};
+const clientSchema = clientBaseSchema.superRefine(requireIdForIndividuel);
+const clientUpdateSchema = clientBaseSchema.partial().superRefine(requireIdForIndividuel);
 // ── Rôles ────────────────────────────────────────────────────────────────────
 /** Création / modification / changement d'affectation : MANAGER, ADMIN, SUPER_ADMIN
  *  (ACCOUNTANT hérite des droits MANAGER via checkRole). */
@@ -241,7 +259,7 @@ function registerClientsIPC() {
                 return { success: false, error: 'Session expirée' };
             checkClientWriteRole(session, WRITE_ROLES);
             const cleaned = stripEmpty(payload);
-            const parsed = clientSchema.partial().safeParse(cleaned);
+            const parsed = clientUpdateSchema.safeParse(cleaned);
             if (!parsed.success)
                 return { success: false, error: parsed.error.format() };
             const db = (0, db_service_1.getDb)();

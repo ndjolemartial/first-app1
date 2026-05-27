@@ -51,6 +51,17 @@ const schema = z.object({
   // Champs d'affectation — convertis en number|null lors de la soumission.
   assignedToId: z.string().optional(),
   referrerId:   z.string().optional(),
+}).superRefine((data, ctx) => {
+  // Pour un client particulier, le type et le numéro de pièce d'identité
+  // sont obligatoires (KYC).
+  if (data.type === 'INDIVIDUEL') {
+    if (!data.idTypeId || data.idTypeId.trim() === '') {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['idTypeId'], message: 'Type de pièce d’identité requis' });
+    }
+    if (!data.idNumber || data.idNumber.trim() === '') {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['idNumber'], message: 'Numéro de pièce d’identité requis' });
+    }
+  }
 });
 
 type FormData = z.infer<typeof schema>;
@@ -276,8 +287,8 @@ export default function ClientFormPage() {
                 <Input label="Prénom" {...register('firstName')} />
               </div>
               <div className="grid grid-cols-3 gap-4">
-                <Select label="Type de pièce d'identité" options={idTypeOptions} {...register('idTypeId')} />
-                <Input label="Numéro pièce d'identité" {...register('idNumber')} />
+                <Select label="Type de pièce d'identité" required options={idTypeOptions} error={errors.idTypeId?.message} {...register('idTypeId')} />
+                <Input label="Numéro pièce d'identité" required error={errors.idNumber?.message} {...register('idNumber')} />
                 <Input label="Nationalité" {...register('nationality')} />
               </div>
               <div className="grid grid-cols-2 gap-4">
@@ -365,8 +376,8 @@ export default function ClientFormPage() {
 
           <Input label="Email" type="email" error={errors.email?.message} {...register('email')} />
           <div className="grid grid-cols-2 gap-4">
-            <Input label="Téléphone" {...register('phone')} />
-            <Input label="Mobile" {...register('mobile')} />
+            <Input label="Téléphone 1" {...register('phone')} />
+            <Input label="Téléphone 2" {...register('mobile')} />
           </div>
           <Input label="Adresse" {...register('address')} />
           <div className="grid grid-cols-2 gap-4">

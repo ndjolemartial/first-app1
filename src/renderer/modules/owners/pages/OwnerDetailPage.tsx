@@ -109,8 +109,8 @@ export default function OwnerDetailPage() {
             <h3 className="font-semibold text-slate-700 mb-4">Coordonnées</h3>
             <dl className="space-y-3 text-sm">
               {[
-                ['Téléphone', o.phone ?? '—'],
-                ['Mobile', o.mobile ?? '—'],
+                ['Téléphone 1', o.phone ?? '—'],
+                ['Téléphone 2', o.mobile ?? '—'],
                 ['Adresse', o.address ?? '—'],
                 ['Ville', o.city ?? '—'],
                 ['Pays', o.country],

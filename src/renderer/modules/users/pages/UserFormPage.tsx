@@ -142,8 +142,8 @@ export default function UserFormPage() {
             {...register('password')}
           />
           <div className="grid grid-cols-2 gap-4">
-            <Input label="Téléphone" error={errors.phone?.message} {...register('phone')} />
-            <Input label="Mobile (contact)" error={errors.mobile?.message} {...register('mobile')} />
+            <Input label="Téléphone 1" error={errors.phone?.message} {...register('phone')} />
+            <Input label="Téléphone 2" error={errors.mobile?.message} {...register('mobile')} />
           </div>
           <div className="grid grid-cols-2 gap-4">
             <Input label="Numéro de pièce d'identité" error={errors.idNumber?.message} {...register('idNumber')} />

@@ -43,6 +43,25 @@ const schema = z.object({
   bankBic: z.string().optional(),
   compte_contribuable: z.string().optional(),
   notes: z.string().optional(),
+}).superRefine((data, ctx) => {
+  // Propriétaire particulier : pièce d'identité du propriétaire obligatoire.
+  if (data.type === 'INDIVIDUEL') {
+    if (!data.idTypeId || data.idTypeId.trim() === '') {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['idTypeId'], message: 'Type de pièce d’identité requis' });
+    }
+    if (!data.idNumber || data.idNumber.trim() === '') {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['idNumber'], message: 'Numéro de pièce d’identité requis' });
+    }
+  }
+  // Propriétaire entreprise : pièce d'identité du représentant légal obligatoire.
+  if (data.type === 'ENTREPRISE') {
+    if (!data.legalRepIdTypeId || data.legalRepIdTypeId.trim() === '') {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['legalRepIdTypeId'], message: 'Type de pièce d’identité du représentant requis' });
+    }
+    if (!data.legalRepIdNumber || data.legalRepIdNumber.trim() === '') {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['legalRepIdNumber'], message: 'Numéro de pièce d’identité du représentant requis' });
+    }
+  }
 });
 
 type FormData = z.infer<typeof schema>;
@@ -294,8 +313,8 @@ export default function OwnerFormPage() {
                 </div>
                 <Input label="Nationalité" placeholder="ex : Ivoirienne" {...register('nationality')} />
                 <div className="grid grid-cols-2 gap-4">
-                  <Select label="Type de pièce d'identité" options={idTypeOptions} {...register('idTypeId')} />
-                  <Input label="Numéro pièce d'identité" placeholder="CI/Passeport/…" {...register('idNumber')} />
+                  <Select label="Type de pièce d'identité" required options={idTypeOptions} error={errors.idTypeId?.message} {...register('idTypeId')} />
+                  <Input label="Numéro pièce d'identité" required placeholder="CI/Passeport/…" error={errors.idNumber?.message} {...register('idNumber')} />
                 </div>
                 <DocUploadField
                   label="Pièce d'identité scannée"
@@ -324,8 +343,8 @@ export default function OwnerFormPage() {
                     </div>
                     <Input label="Contact (téléphone/email)" {...register('legalRepPhone')} />
                     <div className="grid grid-cols-2 gap-4">
-                      <Select label="Type de pièce d'identité" options={idTypeOptions} {...register('legalRepIdTypeId')} />
-                      <Input label="Numéro pièce d'identité" placeholder="CI/Passeport/…" {...register('legalRepIdNumber')} />
+                      <Select label="Type de pièce d'identité" required options={idTypeOptions} error={errors.legalRepIdTypeId?.message} {...register('legalRepIdTypeId')} />
+                      <Input label="Numéro pièce d'identité" required placeholder="CI/Passeport/…" error={errors.legalRepIdNumber?.message} {...register('legalRepIdNumber')} />
                     </div>
                     <DocUploadField
                       label="Pièce d'identité du représentant légal"
@@ -355,8 +374,8 @@ export default function OwnerFormPage() {
               <h3 className="text-sm font-semibold text-slate-700">Coordonnées</h3>
               <Input label="Email" type="email" error={errors.email?.message} {...register('email')} />
               <div className="grid grid-cols-2 gap-4">
-                <Input label="Téléphone" {...register('phone')} />
-                <Input label="Mobile" {...register('mobile')} />
+                <Input label="Téléphone 1" {...register('phone')} />
+                <Input label="Téléphone 2" {...register('mobile')} />
               </div>
               <Input label="Adresse" {...register('address')} />
               <div className="grid grid-cols-2 gap-4">

@@ -66,7 +66,21 @@ const INCLUDE = {
     },
   },
   property: true,
-  convention: { include: { _count: { select: { terrains: true } } } },
+  convention: {
+    include: {
+      _count: { select: { terrains: true } },
+      // Terrains rattachés à la convention — nécessaires pour résoudre
+      // {{convention.lotsSouscrits}} dans le modèle d'attestation.
+      terrains: {
+        orderBy: { order: 'asc' as const },
+        include: {
+          terrain: {
+            select: { id: true, reference: true, numeroIlot: true, numeroParcelle: true, surface: true },
+          },
+        },
+      },
+    },
+  },
   template: true,
   emittedBy: { select: { id: true, firstName: true, lastName: true, matricule: true } },
   documents: { where: { deletedAt: null }, orderBy: { uploadedAt: 'desc' as const } },

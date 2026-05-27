@@ -6,7 +6,7 @@ import { z } from 'zod';
 
 // ── Schéma ───────────────────────────────────────────────────────────────────
 
-const clientSchema = z.object({
+const clientBaseSchema = z.object({
   type: z.enum(['INDIVIDUEL', 'ENTREPRISE']).default('INDIVIDUEL'),
   firstName: z.string().optional(),
   lastName: z.string().optional(),
@@ -36,6 +36,26 @@ const clientSchema = z.object({
   assignedToId: z.number().int().nullable().optional(),
   referrerId: z.number().int().nullable().optional(),
 });
+
+/**
+ * Pour un client particulier (INDIVIDUEL), le type et le numéro de pièce
+ * d'identité sont obligatoires (exigence KYC). La validation est appliquée
+ * sur la création et sur la mise à jour partielle dès lors que le champ
+ * `type` est transmis dans le payload.
+ */
+const requireIdForIndividuel = (data: any, ctx: z.RefinementCtx): void => {
+  if (data.type === 'INDIVIDUEL') {
+    if (data.idTypeId == null) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['idTypeId'], message: 'Type de pièce d’identité requis' });
+    }
+    if (!data.idNumber || String(data.idNumber).trim() === '') {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['idNumber'], message: 'Numéro de pièce d’identité requis' });
+    }
+  }
+};
+
+const clientSchema = clientBaseSchema.superRefine(requireIdForIndividuel);
+const clientUpdateSchema = clientBaseSchema.partial().superRefine(requireIdForIndividuel);
 
 // ── Rôles ────────────────────────────────────────────────────────────────────
 
@@ -243,7 +263,7 @@ export function registerClientsIPC(): void {
       if (!session) return { success: false, error: 'Session expirée' };
       checkClientWriteRole(session, WRITE_ROLES);
       const cleaned = stripEmpty(payload);
-      const parsed = clientSchema.partial().safeParse(cleaned);
+      const parsed = clientUpdateSchema.safeParse(cleaned);
       if (!parsed.success) return { success: false, error: parsed.error.format() };
       const db = getDb();
       const data: any = { ...parsed.data };

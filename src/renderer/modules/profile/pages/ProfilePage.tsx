@@ -234,8 +234,8 @@ export default function ProfilePage() {
               />
             </div>
             <div className="grid grid-cols-2 gap-4">
-              <Input label="Téléphone" {...profileForm.register('phone')} />
-              <Input label="Mobile" {...profileForm.register('mobile')} />
+              <Input label="Téléphone 1" {...profileForm.register('phone')} />
+              <Input label="Téléphone 2" {...profileForm.register('mobile')} />
             </div>
             <Input label="Numéro de pièce d'identité" {...profileForm.register('idNumber')} />
             <Input

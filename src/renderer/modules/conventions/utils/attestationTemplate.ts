@@ -1,7 +1,8 @@
-import { formatDate, formatCurrency } from '../../../shared/utils/format';
+import { formatDate, formatCurrency, formatCivilite } from '../../../shared/utils/format';
 import { moneyToFrenchWords, decimalToFrenchWords, numberToFrenchWords } from '../../../shared/utils/numberToWords';
 import { evaluateConditionals } from '../../../shared/utils/templateConditionals';
 import type { VariableGroup } from './conventionTemplate';
+import { lotsEnumeration } from './lotsEnumeration';
 
 /** Catalogue des variables dynamiques disponibles dans un modèle d'attestation. */
 export const ATTESTATION_VARIABLE_GROUPS: VariableGroup[] = [
@@ -86,6 +87,7 @@ export const ATTESTATION_VARIABLE_GROUPS: VariableGroup[] = [
       { token: 'convention.delai.enLettres', label: 'Délai (en lettres)' },
       { token: 'convention.nombreTerrains', label: 'Nombre de terrains rattachés' },
       { token: 'convention.nombreTerrains.enLettres', label: 'Nombre de terrains rattachés (en lettres)' },
+      { token: 'convention.lotsSouscrits', label: 'Énumération des lots souscrits' },
       { token: 'convention.fraisOuvertureDossier', label: "Frais d'ouverture de dossier" },
       { token: 'convention.fraisOuvertureDossier.enLettres', label: "Frais d'ouverture de dossier (en lettres)" },
     ],
@@ -146,13 +148,27 @@ function delayLabelInWords(startVal?: string | Date | null, endVal?: string | Da
   return `${words} jour${r.count > 1 ? 's' : ''}`;
 }
 
-/** Résout les variables {{token}} à partir d'une attestation chargée avec ses relations. */
-export function resolveAttestationVariables(a: any): Record<string, string> {
+/**
+ * Résout les variables {{token}} à partir d'une attestation chargée avec ses relations.
+ *
+ * @param countriesMap Mapping optionnel code ISO → nom du pays (ex. « CI » →
+ * « Côte d'Ivoire »). Lorsqu'il est fourni, les variables `*.pays` rendent
+ * le nom du pays au lieu du code stocké.
+ */
+export function resolveAttestationVariables(
+  a: any,
+  countriesMap?: Record<string, string>,
+): Record<string, string> {
   if (!a) return {};
   const money = (v: any) => (v != null && v !== '' ? formatCurrency(Number(v)) : '');
   const moneyL = (v: any) => (v != null && v !== '' ? moneyToFrenchWords(v) : '');
   const numL = (v: any) => (v != null && v !== '' ? decimalToFrenchWords(v) : '');
   const date = (v: any) => (v ? formatDate(v) : '');
+  const countryName = (code: string | null | undefined): string => {
+    if (!code) return '';
+    if (countriesMap && countriesMap[code]) return countriesMap[code];
+    return code;
+  };
   return {
     'attestation.reference': a.reference ?? '',
     'attestation.type': TYPE_LABELS[a.type] ?? a.type ?? '',
@@ -166,7 +182,7 @@ export function resolveAttestationVariables(a: any): Record<string, string> {
     'client.email': a.client?.email ?? '',
     'client.adresse': a.client?.address ?? '',
     'client.ville': a.client?.city ?? '',
-    'client.pays': a.client?.country ?? '',
+    'client.pays': countryName(a.client?.country),
     'client.typePieceIdentite': a.client?.idType?.label ?? '',
     'client.pieceIdentite': a.client?.idNumber ?? '',
     'client.nationalite': a.client?.nationality ?? '',
@@ -175,7 +191,7 @@ export function resolveAttestationVariables(a: any): Record<string, string> {
     'cedant.nomComplet': clientName(a.secondaryClient),
     'cedant.civilite': a.secondaryClient?.civilite ?? '',
     'cedant.telephone': a.secondaryClient?.phone ?? a.secondaryClient?.mobile ?? '',
-    'cedant.pays': a.secondaryClient?.country ?? '',
+    'cedant.pays': countryName(a.secondaryClient?.country),
     'cedant.typePieceIdentite': a.secondaryClient?.idType?.label ?? '',
     'cedant.pieceIdentite': a.secondaryClient?.idNumber ?? '',
     'cedant.dateNaissance': date(a.secondaryClient?.birthDate),
@@ -192,7 +208,7 @@ export function resolveAttestationVariables(a: any): Record<string, string> {
     'lotissement.nom': a.terrain?.lotissement?.nom ?? '',
     'lotissement.commune': a.terrain?.lotissement?.commune ?? '',
     'lotissement.ville': a.terrain?.lotissement?.ville ?? '',
-    'lotissement.pays': a.terrain?.lotissement?.pays ?? '',
+    'lotissement.pays': countryName(a.terrain?.lotissement?.pays),
     'lotissement.natureTitre': a.terrain?.lotissement?.titleType?.label ?? '',
     'lotissement.numeroTitre': a.terrain?.lotissement?.titleNumber ?? '',
     'lotissement.documentsLivres': a.terrain?.lotissement?.titleType?.documentsLivres ?? '',
@@ -209,6 +225,12 @@ export function resolveAttestationVariables(a: any): Record<string, string> {
       ? String(a.convention._count.terrains)
       : '',
     'convention.nombreTerrains.enLettres': numL(a.convention?._count?.terrains),
+    // Liste des lots souscrits via la convention (sinon retombe sur le terrain unique).
+    'convention.lotsSouscrits': lotsEnumeration(
+      (a.convention?.terrains ?? []).map((l: any) => l.terrain).filter(Boolean).length > 0
+        ? (a.convention.terrains as any[]).map((l) => l.terrain).filter(Boolean)
+        : (a.terrain ? [a.terrain] : []),
+    ),
     'convention.fraisOuvertureDossier': money(a.convention?.fraisOuvertureDossier),
     'convention.fraisOuvertureDossier.enLettres': moneyL(a.convention?.fraisOuvertureDossier),
     'agent.nomComplet': a.emittedBy ? `${a.emittedBy.lastName ?? ''} ${a.emittedBy.firstName ?? ''}`.trim() : '',
@@ -221,14 +243,25 @@ export function resolveAttestationVariables(a: any): Record<string, string> {
  * Un token inconnu est laissé tel quel pour signaler une éventuelle erreur.
  *
  * Les blocs conditionnels `{{#si …}}…{{/si}}` sont résolus avant la
- * substitution des variables.
+ * substitution des variables. Les comparaisons se font sur les valeurs
+ * brutes (ex. « MADAME »), tandis que la substitution finale affiche les
+ * civilités formatées (« Madame »).
  */
-export function mergeAttestationTemplate(html: string | null | undefined, attestation: any): string {
+export function mergeAttestationTemplate(
+  html: string | null | undefined,
+  attestation: any,
+  countriesMap?: Record<string, string>,
+): string {
   if (!html) return '';
-  const vars = resolveAttestationVariables(attestation);
+  const vars = resolveAttestationVariables(attestation, countriesMap);
   const withConditions = evaluateConditionals(html, vars);
+  const displayVars: Record<string, string> = {
+    ...vars,
+    'client.civilite': formatCivilite(vars['client.civilite']),
+    'cedant.civilite': formatCivilite(vars['cedant.civilite']),
+  };
   return withConditions.replace(/\{\{\s*([\w.]+)\s*\}\}/g, (_m, token) =>
-    Object.prototype.hasOwnProperty.call(vars, token) ? vars[token] : `{{${token}}}`,
+    Object.prototype.hasOwnProperty.call(displayVars, token) ? displayVars[token] : `{{${token}}}`,
   );
 }
 

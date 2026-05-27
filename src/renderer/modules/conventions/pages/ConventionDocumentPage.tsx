@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import PageLayout from '../../../shared/components/layout/PageLayout';
 import Button from '../../../shared/components/ui/Button';
@@ -9,6 +9,7 @@ import EmptyState from '../../../shared/components/ui/EmptyState';
 import { useAuthStore } from '../../../shared/stores/auth.store';
 import { useConvention } from '../hooks/useConventions';
 import { useConventionTemplates } from '../hooks/useConventionTemplates';
+import { useCountries } from '../../../shared/hooks/useCountries';
 import { mergeTemplate } from '../utils/conventionTemplate';
 import { Printer, FileText, FileType2 } from 'lucide-react';
 
@@ -98,7 +99,17 @@ export default function ConventionDocumentPage() {
   const navigate = useNavigate();
   const { data: conventionRes, isLoading } = useConvention(Number(id));
   const { data: templatesRes } = useConventionTemplates();
+  const { data: countriesRes } = useCountries();
   const [templateId, setTemplateId] = useState<number | null>(null);
+
+  // Code ISO → nom complet (« CI » → « Côte d'Ivoire »), pour que les
+  // variables `{{*.pays}}` des modèles affichent le nom du pays.
+  const countriesMap = useMemo<Record<string, string>>(() => {
+    const list = (countriesRes?.data ?? []) as Array<{ isoCode: string; name: string }>;
+    const map: Record<string, string> = {};
+    for (const c of list) map[c.isoCode] = c.name;
+    return map;
+  }, [countriesRes]);
 
   if (isLoading) return <div className="p-8"><SkeletonTable rows={6} /></div>;
 
@@ -110,9 +121,9 @@ export default function ConventionDocumentPage() {
     ?? templates.find((t) => t.isDefault)
     ?? templates[0];
 
-  const mergedHeader = mergeTemplate(selected?.header, convention);
-  const mergedBody = mergeTemplate(selected?.body, convention);
-  const mergedFooter = mergeTemplate(selected?.footer, convention);
+  const mergedHeader = mergeTemplate(selected?.header, convention, countriesMap);
+  const mergedBody = mergeTemplate(selected?.body, convention, countriesMap);
+  const mergedFooter = mergeTemplate(selected?.footer, convention, countriesMap);
 
   const headerWidth = selected?.headerWidth ?? 100;
   const footerWidth = selected?.footerWidth ?? 100;

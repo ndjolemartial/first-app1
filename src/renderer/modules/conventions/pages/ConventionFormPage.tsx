@@ -452,21 +452,45 @@ export default function ConventionFormPage() {
     const bOwned = clientIdNum > 0 && Number(b.clientId) === clientIdNum ? 1 : 0;
     return bOwned - aOwned;
   });
+
+  // Règle métier : tous les terrains d'une convention doivent appartenir au
+  // même lotissement (ou tous être sans lotissement). Dès qu'un terrain est
+  // sélectionné, on verrouille les options d'ajout sur son lotissementId. Les
+  // terrains déjà sélectionnés restent visibles (pour pouvoir les retirer).
+  const selectedTerrainIdsSet = new Set(watchTerrainIds.map(Number));
+  const lockedLotissementId: number | null = (() => {
+    if (watchTerrainIds.length === 0) return null;
+    const first = filteredTerrains.find((t: any) => selectedTerrainIdsSet.has(Number(t.id)));
+    if (!first) return null;
+    return first.lotissementId ?? null;
+  })();
   const terrainOptions = [
     { value: '', label: '— Choisir un terrain —' },
-    ...filteredTerrains.map((t: any) => {
-      const loc = [
-        t.numeroIlot ? `Îlot ${t.numeroIlot}` : '',
-        t.numeroParcelle ? `Lot ${t.numeroParcelle}` : '',
-      ].filter(Boolean).join(', ');
-      const isClientOwned = clientIdNum > 0 && Number(t.clientId) === clientIdNum;
-      return {
-        value: String(t.id),
-        label: `${t.reference} — ${t.lotissement?.nom ?? ''}`.trim() + (loc ? ` (${loc})` : ''),
-        highlighted: isClientOwned,
-      };
-    }),
+    ...filteredTerrains
+      .filter((t: any) => {
+        if (selectedTerrainIdsSet.has(Number(t.id))) return true; // toujours visible
+        if (watchTerrainIds.length === 0) return true;
+        return (t.lotissementId ?? null) === lockedLotissementId;
+      })
+      .map((t: any) => {
+        const loc = [
+          t.numeroIlot ? `Îlot ${t.numeroIlot}` : '',
+          t.numeroParcelle ? `Lot ${t.numeroParcelle}` : '',
+        ].filter(Boolean).join(', ');
+        const isClientOwned = clientIdNum > 0 && Number(t.clientId) === clientIdNum;
+        return {
+          value: String(t.id),
+          label: `${t.reference} — ${t.lotissement?.nom ?? ''}`.trim() + (loc ? ` (${loc})` : ''),
+          highlighted: isClientOwned,
+        };
+      }),
   ];
+
+  // Détection d'une éventuelle incohérence (cas d'édition d'une convention
+  // historique) : terrains rattachés provenant de lotissements différents.
+  const selectedTerrains = filteredTerrains.filter((t: any) => selectedTerrainIdsSet.has(Number(t.id)));
+  const distinctLotIds = new Set(selectedTerrains.map((t: any) => t.lotissementId ?? null));
+  const hasMixedLotissements = distinctLotIds.size > 1;
 
   // Biens immobiliers : pour une nouvelle convention (RENTAL/SALE/MANAGEMENT/
   // COMMERCIAL_LEASE), on propose les biens DISPONIBLES — la convention acte
@@ -656,6 +680,13 @@ export default function ConventionFormPage() {
 
   const onSubmit = async (data: FormData) => {
     setSubmitError('');
+    // Garde-fou client : tous les terrains d'une convention doivent provenir
+    // du même lotissement. Le backend rejette aussi, mais on échoue ici
+    // explicitement pour un message clair sans aller-retour réseau.
+    if (data.assetType === 'TERRAIN' && hasMixedLotissements) {
+      setSubmitError('Tous les terrains rattachés doivent provenir du même lotissement.');
+      return;
+    }
     try {
     const payload: any = { ...data };
     // N'envoie que les identifiants correspondant au type de rattachement choisi
@@ -752,6 +783,14 @@ export default function ConventionFormPage() {
                 {terrainStrictByClient && clientIdNum > 0 && filteredTerrains.length === 0 && (
                   <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-3 py-2">
                     Aucun terrain n'est rattaché à ce client. Assignez d'abord un terrain (statut réservé / vendu / sous option) au client depuis la fiche terrain.
+                  </p>
+                )}
+                <p className="text-xs text-slate-500">
+                  Tous les terrains d'une convention doivent appartenir au même lotissement.
+                </p>
+                {hasMixedLotissements && (
+                  <p className="text-xs text-red-700 bg-red-50 border border-red-200 rounded px-3 py-2">
+                    Les terrains sélectionnés proviennent de lotissements différents. Retirez ceux qui n'appartiennent pas au même lotissement avant d'enregistrer.
                   </p>
                 )}
               </>

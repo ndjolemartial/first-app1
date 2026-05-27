@@ -146,8 +146,8 @@ export default function ProspectFormPage() {
             {...register('email')}
           />
           <div className="grid grid-cols-2 gap-4">
-            <Input label="Téléphone" {...register('phone')} />
-            <Input label="Mobile"    {...register('mobile')} />
+            <Input label="Téléphone 1" {...register('phone')} />
+            <Input label="Téléphone 2" {...register('mobile')} />
           </div>
 
           {/* Pipeline */}

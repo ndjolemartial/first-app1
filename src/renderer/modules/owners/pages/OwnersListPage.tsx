@@ -24,8 +24,8 @@ const TYPE_OPTIONS = [
 const EXPORT_COLUMNS: ExportColumn[] = [
   { header: 'Nom / Entreprise', cell: (o) => (o.type === 'INDIVIDUEL' ? `${o.lastName ?? ''} ${o.firstName ?? ''}`.trim() : o.companyName) },
   { header: 'Type',             cell: (o) => (o.type === 'INDIVIDUEL' ? 'Particulier' : 'Entreprise') },
-  { header: 'Téléphone',        cell: (o) => o.phone },
-  { header: 'Mobile',           cell: (o) => o.mobile },
+  { header: 'Téléphone 1',      cell: (o) => o.phone },
+  { header: 'Téléphone 2',      cell: (o) => o.mobile },
   { header: 'Email',            cell: (o) => o.email },
   { header: 'Ville',            cell: (o) => o.city },
   { header: 'Biens',            cell: (o) => o._count?.properties ?? 0 },

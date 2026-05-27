@@ -4,7 +4,7 @@ import { getSession, checkRole } from '../services/auth.service';
 import logger from '../utils/logger';
 import { z } from 'zod';
 
-const ownerSchema = z.object({
+const ownerBaseSchema = z.object({
   type: z.enum(['INDIVIDUEL', 'ENTREPRISE']).default('INDIVIDUEL'),
   // Particulier
   firstName: z.string().optional(),
@@ -33,6 +33,32 @@ const ownerSchema = z.object({
   compte_contribuable: z.string().optional(),
   notes: z.string().optional(),
 });
+
+/**
+ * Validation conditionnelle : la pièce d'identité du propriétaire particulier
+ * et celle du représentant légal d'une entreprise sont obligatoires (KYC).
+ */
+const requireIdForOwner = (data: any, ctx: z.RefinementCtx): void => {
+  if (data.type === 'INDIVIDUEL') {
+    if (data.idTypeId == null) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['idTypeId'], message: 'Type de pièce d’identité requis' });
+    }
+    if (!data.idNumber || String(data.idNumber).trim() === '') {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['idNumber'], message: 'Numéro de pièce d’identité requis' });
+    }
+  }
+  if (data.type === 'ENTREPRISE') {
+    if (data.legalRepIdTypeId == null) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['legalRepIdTypeId'], message: 'Type de pièce d’identité du représentant requis' });
+    }
+    if (!data.legalRepIdNumber || String(data.legalRepIdNumber).trim() === '') {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['legalRepIdNumber'], message: 'Numéro de pièce d’identité du représentant requis' });
+    }
+  }
+};
+
+const ownerSchema = ownerBaseSchema.superRefine(requireIdForOwner);
+const ownerUpdateSchema = ownerBaseSchema.partial().superRefine(requireIdForOwner);
 
 // Module Propriétaires : réservé aux MANAGER+ (ACCOUNTANT inclus via checkRole).
 // AGENT et READONLY n'ont aucun accès au module.
@@ -133,7 +159,7 @@ export function registerOwnersIPC(): void {
       const session = getSession(token);
       if (!session) return { success: false, error: 'Session expirée' };
       checkRole(session, WRITE_ROLES);
-      const parsed = ownerSchema.partial().safeParse(payload);
+      const parsed = ownerUpdateSchema.safeParse(payload);
       if (!parsed.success) return { success: false, error: parsed.error.format() };
       const db = getDb();
       const data: any = { ...parsed.data };

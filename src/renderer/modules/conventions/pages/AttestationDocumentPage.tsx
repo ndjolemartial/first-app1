@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import PageLayout from '../../../shared/components/layout/PageLayout';
 import Button from '../../../shared/components/ui/Button';
@@ -9,6 +9,7 @@ import EmptyState from '../../../shared/components/ui/EmptyState';
 import { useAuthStore } from '../../../shared/stores/auth.store';
 import { useAttestation } from '../hooks/useAttestations';
 import { useAttestationTemplates } from '../hooks/useAttestationTemplates';
+import { useCountries } from '../../../shared/hooks/useCountries';
 import { mergeAttestationTemplate } from '../utils/attestationTemplate';
 import { Printer, FileText, FileType2 } from 'lucide-react';
 
@@ -84,7 +85,17 @@ export default function AttestationDocumentPage() {
   const navigate = useNavigate();
   const { data: attestationRes, isLoading } = useAttestation(Number(id));
   const { data: templatesRes } = useAttestationTemplates();
+  const { data: countriesRes } = useCountries();
   const [templateId, setTemplateId] = useState<number | null>(null);
+
+  // Code ISO → nom complet (« CI » → « Côte d'Ivoire »), pour que les
+  // variables `{{*.pays}}` des modèles affichent le nom du pays.
+  const countriesMap = useMemo<Record<string, string>>(() => {
+    const list = (countriesRes?.data ?? []) as Array<{ isoCode: string; name: string }>;
+    const map: Record<string, string> = {};
+    for (const c of list) map[c.isoCode] = c.name;
+    return map;
+  }, [countriesRes]);
 
   if (isLoading) return <div className="p-8"><SkeletonTable rows={6} /></div>;
 
@@ -97,9 +108,9 @@ export default function AttestationDocumentPage() {
     ?? templates.find((t) => t.isDefault)
     ?? templates[0];
 
-  const mergedHeader = mergeAttestationTemplate(selected?.header, attestation);
-  const mergedBody = mergeAttestationTemplate(selected?.body, attestation);
-  const mergedFooter = mergeAttestationTemplate(selected?.footer, attestation);
+  const mergedHeader = mergeAttestationTemplate(selected?.header, attestation, countriesMap);
+  const mergedBody = mergeAttestationTemplate(selected?.body, attestation, countriesMap);
+  const mergedFooter = mergeAttestationTemplate(selected?.footer, attestation, countriesMap);
 
   const headerWidth = selected?.headerWidth ?? 100;
   const footerWidth = selected?.footerWidth ?? 100;

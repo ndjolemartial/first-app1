@@ -169,8 +169,8 @@ export default function ProspectDetailPage() {
             <h3 className="font-semibold text-slate-700 mb-4">Informations</h3>
             <dl className="space-y-3 text-sm">
               {[
-                ['Téléphone', p.phone  || '—'],
-                ['Mobile',    p.mobile || '—'],
+                ['Téléphone 1', p.phone  || '—'],
+                ['Téléphone 2', p.mobile || '—'],
                 ['Source',    SOURCE_LABEL[p.source] ?? p.source ?? '—'],
                 ['Budget',    p.budget ? formatCurrency(p.budget) : '—'],
                 ['Créé par',  p.createdBy ? formatUserName(p.createdBy) : '—'],

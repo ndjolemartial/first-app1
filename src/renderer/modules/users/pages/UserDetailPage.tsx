@@ -78,8 +78,8 @@ export default function UserDetailPage() {
             <dl className="space-y-3 text-sm">
               {[
                 ['Matricule', user.matricule],
-                ['Téléphone', user.phone ?? '—'],
-                ['Mobile', user.mobile ?? '—'],
+                ['Téléphone 1', user.phone ?? '—'],
+                ['Téléphone 2', user.mobile ?? '—'],
                 ['Créé le', formatDate(user.createdAt)],
                 ['Dernière connexion', formatDateTime(user.lastLoginAt)],
               ].map(([label, value]) => (

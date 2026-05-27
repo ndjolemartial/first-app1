@@ -110,8 +110,8 @@ export default function ReferrerFormPage() {
               <h3 className="text-sm font-semibold text-slate-700">Coordonnées</h3>
               <Input label="Email" type="email" error={errors.email?.message} {...register('email')} />
               <div className="grid grid-cols-2 gap-4">
-                <Input label="Téléphone" {...register('phone')} />
-                <Input label="Mobile" {...register('mobile')} />
+                <Input label="Téléphone 1" {...register('phone')} />
+                <Input label="Téléphone 2" {...register('mobile')} />
               </div>
               <Input label="Adresse" {...register('address')} />
               <div className="grid grid-cols-2 gap-4">

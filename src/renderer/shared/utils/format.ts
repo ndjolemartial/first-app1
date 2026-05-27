@@ -28,6 +28,19 @@ export function formatCurrency(
   }).format(Number(amount));
 }
 
+/**
+ * Formate une valeur de civilité stockée en majuscules (`MONSIEUR`,
+ * `MADAME`, `MADEMOISELLE`) pour l'affichage : première lettre en majuscule,
+ * reste en minuscules (« Monsieur », « Madame », « Mademoiselle »).
+ * Retourne une chaîne vide pour une valeur absente.
+ */
+export function formatCivilite(value?: string | null): string {
+  if (!value) return '';
+  const v = String(value).trim();
+  if (!v) return '';
+  return v.charAt(0).toUpperCase() + v.slice(1).toLowerCase();
+}
+
 export function fullName(
   firstName?: string | null,
   lastName?: string | null,

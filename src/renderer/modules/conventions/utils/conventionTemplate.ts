@@ -1,6 +1,7 @@
-import { formatDate, formatCurrency } from '../../../shared/utils/format';
+import { formatDate, formatCurrency, formatCivilite } from '../../../shared/utils/format';
 import { moneyToFrenchWords, decimalToFrenchWords, numberToFrenchWords } from '../../../shared/utils/numberToWords';
 import { evaluateConditionals } from '../../../shared/utils/templateConditionals';
+import { lotsEnumeration } from './lotsEnumeration';
 
 /** Une variable dynamique insérable dans un modèle de convention. */
 export interface TemplateVariable {
@@ -28,6 +29,7 @@ export const CONVENTION_VARIABLE_GROUPS: VariableGroup[] = [
       { token: 'convention.dateSignature', label: 'Date de signature' },
       { token: 'convention.nombreTerrains', label: 'Nombre de terrains rattachés' },
       { token: 'convention.nombreTerrains.enLettres', label: 'Nombre de terrains rattachés (en lettres)' },
+      { token: 'convention.lotsSouscrits', label: 'Énumération des lots souscrits' },
       { token: 'convention.prixVente', label: 'Prix de vente' },
       { token: 'convention.prixVente.enLettres', label: 'Prix de vente (en lettres)' },
       { token: 'convention.apportInitial', label: 'Apport initial' },
@@ -215,9 +217,21 @@ function buildInstallmentsTable(installments: any[]): string {
 /**
  * Résout les variables dynamiques à partir d'une convention complète
  * (telle que renvoyée par conventions:getById).
+ *
+ * @param countriesMap Mapping optionnel code ISO → nom du pays (ex. « CI » →
+ * « Côte d'Ivoire »). Lorsqu'il est fourni, les variables `*.pays` rendent
+ * le nom du pays au lieu du code stocké.
  */
-export function resolveConventionVariables(c: any): Record<string, string> {
+export function resolveConventionVariables(
+  c: any,
+  countriesMap?: Record<string, string>,
+): Record<string, string> {
   if (!c) return {};
+  const countryName = (code: string | null | undefined): string => {
+    if (!code) return '';
+    if (countriesMap && countriesMap[code]) return countriesMap[code];
+    return code;
+  };
   const money = (v: any) => (v != null && v !== '' ? formatCurrency(Number(v)) : '');
   const moneyL = (v: any) => (v != null && v !== '' ? moneyToFrenchWords(v) : '');
   const numL = (v: any) => (v != null && v !== '' ? decimalToFrenchWords(v) : '');
@@ -240,6 +254,7 @@ export function resolveConventionVariables(c: any): Record<string, string> {
     'convention.dateSignature': date(c.signedAt),
     'convention.nombreTerrains': String(terrains.length),
     'convention.nombreTerrains.enLettres': numL(terrains.length),
+    'convention.lotsSouscrits': lotsEnumeration(terrains),
     'convention.prixVente': money(c.saleAmount),
     'convention.prixVente.enLettres': moneyL(c.saleAmount),
     'convention.apportInitial': money(c.apportInitial),
@@ -265,7 +280,7 @@ export function resolveConventionVariables(c: any): Record<string, string> {
     'client.email': c.client?.email ?? '',
     'client.adresse': c.client?.address ?? '',
     'client.ville': c.client?.city ?? '',
-    'client.pays': c.client?.country ?? '',
+    'client.pays': countryName(c.client?.country),
     'client.typePieceIdentite': c.client?.idType?.label ?? '',
     'client.pieceIdentite': c.client?.idNumber ?? '',
     'client.nationalite': c.client?.nationality ?? '',
@@ -274,7 +289,7 @@ export function resolveConventionVariables(c: any): Record<string, string> {
     'souscripteur.nomComplet': clientName(c.secondaryClient),
     'souscripteur.civilite': c.secondaryClient?.civilite ?? '',
     'souscripteur.telephone': c.secondaryClient?.phone ?? c.secondaryClient?.mobile ?? '',
-    'souscripteur.pays': c.secondaryClient?.country ?? '',
+    'souscripteur.pays': countryName(c.secondaryClient?.country),
     'souscripteur.dateNaissance': date(c.secondaryClient?.birthDate),
     'souscripteur.lieuNaissance': c.secondaryClient?.birthPlace ?? '',
     'souscripteur.typePieceIdentite': c.secondaryClient?.idType?.label ?? '',
@@ -288,13 +303,16 @@ export function resolveConventionVariables(c: any): Record<string, string> {
     'terrain.prixVente': joinComma(terrains.map((t) => (t.prixVente != null ? formatCurrency(Number(t.prixVente)) : ''))),
     'terrain.prixVente.enLettres': joinComma(terrains.map((t) => (t.prixVente != null ? moneyToFrenchWords(t.prixVente) : ''))),
     'terrain.titreFoncier': joinComma(terrains.map((t) => t.titreFoncier)),
-    'terrain.lotissement': joinComma(terrains.map((t) => t.lotissement?.nom)),
-    'lotissement.nom': joinComma(terrains.map((t) => t.lotissement?.nom)),
-    'lotissement.commune': joinComma(terrains.map((t) => t.lotissement?.commune)),
-    'lotissement.ville': joinComma(terrains.map((t) => t.lotissement?.ville)),
-    'lotissement.pays': joinComma(terrains.map((t) => t.lotissement?.pays)),
-    'lotissement.natureTitre': joinComma(terrains.map((t) => t.lotissement?.titleType?.label)),
-    'lotissement.numeroTitre': joinComma(terrains.map((t) => t.lotissement?.titleNumber)),
+    'terrain.lotissement': terrains[0]?.lotissement?.nom ?? '',
+    // Les terrains rattachés à une convention partagent obligatoirement le
+    // même lotissement (contrainte métier) — on rend donc une seule
+    // occurrence des attributs de lotissement, pas une liste concaténée.
+    'lotissement.nom': terrains[0]?.lotissement?.nom ?? '',
+    'lotissement.commune': terrains[0]?.lotissement?.commune ?? '',
+    'lotissement.ville': terrains[0]?.lotissement?.ville ?? '',
+    'lotissement.pays': countryName(terrains[0]?.lotissement?.pays),
+    'lotissement.natureTitre': terrains[0]?.lotissement?.titleType?.label ?? '',
+    'lotissement.numeroTitre': terrains[0]?.lotissement?.titleNumber ?? '',
     // Liste des documents livrés ; on prend la première valeur non-vide
     // pour éviter de répéter le même libellé si plusieurs terrains partagent
     // le même type de titre.
@@ -323,13 +341,24 @@ export function resolveConventionVariables(c: any): Record<string, string> {
  * Un token inconnu est laissé tel quel pour signaler une éventuelle erreur.
  *
  * Les blocs conditionnels `{{#si …}}…{{/si}}` sont résolus avant la
- * substitution des variables.
+ * substitution des variables. Les comparaisons se font sur les valeurs
+ * brutes (ex. « MONSIEUR »), tandis que la substitution finale affiche les
+ * civilités formatées (« Monsieur »).
  */
-export function mergeTemplate(html: string | null | undefined, convention: any): string {
+export function mergeTemplate(
+  html: string | null | undefined,
+  convention: any,
+  countriesMap?: Record<string, string>,
+): string {
   if (!html) return '';
-  const vars = resolveConventionVariables(convention);
+  const vars = resolveConventionVariables(convention, countriesMap);
   const withConditions = evaluateConditionals(html, vars);
+  const displayVars: Record<string, string> = {
+    ...vars,
+    'client.civilite': formatCivilite(vars['client.civilite']),
+    'souscripteur.civilite': formatCivilite(vars['souscripteur.civilite']),
+  };
   return withConditions.replace(/\{\{\s*([\w.]+)\s*\}\}/g, (_m, token) =>
-    Object.prototype.hasOwnProperty.call(vars, token) ? vars[token] : `{{${token}}}`,
+    Object.prototype.hasOwnProperty.call(displayVars, token) ? displayVars[token] : `{{${token}}}`,
   );
 }

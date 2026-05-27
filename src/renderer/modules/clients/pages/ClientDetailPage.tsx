@@ -137,8 +137,8 @@ export default function ClientDetailPage() {
                 ...(c.type === 'INDIVIDUEL' && c.birthPlace
                   ? [['Lieu de naissance', c.birthPlace]]
                   : []),
-                ['Téléphone', c.phone ?? '—'],
-                ['Mobile', c.mobile ?? '—'],
+                ['Téléphone 1', c.phone ?? '—'],
+                ['Téléphone 2', c.mobile ?? '—'],
                 ['Adresse', c.address ?? '—'],
                 ['Ville', c.city ?? '—'],
                 ['Pays', c.country],
