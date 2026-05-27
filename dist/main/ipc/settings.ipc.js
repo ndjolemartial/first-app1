@@ -665,6 +665,7 @@ function registerSettingsIPC() {
     const titleTypeCreateSchema = zod_1.z.object({
         code: zod_1.z.string().min(1, 'Code requis').regex(/^[A-Z0-9_]+$/i, 'Code invalide'),
         label: zod_1.z.string().min(1, 'Libellé requis'),
+        documentsLivres: zod_1.z.string().optional().nullable(),
         isDefault: zod_1.z.boolean().optional(),
         isActive: zod_1.z.boolean().optional(),
     });
@@ -692,6 +693,7 @@ function registerSettingsIPC() {
     const titleTypeUpdateSchema = zod_1.z.object({
         code: zod_1.z.string().min(1).regex(/^[A-Z0-9_]+$/i).optional(),
         label: zod_1.z.string().min(1).optional(),
+        documentsLivres: zod_1.z.string().optional().nullable(),
         isDefault: zod_1.z.boolean().optional(),
         isActive: zod_1.z.boolean().optional(),
     });

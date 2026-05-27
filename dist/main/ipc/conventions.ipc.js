@@ -154,7 +154,7 @@ const linksIncludeDetail = {
                             id: true, reference: true, nom: true,
                             commune: true, ville: true, pays: true,
                             titleNumber: true,
-                            titleType: { select: { id: true, code: true, label: true } },
+                            titleType: { select: { id: true, code: true, label: true, documentsLivres: true } },
                         },
                     },
                     owner: { select: { id: true, firstName: true, lastName: true, companyName: true } },

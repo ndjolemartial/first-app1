@@ -219,6 +219,12 @@ const countries = {
 const exporter = {
     generate: (token, payload) => api.invoke('export:generate', { token, ...payload }),
 };
+// Export PDF de document (convention / attestation) avec en-tête + pied de page
+// rendus sur chaque page via le moteur natif Chromium.
+const documentExport = {
+    exportDocumentPdf: (token, payload) => api.invoke('documents:exportDocumentPdf', { token, ...payload }),
+    exportDocumentDocx: (token, payload) => api.invoke('documents:exportDocumentDocx', { token, ...payload }),
+};
 // Modèles de facture
 const invoiceTemplates = {
     list: (token) => api.invoke('invoiceTemplates:list', { token }),
@@ -350,4 +356,4 @@ const documents = {
     /** Résout le chemin disque d'un fichier sélectionné/déposé (Electron webUtils). */
     pathForFile: (file) => electron_1.webUtils.getPathForFile(file),
 };
-electron_1.contextBridge.exposeInMainWorld('electron', { auth, users, prospects, clients, owners, properties, conventions, conventionTemplates, attestationTemplates, attestations, accounting, communication, crm, archiving, documents, lotissements, terrains, programmes, projects, geo, countries, commissions, exporter, invoiceTemplates, treasury, budget, dashboard, settings });
+electron_1.contextBridge.exposeInMainWorld('electron', { auth, users, prospects, clients, owners, properties, conventions, conventionTemplates, attestationTemplates, attestations, accounting, communication, crm, archiving, documents, documentExport, lotissements, terrains, programmes, projects, geo, countries, commissions, exporter, invoiceTemplates, treasury, budget, dashboard, settings });

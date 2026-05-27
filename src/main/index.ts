@@ -31,6 +31,7 @@ import { registerTreasuryIPC } from './ipc/treasury.ipc';
 import { registerBudgetIPC } from './ipc/budget.ipc';
 import { registerDashboardIPC } from './ipc/dashboard.ipc';
 import { registerSettingsIPC, initStorageOverride } from './ipc/settings.ipc';
+import { registerDocumentExportIPC } from './ipc/document-export.ipc';
 
 const isDev = process.env.NODE_ENV === 'development';
 let mainWindow: BrowserWindow | null = null;
@@ -106,6 +107,7 @@ function registerIPC(): void {
   registerBudgetIPC();
   registerDashboardIPC();
   registerSettingsIPC();
+  registerDocumentExportIPC();
   logger.info('All IPC handlers registered');
 }
 

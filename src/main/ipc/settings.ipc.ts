@@ -616,10 +616,11 @@ export function registerSettingsIPC(): void {
   });
 
   const titleTypeCreateSchema = z.object({
-    code:      z.string().min(1, 'Code requis').regex(/^[A-Z0-9_]+$/i, 'Code invalide'),
-    label:     z.string().min(1, 'Libellé requis'),
-    isDefault: z.boolean().optional(),
-    isActive:  z.boolean().optional(),
+    code:            z.string().min(1, 'Code requis').regex(/^[A-Z0-9_]+$/i, 'Code invalide'),
+    label:           z.string().min(1, 'Libellé requis'),
+    documentsLivres: z.string().optional().nullable(),
+    isDefault:       z.boolean().optional(),
+    isActive:        z.boolean().optional(),
   });
 
   ipcMain.handle('settings:createTitleType', async (_event, { token, payload }: any) => {
@@ -642,10 +643,11 @@ export function registerSettingsIPC(): void {
   });
 
   const titleTypeUpdateSchema = z.object({
-    code:      z.string().min(1).regex(/^[A-Z0-9_]+$/i).optional(),
-    label:     z.string().min(1).optional(),
-    isDefault: z.boolean().optional(),
-    isActive:  z.boolean().optional(),
+    code:            z.string().min(1).regex(/^[A-Z0-9_]+$/i).optional(),
+    label:           z.string().min(1).optional(),
+    documentsLivres: z.string().optional().nullable(),
+    isDefault:       z.boolean().optional(),
+    isActive:        z.boolean().optional(),
   });
 
   ipcMain.handle('settings:updateTitleType', async (_event, { token, id, payload }: any) => {

@@ -1,4 +1,6 @@
 import { formatDate, formatCurrency } from '../../../shared/utils/format';
+import { moneyToFrenchWords, decimalToFrenchWords, numberToFrenchWords } from '../../../shared/utils/numberToWords';
+import { evaluateConditionals } from '../../../shared/utils/templateConditionals';
 import type { VariableGroup } from './conventionTemplate';
 
 /** Catalogue des variables dynamiques disponibles dans un modèle d'attestation. */
@@ -10,6 +12,7 @@ export const ATTESTATION_VARIABLE_GROUPS: VariableGroup[] = [
       { token: 'attestation.type', label: 'Type' },
       { token: 'attestation.dateEmission', label: "Date d'émission" },
       { token: 'attestation.montant', label: 'Montant' },
+      { token: 'attestation.montant.enLettres', label: 'Montant (en lettres)' },
       { token: 'attestation.notes', label: 'Notes' },
     ],
   },
@@ -50,7 +53,9 @@ export const ATTESTATION_VARIABLE_GROUPS: VariableGroup[] = [
       { token: 'terrain.ilot', label: "Numéro d'îlot" },
       { token: 'terrain.parcelle', label: 'Numéro de parcelle' },
       { token: 'terrain.superficie', label: 'Superficie (m²)' },
+      { token: 'terrain.superficie.enLettres', label: 'Superficie en lettres (m²)' },
       { token: 'terrain.prixVente', label: 'Prix de vente du terrain' },
+      { token: 'terrain.prixVente.enLettres', label: 'Prix de vente du terrain (en lettres)' },
       { token: 'terrain.titreFoncier', label: 'Titre foncier' },
       { token: 'terrain.lotissement', label: 'Lotissement (nom)' },
       { token: 'lotissement.nom', label: 'Nom du lotissement' },
@@ -59,6 +64,7 @@ export const ATTESTATION_VARIABLE_GROUPS: VariableGroup[] = [
       { token: 'lotissement.pays', label: 'Pays du lotissement' },
       { token: 'lotissement.natureTitre', label: 'Nature du titre sollicité (lotissement)' },
       { token: 'lotissement.numeroTitre', label: 'Numéro du titre obtenu (lotissement)' },
+      { token: 'lotissement.documentsLivres', label: 'Documents livrés avec terrains' },
     ],
   },
   {
@@ -68,6 +74,7 @@ export const ATTESTATION_VARIABLE_GROUPS: VariableGroup[] = [
       { token: 'bien.adresse', label: 'Adresse' },
       { token: 'bien.ville', label: 'Ville' },
       { token: 'bien.superficie', label: 'Superficie (m²)' },
+      { token: 'bien.superficie.enLettres', label: 'Superficie en lettres (m²)' },
     ],
   },
   {
@@ -76,8 +83,11 @@ export const ATTESTATION_VARIABLE_GROUPS: VariableGroup[] = [
       { token: 'convention.reference', label: 'Référence' },
       { token: 'convention.dateSignature', label: 'Date de signature' },
       { token: 'convention.delai', label: 'Délai (durée)' },
+      { token: 'convention.delai.enLettres', label: 'Délai (en lettres)' },
       { token: 'convention.nombreTerrains', label: 'Nombre de terrains rattachés' },
+      { token: 'convention.nombreTerrains.enLettres', label: 'Nombre de terrains rattachés (en lettres)' },
       { token: 'convention.fraisOuvertureDossier', label: "Frais d'ouverture de dossier" },
+      { token: 'convention.fraisOuvertureDossier.enLettres', label: "Frais d'ouverture de dossier (en lettres)" },
     ],
   },
   {
@@ -103,29 +113,52 @@ function clientName(cl: any): string {
     : (cl.entreprise ?? '');
 }
 
-/** Calcule un libellé de délai (« 12 mois », « 18 mois », etc.) à partir des dates. */
-function delayLabel(startVal?: string | Date | null, endVal?: string | Date | null): string {
-  if (!startVal || !endVal) return '';
+/** Décompose un délai en (nombre, unité) à partir de deux dates ; null si invalide. */
+function delayValueAndUnit(
+  startVal?: string | Date | null,
+  endVal?: string | Date | null,
+): { count: number; unit: 'mois' | 'jour' } | null {
+  if (!startVal || !endVal) return null;
   const s = new Date(startVal);
   const e = new Date(endVal);
-  if (isNaN(s.getTime()) || isNaN(e.getTime())) return '';
+  if (isNaN(s.getTime()) || isNaN(e.getTime())) return null;
   const months = (e.getUTCFullYear() - s.getUTCFullYear()) * 12 + (e.getUTCMonth() - s.getUTCMonth());
-  if (months > 0 && e.getUTCDate() === s.getUTCDate()) return `${months} mois`;
+  if (months > 0 && e.getUTCDate() === s.getUTCDate()) return { count: months, unit: 'mois' };
   const days = Math.round((e.getTime() - s.getTime()) / 86_400_000);
-  if (days > 0) return `${days} jour${days > 1 ? 's' : ''}`;
-  return '';
+  if (days > 0) return { count: days, unit: 'jour' };
+  return null;
+}
+
+/** Calcule un libellé de délai (« 12 mois », « 18 mois », etc.) à partir des dates. */
+function delayLabel(startVal?: string | Date | null, endVal?: string | Date | null): string {
+  const r = delayValueAndUnit(startVal, endVal);
+  if (!r) return '';
+  if (r.unit === 'mois') return `${r.count} mois`;
+  return `${r.count} jour${r.count > 1 ? 's' : ''}`;
+}
+
+/** Variante en lettres du délai (« douze mois », « trois jours », etc.). */
+function delayLabelInWords(startVal?: string | Date | null, endVal?: string | Date | null): string {
+  const r = delayValueAndUnit(startVal, endVal);
+  if (!r) return '';
+  const words = numberToFrenchWords(r.count);
+  if (r.unit === 'mois') return `${words} mois`;
+  return `${words} jour${r.count > 1 ? 's' : ''}`;
 }
 
 /** Résout les variables {{token}} à partir d'une attestation chargée avec ses relations. */
 export function resolveAttestationVariables(a: any): Record<string, string> {
   if (!a) return {};
   const money = (v: any) => (v != null && v !== '' ? formatCurrency(Number(v)) : '');
+  const moneyL = (v: any) => (v != null && v !== '' ? moneyToFrenchWords(v) : '');
+  const numL = (v: any) => (v != null && v !== '' ? decimalToFrenchWords(v) : '');
   const date = (v: any) => (v ? formatDate(v) : '');
   return {
     'attestation.reference': a.reference ?? '',
     'attestation.type': TYPE_LABELS[a.type] ?? a.type ?? '',
     'attestation.dateEmission': date(a.emittedAt),
     'attestation.montant': money(a.amount),
+    'attestation.montant.enLettres': moneyL(a.amount),
     'attestation.notes': a.notes ?? '',
     'client.nomComplet': clientName(a.client),
     'client.civilite': a.client?.civilite ?? '',
@@ -151,7 +184,9 @@ export function resolveAttestationVariables(a: any): Record<string, string> {
     'terrain.ilot': a.terrain?.numeroIlot ?? '',
     'terrain.parcelle': a.terrain?.numeroParcelle ?? '',
     'terrain.superficie': a.terrain?.surface != null ? String(a.terrain.surface) : '',
+    'terrain.superficie.enLettres': numL(a.terrain?.surface),
     'terrain.prixVente': money(a.terrain?.prixVente),
+    'terrain.prixVente.enLettres': moneyL(a.terrain?.prixVente),
     'terrain.titreFoncier': a.terrain?.titreFoncier ?? '',
     'terrain.lotissement': a.terrain?.lotissement?.nom ?? '',
     'lotissement.nom': a.terrain?.lotissement?.nom ?? '',
@@ -160,17 +195,22 @@ export function resolveAttestationVariables(a: any): Record<string, string> {
     'lotissement.pays': a.terrain?.lotissement?.pays ?? '',
     'lotissement.natureTitre': a.terrain?.lotissement?.titleType?.label ?? '',
     'lotissement.numeroTitre': a.terrain?.lotissement?.titleNumber ?? '',
+    'lotissement.documentsLivres': a.terrain?.lotissement?.titleType?.documentsLivres ?? '',
     'bien.reference': a.property?.reference ?? '',
     'bien.adresse': a.property?.address ?? '',
     'bien.ville': a.property?.city ?? '',
     'bien.superficie': a.property?.surface != null ? String(a.property.surface) : '',
+    'bien.superficie.enLettres': numL(a.property?.surface),
     'convention.reference': a.convention?.reference ?? '',
     'convention.dateSignature': date(a.convention?.signedAt),
     'convention.delai': delayLabel(a.convention?.startDate, a.convention?.endDate),
+    'convention.delai.enLettres': delayLabelInWords(a.convention?.startDate, a.convention?.endDate),
     'convention.nombreTerrains': a.convention?._count?.terrains != null
       ? String(a.convention._count.terrains)
       : '',
+    'convention.nombreTerrains.enLettres': numL(a.convention?._count?.terrains),
     'convention.fraisOuvertureDossier': money(a.convention?.fraisOuvertureDossier),
+    'convention.fraisOuvertureDossier.enLettres': moneyL(a.convention?.fraisOuvertureDossier),
     'agent.nomComplet': a.emittedBy ? `${a.emittedBy.lastName ?? ''} ${a.emittedBy.firstName ?? ''}`.trim() : '',
     'date.aujourdhui': formatDate(new Date()),
   };
@@ -179,11 +219,15 @@ export function resolveAttestationVariables(a: any): Record<string, string> {
 /**
  * Remplace les variables {{token}} d'un texte HTML par les valeurs de l'attestation.
  * Un token inconnu est laissé tel quel pour signaler une éventuelle erreur.
+ *
+ * Les blocs conditionnels `{{#si …}}…{{/si}}` sont résolus avant la
+ * substitution des variables.
  */
 export function mergeAttestationTemplate(html: string | null | undefined, attestation: any): string {
   if (!html) return '';
   const vars = resolveAttestationVariables(attestation);
-  return html.replace(/\{\{\s*([\w.]+)\s*\}\}/g, (_m, token) =>
+  const withConditions = evaluateConditionals(html, vars);
+  return withConditions.replace(/\{\{\s*([\w.]+)\s*\}\}/g, (_m, token) =>
     Object.prototype.hasOwnProperty.call(vars, token) ? vars[token] : `{{${token}}}`,
   );
 }

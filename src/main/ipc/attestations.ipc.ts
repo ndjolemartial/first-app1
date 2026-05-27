@@ -60,7 +60,7 @@ const INCLUDE = {
     include: {
       lotissement: {
         include: {
-          titleType: { select: { id: true, code: true, label: true } },
+          titleType: { select: { id: true, code: true, label: true, documentsLivres: true } },
         },
       },
     },

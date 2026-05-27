@@ -106,7 +106,7 @@ function registerLotissementsIPC() {
                         orderBy: { reference: 'asc' },
                     },
                     documents: { orderBy: { uploadedAt: 'desc' } },
-                    titleType: { select: { id: true, code: true, label: true } },
+                    titleType: { select: { id: true, code: true, label: true, documentsLivres: true } },
                 },
             });
             if (!lot)

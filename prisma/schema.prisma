@@ -1173,14 +1173,19 @@ model IdDocumentType {
 /// depuis Paramètres › Natures de titres de lotissement. Une entrée par
 /// défaut (Arrêté d'approbation) est créée en seed.
 model LotissementTitleType {
-  id        Int       @id @default(autoincrement())
-  code      String    @unique  // Slug stable (ex: ARRETE_APPROBATION)
-  label     String             // Libellé d'affichage (ex: « Arrêté d'approbation »)
-  isDefault Boolean   @default(false)
-  isActive  Boolean   @default(true)
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
-  deletedAt DateTime?
+  id              Int       @id @default(autoincrement())
+  code            String    @unique  // Slug stable (ex: ARRETE_APPROBATION)
+  label           String             // Libellé d'affichage (ex: « Arrêté d'approbation »)
+  /// Libellé des documents administratifs livrés avec les terrains de ce
+  /// titre (ex: « ACD, plan de masse, situation géographique »). Substitué
+  /// dans les modèles de convention / attestation via la variable
+  /// `lotissement.documentsLivres`.
+  documentsLivres String?   @db.Text
+  isDefault       Boolean   @default(false)
+  isActive        Boolean   @default(true)
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  deletedAt       DateTime?
 
   lotissements Lotissement[]
 }

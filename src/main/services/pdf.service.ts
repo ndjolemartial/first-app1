@@ -52,3 +52,76 @@ export async function htmlToPdf(
     }
   }
 }
+
+/**
+ * Convertit un document HTML en PDF avec en-tête et pied de page enrichis,
+ * rendus par Chromium dans les marges de **chaque** page (y compris la
+ * dernière). Utilise le mécanisme natif `displayHeaderFooter` de
+ * `webContents.printToPDF` : les templates HTML sont automatiquement répétés.
+ *
+ * Les balises `<span class="pageNumber"></span>` et `<span class="totalPages">`
+ * sont auto-remplies par Chromium avec le numéro de page courant et le total.
+ *
+ * @param bodyHtml         Le contenu HTML du corps (sans header / footer).
+ * @param headerTemplate   HTML du bandeau d'en-tête (avec ses styles inline).
+ * @param footerTemplate   HTML du pied de page (avec ses styles inline).
+ * @param headerMm         Hauteur de l'en-tête en mm (pour calculer la marge haute).
+ * @param footerMm         Hauteur du pied de page en mm (pour la marge basse).
+ */
+export async function htmlToPdfWithTemplates(
+  bodyHtml: string,
+  headerTemplate: string,
+  footerTemplate: string,
+  headerMm: number,
+  footerMm: number,
+): Promise<Buffer> {
+  // Document HTML autonome contenant uniquement le corps (les en-tête /
+  // pied de page sont gérés par les templates Chromium).
+  const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><style>
+* { box-sizing: border-box; }
+body { font-family: 'Segoe UI', Arial, sans-serif; font-size: 11.5pt; color: #1e293b; line-height: 1.55; margin: 0; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+h1 { font-size: 17pt; margin: 8pt 0; }
+h2 { font-size: 13.5pt; margin: 8pt 0; }
+p { margin: 5pt 0; }
+img { max-width: 100%; height: auto; }
+ul { list-style: disc; padding-left: 20pt; }
+ol { list-style: decimal; padding-left: 20pt; }
+</style></head><body>${bodyHtml}</body></html>`;
+
+  const tmpFile = path.join(
+    app.getPath('temp'),
+    `afrikimmo-pdf-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.html`,
+  );
+  fs.writeFileSync(tmpFile, html, 'utf-8');
+
+  const win = new BrowserWindow({ show: false, webPreferences: { sandbox: false } });
+  try {
+    await win.loadFile(tmpFile);
+    // Conversion mm → inches (Electron attend les marges en inches).
+    const mmToIn = (mm: number): number => mm / 25.4;
+    // Marge = hauteur du bandeau + 10 mm de respiration (5 mm de chaque côté).
+    // Marge sup. = hauteur en-tête + 12 mm de respiration (8 mm avant + 4 mm après).
+    // Marge inf. = hauteur pied + 12 mm.
+    return await win.webContents.printToPDF({
+      landscape: false,
+      printBackground: true,
+      pageSize: 'A4',
+      displayHeaderFooter: true,
+      margins: {
+        top: mmToIn(headerMm + 12),
+        bottom: mmToIn(footerMm + 12),
+        left: mmToIn(18),
+        right: mmToIn(18),
+      },
+      headerTemplate,
+      footerTemplate,
+    });
+  } finally {
+    win.destroy();
+    try {
+      fs.unlinkSync(tmpFile);
+    } catch {
+      /* fichier temporaire déjà supprimé */
+    }
+  }
+}

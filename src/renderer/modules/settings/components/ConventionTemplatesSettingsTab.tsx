@@ -10,9 +10,10 @@ import ConfirmDialog from '../../../shared/components/ui/ConfirmDialog';
 import {
   useConventionTemplates,
   useDeleteConventionTemplate,
+  useCreateConventionTemplate,
 } from '../../conventions/hooks/useConventionTemplates';
 import { formatDate } from '../../../shared/utils/format';
-import { Plus, Edit, Trash2, FileText } from 'lucide-react';
+import { Plus, Edit, Trash2, FileText, Copy } from 'lucide-react';
 
 const TYPE_LABEL: Record<string, string> = {
   RENTAL_UNFURNISHED: 'Location non meublée', RENTAL_FURNISHED: 'Location meublée',
@@ -30,6 +31,7 @@ export default function ConventionTemplatesSettingsTab() {
   const [type, setType] = useState('');
   const { data, isLoading } = useConventionTemplates({ type: type || undefined });
   const deleteTemplate = useDeleteConventionTemplate();
+  const createTemplate = useCreateConventionTemplate();
   const [toDelete, setToDelete] = useState<any>(null);
 
   const templates: any[] = data?.data ?? [];
@@ -37,6 +39,25 @@ export default function ConventionTemplatesSettingsTab() {
   const handleDelete = async () => {
     if (toDelete) await deleteTemplate.mutateAsync(toDelete.id);
     setToDelete(null);
+  };
+
+  /** Crée une copie indépendante d'un modèle existant (sans son flag « par défaut »). */
+  const handleDuplicate = async (t: any) => {
+    await createTemplate.mutateAsync({
+      name: `Copie de ${t.name}`,
+      type: t.type,
+      amendmentType: t.amendmentType ?? undefined,
+      souscriptionType: t.souscriptionType ?? undefined,
+      header: t.header ?? '',
+      body: t.body ?? '',
+      footer: t.footer ?? '',
+      headerWidth: t.headerWidth ?? 100,
+      footerWidth: t.footerWidth ?? 100,
+      headerHeight: t.headerHeight ?? 140,
+      footerHeight: t.footerHeight ?? 140,
+      isActive: t.isActive ?? true,
+      isDefault: false,
+    });
   };
 
   return (
@@ -95,8 +116,14 @@ export default function ConventionTemplatesSettingsTab() {
                   <td className="px-4 py-3">
                     <div className="flex justify-end gap-1">
                       <Button variant="ghost" size="sm" icon={<Edit className="h-4 w-4" />}
+                        title="Modifier"
                         onClick={() => navigate(`/conventions/templates/${t.id}/edit`)} />
+                      <Button variant="ghost" size="sm" icon={<Copy className="h-4 w-4" />}
+                        title="Dupliquer"
+                        loading={createTemplate.isPending}
+                        onClick={() => handleDuplicate(t)} />
                       <Button variant="ghost" size="sm" icon={<Trash2 className="h-4 w-4" />}
+                        title="Supprimer"
                         onClick={() => setToDelete(t)} />
                     </div>
                   </td>

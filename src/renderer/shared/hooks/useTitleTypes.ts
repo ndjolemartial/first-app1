@@ -7,6 +7,8 @@ export interface LotissementTitleType {
   id: number;
   code: string;
   label: string;
+  /** Documents livrés avec les terrains de ce titre (texte libre). */
+  documentsLivres?: string | null;
   isDefault: boolean;
   isActive: boolean;
 }

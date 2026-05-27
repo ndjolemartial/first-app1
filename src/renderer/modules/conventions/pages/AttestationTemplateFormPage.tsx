@@ -144,8 +144,8 @@ export default function AttestationTemplateFormPage() {
               </div>
             </div>
           </div>
-          <p className="text-xs text-slate-500 mb-3">Apparaît en bas de chaque page du document généré.</p>
-          <div style={{ width: `${footerWidth}%` }}>
+          <p className="text-xs text-slate-500 mb-3">Apparaît en bas de chaque page du document généré (fond rouge).</p>
+          <div className="rounded bg-red-600 p-2" style={{ width: `${footerWidth}%` }}>
             <RichTextEditor value={footer} onChange={setFooter} variables={ATTESTATION_VARIABLE_GROUPS}
               placeholder="Pied de page (signatures, mentions légales…)" minHeight={footerHeight} />
           </div>

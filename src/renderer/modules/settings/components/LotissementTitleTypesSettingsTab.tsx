@@ -43,7 +43,7 @@ export default function LotissementTitleTypesSettingsTab() {
   });
 
   const openNew = () =>
-    setEdit({ open: true, type: { id: 0, code: '', label: '', isDefault: false, isActive: true } });
+    setEdit({ open: true, type: { id: 0, code: '', label: '', documentsLivres: '', isDefault: false, isActive: true } });
   const openEdit = (type: LotissementTitleType) => setEdit({ open: true, type: { ...type } });
   const closeEdit = () => setEdit({ open: false, type: null });
 
@@ -53,6 +53,7 @@ export default function LotissementTitleTypesSettingsTab() {
     const payload = {
       code: t.code || toCode(t.label),
       label: t.label.trim(),
+      documentsLivres: (t.documentsLivres ?? '').trim() || null,
       isDefault: t.isDefault,
       isActive: t.isActive,
     };
@@ -100,6 +101,7 @@ export default function LotissementTitleTypesSettingsTab() {
             <tr>
               <th className="text-left px-3 py-2 font-medium text-slate-600">Libellé</th>
               <th className="text-left px-3 py-2 font-medium text-slate-600">Code</th>
+              <th className="text-left px-3 py-2 font-medium text-slate-600">Documents livrés avec terrains</th>
               <th className="text-center px-3 py-2 font-medium text-slate-600">Par défaut</th>
               <th className="text-center px-3 py-2 font-medium text-slate-600">Statut</th>
               <th className="text-right px-3 py-2 font-medium text-slate-600">Actions</th>
@@ -110,6 +112,11 @@ export default function LotissementTitleTypesSettingsTab() {
               <tr key={t.id} className="hover:bg-slate-50">
                 <td className="px-3 py-2 font-medium text-slate-900">{t.label}</td>
                 <td className="px-3 py-2 font-mono text-xs text-slate-600">{t.code}</td>
+                <td className="px-3 py-2 text-slate-600 max-w-md">
+                  {t.documentsLivres
+                    ? <span className="whitespace-pre-line text-xs">{t.documentsLivres}</span>
+                    : <span className="text-slate-300">—</span>}
+                </td>
                 <td className="px-3 py-2 text-center">
                   {t.isDefault && <Star className="h-4 w-4 inline text-amber-500 fill-amber-400" />}
                 </td>
@@ -153,6 +160,21 @@ export default function LotissementTitleTypesSettingsTab() {
               onChange={(e) => setEdit((s) => ({ ...s, type: { ...s.type!, code: e.target.value.toUpperCase() } }))}
               placeholder={edit.type.label ? toCode(edit.type.label) : 'PERMIS_AMENAGER'}
             />
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">
+                Documents livrés avec terrains
+              </label>
+              <textarea
+                value={edit.type.documentsLivres ?? ''}
+                onChange={(e) => setEdit((s) => ({ ...s, type: { ...s.type!, documentsLivres: e.target.value } }))}
+                placeholder="ex : ACD, plan de masse, situation géographique"
+                rows={3}
+                className="block w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+              />
+              <p className="text-xs text-slate-500 mt-1">
+                Substitué dans les modèles via la variable <code>{'{{lotissement.documentsLivres}}'}</code>.
+              </p>
+            </div>
             <div className="flex flex-col gap-2">
               <label className="inline-flex items-center gap-2 text-sm text-slate-700 cursor-pointer">
                 <input

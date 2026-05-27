@@ -36,6 +36,7 @@ const treasury_ipc_1 = require("./ipc/treasury.ipc");
 const budget_ipc_1 = require("./ipc/budget.ipc");
 const dashboard_ipc_1 = require("./ipc/dashboard.ipc");
 const settings_ipc_1 = require("./ipc/settings.ipc");
+const document_export_ipc_1 = require("./ipc/document-export.ipc");
 const isDev = process.env.NODE_ENV === 'development';
 let mainWindow = null;
 function createWindow() {
@@ -105,6 +106,7 @@ function registerIPC() {
     (0, budget_ipc_1.registerBudgetIPC)();
     (0, dashboard_ipc_1.registerDashboardIPC)();
     (0, settings_ipc_1.registerSettingsIPC)();
+    (0, document_export_ipc_1.registerDocumentExportIPC)();
     logger_1.default.info('All IPC handlers registered');
 }
 /**

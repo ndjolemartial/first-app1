@@ -252,6 +252,30 @@ interface Window {
         },
       ) => Promise<IpcResponse<{ path?: string; canceled?: boolean }>>;
     };
+    documentExport: {
+      exportDocumentPdf: (
+        token: string,
+        payload: {
+          fileName: string;
+          bodyHtml: string;
+          headerTemplate: string;
+          footerTemplate: string;
+          headerMm: number;
+          footerMm: number;
+        },
+      ) => Promise<IpcResponse<{ filePath?: string; canceled?: boolean }>>;
+      exportDocumentDocx: (
+        token: string,
+        payload: {
+          fileName: string;
+          bodyHtml: string;
+          headerTemplate: string;
+          footerTemplate: string;
+          headerMm: number;
+          footerMm: number;
+        },
+      ) => Promise<IpcResponse<{ filePath?: string; canceled?: boolean }>>;
+    };
     invoiceTemplates: {
       list: (
         token: string,

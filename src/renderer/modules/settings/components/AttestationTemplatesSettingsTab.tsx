@@ -10,10 +10,11 @@ import ConfirmDialog from '../../../shared/components/ui/ConfirmDialog';
 import {
   useAttestationTemplates,
   useDeleteAttestationTemplate,
+  useCreateAttestationTemplate,
 } from '../../conventions/hooks/useAttestationTemplates';
 import { ATTESTATION_TYPE_LABELS } from '../../conventions/utils/attestationTemplate';
 import { formatDate } from '../../../shared/utils/format';
-import { Plus, Edit, Trash2, FileText } from 'lucide-react';
+import { Plus, Edit, Trash2, FileText, Copy } from 'lucide-react';
 
 const TYPE_OPTIONS = [
   { value: '', label: 'Tous les types' },
@@ -25,6 +26,7 @@ export default function AttestationTemplatesSettingsTab() {
   const [type, setType] = useState('');
   const { data, isLoading } = useAttestationTemplates({ type: type || undefined });
   const deleteTemplate = useDeleteAttestationTemplate();
+  const createTemplate = useCreateAttestationTemplate();
   const [toDelete, setToDelete] = useState<any>(null);
 
   const templates: any[] = data?.data ?? [];
@@ -32,6 +34,23 @@ export default function AttestationTemplatesSettingsTab() {
   const handleDelete = async () => {
     if (toDelete) await deleteTemplate.mutateAsync(toDelete.id);
     setToDelete(null);
+  };
+
+  /** Crée une copie indépendante d'un modèle existant (sans son flag « par défaut »). */
+  const handleDuplicate = async (t: any) => {
+    await createTemplate.mutateAsync({
+      name: `Copie de ${t.name}`,
+      type: t.type,
+      header: t.header ?? '',
+      body: t.body ?? '',
+      footer: t.footer ?? '',
+      headerWidth: t.headerWidth ?? 100,
+      footerWidth: t.footerWidth ?? 100,
+      headerHeight: t.headerHeight ?? 140,
+      footerHeight: t.footerHeight ?? 140,
+      isActive: t.isActive ?? true,
+      isDefault: false,
+    });
   };
 
   return (
@@ -90,8 +109,14 @@ export default function AttestationTemplatesSettingsTab() {
                   <td className="px-4 py-3">
                     <div className="flex justify-end gap-1">
                       <Button variant="ghost" size="sm" icon={<Edit className="h-4 w-4" />}
+                        title="Modifier"
                         onClick={() => navigate(`/conventions/attestation-templates/${t.id}/edit`)} />
+                      <Button variant="ghost" size="sm" icon={<Copy className="h-4 w-4" />}
+                        title="Dupliquer"
+                        loading={createTemplate.isPending}
+                        onClick={() => handleDuplicate(t)} />
                       <Button variant="ghost" size="sm" icon={<Trash2 className="h-4 w-4" />}
+                        title="Supprimer"
                         onClick={() => setToDelete(t)} />
                     </div>
                   </td>
