@@ -1,7 +1,11 @@
 import { formatDate, formatCurrency, formatCivilite } from '../../../shared/utils/format';
 import { moneyToFrenchWords, decimalToFrenchWords, numberToFrenchWords } from '../../../shared/utils/numberToWords';
 import { evaluateConditionals } from '../../../shared/utils/templateConditionals';
-import type { VariableGroup } from './conventionTemplate';
+import {
+  MODALITES_LABELS,
+  buildInstallmentsTable,
+  type VariableGroup,
+} from './conventionTemplate';
 import { lotsEnumeration } from './lotsEnumeration';
 
 /** Catalogue des variables dynamiques disponibles dans un modèle d'attestation. */
@@ -93,6 +97,32 @@ export const ATTESTATION_VARIABLE_GROUPS: VariableGroup[] = [
     ],
   },
   {
+    // Variables disponibles uniquement lorsque l'attestation est liée à un
+    // avenant (a.convention est un avenant et expose `parentConvention`).
+    // Pour toute autre attestation, elles se résolvent à une chaîne vide.
+    group: 'Avenant / convention initiale',
+    items: [
+      { token: 'avenant.numero', label: "Numéro d'avenant (1, 2, …)" },
+      { token: 'avenant.numero.enLettres', label: "Numéro d'avenant (en lettres)" },
+      { token: 'avenant.montantSupplementaire', label: 'Montant supplémentaire (transfert de site)' },
+      { token: 'avenant.montantSupplementaire.enLettres', label: 'Montant supplémentaire (en lettres)' },
+      { token: 'avenant.modalitesPaiement', label: 'Modalité de paiement du montant supplémentaire' },
+      { token: 'avenant.nombreEcheances', label: "Nombre d'échéances (montant supplémentaire)" },
+      { token: 'avenant.nombreEcheances.enLettres', label: "Nombre d'échéances du montant supplémentaire (en lettres)" },
+      { token: 'avenant.echeancier', label: 'Tableau des échéances (montant supplémentaire)' },
+      { token: 'convention.initiale.dateSignature', label: 'Date de signature de la convention initiale' },
+      { token: 'convention.initiale.montantSouscription', label: 'Montant de souscription (convention initiale)' },
+      { token: 'convention.initiale.montantSouscription.enLettres', label: 'Montant de souscription initial (en lettres)' },
+      { token: 'convention.initiale.soldePayer', label: 'Solde à payer (convention initiale)' },
+      { token: 'convention.initiale.soldePayer.enLettres', label: 'Solde à payer (en lettres)' },
+      { token: 'convention.initiale.totalVersements', label: 'Total des versements effectués (convention initiale)' },
+      { token: 'convention.initiale.totalVersements.enLettres', label: 'Total des versements effectués (en lettres)' },
+      { token: 'convention.initiale.lotissement.nom', label: 'Nom du lotissement (convention initiale)' },
+      { token: 'convention.initiale.lotissement.ville', label: 'Ville du lotissement (convention initiale)' },
+      { token: 'convention.initiale.lotsSouscrits', label: 'Énumération des lots souscrits (convention initiale)' },
+    ],
+  },
+  {
     group: 'Divers',
     items: [
       { token: 'agent.nomComplet', label: 'Agent émetteur' },
@@ -146,6 +176,59 @@ function delayLabelInWords(startVal?: string | Date | null, endVal?: string | Da
   const words = numberToFrenchWords(r.count);
   if (r.unit === 'mois') return `${words} mois`;
   return `${words} jour${r.count > 1 ? 's' : ''}`;
+}
+
+/**
+ * Calcule le solde restant à payer pour une convention de vente. Cf.
+ * `computeSolde` dans conventionTemplate.ts — logique identique :
+ *   - CASH → 0
+ *   - échéancier → somme des échéances non `PAYE`/`ANNULE`
+ *   - à défaut → `saleAmount − apportInitial`
+ */
+function computeSolde(parent: any): number | null {
+  if (!parent) return null;
+  const sale = Number(parent.saleAmount ?? 0);
+  if (!sale) return null;
+  if (parent.paymentModalites === 'CASH') return 0;
+  const apport = Number(parent.apportInitial ?? 0);
+  const installments: any[] = parent.installments ?? [];
+  if (installments.length > 0) {
+    return installments
+      .filter((i) => i.status !== 'PAYE' && i.status !== 'ANNULE')
+      .reduce((s, i) => s + (Number(i.amount) || 0), 0);
+  }
+  return Math.max(0, sale - apport);
+}
+
+/**
+ * Cumul des versements déjà effectués sur une convention de vente. Cf.
+ * `computeVersements` dans conventionTemplate.ts — logique identique :
+ *   - CASH → prix de vente intégral
+ *   - sinon → apport initial + somme des échéances `PAYE`
+ */
+function computeVersements(parent: any): number | null {
+  if (!parent) return null;
+  const sale = Number(parent.saleAmount ?? 0);
+  if (!sale) return null;
+  if (parent.paymentModalites === 'CASH') return sale;
+  const apport = Number(parent.apportInitial ?? 0);
+  const installments: any[] = parent.installments ?? [];
+  const paid = installments
+    .filter((i) => i.status === 'PAYE')
+    .reduce((s, i) => s + (Number(i.amount) || 0), 0);
+  return apport + paid;
+}
+
+/**
+ * Numéro d'ordre de l'avenant attaché à l'attestation parmi les amendments
+ * de la convention parente (1, 2, …). Retourne `null` quand l'attestation
+ * n'est pas liée à un avenant (i.e. `a.convention.parentConvention` absent).
+ */
+function computeAvenantNumero(a: any): number | null {
+  const list: any[] = a?.convention?.parentConvention?.amendments ?? [];
+  if (list.length === 0) return null;
+  const idx = list.findIndex((x) => Number(x.id) === Number(a.convention?.id));
+  return idx >= 0 ? idx + 1 : null;
 }
 
 /**
@@ -233,6 +316,73 @@ export function resolveAttestationVariables(
     ),
     'convention.fraisOuvertureDossier': money(a.convention?.fraisOuvertureDossier),
     'convention.fraisOuvertureDossier.enLettres': moneyL(a.convention?.fraisOuvertureDossier),
+    // ── Avenant / convention initiale ─────────────────────────
+    // Non-vide uniquement si l'attestation est liée à une convention qui est
+    // elle-même un avenant (a.convention.parentConvention chargé).
+    'avenant.numero': (() => {
+      const n = computeAvenantNumero(a);
+      return n != null ? String(n) : '';
+    })(),
+    'avenant.numero.enLettres': (() => {
+      const n = computeAvenantNumero(a);
+      return n != null ? numberToFrenchWords(n) : '';
+    })(),
+    'avenant.montantSupplementaire': money(a.convention?.additionalAmount),
+    'avenant.montantSupplementaire.enLettres': moneyL(a.convention?.additionalAmount),
+    // Modalités / échéancier du montant supplémentaire — non-vides
+    // uniquement lorsque la convention liée est un avenant de transfert
+    // de site (a.convention.type === 'AVENANT' && amendmentType === 'TRANSFERT_SITE').
+    'avenant.modalitesPaiement':
+      (a.convention?.type === 'AVENANT' && a.convention?.amendmentType === 'TRANSFERT_SITE')
+        ? (MODALITES_LABELS[a.convention?.paymentModalites] ?? a.convention?.paymentModalites ?? '')
+        : '',
+    'avenant.nombreEcheances':
+      (a.convention?.type === 'AVENANT' && a.convention?.amendmentType === 'TRANSFERT_SITE'
+        && a.convention?.installmentCount != null)
+        ? String(a.convention.installmentCount)
+        : '',
+    'avenant.nombreEcheances.enLettres':
+      (a.convention?.type === 'AVENANT' && a.convention?.amendmentType === 'TRANSFERT_SITE')
+        ? numL(a.convention?.installmentCount)
+        : '',
+    'avenant.echeancier':
+      (a.convention?.type === 'AVENANT' && a.convention?.amendmentType === 'TRANSFERT_SITE')
+        ? buildInstallmentsTable(a.convention?.installments)
+        : '',
+    'convention.initiale.dateSignature': date(a.convention?.parentConvention?.signedAt),
+    'convention.initiale.montantSouscription': money(a.convention?.parentConvention?.saleAmount),
+    'convention.initiale.montantSouscription.enLettres': moneyL(a.convention?.parentConvention?.saleAmount),
+    'convention.initiale.soldePayer': (() => {
+      const s = computeSolde(a.convention?.parentConvention);
+      return s != null ? formatCurrency(s) : '';
+    })(),
+    'convention.initiale.soldePayer.enLettres': (() => {
+      const s = computeSolde(a.convention?.parentConvention);
+      return s != null ? moneyToFrenchWords(s) : '';
+    })(),
+    // Cumul des versements déjà effectués sur la convention initiale
+    // (apport + échéances réglées, ou intégralité du prix pour un comptant).
+    'convention.initiale.totalVersements': (() => {
+      const v = computeVersements(a.convention?.parentConvention);
+      return v != null ? formatCurrency(v) : '';
+    })(),
+    'convention.initiale.totalVersements.enLettres': (() => {
+      const v = computeVersements(a.convention?.parentConvention);
+      return v != null ? moneyToFrenchWords(v) : '';
+    })(),
+    // Lotissement de la convention initiale — pris sur le premier terrain
+    // rattaché à la convention parente (cf. conventionTemplate.ts).
+    'convention.initiale.lotissement.nom':
+      a.convention?.parentConvention?.terrains?.[0]?.terrain?.lotissement?.nom ?? '',
+    'convention.initiale.lotissement.ville':
+      a.convention?.parentConvention?.terrains?.[0]?.terrain?.lotissement?.ville ?? '',
+    // Énumération des lots souscrits sur la convention initiale —
+    // formatage identique à {{convention.lotsSouscrits}}.
+    'convention.initiale.lotsSouscrits': lotsEnumeration(
+      (a.convention?.parentConvention?.terrains ?? [])
+        .map((l: any) => l.terrain)
+        .filter(Boolean),
+    ),
     'agent.nomComplet': a.emittedBy ? `${a.emittedBy.lastName ?? ''} ${a.emittedBy.firstName ?? ''}`.trim() : '',
     'date.aujourdhui': formatDate(new Date()),
   };

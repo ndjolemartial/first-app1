@@ -70,6 +70,45 @@ const INCLUDE = {
                     },
                 },
             },
+            // Échéancier de la convention liée — utilisé pour résoudre
+            // {{avenant.echeancier}} lorsque la convention est un avenant
+            // de transfert de site en paiement échelonné.
+            installments: { orderBy: { installmentNumber: 'asc' } },
+            // Convention parente — pour les attestations liées à un avenant : permet
+            // de résoudre les variables {{convention.initiale.*}} et {{avenant.numero}}.
+            // On charge aussi le premier terrain rattaché et son lotissement pour
+            // {{convention.initiale.lotissement.nom|ville}}.
+            parentConvention: {
+                select: {
+                    id: true, reference: true, signedAt: true, saleAmount: true, apportInitial: true,
+                    // Nécessaire pour distinguer paiement comptant (CASH) et
+                    // paiement échelonné dans le calcul du total des versements.
+                    paymentModalites: true,
+                    installments: {
+                        select: { id: true, amount: true, status: true },
+                        orderBy: { installmentNumber: 'asc' },
+                    },
+                    amendments: {
+                        where: { deletedAt: null },
+                        select: { id: true, createdAt: true },
+                        orderBy: { createdAt: 'asc' },
+                    },
+                    terrains: {
+                        orderBy: { order: 'asc' },
+                        select: {
+                            terrain: {
+                                select: {
+                                    id: true,
+                                    // Champs requis par lotsEnumeration() pour le rendu de
+                                    // la variable {{convention.initiale.lotsSouscrits}}.
+                                    numeroIlot: true, numeroParcelle: true, surface: true,
+                                    lotissement: { select: { id: true, nom: true, ville: true } },
+                                },
+                            },
+                        },
+                    },
+                },
+            },
         },
     },
     template: true,

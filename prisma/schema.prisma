@@ -530,6 +530,10 @@ model Convention {
   charges              Decimal?         @db.Decimal(15, 2)
   // Frais d'ouverture de dossier facturés au client à la signature.
   fraisOuvertureDossier Decimal?        @db.Decimal(15, 2)
+  // Montant supplémentaire éventuel — utilisé pour l'avenant de transfert
+  // de site / changement de lot lorsque le nouveau lot induit un complément
+  // à payer par le client (différence de prix, frais d'avenant…).
+  additionalAmount     Decimal?         @db.Decimal(15, 2)
   paymentDay           Int?
   paymentMethod        PaymentMethod    @default(ESPECE)
   paymentModalites     PaymentModalites @default(CASH)

@@ -15,7 +15,7 @@ import { useConvention, useConventions, useCreateConvention, useUpdateConvention
 import { useClients } from '../../clients/hooks/useClients';
 import { useProperties } from '../../properties/hooks/useProperties';
 import { useTerrains } from '../../terrains/hooks/useTerrains';
-import { formatPersonName } from '../../../shared/utils/format';
+import { formatPersonName, formatCurrency } from '../../../shared/utils/format';
 import { Save } from 'lucide-react';
 
 /** Identifiant optionnel : une chaîne vide est traitée comme « non renseigné ». */
@@ -65,6 +65,7 @@ const schema = z.object({
   agencyFees: optionalNumber,
   charges: optionalNumber,
   fraisOuvertureDossier: optionalNumber,
+  additionalAmount: optionalNumber,
   paymentDay: optionalDay,
   paymentMethod: z.enum(['ESPECE', 'CHEQUE', 'TRANSFERT', 'VIREMENT', 'MOBILE_MONEY', 'NON_DEFINI']).default('ESPECE'),
   paymentModalites: z.enum(['CASH', 'SUR_3_MOIS', 'SUR_6_MOIS', 'SUR_9_MOIS', 'SUR_12_MOIS', 'SUR_24_MOIS', 'SUR_36_MOIS', 'SUR_48_MOIS', 'SUR_60_MOIS', 'SUR_PLUS_60_MOIS']).default('CASH'),
@@ -72,10 +73,17 @@ const schema = z.object({
   firstInstallmentDate: z.string().optional(),
   notes: z.string().optional(),
 }).superRefine((d, ctx) => {
-  if (d.assetType === 'PROPERTY' && (!d.propertyIds || d.propertyIds.length === 0)) {
+  // Avenant / résiliation : les terrains et biens rattachés sont hérités
+  // automatiquement de la convention parente, sauf pour l'avenant de
+  // « transfert de site / changement de lot » où l'utilisateur choisit lui-
+  // même les nouveaux terrains (par définition différents de ceux du parent).
+  const isAmendmentType = d.type === 'AVENANT' || d.type === 'RESILIATION';
+  const isTransfertSite = d.type === 'AVENANT' && d.amendmentType === 'TRANSFERT_SITE';
+  const skipAssetRequired = isAmendmentType && !isTransfertSite;
+  if (d.assetType === 'PROPERTY' && !skipAssetRequired && (!d.propertyIds || d.propertyIds.length === 0)) {
     ctx.addIssue({ code: 'custom', path: ['propertyIds'], message: 'Sélectionnez au moins un bien immobilier' });
   }
-  if (d.assetType === 'TERRAIN' && (!d.terrainIds || d.terrainIds.length === 0)) {
+  if (d.assetType === 'TERRAIN' && !skipAssetRequired && (!d.terrainIds || d.terrainIds.length === 0)) {
     ctx.addIssue({ code: 'custom', path: ['terrainIds'], message: 'Sélectionnez au moins un terrain' });
   }
   if (d.secondaryClientId && d.secondaryClientId === d.clientId) {
@@ -104,6 +112,18 @@ const schema = z.object({
       code: 'custom',
       path: ['souscriptionType'],
       message: 'Précisez la nature de la souscription',
+    });
+  }
+  // Avenant de transfert de site en paiement échelonné : le montant
+  // supplémentaire devient la base de l'échéancier — il doit donc être
+  // saisi (> 0). Pour un paiement comptant, il peut rester vide (ex :
+  // changement de lot sans incidence financière).
+  if (isTransfertSite && d.paymentModalites !== 'CASH'
+      && (!d.additionalAmount || d.additionalAmount <= 0)) {
+    ctx.addIssue({
+      code: 'custom',
+      path: ['additionalAmount'],
+      message: 'Saisissez le montant supplémentaire avant de définir un échéancier',
     });
   }
 });
@@ -252,6 +272,29 @@ function fifthOfMonthDates(fromDateStr: string, count: number): string[] {
   return out;
 }
 
+/**
+ * Solde restant à payer sur une convention de vente. Logique alignée sur le
+ * resolver de variables de modèle (cf. computeSolde dans conventionTemplate.ts).
+ *   - Paiement comptant (CASH) → 0
+ *   - Échéancier présent → somme des échéances non `PAYE`/`ANNULE`
+ *   - À défaut → `saleAmount − apportInitial` borné à 0
+ * Retourne `null` si la convention n'a pas de prix de vente.
+ */
+function computeConventionSolde(parent: any): number | null {
+  if (!parent) return null;
+  const sale = Number(parent.saleAmount ?? 0);
+  if (!sale) return null;
+  if (parent.paymentModalites === 'CASH') return 0;
+  const apport = Number(parent.apportInitial ?? 0);
+  const installments: any[] = parent.installments ?? [];
+  if (installments.length > 0) {
+    return installments
+      .filter((i: any) => i.status !== 'PAYE' && i.status !== 'ANNULE')
+      .reduce((s: number, i: any) => s + (Number(i.amount) || 0), 0);
+  }
+  return Math.max(0, sale - apport);
+}
+
 /** Construit l'échéancier par défaut : montants égaux, dernière échéance ajustée à l'arrondi. */
 function buildInstallments(
   count: number, total: number, apport: number, fromDateStr: string,
@@ -385,6 +428,7 @@ export default function ConventionFormPage() {
   });
 
   const watchType = watch('type');
+  const watchAmendmentType = watch('amendmentType');
   const watchModalites = watch('paymentModalites');
   const watchAssetType = watch('assetType');
   const watchStartDate = watch('startDate');
@@ -394,18 +438,33 @@ export default function ConventionFormPage() {
   const watchSignedAt = watch('signedAt');
   const watchSaleAmount = watch('saleAmount');
   const watchApport = watch('apportInitial');
+  const watchAdditionalAmount = watch('additionalAmount');
   const clientIdNum = Number(watchClientId) || 0;
+  // Cas particulier : l'avenant de transfert de site / changement de lot.
+  // L'utilisateur doit pouvoir sélectionner de nouveaux terrains (parmi les
+  // DISPONIBLES) — on ne masque pas le sélecteur et on n'hérite pas de la
+  // convention parente.
+  const isTransfertSite = watchType === 'AVENANT' && watchAmendmentType === 'TRANSFERT_SITE';
 
   const installmentCount = watchModalites === 'SUR_PLUS_60_MOIS'
     ? (Number(watchInstallmentCount) || 0)
     : (INSTALLMENT_COUNTS[watchModalites ?? ''] ?? 0);
   const installmentsTotal = installmentRows.reduce((s, r) => s + (Number(r.amount) || 0), 0);
 
+  // Pour un avenant de transfert de site, la base de l'échéancier est le
+  // montant supplémentaire (et il n'y a pas d'apport — c'est un complément).
+  // Pour les autres conventions de vente, on reste sur le prix de vente
+  // total avec apport initial éventuel.
+  const installmentBaseAmount = isTransfertSite
+    ? (Number(watchAdditionalAmount) || 0)
+    : (Number(watchSaleAmount) || 0);
+  const installmentApportAmount = isTransfertSite ? 0 : (Number(watchApport) || 0);
+
   const recomputeInstallments = () => {
     setInstallmentRows(buildInstallments(
       installmentCount,
-      Number(watchSaleAmount) || 0,
-      Number(watchApport) || 0,
+      installmentBaseAmount,
+      installmentApportAmount,
       watchSignedAt || watchStartDate,
     ));
   };
@@ -416,11 +475,12 @@ export default function ConventionFormPage() {
 
   const typeOptions = watchAssetType === 'TERRAIN' ? TERRAIN_TYPE_OPTIONS : PROPERTY_TYPE_OPTIONS;
 
-  // Règle métier : pour SOUSCRIPTION de terrain, la convention acte la réservation —
-  // on propose tous les terrains DISPONIBLES. Pour les autres types (SALE/AVENANT/
-  // RESILIATION), le terrain doit avoir été préalablement assigné au client choisi
-  // (clientId + statut engagé) depuis la fiche terrain.
-  const terrainStrictByClient = !TERRAIN_DISPONIBLE_TYPES.includes(watchType);
+  // Règle métier : pour SOUSCRIPTION de terrain (et pour l'avenant de
+  // TRANSFERT_SITE qui acte le changement de lot vers un nouveau terrain), la
+  // convention propose les terrains DISPONIBLES. Pour les autres types
+  // (SALE/AVENANT autres natures/RESILIATION), le terrain doit avoir été
+  // préalablement assigné au client choisi depuis la fiche terrain.
+  const terrainStrictByClient = !TERRAIN_DISPONIBLE_TYPES.includes(watchType) && !isTransfertSite;
   // Terrains déjà rattachés en édition — conservés en option même hors filtre courant.
   const editingTerrains: any[] = isEdit
     ? (res?.data?.terrains ?? []).map((l: any) => l.terrain)
@@ -540,23 +600,34 @@ export default function ConventionFormPage() {
     }),
   ];
 
-  // Avenant / résiliation : convention initiale ou précédente, parmi les conventions
-  // partageant au moins un terrain avec la sélection courante.
+  // Avenant / résiliation : la convention parente est choisie parmi les
+  // conventions « principales » déjà créées au nom du client sélectionné
+  // (souscription, vente, location, gestion, bail commercial). On exclut les
+  // avenants et résiliations eux-mêmes (pas d'avenant d'avenant) ainsi que
+  // la convention en cours d'édition. Les terrains/biens rattachés seront
+  // hérités automatiquement de la convention parente.
   const isAmendment = AMENDMENT_TYPES.includes(watchType);
-  const selectedTerrainIdSet = new Set(watchTerrainIds.map(String));
   const parentConventionOptions = [
     { value: '', label: '— Choisir la convention —' },
     ...(conventionsRes?.data ?? [])
       .filter((co: any) => {
         if (co.id === Number(id)) return false;
-        const coTerrainIds: string[] = (co.terrains ?? []).map((l: any) => String(l.terrain?.id ?? l.terrainId));
-        return coTerrainIds.some((tid) => selectedTerrainIdSet.has(tid));
+        if (AMENDMENT_TYPES.includes(co.type)) return false;
+        return clientIdNum > 0 && Number(co.clientId) === clientIdNum;
       })
       .map((co: any) => {
-        const cn = formatPersonName(co.client, '');
+        const date = co.startDate
+          ? new Date(co.startDate).toLocaleDateString('fr-FR')
+          : '';
+        // Nom du lotissement repris depuis le premier terrain rattaché
+        // (les terrains d'une convention partagent obligatoirement le même
+        // lotissement). Absent pour les conventions portant sur des biens.
+        const lot = co.terrains?.[0]?.terrain?.lotissement?.nom ?? '';
         return {
           value: String(co.id),
-          label: `${co.reference} — ${TYPE_LABELS[co.type] ?? co.type}${cn ? ` — ${cn}` : ''}`,
+          label: `${co.reference} — ${TYPE_LABELS[co.type] ?? co.type}`
+            + (lot ? ` — ${lot}` : '')
+            + (date ? ` (${date})` : ''),
         };
       }),
   ];
@@ -584,6 +655,8 @@ export default function ConventionFormPage() {
   // sinon la sélection sur biens/terrains DISPONIBLES reste valide quel que soit le client.
   // Le pré-remplissage initial (edit mode) ne déclenche pas la purge : on enregistre
   // d'abord le clientId d'amorçage, on ne réagit qu'aux changements suivants.
+  // En avenant/résiliation, on réinitialise aussi la convention parente : elle
+  // dépend du client courant et le précédent choix n'a plus de sens.
   useEffect(() => {
     if (prevClientIdRef.current === null) {
       prevClientIdRef.current = clientIdNum;
@@ -593,8 +666,35 @@ export default function ConventionFormPage() {
       prevClientIdRef.current = clientIdNum;
       if (terrainStrictByClient) setValue('terrainIds', [], { shouldValidate: false });
       if (propertyStrictByClient) setValue('propertyIds', [], { shouldValidate: false });
+      if (isAmendment) setValue('parentConventionId', undefined, { shouldValidate: false });
     }
-  }, [clientIdNum, setValue, terrainStrictByClient, propertyStrictByClient]);
+  }, [clientIdNum, setValue, terrainStrictByClient, propertyStrictByClient, isAmendment]);
+
+  // Avenant / résiliation : on hérite automatiquement des terrains et biens
+  // de la convention parente sélectionnée. Le sélecteur de rattachement est
+  // masqué dans ce cas — la cohérence est garantie par cette propagation.
+  // Exception : l'avenant de TRANSFERT_SITE acte un changement de lot, donc
+  // l'utilisateur sélectionne lui-même les nouveaux terrains — pas d'héritage.
+  const watchParentId = watch('parentConventionId');
+  // Pour un avenant : fiche complète de la convention parente (échéancier
+  // inclus) — utilisée pour afficher le solde restant à payer dans le bloc
+  // « Conditions financières » d'un avenant de transfert de site.
+  const parentIdForFetch = Number(watchParentId) || 0;
+  const { data: parentRes } = useConvention(parentIdForFetch);
+  const parentConventionFull = parentRes?.data;
+  useEffect(() => {
+    if (!isAmendment || isTransfertSite || !watchParentId) return;
+    const parent = (conventionsRes?.data ?? []).find((c: any) => c.id === Number(watchParentId));
+    if (!parent) return;
+    const terrIds: number[] = (parent.terrains ?? [])
+      .map((l: any) => Number(l.terrain?.id ?? l.terrainId))
+      .filter((x: number) => Number.isFinite(x) && x > 0);
+    const propIds: number[] = (parent.properties ?? [])
+      .map((l: any) => Number(l.property?.id ?? l.propertyId))
+      .filter((x: number) => Number.isFinite(x) && x > 0);
+    setValue('terrainIds', terrIds, { shouldValidate: false });
+    setValue('propertyIds', propIds, { shouldValidate: false });
+  }, [watchParentId, isAmendment, isTransfertSite, conventionsRes, setValue]);
 
   // Calcule la date de fin à partir de la date de début et du délai choisi.
   useEffect(() => {
@@ -604,6 +704,8 @@ export default function ConventionFormPage() {
   }, [watchStartDate, durationMonths, setValue]);
 
   // Régénère l'échéancier par défaut quand le nombre d'échéances change.
+  // La base est `additionalAmount` pour un transfert de site, sinon le
+  // prix de vente (avec apport déduit dans ce cas).
   useEffect(() => {
     if (skipInstallmentGenRef.current) {
       skipInstallmentGenRef.current = false;
@@ -613,8 +715,8 @@ export default function ConventionFormPage() {
       installmentCount > 0
         ? buildInstallments(
             installmentCount,
-            Number(watchSaleAmount) || 0,
-            Number(watchApport) || 0,
+            installmentBaseAmount,
+            installmentApportAmount,
             watchSignedAt || watchStartDate,
           )
         : [],
@@ -650,6 +752,7 @@ export default function ConventionFormPage() {
         agencyFees: c.agencyFees ? Number(c.agencyFees) : undefined,
         charges: c.charges ? Number(c.charges) : undefined,
         fraisOuvertureDossier: c.fraisOuvertureDossier ? Number(c.fraisOuvertureDossier) : undefined,
+        additionalAmount: c.additionalAmount ? Number(c.additionalAmount) : undefined,
         indexType: c.indexType ?? '',
         notes: c.notes ?? '',
       });
@@ -707,6 +810,10 @@ export default function ConventionFormPage() {
     if (payload.type !== 'AVENANT') delete payload.amendmentType;
     // La nature de la souscription ne concerne que les souscriptions
     if (payload.type !== 'SOUSCRIPTION') delete payload.souscriptionType;
+    // Le montant supplémentaire ne concerne que l'avenant de transfert de site
+    if (!(payload.type === 'AVENANT' && payload.amendmentType === 'TRANSFERT_SITE')) {
+      delete payload.additionalAmount;
+    }
     // Échéancier : vente par échéances uniquement
     if (isSale && payload.paymentModalites !== 'CASH') {
       payload.installments = installmentRows
@@ -764,7 +871,11 @@ export default function ConventionFormPage() {
               options={clientOptions}
               error={errors.clientId?.message}
             />
-            {watchAssetType === 'TERRAIN' ? (
+            {isAmendment && !isTransfertSite ? (
+              <div className="text-xs text-slate-600 bg-slate-50 border border-slate-200 rounded px-3 py-2">
+                Les {watchAssetType === 'TERRAIN' ? 'terrains' : 'biens'} rattachés à cette convention seront hérités automatiquement de la convention initiale / précédente sélectionnée ci-dessous.
+              </div>
+            ) : watchAssetType === 'TERRAIN' ? (
               <>
                 <Controller
                   control={control}
@@ -874,9 +985,22 @@ export default function ConventionFormPage() {
                 options={parentConventionOptions}
                 error={errors.parentConventionId?.message}
               />
-              <p className="text-xs text-slate-500 mt-1">
-                Conventions partageant au moins un terrain avec la sélection courante.
-              </p>
+              {clientIdNum === 0 ? (
+                <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-3 py-2 mt-2">
+                  Sélectionnez d'abord le client principal pour afficher les conventions déjà créées en son nom.
+                </p>
+              ) : parentConventionOptions.length <= 1 ? (
+                <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-3 py-2 mt-2">
+                  Aucune convention parente n'a été trouvée pour ce client. Créez d'abord la convention initiale avant de saisir un avenant ou une résiliation.
+                </p>
+              ) : (
+                <p className="text-xs text-slate-500 mt-1">
+                  Conventions déjà créées au nom du client sélectionné
+                  {isTransfertSite
+                    ? ' — sélectionnez ci-dessus les nouveaux terrains du lot de remplacement.'
+                    : ' — les terrains et biens rattachés en seront hérités automatiquement.'}
+                </p>
+              )}
             </div>
           )}
           <div className="grid grid-cols-2 gap-4 mt-4">
@@ -924,7 +1048,41 @@ export default function ConventionFormPage() {
             </>
           ) : (
             <>
-              {watchAssetType === 'TERRAIN' ? (
+              {isTransfertSite ? (
+                <div className="space-y-4">
+                  {/* Solde restant à payer sur la convention initiale —
+                      lecture seule, calculé à partir des échéances du parent. */}
+                  <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
+                    <div className="text-xs font-medium text-slate-500 uppercase tracking-wide">
+                      Solde à payer sur la convention initiale
+                    </div>
+                    <div className="text-lg font-semibold text-slate-800 mt-1">
+                      {(() => {
+                        if (!parentIdForFetch) return '— sélectionnez la convention initiale —';
+                        const s = computeConventionSolde(parentConventionFull);
+                        return s != null ? formatCurrency(s) : '—';
+                      })()}
+                    </div>
+                    {parentConventionFull?.reference && (
+                      <div className="text-xs text-slate-500 mt-1">
+                        Réf. {parentConventionFull.reference}
+                        {parentConventionFull.paymentModalites === 'CASH' && ' — payée comptant à la signature'}
+                      </div>
+                    )}
+                  </div>
+                  <Input
+                    label="Montant supplémentaire (FCFA)"
+                    type="number"
+                    step="1000"
+                    placeholder="0"
+                    error={errors.additionalAmount?.message}
+                    {...register('additionalAmount')}
+                  />
+                  <p className="text-xs text-slate-500 -mt-2">
+                    Complément à payer suite au changement de lot (différence de prix, frais d'avenant…). Laisser vide si aucun supplément.
+                  </p>
+                </div>
+              ) : watchAssetType === 'TERRAIN' ? (
                 <div>
                   <Input label="Prix de vente total (FCFA)" type="number" step="1000" {...register('saleAmount')} />
                   <p className="text-xs text-slate-500 mt-1">
@@ -943,12 +1101,19 @@ export default function ConventionFormPage() {
               </div>
               {isInstallment && (
                 <div className="mt-4 p-4 bg-blue-50 rounded-lg space-y-4">
-                  <div className="grid grid-cols-2 gap-4">
-                    <Input label="Apport initial (FCFA)" type="number" step="1000" {...register('apportInitial')} />
-                    {watchModalites === 'SUR_PLUS_60_MOIS' && (
-                      <Input label="Nombre d'échéances" type="number" {...register('installmentCount')} />
-                    )}
-                  </div>
+                  {/* Pour un transfert de site, pas d'apport — la base de
+                      l'échéancier est directement le montant supplémentaire. */}
+                  {!isTransfertSite && (
+                    <div className="grid grid-cols-2 gap-4">
+                      <Input label="Apport initial (FCFA)" type="number" step="1000" {...register('apportInitial')} />
+                      {watchModalites === 'SUR_PLUS_60_MOIS' && (
+                        <Input label="Nombre d'échéances" type="number" {...register('installmentCount')} />
+                      )}
+                    </div>
+                  )}
+                  {isTransfertSite && watchModalites === 'SUR_PLUS_60_MOIS' && (
+                    <Input label="Nombre d'échéances" type="number" {...register('installmentCount')} />
+                  )}
                   {installmentCount > 0 && (
                     <div>
                       <div className="flex items-center justify-between mb-2">
@@ -977,10 +1142,16 @@ export default function ConventionFormPage() {
                       </div>
                       <div className="flex justify-between text-xs mt-2 pt-2 border-t border-blue-200 text-slate-600">
                         <span>Total échéances : <span className="font-semibold">{installmentsTotal.toLocaleString('fr-FR')} FCFA</span></span>
-                        <span>Apport + échéances : <span className="font-semibold">{(installmentsTotal + (Number(watchApport) || 0)).toLocaleString('fr-FR')} FCFA</span></span>
+                        {isTransfertSite ? (
+                          <span>Montant supplémentaire : <span className="font-semibold">{(Number(watchAdditionalAmount) || 0).toLocaleString('fr-FR')} FCFA</span></span>
+                        ) : (
+                          <span>Apport + échéances : <span className="font-semibold">{(installmentsTotal + (Number(watchApport) || 0)).toLocaleString('fr-FR')} FCFA</span></span>
+                        )}
                       </div>
                       <p className="text-xs text-slate-500 mt-1">
-                        Par défaut : (prix de vente − apport) ÷ nombre d'échéances, le 5 de chaque mois à partir de la signature. Dates et montants modifiables.
+                        {isTransfertSite
+                          ? "Par défaut : montant supplémentaire ÷ nombre d'échéances, le 5 de chaque mois à partir de la signature. Dates et montants modifiables."
+                          : "Par défaut : (prix de vente − apport) ÷ nombre d'échéances, le 5 de chaque mois à partir de la signature. Dates et montants modifiables."}
                       </p>
                     </div>
                   )}

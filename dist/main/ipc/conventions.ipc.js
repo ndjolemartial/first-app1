@@ -38,6 +38,9 @@ const conventionBaseSchema = zod_1.z.object({
     agencyFees: zod_1.z.number().optional(),
     charges: zod_1.z.number().optional(),
     fraisOuvertureDossier: zod_1.z.number().optional(),
+    // Avenant de transfert de site uniquement — complément éventuel à payer
+    // lié au changement de lot. Ignoré pour tout autre type de convention.
+    additionalAmount: zod_1.z.number().optional(),
     paymentDay: zod_1.z.number().int().min(1).max(31).optional(),
     paymentMethod: zod_1.z.enum(['ESPECE', 'CHEQUE', 'TRANSFERT', 'VIREMENT', 'MOBILE_MONEY', 'NON_DEFINI']).default('ESPECE'),
     paymentModalites: zod_1.z.enum(['CASH', 'SUR_3_MOIS', 'SUR_6_MOIS', 'SUR_9_MOIS', 'SUR_12_MOIS', 'SUR_24_MOIS', 'SUR_36_MOIS', 'SUR_48_MOIS', 'SUR_60_MOIS', 'SUR_PLUS_60_MOIS']).default('CASH'),
@@ -251,7 +254,43 @@ function registerConventionsIPC() {
                     ...linksIncludeDetail,
                     client: { include: { idType: { select: { id: true, code: true, label: true } } } },
                     secondaryClient: { include: { idType: { select: { id: true, code: true, label: true } } } },
-                    parentConvention: { select: { id: true, reference: true, type: true, status: true } },
+                    // Convention parente — on charge en plus signedAt, saleAmount,
+                    // apportInitial, l'échéancier (pour le solde), la liste de ses
+                    // amendments (pour le numéro d'avenant courant) et le premier
+                    // terrain rattaché avec son lotissement (pour les variables
+                    // {{convention.initiale.lotissement.*}}).
+                    parentConvention: {
+                        select: {
+                            id: true, reference: true, type: true, status: true,
+                            signedAt: true, saleAmount: true, apportInitial: true,
+                            // Nécessaire pour distinguer paiement comptant (CASH) et
+                            // paiement échelonné dans le calcul du total des versements.
+                            paymentModalites: true,
+                            installments: {
+                                select: { id: true, amount: true, status: true },
+                                orderBy: { installmentNumber: 'asc' },
+                            },
+                            amendments: {
+                                where: { deletedAt: null },
+                                select: { id: true, createdAt: true, reference: true },
+                                orderBy: { createdAt: 'asc' },
+                            },
+                            terrains: {
+                                orderBy: { order: 'asc' },
+                                select: {
+                                    terrain: {
+                                        select: {
+                                            id: true,
+                                            // Champs requis par lotsEnumeration() pour le rendu de
+                                            // la variable {{convention.initiale.lotsSouscrits}}.
+                                            numeroIlot: true, numeroParcelle: true, surface: true,
+                                            lotissement: { select: { id: true, nom: true, ville: true } },
+                                        },
+                                    },
+                                },
+                            },
+                        },
+                    },
                     amendments: {
                         where: { deletedAt: null },
                         select: { id: true, reference: true, type: true, status: true, createdAt: true },
@@ -317,6 +356,10 @@ function registerConventionsIPC() {
                     agencyFees: isTerrain ? null : toDecimal(d.agencyFees),
                     charges: toDecimal(d.charges),
                     fraisOuvertureDossier: toDecimal(d.fraisOuvertureDossier),
+                    // additionalAmount n'a de sens que pour l'avenant de transfert de site
+                    additionalAmount: (d.type === 'AVENANT' && d.amendmentType === 'TRANSFERT_SITE')
+                        ? toDecimal(d.additionalAmount)
+                        : null,
                     paymentDay: d.paymentDay,
                     paymentMethod: d.paymentMethod,
                     paymentModalites: d.paymentModalites,
@@ -428,6 +471,11 @@ function registerConventionsIPC() {
             // La nature de la souscription ne s'applique qu'aux souscriptions
             if (d.type && d.type !== 'SOUSCRIPTION')
                 data.souscriptionType = null;
+            // Le montant supplémentaire ne concerne que l'avenant de transfert de site —
+            // pour tout autre type / nature, on neutralise la valeur côté base.
+            if (d.type && !(d.type === 'AVENANT' && d.amendmentType === 'TRANSFERT_SITE')) {
+                data.additionalAmount = null;
+            }
             if (d.parentConventionId && d.parentConventionId === id) {
                 return { success: false, error: 'Une convention ne peut pas être liée à elle-même' };
             }
