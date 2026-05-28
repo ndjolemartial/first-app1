@@ -6,7 +6,9 @@ import Input from '../../../shared/components/ui/Input';
 import Select from '../../../shared/components/ui/Select';
 import Card from '../../../shared/components/ui/Card';
 import RichTextEditor from '../../../shared/components/ui/RichTextEditor';
+import FooterColorPicker from '../components/FooterColorPicker';
 import { CONVENTION_VARIABLE_GROUPS } from '../utils/conventionTemplate';
+import { footerTextColor, isTransparentFooter, resolveFooterBg } from '../utils/footerColor';
 import {
   useConventionTemplate, useCreateConventionTemplate, useUpdateConventionTemplate,
 } from '../hooks/useConventionTemplates';
@@ -50,13 +52,21 @@ export default function ConventionTemplateFormPage() {
   const [amendmentType, setAmendmentType] = useState('');
   const [souscriptionType, setSouscriptionType] = useState('');
   const [isDefault, setIsDefault] = useState(false);
+  // En-tête monobloc — texte et/ou image ; toute image insérée occupe 100 %
+  // de la largeur du bloc (cf. CSS Tailwind `[&_img]` ci-dessous et CSS PDF
+  // dans `ConventionDocumentPage.buildHeaderTemplate`).
   const [header, setHeader] = useState('');
+  const [headerWidth, setHeaderWidth] = useState(100);
+  const [headerHeight, setHeaderHeight] = useState(140);
   const [body, setBody] = useState('');
   const [footer, setFooter] = useState('');
-  const [headerWidth, setHeaderWidth] = useState(100);
   const [footerWidth, setFooterWidth] = useState(100);
-  const [headerHeight, setHeaderHeight] = useState(140);
   const [footerHeight, setFooterHeight] = useState(140);
+  const [footerBgColor, setFooterBgColor] = useState<string | null>(null);
+  const [endOfDocument, setEndOfDocument] = useState('');
+  const [endOfDocumentWidth, setEndOfDocumentWidth] = useState(100);
+  const [endOfDocumentHeight, setEndOfDocumentHeight] = useState(140);
+  const [endOfDocumentBgColor, setEndOfDocumentBgColor] = useState<string | null>(null);
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
 
@@ -69,12 +79,17 @@ export default function ConventionTemplateFormPage() {
       setSouscriptionType(t.souscriptionType ?? '');
       setIsDefault(!!t.isDefault);
       setHeader(t.header ?? '');
+      setHeaderWidth(t.headerWidth ?? 100);
+      setHeaderHeight(t.headerHeight ?? 140);
       setBody(t.body ?? '');
       setFooter(t.footer ?? '');
-      setHeaderWidth(t.headerWidth ?? 100);
       setFooterWidth(t.footerWidth ?? 100);
-      setHeaderHeight(t.headerHeight ?? 140);
       setFooterHeight(t.footerHeight ?? 140);
+      setFooterBgColor(t.footerBgColor ?? null);
+      setEndOfDocument(t.endOfDocument ?? '');
+      setEndOfDocumentWidth(t.endOfDocumentWidth ?? 100);
+      setEndOfDocumentHeight(t.endOfDocumentHeight ?? 140);
+      setEndOfDocumentBgColor(t.endOfDocumentBgColor ?? null);
     }
   }, [res, isEdit]);
 
@@ -83,8 +98,10 @@ export default function ConventionTemplateFormPage() {
     setError('');
     setSaving(true);
     const payload = {
-      name: name.trim(), type, isDefault, header, body, footer,
-      headerWidth, footerWidth, headerHeight, footerHeight,
+      name: name.trim(), type, isDefault, body, footer,
+      header, headerWidth, headerHeight,
+      footerWidth, footerHeight, footerBgColor,
+      endOfDocument, endOfDocumentWidth, endOfDocumentHeight, endOfDocumentBgColor,
       amendmentType: type === 'AVENANT' ? (amendmentType || undefined) : undefined,
       souscriptionType: type === 'SOUSCRIPTION' ? (souscriptionType || undefined) : undefined,
     };
@@ -157,8 +174,17 @@ export default function ConventionTemplateFormPage() {
               </div>
             </div>
           </div>
-          <p className="text-xs text-slate-500 mb-3">Apparaît en haut de chaque page du document généré.</p>
-          <div style={{ width: `${headerWidth}%` }}>
+          <p className="text-xs text-slate-500 mb-3">
+            Apparaît en haut de chaque page du document généré. Toute image
+            insérée occupe automatiquement 100 % de la largeur du bloc.
+          </p>
+          {/* `[&_.tiptap-content_img]:!w-full` force les images du bloc à
+              prendre 100 % de la largeur du conteneur, aussi bien dans
+              l'éditeur que dans l'aperçu — mêmes règles côté PDF. */}
+          <div
+            style={{ width: `${headerWidth}%` }}
+            className="[&_.tiptap-content_img]:!w-full [&_.tiptap-content_img]:!h-auto [&_.tiptap-content_img]:!max-w-none"
+          >
             <RichTextEditor value={header} onChange={setHeader} variables={CONVENTION_VARIABLE_GROUPS}
               placeholder="En-tête (logo, coordonnées de l'agence…)" minHeight={headerHeight} />
           </div>
@@ -167,10 +193,52 @@ export default function ConventionTemplateFormPage() {
         <Card>
           <h3 className="text-base font-semibold text-slate-800 mb-1">Corps de la convention</h3>
           <p className="text-xs text-slate-500 mb-3">
-            Utilisez le bouton « Variables » pour insérer des valeurs dynamiques (client, terrain, montants…).
+            Utilisez le bouton « Variables » pour insérer des valeurs dynamiques (client,
+            terrain, montants…). Les marqueurs « — Page N — » indiquent approximativement
+            où le contenu débordera sur une nouvelle page A4.
           </p>
           <RichTextEditor value={body} onChange={setBody} variables={CONVENTION_VARIABLE_GROUPS}
-            placeholder="Corps de la convention…" minHeight={380} />
+            placeholder="Corps de la convention…" minHeight={380} showPageBreaks />
+        </Card>
+
+        <Card>
+          <div className="flex items-center justify-between mb-1">
+            <h3 className="text-base font-semibold text-slate-800">Fin du document</h3>
+            <div className="flex items-center gap-4">
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-slate-500">Largeur</span>
+                <input type="range" min={20} max={100} step={5} value={endOfDocumentWidth}
+                  onChange={(e) => setEndOfDocumentWidth(Number(e.target.value))} className="w-28 accent-blue-600" />
+                <span className="text-xs font-medium text-slate-600 w-9 text-right">{endOfDocumentWidth}%</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-slate-500">Hauteur</span>
+                <input type="range" min={40} max={500} step={10} value={endOfDocumentHeight}
+                  onChange={(e) => setEndOfDocumentHeight(Number(e.target.value))} className="w-28 accent-blue-600" />
+                <span className="text-xs font-medium text-slate-600 w-12 text-right">{endOfDocumentHeight}px</span>
+              </div>
+            </div>
+          </div>
+          <div className="flex items-center justify-between mb-3 gap-3 flex-wrap">
+            <p className="text-xs text-slate-500">
+              Inséré à la suite du corps (signatures, mentions légales finales…), une seule fois.
+            </p>
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-slate-500">Couleur de fond</span>
+              <FooterColorPicker value={endOfDocumentBgColor} onChange={setEndOfDocumentBgColor} />
+            </div>
+          </div>
+          <div
+            className={`rounded p-2 ${isTransparentFooter(endOfDocumentBgColor) ? 'border border-dashed border-slate-300' : ''}`}
+            style={{
+              width: `${endOfDocumentWidth}%`,
+              backgroundColor: isTransparentFooter(endOfDocumentBgColor) ? 'transparent' : resolveFooterBg(endOfDocumentBgColor),
+              color: footerTextColor(endOfDocumentBgColor),
+            }}
+          >
+            <RichTextEditor value={endOfDocument} onChange={setEndOfDocument} variables={CONVENTION_VARIABLE_GROUPS}
+              placeholder="Fin du document (signatures, mentions finales…)" minHeight={endOfDocumentHeight} />
+          </div>
         </Card>
 
         <Card>
@@ -191,8 +259,23 @@ export default function ConventionTemplateFormPage() {
               </div>
             </div>
           </div>
-          <p className="text-xs text-slate-500 mb-3">Apparaît en bas de chaque page du document généré (fond rouge).</p>
-          <div className="rounded bg-red-600 p-2" style={{ width: `${footerWidth}%` }}>
+          <div className="flex items-center justify-between mb-3 gap-3 flex-wrap">
+            <p className="text-xs text-slate-500">
+              Apparaît en bas de chaque page du document généré.
+            </p>
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-slate-500">Couleur de fond</span>
+              <FooterColorPicker value={footerBgColor} onChange={setFooterBgColor} />
+            </div>
+          </div>
+          <div
+            className={`rounded p-2 ${isTransparentFooter(footerBgColor) ? 'border border-dashed border-slate-300' : ''}`}
+            style={{
+              width: `${footerWidth}%`,
+              backgroundColor: isTransparentFooter(footerBgColor) ? 'transparent' : resolveFooterBg(footerBgColor),
+              color: footerTextColor(footerBgColor),
+            }}
+          >
             <RichTextEditor value={footer} onChange={setFooter} variables={CONVENTION_VARIABLE_GROUPS}
               placeholder="Pied de page (mentions légales, signatures…)" minHeight={footerHeight} />
           </div>

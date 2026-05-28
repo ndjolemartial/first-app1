@@ -37,6 +37,14 @@ function lotsHeader(count: number): string {
   return `${words} (${count}) lot${count > 1 ? 's' : ''}`;
 }
 
+/**
+ * "de superficie" pour un seul lot (un total n'a pas de sens à 1 élément) ;
+ * "de superficie totale" dès qu'il y a au moins deux lots groupés.
+ */
+function surfacePhrase(count: number, surface: string): string {
+  return count > 1 ? `de superficie totale ${surface}` : `de superficie ${surface}`;
+}
+
 /** Jointure type "a, b, c et d" (virgules + « et » devant le dernier). */
 function joinFrench(items: string[]): string {
   if (items.length === 0) return '';
@@ -51,6 +59,8 @@ function joinFrench(items: string[]): string {
  *  2. Aucune référence n'est connue :
  *     « quatre (4) lots de superficie totale 1 923 m² dont les références
  *     seront précisées plus tard. »
+ *     Cas particulier à 1 lot : « un (1) lot de superficie 523 m² … »
+ *     (pas de « totale » quand il n'y a qu'un seul élément).
  *  3. Mixte : on liste les lots connus puis on regroupe les autres :
  *     « quatre (4) lots à savoir le lot 1 ilot 2 …, le lot 4 ilot 37 … et
  *     deux (2) lots de superficie totale 1 023 m² (les références manquantes
@@ -74,12 +84,12 @@ export function lotsEnumeration(terrains: LotEnumItem[] | null | undefined): str
 
   // Cas 2 : aucune référence n'est connue.
   if (known.length === 0) {
-    return `${lotsHeader(total)} de superficie totale ${surfaceLabel(unknownTotalSurface)} dont les références seront précisées plus tard`;
+    return `${lotsHeader(total)} ${surfacePhrase(total, surfaceLabel(unknownTotalSurface))} dont les références seront précisées plus tard`;
   }
 
   // Cas 3 : mixte — on liste les connus puis on regroupe le reste.
   const unknownGroup =
-    `${lotsHeader(unknown.length)} de superficie totale ${surfaceLabel(unknownTotalSurface)}`
+    `${lotsHeader(unknown.length)} ${surfacePhrase(unknown.length, surfaceLabel(unknownTotalSurface))}`
     + ` (les références manquantes seront précisées plus tard)`;
   return `${lotsHeader(total)} à savoir ${joinFrench([...knownParts, unknownGroup])}`;
 }

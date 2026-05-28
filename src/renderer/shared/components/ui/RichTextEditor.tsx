@@ -1,9 +1,9 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import {
   Bold, Italic, Underline as UnderlineIcon, Strikethrough, Heading1, Heading2, Pilcrow,
   List, ListOrdered, AlignLeft, AlignCenter, AlignRight, AlignJustify, Braces,
   Baseline, Highlighter, Image as ImageIcon, SquarePlus, Shapes, Link as LinkIcon,
-  GitBranch, MoveDiagonal2, CornerDownLeft,
+  GitBranch, MoveDiagonal2, CornerDownLeft, MoveVertical,
 } from 'lucide-react';
 import { useEditor, EditorContent, Editor } from '@tiptap/react';
 import { Extension } from '@tiptap/core';
@@ -36,10 +36,34 @@ interface RichTextEditorProps {
   variables?: VariableGroup[];
   placeholder?: string;
   minHeight?: number;
+  /**
+   * Affiche des marqueurs de saut de page (lignes pointillées + « — Page N — »)
+   * pour aider à visualiser où le contenu débordera sur la page suivante du PDF.
+   * La hauteur d'une page utile est estimée à ~1000 px (équivalent A4 à 96 dpi,
+   * margins moyens) — c'est une approximation visuelle, pas une pagination exacte.
+   */
+  showPageBreaks?: boolean;
 }
+
+/**
+ * Hauteur de contenu utile d'une page A4 en pixels CSS (≈ 96 dpi).
+ * A4 : 297 mm − marges typiques (haut 18 mm + bas 18 mm) ≈ 261 mm ≈ 987 px.
+ * Arrondi à 1000 px pour faciliter le repérage visuel.
+ */
+const PAGE_BREAK_HEIGHT_PX = 1000;
 
 /** Tailles de police disponibles dans le sélecteur. */
 const FONT_SIZES = ['8pt', '9pt', '10pt', '11pt', '12pt', '14pt', '16pt', '18pt', '20pt', '24pt', '28pt', '32pt', '36pt', '48pt'];
+
+/** Valeurs d'interligne proposées dans le sélecteur (multiplicateurs). */
+const LINE_HEIGHTS: { value: string; label: string }[] = [
+  { value: '1',    label: '1.0' },
+  { value: '1.15', label: '1.15' },
+  { value: '1.5',  label: '1.5' },
+  { value: '2',    label: '2.0' },
+  { value: '2.5',  label: '2.5' },
+  { value: '3',    label: '3.0' },
+];
 
 /** Familles de police disponibles. */
 const FONT_FAMILIES: { label: string; value: string }[] = [
@@ -85,18 +109,49 @@ const FontSize = Extension.create({
 });
 
 /**
+ * Extension TipTap qui ajoute un attribut `lineHeight` aux paragraphes et
+ * aux titres. Sérialise via `style="line-height: X"` (multiplicateur sans
+ * unité, conforme à la pratique des éditeurs WYSIWYG).
+ */
+const LineHeight = Extension.create({
+  name: 'lineHeight',
+  addOptions() {
+    return { types: ['paragraph', 'heading'] };
+  },
+  addGlobalAttributes() {
+    return [
+      {
+        types: this.options.types as string[],
+        attributes: {
+          lineHeight: {
+            default: null,
+            parseHTML: (el: HTMLElement) => el.style.lineHeight || null,
+            renderHTML: (attrs: { lineHeight?: string | null }) => {
+              if (!attrs.lineHeight) return {};
+              return { style: `line-height: ${attrs.lineHeight}` };
+            },
+          },
+        },
+      },
+    ];
+  },
+});
+
+/**
  * Éditeur de texte enrichi basé sur TipTap (ProseMirror). Produit un HTML
  * propre et sémantique adapté à l'impression PDF, avec sélecteurs de police,
  * couleurs, alignement, listes, images et insertion de variables dynamiques.
  */
 export default function RichTextEditor({
-  value, onChange, variables, placeholder, minHeight = 220,
+  value, onChange, variables, placeholder, minHeight = 220, showPageBreaks = false,
 }: RichTextEditorProps) {
   const varsRef = useRef<HTMLDivElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+  const editorAreaRef = useRef<HTMLDivElement>(null);
   const [showVars, setShowVars] = useState(false);
   const [showShape, setShowShape] = useState(false);
   const [showCondition, setShowCondition] = useState(false);
+  const [contentHeight, setContentHeight] = useState(0);
 
   const editor = useEditor({
     extensions: [
@@ -106,6 +161,7 @@ export default function RichTextEditor({
       Underline,
       TextStyle,
       FontSize,
+      LineHeight,
       FontFamily,
       Color,
       Highlight.configure({ multicolor: true }),
@@ -141,6 +197,18 @@ export default function RichTextEditor({
     document.addEventListener('mousedown', onDown);
     return () => document.removeEventListener('mousedown', onDown);
   }, [showVars]);
+
+  // Observe la hauteur de l'éditeur pour positionner les marqueurs de saut
+  // de page. Mise à jour automatique à chaque frappe, image, etc.
+  useLayoutEffect(() => {
+    if (!showPageBreaks || !editorAreaRef.current) return;
+    const el = editorAreaRef.current;
+    const measure = () => setContentHeight(el.scrollHeight);
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [showPageBreaks, editor, value]);
 
   if (!editor) return <div className="border border-slate-300 rounded-lg h-[260px]" />;
 
@@ -185,8 +253,26 @@ export default function RichTextEditor({
     }
   };
 
+  /**
+   * Insère la forme produite par la modale. TipTap/ProseMirror n'a pas de
+   * spec pour `<svg>`, donc une insertion en HTML brut fait silencieusement
+   * disparaître le markup. On convertit le SVG en data URI base64 et on
+   * l'insère via l'extension Image (déjà active) — la forme devient un
+   * nœud Image redimensionnable et compatible avec l'export PDF/Word.
+   */
   const insertShape = (html: string) => {
-    editor.chain().focus().insertContent(html).run();
+    const svgMatch = html.match(/<svg[\s\S]*?<\/svg>/);
+    if (!svgMatch) {
+      editor.chain().focus().insertContent(html).run();
+      return;
+    }
+    const svg = svgMatch[0];
+    // UTF-8 → octets → base64 (compatible avec foreignObject + accents).
+    const bytes = new TextEncoder().encode(svg);
+    let binary = '';
+    for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+    const dataUri = `data:image/svg+xml;base64,${btoa(binary)}`;
+    editor.chain().focus().setImage({ src: dataUri }).run();
   };
 
   /** Insère un bloc de condition `{{#si …}}…{{/si}}` produit par la modale. */
@@ -239,8 +325,11 @@ export default function RichTextEditor({
         onInsertVar={insertVariable}
       />
       <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={onPickImage} />
-      <div className="tiptap-wrapper" data-placeholder={placeholder ?? ''}>
+      <div className="tiptap-wrapper relative" data-placeholder={placeholder ?? ''} ref={editorAreaRef}>
         <EditorContent editor={editor} />
+        {showPageBreaks && contentHeight > PAGE_BREAK_HEIGHT_PX && (
+          <PageBreakMarkers contentHeight={contentHeight} />
+        )}
       </div>
       <ShapeInsertDialog
         open={showShape}
@@ -339,6 +428,27 @@ function Toolbar({
         <option value="">Taille</option>
         {FONT_SIZES.map((s) => <option key={s} value={s}>{s}</option>)}
       </select>
+
+      {/* Interligne — applique line-height au paragraphe ou au titre courant. */}
+      <div title="Interligne" className="flex items-center gap-0.5">
+        <MoveVertical className="h-3.5 w-3.5 text-slate-500" />
+        <select
+          value={(editor.getAttributes('paragraph').lineHeight as string)
+            || (editor.getAttributes('heading').lineHeight as string)
+            || ''}
+          onChange={(e) => {
+            const v = e.target.value || null;
+            const types: ('paragraph' | 'heading')[] = ['paragraph', 'heading'];
+            const chain = editor.chain().focus();
+            types.forEach((t) => chain.updateAttributes(t, { lineHeight: v }));
+            chain.run();
+          }}
+          className="h-8 text-xs text-slate-600 bg-white border border-slate-200 rounded px-1"
+        >
+          <option value="">Interligne</option>
+          {LINE_HEIGHTS.map((lh) => <option key={lh.value} value={lh.value}>{lh.label}</option>)}
+        </select>
+      </div>
 
       <Sep />
 
@@ -520,5 +630,37 @@ function Btn({ onClick, title, active, children }: BtnProps) {
     >
       {children}
     </button>
+  );
+}
+
+// ── PageBreakMarkers ───────────────────────────────────────────────────────────
+
+/**
+ * Affiche des lignes pointillées et un libellé « — Page N — » à chaque hauteur
+ * équivalente à une page A4 utile (~1000 px à 96 dpi). Indication visuelle
+ * uniquement : la pagination réelle du PDF dépend de la largeur d'impression
+ * et de la police, donc ces marqueurs sont approximatifs.
+ */
+function PageBreakMarkers({ contentHeight }: { contentHeight: number }) {
+  const breakCount = Math.floor(contentHeight / PAGE_BREAK_HEIGHT_PX);
+  if (breakCount <= 0) return null;
+  return (
+    <>
+      {Array.from({ length: breakCount }, (_, i) => {
+        const top = (i + 1) * PAGE_BREAK_HEIGHT_PX;
+        return (
+          <div
+            key={i}
+            aria-hidden
+            className="absolute left-0 right-0 pointer-events-none border-t border-dashed border-blue-300"
+            style={{ top }}
+          >
+            <span className="absolute -top-2.5 right-2 px-1.5 py-0.5 text-[10px] font-medium text-blue-600 bg-white border border-blue-200 rounded-full">
+              — Page {i + 2} —
+            </span>
+          </div>
+        );
+      })}
+    </>
   );
 }

@@ -55,6 +55,11 @@ export default function ConventionTemplatesSettingsTab() {
       footerWidth: t.footerWidth ?? 100,
       headerHeight: t.headerHeight ?? 140,
       footerHeight: t.footerHeight ?? 140,
+      footerBgColor: t.footerBgColor ?? null,
+      endOfDocument: t.endOfDocument ?? '',
+      endOfDocumentWidth: t.endOfDocumentWidth ?? 100,
+      endOfDocumentHeight: t.endOfDocumentHeight ?? 140,
+      endOfDocumentBgColor: t.endOfDocumentBgColor ?? null,
       isActive: t.isActive ?? true,
       isDefault: false,
     });

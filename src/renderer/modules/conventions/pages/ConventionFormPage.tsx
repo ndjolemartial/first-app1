@@ -477,10 +477,15 @@ export default function ConventionFormPage() {
           t.numeroIlot ? `Îlot ${t.numeroIlot}` : '',
           t.numeroParcelle ? `Lot ${t.numeroParcelle}` : '',
         ].filter(Boolean).join(', ');
+        // Surface affichée si renseignée — utile pour comparer les parcelles
+        // d'un même lotissement directement dans la liste de sélection.
+        const surface = (t.surface !== null && t.surface !== undefined && t.surface !== '')
+          ? ` · ${t.surface} m²`
+          : '';
         const isClientOwned = clientIdNum > 0 && Number(t.clientId) === clientIdNum;
         return {
           value: String(t.id),
-          label: `${t.reference} — ${t.lotissement?.nom ?? ''}`.trim() + (loc ? ` (${loc})` : ''),
+          label: `${t.reference} — ${t.lotissement?.nom ?? ''}`.trim() + (loc ? ` (${loc})` : '') + surface,
           highlighted: isClientOwned,
         };
       }),

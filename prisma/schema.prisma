@@ -627,13 +627,26 @@ model ConventionTemplate {
   // couvrant toutes les natures de ce type de convention.
   amendmentType    ConventionAmendmentType?
   souscriptionType ConventionSouscriptionType?
-  header      String?    @db.LongText
+  // En-tête monobloc — texte et/ou image. Toute image insérée occupe 100 %
+  // de la largeur du bloc (cf. CSS du rendu PDF). La largeur du bloc et sa
+  // hauteur sont configurables.
+  header       String? @db.LongText
+  headerWidth  Int     @default(100)
+  headerHeight Int     @default(140)
   body        String     @db.LongText
   footer      String?    @db.LongText
-  headerWidth  Int       @default(100)
   footerWidth  Int       @default(100)
-  headerHeight Int       @default(140)
   footerHeight Int       @default(140)
+  // Couleur de fond du pied de page (hex `#rrggbb` ou `transparent`).
+  // `NULL` ⇒ valeur par défaut historique (`#dc2626`).
+  footerBgColor String?  @db.VarChar(20)
+  // Bloc « Fin du document » — inséré à la suite du corps (signatures,
+  // mentions légales finales…). Mêmes contrôles que le pied de page :
+  // largeur en %, hauteur en px, couleur de fond optionnelle.
+  endOfDocument        String?  @db.LongText
+  endOfDocumentWidth   Int      @default(100)
+  endOfDocumentHeight  Int      @default(140)
+  endOfDocumentBgColor String?  @db.VarChar(20)
   isActive  Boolean      @default(true)
   isDefault Boolean      @default(false)
   createdAt DateTime     @default(now())
@@ -667,13 +680,25 @@ model AttestationTemplate {
   uuid         String          @unique @default(cuid())
   name         String
   type         AttestationType
-  header       String?         @db.LongText
+  // En-tête monobloc — texte et/ou image. Toute image insérée occupe 100 %
+  // de la largeur du bloc (cf. CSS du rendu PDF). La largeur du bloc et sa
+  // hauteur sont configurables.
+  header       String? @db.LongText
+  headerWidth  Int     @default(100)
+  headerHeight Int     @default(140)
   body         String          @db.LongText
   footer       String?         @db.LongText
-  headerWidth  Int             @default(100)
   footerWidth  Int             @default(100)
-  headerHeight Int             @default(140)
   footerHeight Int             @default(140)
+  // Couleur de fond du pied de page (hex `#rrggbb` ou `transparent`).
+  // `NULL` ⇒ valeur par défaut historique (`#dc2626`).
+  footerBgColor String?        @db.VarChar(20)
+  // Bloc « Fin du document » — inséré à la suite du corps (signatures,
+  // mentions légales finales…). Mêmes contrôles que le pied de page.
+  endOfDocument        String?  @db.LongText
+  endOfDocumentWidth   Int      @default(100)
+  endOfDocumentHeight  Int      @default(140)
+  endOfDocumentBgColor String?  @db.VarChar(20)
   isActive     Boolean         @default(true)
   isDefault    Boolean         @default(false)
   createdAt    DateTime        @default(now())

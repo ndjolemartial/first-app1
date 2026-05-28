@@ -12,13 +12,28 @@ const ATTESTATION_TYPES = ['ATTRIBUTION', 'CESSION', 'SOLDE', 'TRANSFERT_PROPRIE
 const templateSchema = z.object({
   name: z.string().min(1, 'Nom requis'),
   type: z.enum(ATTESTATION_TYPES),
-  header: z.string().optional(),
+  // En-tête monobloc — texte et/ou image ; toute image insérée occupe 100 %
+  // de la largeur du bloc (CSS du rendu PDF).
+  header:       z.string().optional(),
+  headerWidth:  z.number().int().min(20).max(100).default(100),
+  headerHeight: z.number().int().min(40).max(800).default(140),
   body: z.string().default(''),
   footer: z.string().optional(),
-  headerWidth: z.number().int().min(20).max(100).default(100),
   footerWidth: z.number().int().min(20).max(100).default(100),
-  headerHeight: z.number().int().min(40).max(800).default(140),
   footerHeight: z.number().int().min(40).max(800).default(140),
+  // Couleur de fond du footer : `#rrggbb`, `transparent`, ou null/undefined
+  // pour conserver la valeur par défaut historique (#dc2626).
+  footerBgColor: z.preprocess(
+    (v) => (v === '' || v === null ? null : v),
+    z.string().regex(/^(transparent|#[0-9a-fA-F]{6})$/, 'Couleur invalide').nullable().optional(),
+  ),
+  endOfDocument: z.string().optional(),
+  endOfDocumentWidth: z.number().int().min(20).max(100).default(100),
+  endOfDocumentHeight: z.number().int().min(40).max(800).default(140),
+  endOfDocumentBgColor: z.preprocess(
+    (v) => (v === '' || v === null ? null : v),
+    z.string().regex(/^(transparent|#[0-9a-fA-F]{6})$/, 'Couleur invalide').nullable().optional(),
+  ),
   isActive: z.boolean().default(true),
   isDefault: z.boolean().default(false),
 });
