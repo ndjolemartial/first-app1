@@ -1,9 +1,15 @@
 import { useEffect, useRef, useState } from 'react';
-import { Save, Upload, Trash2, ArrowUp, ArrowDown, Film, ImageIcon } from 'lucide-react';
+import { Save, Upload, Trash2, ArrowUp, ArrowDown, Film, ImageIcon, Eye } from 'lucide-react';
 import Button from '../../../shared/components/ui/Button';
 import Card from '../../../shared/components/ui/Card';
 import Input from '../../../shared/components/ui/Input';
-import { useSlideshowSettings, useUpdateSlideshow, useUploadSlideshowMedia } from '../hooks/useSettings';
+import {
+  useSlideshowSettings,
+  useUpdateSlideshow,
+  useUploadSlideshowMedia,
+  useSlideshowVisibility,
+  useUpdateSlideshowVisibility,
+} from '../hooks/useSettings';
 import { useAuthStore } from '../../../shared/stores/auth.store';
 
 interface SlideItem {
@@ -18,6 +24,16 @@ const ACCEPTED_TYPES = [
   'video/mp4', 'video/webm', 'video/quicktime',
 ];
 const MAX_MB = 50;
+
+const ROLE_OPTIONS: Array<{ value: string; label: string }> = [
+  { value: 'SUPER_ADMIN',          label: 'Super administrateur' },
+  { value: 'ADMIN',                label: 'Administrateur' },
+  { value: 'MANAGER',              label: 'Manager' },
+  { value: 'ACCOUNTANT',           label: 'Comptable' },
+  { value: 'ASSISTANTE_DIRECTION', label: 'Assistante de direction' },
+  { value: 'AGENT',                label: 'Agent' },
+  { value: 'READONLY',             label: 'Lecture seule' },
+];
 
 /** Composant d'aperçu d'un média stocké localement (chargement base64 via IPC). */
 function MediaPreview({ item }: { item: SlideItem }) {
@@ -47,15 +63,30 @@ function MediaPreview({ item }: { item: SlideItem }) {
 
 export default function SlideshowSettingsTab() {
   const { data: res, isLoading } = useSlideshowSettings();
+  const { data: visibilityRes } = useSlideshowVisibility();
   const update = useUpdateSlideshow();
+  const updateVisibility = useUpdateSlideshowVisibility();
   const upload = useUploadSlideshowMedia();
   const [items, setItems] = useState<SlideItem[]>([]);
+  const [allowedRoles, setAllowedRoles] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (res?.success && Array.isArray(res.data)) setItems(res.data as SlideItem[]);
   }, [res]);
+
+  useEffect(() => {
+    if (visibilityRes?.success && visibilityRes.data) {
+      setAllowedRoles(visibilityRes.data.allowedRoles ?? []);
+    }
+  }, [visibilityRes]);
+
+  function toggleRole(role: string) {
+    setAllowedRoles((prev) =>
+      prev.includes(role) ? prev.filter((r) => r !== role) : [...prev, role],
+    );
+  }
 
   async function handleAddFile(e: React.ChangeEvent<HTMLInputElement>) {
     setError(null);
@@ -140,6 +171,45 @@ export default function SlideshowSettingsTab() {
           Pour une lecture nette, privilégiez les images d'au moins <strong>1500 pixels de large</strong>
           et exportez les vidéos en H.264 / AAC.
         </p>
+      </Card>
+
+      <Card>
+        <div className="flex items-center gap-2 mb-3">
+          <Eye className="h-4 w-4 text-slate-500" />
+          <h3 className="font-semibold text-slate-700">Visibilité sur le tableau de bord</h3>
+        </div>
+        <p className="text-sm text-slate-600 mb-4">
+          Sélectionnez les rôles utilisateurs qui verront le slideshow sur leur tableau de bord.
+          Si aucun rôle n'est coché, le slideshow est masqué pour tous.
+        </p>
+        <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+          {ROLE_OPTIONS.map((opt) => {
+            const checked = allowedRoles.includes(opt.value);
+            return (
+              <label
+                key={opt.value}
+                className="flex items-center gap-2 rounded-lg border border-slate-200 px-3 py-2 hover:bg-slate-50 cursor-pointer"
+              >
+                <input
+                  type="checkbox"
+                  checked={checked}
+                  onChange={() => toggleRole(opt.value)}
+                  className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                />
+                <span className="text-sm text-slate-700">{opt.label}</span>
+              </label>
+            );
+          })}
+        </div>
+        <div className="flex justify-end pt-4">
+          <Button
+            icon={<Save className="h-4 w-4" />}
+            loading={updateVisibility.isPending}
+            onClick={() => updateVisibility.mutate(allowedRoles)}
+          >
+            Enregistrer la visibilité
+          </Button>
+        </div>
       </Card>
 
       <Card>

@@ -45,7 +45,6 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // ASSISTANTE_DIRECTION : tableau de bord allégé — slideshow uniquement, pas de KPI.
   const isAD = user?.role === 'ASSISTANTE_DIRECTION';
 
   useEffect(() => {
@@ -153,6 +152,12 @@ export default function DashboardPage() {
         </div>
       )}
 
+      {data && data.slideshow.length > 0 && (
+        <div className={isAD ? 'mb-2' : 'mb-8'}>
+          <DashboardSlideshow items={data.slideshow} />
+        </div>
+      )}
+
       {!isAD && (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           {loading
@@ -182,12 +187,6 @@ export default function DashboardPage() {
                   </Card>
                 </Link>
               ))}
-        </div>
-      )}
-
-      {data && data.slideshow.length > 0 && (
-        <div className={isAD ? 'mt-2' : 'mt-8'}>
-          <DashboardSlideshow items={data.slideshow} />
         </div>
       )}
 

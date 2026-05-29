@@ -763,10 +763,33 @@ function registerAccountingIPC() {
             const d = parsed.data;
             const invoice = await db.invoice.findUnique({
                 where: { id: d.invoiceId },
-                include: { payments: true },
+                include: {
+                    payments: true,
+                    convention: { select: { reference: true, status: true } },
+                },
             });
             if (!invoice)
                 return { success: false, error: 'Facture introuvable' };
+            // Une facture encore en brouillon ne peut pas être encaissée :
+            // l'émetteur doit d'abord la confirmer (statut ENVOYEE).
+            if (invoice.status === 'BROUILLON') {
+                return { success: false, error: 'Impossible d\'encaisser une facture en brouillon : confirmez-la d\'abord' };
+            }
+            // Statuts de convention bloquant tout encaissement : brouillon (pas
+            // encore finalisée), attente de signature (pas encore opposable) ou
+            // annulée (sans valeur).
+            const blockedConventionStatuses = {
+                BROUILLON: 'en brouillon : finalisez-la d\'abord',
+                ATTENTE_SIGNATURE: 'en attente de signature : aucun encaissement n\'est possible tant qu\'elle n\'est pas signée',
+                ANNULE: 'annulée : plus aucun encaissement ne peut être enregistré sur cette convention',
+            };
+            const convStatus = invoice.convention?.status ?? '';
+            if (convStatus && blockedConventionStatuses[convStatus]) {
+                return {
+                    success: false,
+                    error: `La convention liée (${invoice.convention?.reference ?? ''}) est ${blockedConventionStatuses[convStatus]}`,
+                };
+            }
             const paidAt = d.paidAt ? new Date(d.paidAt) : new Date();
             // Vérifie le compte de trésorerie si l'encaissement y est rattaché.
             if (d.bankAccountId) {
@@ -1119,12 +1142,26 @@ function registerAccountingIPC() {
             const d = parsed.data;
             const installment = await db.saleInstallment.findUnique({
                 where: { id: d.installmentId },
-                include: { convention: { select: { id: true, reference: true, clientId: true } } },
+                include: { convention: { select: { id: true, reference: true, clientId: true, status: true } } },
             });
             if (!installment)
                 return { success: false, error: 'Échéance introuvable' };
             if (installment.status === 'PAYE')
                 return { success: false, error: 'Échéance déjà payée' };
+            // Statuts de convention bloquant l'encaissement d'une échéance :
+            // brouillon (non finalisée), attente de signature (non opposable) ou
+            // annulée (sans valeur).
+            const blockedInstallmentStatuses = {
+                BROUILLON: 'en brouillon : finalisez-la d\'abord',
+                ATTENTE_SIGNATURE: 'en attente de signature : aucun encaissement n\'est possible tant qu\'elle n\'est pas signée',
+                ANNULE: 'annulée : plus aucun encaissement ne peut être enregistré sur cette convention',
+            };
+            if (blockedInstallmentStatuses[installment.convention.status ?? '']) {
+                return {
+                    success: false,
+                    error: `La convention ${installment.convention.reference} est ${blockedInstallmentStatuses[installment.convention.status ?? '']}`,
+                };
+            }
             // Vérifie le compte de trésorerie si l'encaissement y est rattaché.
             if (d.bankAccountId) {
                 const account = await db.bankAccount.findUnique({ where: { id: d.bankAccountId } });

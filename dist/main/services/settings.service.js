@@ -150,6 +150,8 @@ exports.SettingsKeys = {
     smsApiPassword: 'sms.api.password', // secret OVH/Brevo
     // Slideshow dashboard (JSON array)
     dashboardSlideshow: 'dashboard.slideshow',
+    // Rôles autorisés à voir le slideshow du tableau de bord (JSON array de UserRole)
+    dashboardSlideshowRoles: 'dashboard.slideshow.allowedRoles',
 };
 /** Liste des clés correspondant à des secrets chiffrés. */
 exports.SECRET_KEYS = new Set([

@@ -311,6 +311,8 @@ const settings = {
     updateSlideshow: (token, items) => api.invoke('settings:updateSlideshow', { token, items }),
     uploadSlideshowMedia: (token, payload) => api.invoke('settings:uploadSlideshowMedia', { token, payload }),
     getSlideshowMediaData: (token, relativePath) => api.invoke('settings:getSlideshowMediaData', { token, relativePath }),
+    getSlideshowVisibility: (token) => api.invoke('settings:getSlideshowVisibility', { token }),
+    updateSlideshowVisibility: (token, payload) => api.invoke('settings:updateSlideshowVisibility', { token, payload }),
     // Types de pièces d'identité (catalogue extensible)
     listIdTypes: (token, includeInactive = false) => api.invoke('settings:listIdTypes', { token, includeInactive }),
     createIdType: (token, payload) => api.invoke('settings:createIdType', { token, payload }),

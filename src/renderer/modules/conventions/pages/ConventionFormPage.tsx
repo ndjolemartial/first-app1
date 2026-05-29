@@ -187,7 +187,6 @@ const STATUS_OPTIONS = [
   { value: 'ATTENTE_SIGNATURE', label: 'Attente signature' },
   { value: 'ACTIVE', label: 'Active' },
   { value: 'EXPIRE', label: 'Expirée' },
-  { value: 'TERMINER', label: 'Terminée' },
   { value: 'ANNULE', label: 'Annulée' },
 ];
 

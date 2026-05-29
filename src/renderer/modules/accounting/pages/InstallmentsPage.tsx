@@ -22,6 +22,7 @@ import { formatCurrency, formatDate } from '../../../shared/utils/format';
 import ExportMenu, { ExportColumn } from '../../../shared/components/ExportMenu';
 import TreasuryAccountFields from '../../../shared/components/TreasuryAccountFields';
 import { AlertCircle, Clock, CreditCard, CheckCircle2, Ban, Search, Printer, ListTodo } from 'lucide-react';
+import { toast } from '../../../shared/components/ui/Toast';
 
 type TabKey = 'upcoming' | 'overdue' | 'unpaid' | 'paid' | 'cancelled';
 
@@ -109,6 +110,7 @@ function PayModal({ installment, onClose, onSuccess }: { installment: any; onClo
       },
     });
     if (r.success) onSuccess();
+    else toast.error(typeof r.error === 'string' ? r.error : 'Échec de l\'encaissement de l\'échéance');
   };
 
   const clientName = installment.convention?.client?.type === 'INDIVIDUEL'

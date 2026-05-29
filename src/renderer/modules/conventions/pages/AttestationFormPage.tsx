@@ -10,9 +10,9 @@ import { useAttestation, useCreateAttestation, useUpdateAttestation } from '../h
 import { useClients } from '../../clients/hooks/useClients';
 import { useProperties } from '../../properties/hooks/useProperties';
 import { useTerrains } from '../../terrains/hooks/useTerrains';
-import { useConvention } from '../hooks/useConventions';
+import { useConvention, useConventions } from '../hooks/useConventions';
 import { ATTESTATION_TYPE_LABELS } from '../utils/attestationTemplate';
-import { formatPersonName } from '../../../shared/utils/format';
+import { formatPersonName, formatCurrency } from '../../../shared/utils/format';
 import { Save } from 'lucide-react';
 
 const TYPE_OPTIONS = Object.entries(ATTESTATION_TYPE_LABELS).map(([value, label]) => ({ value, label }));
@@ -22,8 +22,54 @@ const ASSET_OPTIONS = [
   { value: 'PROPERTY', label: 'Un bien immobilier' },
 ];
 
+const CONVENTION_TYPE_SHORT: Record<string, string> = {
+  RENTAL_UNFURNISHED: 'Location', RENTAL_FURNISHED: 'Loc. meublée',
+  SALE: 'Vente', MANAGEMENT: 'Gestion', COMMERCIAL_LEASE: 'Bail comm.',
+  SOUSCRIPTION: 'Souscription', AVENANT: 'Avenant', RESILIATION: 'Résiliation',
+};
+
 function clientLabel(c: any): string {
   return formatPersonName(c, '');
+}
+
+/**
+ * Récupère le lotissement rattaché à une convention (via son premier terrain).
+ * Toutes les conventions sur terrain partagent un même lotissement, donc le
+ * premier terrain est représentatif.
+ */
+function getConventionLotissement(c: any): { nom: string; ville: string } | null {
+  const lot = c?.terrains?.[0]?.terrain?.lotissement;
+  if (!lot) return null;
+  return { nom: lot.nom ?? '', ville: lot.ville ?? '' };
+}
+
+function conventionOptionLabel(c: any): string {
+  const t = CONVENTION_TYPE_SHORT[c.type] ?? c.type;
+  const lot = getConventionLotissement(c);
+  const lotPart = lot?.nom ? ` — Lot. ${lot.nom}` : '';
+  return `${c.reference} — ${t}${lotPart}`;
+}
+
+/**
+ * Solde d'une convention de souscription : (prix de vente + frais d'ouverture
+ * de dossier + montant supplémentaire éventuel) − apport initial − somme des
+ * échéances réglées. Les frais de démarches ACD ne sont jamais inclus.
+ * Retourne `null` si le calcul n'est pas significatif (pas de prix de vente).
+ */
+function computeSubscriptionBalance(c: any): number | null {
+  if (!c) return null;
+  const sale = Number(c.saleAmount ?? 0);
+  if (!sale) return null;
+  const fraisOuv = Number(c.fraisOuvertureDossier ?? 0);
+  const additional = Number(c.additionalAmount ?? 0);
+  const totalDu = sale + fraisOuv + additional;
+  if (c.paymentModalites === 'CASH') return 0;
+  const apport = Number(c.apportInitial ?? 0);
+  const installments: any[] = c.installments ?? [];
+  const paid = installments
+    .filter((i) => i.status === 'PAYE')
+    .reduce((s, i) => s + (Number(i.amount) || 0), 0);
+  return Math.max(0, totalDu - apport - paid);
 }
 
 function toDateInput(val?: string | Date | null): string {
@@ -46,7 +92,6 @@ export default function AttestationFormPage() {
   const update = useUpdateAttestation();
   const { data: clientsRes } = useClients({}, 1, 500);
   const { data: propertiesRes } = useProperties({}, 1, 500);
-  const { data: terrainsRes } = useTerrains({}, 1, 500);
 
   const [type, setType] = useState(prefilledType || 'ATTRIBUTION');
   const [clientId, setClientId] = useState('');
@@ -60,6 +105,50 @@ export default function AttestationFormPage() {
   const [notes, setNotes] = useState('');
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
+
+  const isSoldeOrTransfert = type === 'SOLDE' || type === 'TRANSFERT_PROPRIETE';
+  const isTransfert = type === 'TRANSFERT_PROPRIETE';
+  const isCession = type === 'CESSION';
+  const clientIdNum = clientId ? Number(clientId) : 0;
+  const secondaryClientIdNum = secondaryClientId ? Number(secondaryClientId) : 0;
+  const conventionIdNum = conventionId ? Number(conventionId) : 0;
+
+  // Pour une cession, on ne propose que les terrains affectés au cédant
+  // (Terrain.clientId === secondaryClientId). Pour les autres types, on
+  // garde la liste complète.
+  const terrainFilters = isCession && secondaryClientIdNum > 0
+    ? { clientId: secondaryClientIdNum }
+    : {};
+  const { data: terrainsRes } = useTerrains(terrainFilters, 1, 500);
+
+  // Source des conventions à proposer dans le menu déroulant :
+  //   - TRANSFERT_PROPRIETE → conventions de l'ancien propriétaire
+  //   - autres types        → conventions du client bénéficiaire
+  const conventionsOwnerId = isTransfert ? secondaryClientIdNum : clientIdNum;
+  const { data: clientConvsRes } = useConventions(
+    conventionsOwnerId > 0 ? { clientId: conventionsOwnerId } : {},
+    1, 500,
+  );
+  // Une attestation ne peut jamais être liée à un avenant ni à une convention
+  // de résiliation — on filtre la liste source en conséquence pour tous les
+  // types d'attestation.
+  const clientConventions: any[] = conventionsOwnerId > 0
+    ? (clientConvsRes?.data ?? []).filter(
+        (c: any) => c.type !== 'AVENANT' && c.type !== 'RESILIATION',
+      )
+    : [];
+
+  // Détail de la convention sélectionnée — nécessaire pour récupérer les
+  // échéances et calculer le solde restant à régler.
+  const { data: selectedConvRes } = useConvention(conventionIdNum);
+  const selectedConvention = selectedConvRes?.data;
+  // Une convention est considérée comme « liée » dès qu'une référence est
+  // sélectionnée dans le menu déroulant. Le détail (selectedConvention) arrive
+  // de manière asynchrone — on garde l'UI en place dès la sélection.
+  const hasLinkedConvention = conventionIdNum > 0;
+  const showSubscriptionFields = isSoldeOrTransfert || hasLinkedConvention;
+  const balance = isSoldeOrTransfert ? computeSubscriptionBalance(selectedConvention) : null;
+  const selectedLotissement = showSubscriptionFields ? getConventionLotissement(selectedConvention) : null;
 
   // Pré-remplissage depuis l'attestation existante (édition)
   useEffect(() => {
@@ -87,6 +176,32 @@ export default function AttestationFormPage() {
     }
   }, [prefilledConv, isEdit]);
 
+  // Synchronisation du montant avec la convention liée : à chaque changement
+  // de sélection on aligne le champ sur le prix de vente de la convention
+  // (création ou édition). Lorsqu'aucune convention n'est liée, le champ est
+  // remis à vide — cohérent avec les autres champs dérivés (Solde, lotissement)
+  // qui s'effacent eux aussi sans convention.
+  useEffect(() => {
+    if (!hasLinkedConvention) {
+      setAmount('');
+      return;
+    }
+    if (selectedConvention?.saleAmount != null) {
+      setAmount(String(Number(selectedConvention.saleAmount)));
+    }
+  }, [hasLinkedConvention, selectedConvention?.id, selectedConvention?.saleAmount]);
+
+  // Si le propriétaire des conventions change (client bénéficiaire, ou ancien
+  // propriétaire pour un transfert de propriété), on retire la convention liée
+  // lorsqu'elle ne lui appartient plus.
+  useEffect(() => {
+    if (conventionsOwnerId <= 0 || !conventionId) return;
+    if (clientConventions.length === 0) return;
+    if (!clientConventions.some((c) => String(c.id) === conventionId)) {
+      setConventionId('');
+    }
+  }, [conventionsOwnerId, clientConventions, conventionId]);
+
   const clientOptions = [
     { value: '', label: '— Choisir un client —' },
     ...(clientsRes?.data ?? []).map((c: any) => ({ value: String(c.id), label: clientLabel(c) })),
@@ -97,13 +212,24 @@ export default function AttestationFormPage() {
       .filter((c: any) => String(c.id) !== clientId)
       .map((c: any) => ({ value: String(c.id), label: clientLabel(c) })),
   ];
-  const terrainOptions = [
-    { value: '', label: '— Choisir un terrain —' },
-    ...(terrainsRes?.data ?? []).map((t: any) => ({
-      value: String(t.id),
-      label: `${t.reference}${t.numeroParcelle ? ` — parcelle ${t.numeroParcelle}` : ''}`,
-    })),
-  ];
+  // Liste des terrains à proposer. Pour une cession, on bloque le menu tant
+  // qu'aucun cédant n'est sélectionné et on affiche un message dédié si le
+  // cédant n'a aucun terrain affecté.
+  const terrainsList: any[] = terrainsRes?.data ?? [];
+  let terrainOptions: Array<{ value: string; label: string }>;
+  if (isCession && secondaryClientIdNum <= 0) {
+    terrainOptions = [{ value: '', label: '— Choisir d\'abord le cédant —' }];
+  } else if (isCession && terrainsList.length === 0) {
+    terrainOptions = [{ value: '', label: 'Aucun terrain affecté à ce cédant' }];
+  } else {
+    terrainOptions = [
+      { value: '', label: '— Choisir un terrain —' },
+      ...terrainsList.map((t: any) => ({
+        value: String(t.id),
+        label: `${t.reference}${t.numeroParcelle ? ` — parcelle ${t.numeroParcelle}` : ''}`,
+      })),
+    ];
+  }
   const propertyOptions = [
     { value: '', label: '— Choisir un bien —' },
     ...(propertiesRes?.data ?? []).map((p: any) => ({
@@ -111,6 +237,25 @@ export default function AttestationFormPage() {
       label: `${p.reference} — ${p.address}, ${p.city}`,
     })),
   ];
+
+  // Options du select Convention liée : dépend du propriétaire des conventions
+  // (client bénéficiaire ou ancien propriétaire pour TRANSFERT_PROPRIETE). Si
+  // aucun n'est sélectionné, on invite à en choisir un. S'il n'a aucune
+  // convention, on affiche le marqueur « Aucune convention ».
+  let conventionOptions: Array<{ value: string; label: string }>;
+  if (conventionsOwnerId <= 0) {
+    conventionOptions = [{
+      value: '',
+      label: isTransfert ? '— Choisir d\'abord l\'ancien propriétaire —' : '— Choisir d\'abord un client —',
+    }];
+  } else if (clientConventions.length === 0) {
+    conventionOptions = [{ value: '', label: 'Aucune convention' }];
+  } else {
+    conventionOptions = [
+      { value: '', label: '— Choisir une convention —' },
+      ...clientConventions.map((c: any) => ({ value: String(c.id), label: conventionOptionLabel(c) })),
+    ];
+  }
 
   const handleSave = async () => {
     setError('');
@@ -123,19 +268,54 @@ export default function AttestationFormPage() {
       setError('Le cessionnaire et le cédant doivent être deux clients différents');
       return;
     }
-    if (assetType === 'TERRAIN' && !terrainId) { setError('Sélectionnez un terrain'); return; }
-    if (assetType === 'PROPERTY' && !propertyId) { setError('Sélectionnez un bien immobilier'); return; }
+    if (isCession && assetType === 'TERRAIN' && !terrainId) {
+      setError('Sélectionnez le terrain cédé');
+      return;
+    }
+    if (isCession && assetType === 'PROPERTY' && !propertyId) {
+      setError('Sélectionnez le bien immobilier cédé');
+      return;
+    }
+    if (isTransfert && !secondaryClientId) {
+      setError('Sélectionnez l\'ancien propriétaire');
+      return;
+    }
+    if (isTransfert && secondaryClientId === clientId) {
+      setError('L\'ancien propriétaire et le nouveau bénéficiaire doivent être différents');
+      return;
+    }
+    if (isSoldeOrTransfert && !conventionId) {
+      setError('Sélectionnez la convention liée à l\'attestation');
+      return;
+    }
+    // Une attestation de solde ou de transfert de propriété ne peut être émise
+    // que lorsque la souscription est entièrement réglée (solde = 0).
+    if (isSoldeOrTransfert) {
+      if (!selectedConvention) {
+        setError('Chargement de la convention en cours, réessayez dans un instant');
+        return;
+      }
+      if (balance == null || balance > 0) {
+        const remaining = balance != null ? formatCurrency(balance) : 'inconnu';
+        setError(`Le solde de la convention liée doit être à 0 pour émettre cette attestation (solde restant : ${remaining}).`);
+        return;
+      }
+    }
 
     setSaving(true);
     const payload: any = {
       type,
       clientId: Number(clientId),
       secondaryClientId: secondaryClientId ? Number(secondaryClientId) : undefined,
-      terrainId: assetType === 'TERRAIN' ? Number(terrainId) : undefined,
-      propertyId: assetType === 'PROPERTY' ? Number(propertyId) : undefined,
+      // Pour SOLDE / TRANSFERT_PROPRIETE on n'attache pas de bien — l'attestation
+      // porte sur la souscription dans son ensemble.
+      terrainId: !isSoldeOrTransfert && assetType === 'TERRAIN' && terrainId ? Number(terrainId) : undefined,
+      propertyId: !isSoldeOrTransfert && assetType === 'PROPERTY' && propertyId ? Number(propertyId) : undefined,
       conventionId: conventionId ? Number(conventionId) : undefined,
       emittedAt: emittedAt ? new Date(emittedAt).toISOString() : undefined,
-      amount: amount ? Number(amount) : undefined,
+      // Le montant n'est envoyé que lorsque le champ est visible — c'est-à-dire
+      // pour SOLDE / TRANSFERT_PROPRIETE ou lorsqu'une convention est liée.
+      amount: showSubscriptionFields && amount ? Number(amount) : undefined,
       notes: notes || undefined,
     };
     const r = isEdit
@@ -160,7 +340,12 @@ export default function AttestationFormPage() {
           <h3 className="text-base font-semibold text-slate-800 mb-4">Type et bénéficiaire</h3>
           <div className="grid grid-cols-2 gap-4">
             <Select label="Type d'attestation *" options={TYPE_OPTIONS} value={type}
-              onChange={(e) => setType(e.target.value)} />
+              onChange={(e) => {
+                setType(e.target.value);
+                // En CESSION la liste des terrains est restreinte au cédant ;
+                // une sélection antérieure peut ne plus être valide.
+                setTerrainId('');
+              }} />
             <Input label="Date d'émission *" type="date" value={emittedAt}
               onChange={(e) => setEmittedAt(e.target.value)} />
             <Select label={type === 'CESSION' ? 'Cessionnaire (bénéficiaire) *' : 'Client bénéficiaire *'}
@@ -168,41 +353,90 @@ export default function AttestationFormPage() {
               onChange={(e) => setClientId(e.target.value)} />
             {type === 'CESSION' && (
               <Select label="Cédant *" options={secondaryClientOptions} value={secondaryClientId}
-                onChange={(e) => setSecondaryClientId(e.target.value)} />
+                onChange={(e) => {
+                  setSecondaryClientId(e.target.value);
+                  // La liste des terrains se restreint au nouveau cédant : on
+                  // efface le terrain précédemment choisi.
+                  setTerrainId('');
+                }} />
             )}
             {type === 'TRANSFERT_PROPRIETE' && (
-              <Select label="Ancien propriétaire (facultatif)" options={secondaryClientOptions}
+              <Select label="Ancien propriétaire *" options={secondaryClientOptions}
                 value={secondaryClientId} onChange={(e) => setSecondaryClientId(e.target.value)} />
             )}
           </div>
         </Card>
 
-        <Card>
-          <h3 className="text-base font-semibold text-slate-800 mb-4">Bien concerné</h3>
-          <div className="grid grid-cols-2 gap-4">
-            <Select label="Type de bien *" options={ASSET_OPTIONS} value={assetType}
-              onChange={(e) => setAssetType(e.target.value)} />
-            {assetType === 'TERRAIN' ? (
-              <Select label="Terrain *" options={terrainOptions} value={terrainId}
-                onChange={(e) => setTerrainId(e.target.value)} />
-            ) : (
-              <Select label="Bien immobilier *" options={propertyOptions} value={propertyId}
-                onChange={(e) => setPropertyId(e.target.value)} />
-            )}
-          </div>
-        </Card>
+        {!isSoldeOrTransfert && (
+          <Card>
+            <h3 className="text-base font-semibold text-slate-800 mb-4">Bien concerné</h3>
+            <div className="grid grid-cols-2 gap-4">
+              <Select label={isCession ? 'Type de bien *' : 'Type de bien'} options={ASSET_OPTIONS} value={assetType}
+                onChange={(e) => setAssetType(e.target.value)} />
+              {assetType === 'TERRAIN' ? (
+                <Select label={isCession ? 'Terrain *' : 'Terrain'} options={terrainOptions} value={terrainId}
+                  onChange={(e) => setTerrainId(e.target.value)} />
+              ) : (
+                <Select label={isCession ? 'Bien immobilier *' : 'Bien immobilier'} options={propertyOptions} value={propertyId}
+                  onChange={(e) => setPropertyId(e.target.value)} />
+              )}
+            </div>
+          </Card>
+        )}
 
         <Card>
           <h3 className="text-base font-semibold text-slate-800 mb-4">Détails complémentaires</h3>
-          <div className="grid grid-cols-2 gap-4">
-            <Input label="Montant (XOF)" type="number" value={amount}
-              onChange={(e) => setAmount(e.target.value)}
-              placeholder={type === 'SOLDE' ? 'Total réglé (frais inclus)' : 'Optionnel'} />
-            <Input label="Convention liée (référence)" value={conventionId}
+          <div className="space-y-4">
+            {/* Convention liée — seule sur sa ligne */}
+            <Select
+              label={isSoldeOrTransfert ? 'Convention liée *' : 'Convention liée'}
+              options={conventionOptions}
+              value={conventionId}
               onChange={(e) => setConventionId(e.target.value)}
-              placeholder="ID de la convention (facultatif)" />
-          </div>
-          <div className="mt-4">
+            />
+
+            {/* Montant de souscription + Solde restant à payer — visibles
+                lorsqu'une convention est liée (ou pour SOLDE / TRANSFERT_PROPRIETE
+                où la liaison est obligatoire). */}
+            {showSubscriptionFields && (
+              <div className="grid grid-cols-2 gap-4">
+                <Input
+                  label="Montant de souscription (XOF)"
+                  type="number"
+                  value={amount}
+                  onChange={(e) => setAmount(e.target.value)}
+                  placeholder="Montant de souscription"
+                />
+                {isSoldeOrTransfert && (
+                  <Input
+                    label="Solde restant à payer (XOF)"
+                    value={balance != null ? formatCurrency(balance) : ''}
+                    readOnly
+                    placeholder={selectedConvention ? '—' : 'Sélectionnez une convention'}
+                  />
+                )}
+              </div>
+            )}
+
+            {/* Nom du lotissement + Ville du lotissement — mêmes conditions
+                d'affichage que le bloc montant. */}
+            {showSubscriptionFields && (
+              <div className="grid grid-cols-2 gap-4">
+                <Input
+                  label="Nom du lotissement"
+                  value={selectedLotissement?.nom ?? ''}
+                  readOnly
+                  placeholder={selectedConvention ? '—' : 'Sélectionnez une convention'}
+                />
+                <Input
+                  label="Ville du lotissement"
+                  value={selectedLotissement?.ville ?? ''}
+                  readOnly
+                  placeholder={selectedConvention ? '—' : 'Sélectionnez une convention'}
+                />
+              </div>
+            )}
+
             <Textarea label="Notes" value={notes} onChange={(e) => setNotes(e.target.value)}
               rows={3} placeholder="Précisions complémentaires (facultatif)" />
           </div>

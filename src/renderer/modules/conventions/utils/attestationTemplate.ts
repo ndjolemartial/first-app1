@@ -94,6 +94,10 @@ export const ATTESTATION_VARIABLE_GROUPS: VariableGroup[] = [
       { token: 'convention.lotsSouscrits', label: 'Énumération des lots souscrits' },
       { token: 'convention.fraisOuvertureDossier', label: "Frais d'ouverture de dossier" },
       { token: 'convention.fraisOuvertureDossier.enLettres', label: "Frais d'ouverture de dossier (en lettres)" },
+      { token: 'convention.montantSouscription', label: 'Montant de souscription' },
+      { token: 'convention.montantSouscription.enLettres', label: 'Montant de souscription (en lettres)' },
+      { token: 'convention.lotissement.nom', label: 'Nom du lotissement' },
+      { token: 'convention.lotissement.ville', label: 'Ville du lotissement' },
     ],
   },
   {
@@ -316,6 +320,15 @@ export function resolveAttestationVariables(
     ),
     'convention.fraisOuvertureDossier': money(a.convention?.fraisOuvertureDossier),
     'convention.fraisOuvertureDossier.enLettres': moneyL(a.convention?.fraisOuvertureDossier),
+    // Lotissement de la convention liée — pris sur le premier terrain rattaché
+    // (cohérence lotissement par convention garantie par la validation amont).
+    'convention.lotissement.nom':
+      a.convention?.terrains?.[0]?.terrain?.lotissement?.nom ?? '',
+    'convention.lotissement.ville':
+      a.convention?.terrains?.[0]?.terrain?.lotissement?.ville ?? '',
+    // Montant de souscription = prix de vente (`saleAmount`) de la convention liée.
+    'convention.montantSouscription': money(a.convention?.saleAmount),
+    'convention.montantSouscription.enLettres': moneyL(a.convention?.saleAmount),
     // ── Avenant / convention initiale ─────────────────────────
     // Non-vide uniquement si l'attestation est liée à une convention qui est
     // elle-même un avenant (a.convention.parentConvention chargé).

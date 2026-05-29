@@ -32,6 +32,7 @@ import { registerBudgetIPC } from './ipc/budget.ipc';
 import { registerDashboardIPC } from './ipc/dashboard.ipc';
 import { registerSettingsIPC, initStorageOverride } from './ipc/settings.ipc';
 import { registerDocumentExportIPC } from './ipc/document-export.ipc';
+import { seedDefaultArchivePolicies, scheduleAutoArchiving } from './services/archiving.service';
 
 const isDev = process.env.NODE_ENV === 'development';
 let mainWindow: BrowserWindow | null = null;
@@ -140,6 +141,12 @@ app.whenReady().then(async () => {
   registerIPC();
   // Propage le chemin de stockage paramétré (AppSetting) au storage.service.
   await initStorageOverride();
+  // Politiques d'archivage par défaut + déclenchement de la passe quotidienne.
+  // Tout est fait en fire-and-forget pour ne pas retarder l'apparition de la
+  // fenêtre principale.
+  seedDefaultArchivePolicies()
+    .then(() => scheduleAutoArchiving())
+    .catch((e) => logger.error(`Auto-archiving bootstrap failed: ${e.message}`));
   setupAppMenu();
   createWindow();
   logger.info('Application started');

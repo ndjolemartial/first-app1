@@ -6,12 +6,15 @@ import Badge from '../../../shared/components/ui/Badge';
 import Card from '../../../shared/components/ui/Card';
 import { SkeletonTable } from '../../../shared/components/ui/Skeleton';
 import ConfirmDialog from '../../../shared/components/ui/ConfirmDialog';
-import { useConvention, useDeleteConvention, useGenerateInstallments } from '../hooks/useConventions';
+import { useConvention, useDeleteConvention, useGenerateInstallments, useUpdateConvention } from '../hooks/useConventions';
+import { toast } from '../../../shared/components/ui/Toast';
 import { usePrintInvoice } from '../../accounting/hooks/useAccounting';
 import { formatDate, formatCurrency } from '../../../shared/utils/format';
 import EditInstallmentsModal from '../components/EditInstallmentsModal';
 import { Edit, Trash2, FileText, User, Building2, MapPin, Link2, Printer, RefreshCw, FilePlus, PencilLine } from 'lucide-react';
 import EntityDocumentsCard from '../../archiving/components/EntityDocumentsCard';
+import { ATTESTATION_TYPE_LABELS } from '../utils/attestationTemplate';
+import { Award } from 'lucide-react';
 
 const STATUS_VARIANT: Record<string, 'success' | 'info' | 'warning' | 'danger' | 'default'> = {
   ACTIVE: 'success', BROUILLON: 'info', ATTENTE_SIGNATURE: 'warning',
@@ -52,10 +55,12 @@ export default function ConventionDetailPage() {
   const navigate = useNavigate();
   const { data: res, isLoading, refetch } = useConvention(Number(id));
   const deleteConvention = useDeleteConvention();
+  const updateConvention = useUpdateConvention();
   const generateInstallments = useGenerateInstallments();
   const printInvoice = usePrintInvoice();
   const [showDelete, setShowDelete] = useState(false);
   const [showAttestationMenu, setShowAttestationMenu] = useState(false);
+  const [showStatusMenu, setShowStatusMenu] = useState(false);
   const [showEditInstallments, setShowEditInstallments] = useState(false);
 
   if (isLoading) return <div className="p-8"><SkeletonTable rows={6} /></div>;
@@ -82,6 +87,18 @@ export default function ConventionDetailPage() {
   const handleGenerateInstallments = async () => {
     await generateInstallments.mutateAsync(Number(id));
     refetch();
+  };
+
+  const handleStatusChange = async (newStatus: string) => {
+    setShowStatusMenu(false);
+    if (newStatus === c.status) return;
+    const r = await updateConvention.mutateAsync({ id: Number(id), payload: { status: newStatus } });
+    if (r?.success) {
+      toast.success(`Statut mis à jour : ${STATUS_LABEL[newStatus] ?? newStatus}`);
+      refetch();
+    } else {
+      toast.error(typeof r?.error === 'string' ? r.error : 'Échec de la mise à jour du statut');
+    }
   };
 
   const totalPaid = c.installments
@@ -158,7 +175,40 @@ export default function ConventionDetailPage() {
                   </p>
                 </div>
               </div>
-              <Badge variant={STATUS_VARIANT[c.status] ?? 'default'}>{STATUS_LABEL[c.status] ?? c.status}</Badge>
+              {/* Statut cliquable : ouvre un menu pour changer rapidement
+                  le statut sans repasser par le formulaire d'édition. */}
+              <div className="relative">
+                <button
+                  type="button"
+                  onClick={() => setShowStatusMenu((v) => !v)}
+                  disabled={updateConvention.isPending}
+                  title="Changer le statut"
+                  className="focus:outline-none focus:ring-2 focus:ring-blue-300 rounded-full disabled:opacity-60"
+                >
+                  <Badge variant={STATUS_VARIANT[c.status] ?? 'default'}>
+                    {STATUS_LABEL[c.status] ?? c.status} ▾
+                  </Badge>
+                </button>
+                {showStatusMenu && (
+                  <div
+                    className="absolute right-0 mt-1 w-56 bg-white border border-slate-200 rounded-lg shadow-lg z-10 py-1"
+                    onMouseLeave={() => setShowStatusMenu(false)}
+                  >
+                    {['BROUILLON', 'ATTENTE_SIGNATURE', 'ACTIVE', 'EXPIRE', 'ANNULE'].map((s) => (
+                      <button
+                        key={s}
+                        className={`block w-full text-left px-4 py-2 text-sm hover:bg-slate-50 ${
+                          c.status === s ? 'font-semibold text-blue-700' : 'text-slate-700'
+                        }`}
+                        onClick={() => handleStatusChange(s)}
+                      >
+                        {STATUS_LABEL[s] ?? s}
+                        {c.status === s && <span className="ml-2 text-xs text-slate-400">(actuel)</span>}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
 
             <div className="grid grid-cols-3 gap-4 pt-4 border-t border-slate-100">
@@ -420,19 +470,38 @@ export default function ConventionDetailPage() {
               <h3 className="font-semibold text-slate-800 mb-3 flex items-center gap-2">
                 <Link2 className="h-4 w-4 text-slate-500" /> Conventions liées
               </h3>
-              {c.parentConvention && (
-                <div className="mb-3">
-                  <p className="text-xs text-slate-500 mb-1">
-                    {c.type === 'RESILIATION' ? 'Convention résiliée' : 'Convention initiale / précédente'}
-                  </p>
-                  <button
-                    className="text-sm font-medium text-blue-600 hover:underline"
-                    onClick={() => navigate(`/conventions/${c.parentConvention.id}`)}
-                  >
-                    {c.parentConvention.reference} — {TYPE_LABEL[c.parentConvention.type] ?? c.parentConvention.type}
-                  </button>
-                </div>
-              )}
+              {c.parentConvention && (() => {
+                const parentLot = c.parentConvention.terrains?.[0]?.terrain?.lotissement;
+                return (
+                  <div className="mb-3">
+                    <p className="text-xs text-slate-500 mb-1">
+                      {c.type === 'RESILIATION' ? 'Convention résiliée' : 'Convention initiale / précédente'}
+                    </p>
+                    <button
+                      className="text-sm font-medium text-blue-600 hover:underline"
+                      onClick={() => navigate(`/conventions/${c.parentConvention.id}`)}
+                    >
+                      {c.parentConvention.reference} — {TYPE_LABEL[c.parentConvention.type] ?? c.parentConvention.type}
+                    </button>
+                    {(parentLot?.nom || parentLot?.ville) && (
+                      <dl className="mt-2 space-y-0.5 text-xs text-slate-600">
+                        {parentLot?.nom && (
+                          <div className="flex justify-between gap-3">
+                            <dt className="text-slate-500">Lotissement</dt>
+                            <dd className="font-medium text-slate-800">{parentLot.nom}</dd>
+                          </div>
+                        )}
+                        {parentLot?.ville && (
+                          <div className="flex justify-between gap-3">
+                            <dt className="text-slate-500">Ville du lotissement</dt>
+                            <dd className="font-medium text-slate-800">{parentLot.ville}</dd>
+                          </div>
+                        )}
+                      </dl>
+                    )}
+                  </div>
+                );
+              })()}
               {(c.amendments?.length ?? 0) > 0 && (
                 <div>
                   <p className="text-xs text-slate-500 mb-1">Avenants &amp; résiliation</p>
@@ -449,6 +518,26 @@ export default function ConventionDetailPage() {
                   </div>
                 </div>
               )}
+            </Card>
+          )}
+
+          {/* Attestations émises ou associées à cette convention */}
+          {(c.attestations?.length ?? 0) > 0 && (
+            <Card>
+              <h3 className="font-semibold text-slate-800 mb-3 flex items-center gap-2">
+                <Award className="h-4 w-4 text-emerald-600" /> Attestations émises
+              </h3>
+              <div className="space-y-1">
+                {c.attestations.map((a: any) => (
+                  <button
+                    key={a.id}
+                    className="block text-sm font-medium text-blue-600 hover:underline"
+                    onClick={() => navigate(`/conventions/attestations/${a.id}`)}
+                  >
+                    {a.reference} — {ATTESTATION_TYPE_LABELS[a.type] ?? a.type}
+                  </button>
+                ))}
+              </div>
             </Card>
           )}
 

@@ -53,6 +53,18 @@ const slideshowItemSchema = zod_1.z.object({
     durationMs: zod_1.z.number().int().positive().optional(),
 });
 const slideshowSchema = zod_1.z.array(slideshowItemSchema);
+const USER_ROLES = [
+    'SUPER_ADMIN',
+    'ADMIN',
+    'MANAGER',
+    'ACCOUNTANT',
+    'ASSISTANTE_DIRECTION',
+    'AGENT',
+    'READONLY',
+];
+const slideshowVisibilitySchema = zod_1.z.object({
+    allowedRoles: zod_1.z.array(zod_1.z.enum(USER_ROLES)),
+});
 const fileUploadSchema = zod_1.z.object({
     fileName: zod_1.z.string().min(1),
     fileType: zod_1.z.string().min(1),
@@ -510,6 +522,54 @@ function registerSettingsIPC() {
         }
         catch (err) {
             logger_1.default.error('settings:uploadSlideshowMedia', err.message);
+            return { success: false, error: err.message };
+        }
+    });
+    /**
+     * Lit la liste des rôles autorisés à voir le slideshow sur le tableau de bord.
+     * Tableau vide = personne n'y a accès.
+     */
+    electron_1.ipcMain.handle('settings:getSlideshowVisibility', async (_event, { token }) => {
+        try {
+            const session = (0, auth_service_1.getSession)(token);
+            if (!session)
+                return { success: false, error: 'Session expirée' };
+            (0, auth_service_1.checkRole)(session, ADMIN_ROLES);
+            const raw = await (0, settings_service_1.getSetting)(settings_service_1.SettingsKeys.dashboardSlideshowRoles);
+            let allowedRoles = [];
+            if (raw) {
+                try {
+                    const parsed = JSON.parse(raw);
+                    if (Array.isArray(parsed))
+                        allowedRoles = parsed.filter((r) => typeof r === 'string');
+                }
+                catch {
+                    allowedRoles = [];
+                }
+            }
+            return { success: true, data: { allowedRoles } };
+        }
+        catch (err) {
+            return { success: false, error: err.message };
+        }
+    });
+    /** Met à jour la liste des rôles autorisés à voir le slideshow. */
+    electron_1.ipcMain.handle('settings:updateSlideshowVisibility', async (_event, { token, payload }) => {
+        try {
+            const session = (0, auth_service_1.getSession)(token);
+            if (!session)
+                return { success: false, error: 'Session expirée' };
+            (0, auth_service_1.checkRole)(session, ADMIN_ROLES);
+            const parsed = slideshowVisibilitySchema.safeParse(payload);
+            if (!parsed.success)
+                return { success: false, error: parsed.error.issues.map((i) => i.message).join(', ') };
+            const unique = Array.from(new Set(parsed.data.allowedRoles));
+            await (0, settings_service_1.setSettings)([{ key: settings_service_1.SettingsKeys.dashboardSlideshowRoles, value: JSON.stringify(unique) }]);
+            logger_1.default.info(`Visibilité du slideshow mise à jour (${unique.length} rôle(s) autorisé(s))`);
+            return { success: true };
+        }
+        catch (err) {
+            logger_1.default.error('settings:updateSlideshowVisibility', err.message);
             return { success: false, error: err.message };
         }
     });

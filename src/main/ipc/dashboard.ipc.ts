@@ -7,6 +7,7 @@ const READ_ROLES = ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'AGENT', 'ACCOUNTANT', 'A
 const PRIVILEGED_ROLES = ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ACCOUNTANT', 'ASSISTANTE_DIRECTION'];
 
 const SLIDESHOW_SETTING_KEY = 'dashboard.slideshow';
+const SLIDESHOW_ROLES_SETTING_KEY = 'dashboard.slideshow.allowedRoles';
 
 interface SlideshowItem {
   type: 'image' | 'video';
@@ -59,7 +60,20 @@ export function registerDashboardIPC(): void {
           ])
         : Promise.resolve([null, null, null, null, null, null] as const);
 
-      const slideshowPromise = db.appSetting
+      const slideshowRolesPromise = db.appSetting
+        .findUnique({ where: { key: SLIDESHOW_ROLES_SETTING_KEY } })
+        .then((s) => {
+          if (!s?.value) return [] as string[];
+          try {
+            const parsed = JSON.parse(s.value);
+            return Array.isArray(parsed) ? (parsed as string[]) : [];
+          } catch {
+            return [] as string[];
+          }
+        })
+        .catch(() => [] as string[]);
+
+      const slideshowItemsPromise = db.appSetting
         .findUnique({ where: { key: SLIDESHOW_SETTING_KEY } })
         .then((s) => {
           if (!s?.value) return DEFAULT_SLIDESHOW;
@@ -74,11 +88,16 @@ export function registerDashboardIPC(): void {
         })
         .catch(() => DEFAULT_SLIDESHOW);
 
-      const [prospectsCount, privileged, slideshow] = await Promise.all([
+      const [prospectsCount, privileged, slideshowItems, slideshowRoles] = await Promise.all([
         prospectsCountPromise,
         privilegedPromises,
-        slideshowPromise,
+        slideshowItemsPromise,
+        slideshowRolesPromise,
       ]);
+
+      // Slideshow visible uniquement si le rôle de l'utilisateur figure dans
+      // la liste d'autorisation (vide par défaut = personne).
+      const slideshow = slideshowRoles.includes(session.role) ? slideshowItems : [];
 
       const [clientsCount, ownersCount, availableTerrainsCount, availablePropertiesCount, lotissementsCount, programmesCount] = privileged;
 

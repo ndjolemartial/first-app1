@@ -437,6 +437,12 @@ interface Window {
         Promise<IpcResponse<{ relativePath: string; type: 'image' | 'video' }>>;
       getSlideshowMediaData: (token: string, relativePath: string) =>
         Promise<IpcResponse<{ base64: string; mimeType: string }>>;
+      getSlideshowVisibility: (token: string) =>
+        Promise<IpcResponse<{ allowedRoles: string[] }>>;
+      updateSlideshowVisibility: (
+        token: string,
+        payload: { allowedRoles: string[] },
+      ) => Promise<IpcResponse>;
       // Types de pièces d'identité (catalogue extensible)
       listIdTypes: (token: string, includeInactive?: boolean) => Promise<IpcResponse<any[]>>;
       createIdType: (token: string, payload: object) => Promise<IpcResponse<any>>;

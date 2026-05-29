@@ -11,6 +11,7 @@ const logger_1 = __importDefault(require("../utils/logger"));
 const READ_ROLES = ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'AGENT', 'ACCOUNTANT', 'ASSISTANTE_DIRECTION', 'READONLY'];
 const PRIVILEGED_ROLES = ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ACCOUNTANT', 'ASSISTANTE_DIRECTION'];
 const SLIDESHOW_SETTING_KEY = 'dashboard.slideshow';
+const SLIDESHOW_ROLES_SETTING_KEY = 'dashboard.slideshow.allowedRoles';
 const DEFAULT_SLIDESHOW = [
     {
         type: 'image',
@@ -51,7 +52,21 @@ function registerDashboardIPC() {
                     db.programmeImmobilier.count({ where: { deletedAt: null } }),
                 ])
                 : Promise.resolve([null, null, null, null, null, null]);
-            const slideshowPromise = db.appSetting
+            const slideshowRolesPromise = db.appSetting
+                .findUnique({ where: { key: SLIDESHOW_ROLES_SETTING_KEY } })
+                .then((s) => {
+                if (!s?.value)
+                    return [];
+                try {
+                    const parsed = JSON.parse(s.value);
+                    return Array.isArray(parsed) ? parsed : [];
+                }
+                catch {
+                    return [];
+                }
+            })
+                .catch(() => []);
+            const slideshowItemsPromise = db.appSetting
                 .findUnique({ where: { key: SLIDESHOW_SETTING_KEY } })
                 .then((s) => {
                 if (!s?.value)
@@ -67,11 +82,15 @@ function registerDashboardIPC() {
                 }
             })
                 .catch(() => DEFAULT_SLIDESHOW);
-            const [prospectsCount, privileged, slideshow] = await Promise.all([
+            const [prospectsCount, privileged, slideshowItems, slideshowRoles] = await Promise.all([
                 prospectsCountPromise,
                 privilegedPromises,
-                slideshowPromise,
+                slideshowItemsPromise,
+                slideshowRolesPromise,
             ]);
+            // Slideshow visible uniquement si le rôle de l'utilisateur figure dans
+            // la liste d'autorisation (vide par défaut = personne).
+            const slideshow = slideshowRoles.includes(session.role) ? slideshowItems : [];
             const [clientsCount, ownersCount, availableTerrainsCount, availablePropertiesCount, lotissementsCount, programmesCount] = privileged;
             return {
                 success: true,

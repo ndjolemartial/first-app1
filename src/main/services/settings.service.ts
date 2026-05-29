@@ -153,6 +153,8 @@ export const SettingsKeys = {
 
   // Slideshow dashboard (JSON array)
   dashboardSlideshow:     'dashboard.slideshow',
+  // Rôles autorisés à voir le slideshow du tableau de bord (JSON array de UserRole)
+  dashboardSlideshowRoles: 'dashboard.slideshow.allowedRoles',
 } as const;
 
 /** Liste des clés correspondant à des secrets chiffrés. */

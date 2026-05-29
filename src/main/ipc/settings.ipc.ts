@@ -61,6 +61,20 @@ const slideshowItemSchema = z.object({
 
 const slideshowSchema = z.array(slideshowItemSchema);
 
+const USER_ROLES = [
+  'SUPER_ADMIN',
+  'ADMIN',
+  'MANAGER',
+  'ACCOUNTANT',
+  'ASSISTANTE_DIRECTION',
+  'AGENT',
+  'READONLY',
+] as const;
+
+const slideshowVisibilitySchema = z.object({
+  allowedRoles: z.array(z.enum(USER_ROLES)),
+});
+
 const fileUploadSchema = z.object({
   fileName: z.string().min(1),
   fileType: z.string().min(1),
@@ -469,6 +483,47 @@ export function registerSettingsIPC(): void {
       return { success: true, data: { relativePath, type } };
     } catch (err: any) {
       logger.error('settings:uploadSlideshowMedia', err.message);
+      return { success: false, error: err.message };
+    }
+  });
+
+  /**
+   * Lit la liste des rôles autorisés à voir le slideshow sur le tableau de bord.
+   * Tableau vide = personne n'y a accès.
+   */
+  ipcMain.handle('settings:getSlideshowVisibility', async (_event, { token }: any) => {
+    try {
+      const session = getSession(token);
+      if (!session) return { success: false, error: 'Session expirée' };
+      checkRole(session, ADMIN_ROLES);
+      const raw = await getSetting(SettingsKeys.dashboardSlideshowRoles);
+      let allowedRoles: string[] = [];
+      if (raw) {
+        try {
+          const parsed = JSON.parse(raw);
+          if (Array.isArray(parsed)) allowedRoles = parsed.filter((r) => typeof r === 'string');
+        } catch { allowedRoles = []; }
+      }
+      return { success: true, data: { allowedRoles } };
+    } catch (err: any) {
+      return { success: false, error: err.message };
+    }
+  });
+
+  /** Met à jour la liste des rôles autorisés à voir le slideshow. */
+  ipcMain.handle('settings:updateSlideshowVisibility', async (_event, { token, payload }: any) => {
+    try {
+      const session = getSession(token);
+      if (!session) return { success: false, error: 'Session expirée' };
+      checkRole(session, ADMIN_ROLES);
+      const parsed = slideshowVisibilitySchema.safeParse(payload);
+      if (!parsed.success) return { success: false, error: parsed.error.issues.map((i) => i.message).join(', ') };
+      const unique = Array.from(new Set(parsed.data.allowedRoles));
+      await setSettings([{ key: SettingsKeys.dashboardSlideshowRoles, value: JSON.stringify(unique) }]);
+      logger.info(`Visibilité du slideshow mise à jour (${unique.length} rôle(s) autorisé(s))`);
+      return { success: true };
+    } catch (err: any) {
+      logger.error('settings:updateSlideshowVisibility', err.message);
       return { success: false, error: err.message };
     }
   });

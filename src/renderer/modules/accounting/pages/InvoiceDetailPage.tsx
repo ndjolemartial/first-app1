@@ -11,6 +11,7 @@ import TreasuryAccountFields from '../../../shared/components/TreasuryAccountFie
 import { formatCurrency, formatDate } from '../../../shared/utils/format';
 import { FileText, User, CreditCard, Plus, Printer, RotateCcw } from 'lucide-react';
 import EntityDocumentsCard from '../../archiving/components/EntityDocumentsCard';
+import { toast } from '../../../shared/components/ui/Toast';
 
 const STATUS_VARIANT: Record<string, 'success' | 'info' | 'warning' | 'danger' | 'default'> = {
   BROUILLON: 'default', ENVOYEE: 'info', PAYEE: 'success',
@@ -86,6 +87,10 @@ export default function InvoiceDetailPage() {
       reset();
       setShowPaymentForm(false);
       refetch();
+    } else {
+      // Erreurs typiques : facture en brouillon, convention liée en brouillon,
+      // compte de trésorerie introuvable… On remonte le message du backend.
+      toast.error(typeof r.error === 'string' ? r.error : 'Échec de l\'encaissement');
     }
   };
 

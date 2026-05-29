@@ -37,6 +37,7 @@ const budget_ipc_1 = require("./ipc/budget.ipc");
 const dashboard_ipc_1 = require("./ipc/dashboard.ipc");
 const settings_ipc_1 = require("./ipc/settings.ipc");
 const document_export_ipc_1 = require("./ipc/document-export.ipc");
+const archiving_service_1 = require("./services/archiving.service");
 const isDev = process.env.NODE_ENV === 'development';
 let mainWindow = null;
 function createWindow() {
@@ -137,6 +138,12 @@ electron_1.app.whenReady().then(async () => {
     registerIPC();
     // Propage le chemin de stockage paramétré (AppSetting) au storage.service.
     await (0, settings_ipc_1.initStorageOverride)();
+    // Politiques d'archivage par défaut + déclenchement de la passe quotidienne.
+    // Tout est fait en fire-and-forget pour ne pas retarder l'apparition de la
+    // fenêtre principale.
+    (0, archiving_service_1.seedDefaultArchivePolicies)()
+        .then(() => (0, archiving_service_1.scheduleAutoArchiving)())
+        .catch((e) => logger_1.default.error(`Auto-archiving bootstrap failed: ${e.message}`));
     setupAppMenu();
     createWindow();
     logger_1.default.info('Application started');

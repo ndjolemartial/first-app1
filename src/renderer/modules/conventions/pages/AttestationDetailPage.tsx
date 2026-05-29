@@ -144,17 +144,36 @@ export default function AttestationDetailPage() {
             </Card>
           )}
 
-          {a.convention && (
-            <Card>
-              <h3 className="text-sm font-semibold text-slate-700 mb-3 flex items-center gap-2">
-                <Link2 className="h-4 w-4 text-indigo-600" />
-                Convention liée
-              </h3>
-              <Button variant="ghost" size="sm" onClick={() => navigate(`/conventions/${a.convention.id}`)}>
-                {a.convention.reference}
-              </Button>
-            </Card>
-          )}
+          {a.convention && (() => {
+            const lot = a.convention.terrains?.[0]?.terrain?.lotissement;
+            return (
+              <Card>
+                <h3 className="text-sm font-semibold text-slate-700 mb-3 flex items-center gap-2">
+                  <Link2 className="h-4 w-4 text-indigo-600" />
+                  Convention liée
+                </h3>
+                <Button variant="ghost" size="sm" onClick={() => navigate(`/conventions/${a.convention.id}`)}>
+                  {a.convention.reference}
+                </Button>
+                {(lot?.nom || lot?.ville) && (
+                  <dl className="mt-3 space-y-1 text-sm text-slate-600">
+                    {lot?.nom && (
+                      <div className="flex justify-between gap-3">
+                        <dt className="text-slate-500">Lotissement</dt>
+                        <dd className="font-medium text-slate-800">{lot.nom}</dd>
+                      </div>
+                    )}
+                    {lot?.ville && (
+                      <div className="flex justify-between gap-3">
+                        <dt className="text-slate-500">Ville du lotissement</dt>
+                        <dd className="font-medium text-slate-800">{lot.ville}</dd>
+                      </div>
+                    )}
+                  </dl>
+                )}
+              </Card>
+            );
+          })()}
         </div>
 
         {a.notes && (

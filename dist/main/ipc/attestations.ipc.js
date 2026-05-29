@@ -12,8 +12,12 @@ const zod_1 = require("zod");
 const WRITE_ROLES = ['SUPER_ADMIN', 'ADMIN', 'MANAGER'];
 const READ_ROLES = [...WRITE_ROLES, 'AGENT', 'ACCOUNTANT', 'READONLY'];
 const ATTESTATION_TYPES = ['ATTRIBUTION', 'CESSION', 'SOLDE', 'TRANSFERT_PROPRIETE'];
-const attestationSchema = zod_1.z
-    .object({
+/**
+ * Schéma de base (objet brut). On le garde séparé des `.refine()` car
+ * `ZodEffects` (résultat d'un refine) ne supporte pas `.partial()`, indispensable
+ * pour la validation des mises à jour partielles côté `attestations:update`.
+ */
+const attestationBaseSchema = zod_1.z.object({
     type: zod_1.z.enum(ATTESTATION_TYPES),
     clientId: zod_1.z.number().int().positive(),
     secondaryClientId: zod_1.z.number().int().positive().optional(),
@@ -24,10 +28,30 @@ const attestationSchema = zod_1.z
     emittedAt: zod_1.z.string().optional(),
     amount: zod_1.z.number().optional(),
     notes: zod_1.z.string().optional(),
-})
+});
+const attestationSchema = attestationBaseSchema
     .refine((d) => (d.type === 'CESSION' ? !!d.secondaryClientId : true), { message: 'Une attestation de cession nécessite un cédant (client secondaire)' })
     .refine((d) => (d.type === 'CESSION' ? d.clientId !== d.secondaryClientId : true), { message: 'Le cessionnaire et le cédant doivent être deux clients différents' })
-    .refine((d) => !!d.terrainId || !!d.propertyId, { message: 'Sélectionnez un terrain ou un bien immobilier pour l\'attestation' });
+    .refine((d) => (d.type === 'CESSION' ? !!d.terrainId || !!d.propertyId : true), { message: 'Une attestation de cession nécessite un terrain ou un bien immobilier cédé' })
+    .refine((d) => (d.type === 'TRANSFERT_PROPRIETE' ? !!d.secondaryClientId : true), { message: 'Une attestation de transfert de propriété nécessite l\'ancien propriétaire' })
+    .refine((d) => (d.type === 'TRANSFERT_PROPRIETE' ? d.clientId !== d.secondaryClientId : true), { message: 'L\'ancien propriétaire et le nouveau bénéficiaire doivent être différents' });
+/**
+ * Schéma de mise à jour : on autorise tous les champs en partiel et on
+ * réplique les contraintes CESSION uniquement quand les champs concernés sont
+ * effectivement fournis (le cas contraire signifie « non modifié »).
+ */
+const attestationUpdateSchema = attestationBaseSchema.partial()
+    .refine((d) => (d.type === 'CESSION' && 'secondaryClientId' in d ? !!d.secondaryClientId : true), { message: 'Une attestation de cession nécessite un cédant (client secondaire)' })
+    .refine((d) => (d.type === 'CESSION' && d.clientId != null && d.secondaryClientId != null
+    ? d.clientId !== d.secondaryClientId
+    : true), { message: 'Le cessionnaire et le cédant doivent être deux clients différents' })
+    .refine((d) => (d.type === 'CESSION' && ('terrainId' in d || 'propertyId' in d)
+    ? !!d.terrainId || !!d.propertyId
+    : true), { message: 'Une attestation de cession nécessite un terrain ou un bien immobilier cédé' })
+    .refine((d) => (d.type === 'TRANSFERT_PROPRIETE' && 'secondaryClientId' in d ? !!d.secondaryClientId : true), { message: 'Une attestation de transfert de propriété nécessite l\'ancien propriétaire' })
+    .refine((d) => (d.type === 'TRANSFERT_PROPRIETE' && d.clientId != null && d.secondaryClientId != null
+    ? d.clientId !== d.secondaryClientId
+    : true), { message: 'L\'ancien propriétaire et le nouveau bénéficiaire doivent être différents' });
 /**
  * Sérialise une valeur pour l'IPC : les objets Decimal de Prisma ne sont pas
  * clonables nativement par Electron. Round-trip JSON → types primitifs.
@@ -61,12 +85,16 @@ const INCLUDE = {
         include: {
             _count: { select: { terrains: true } },
             // Terrains rattachés à la convention — nécessaires pour résoudre
-            // {{convention.lotsSouscrits}} dans le modèle d'attestation.
+            // {{convention.lotsSouscrits}} et {{convention.lotissement.*}} dans
+            // le modèle d'attestation.
             terrains: {
                 orderBy: { order: 'asc' },
                 include: {
                     terrain: {
-                        select: { id: true, reference: true, numeroIlot: true, numeroParcelle: true, surface: true },
+                        select: {
+                            id: true, reference: true, numeroIlot: true, numeroParcelle: true, surface: true,
+                            lotissement: { select: { id: true, nom: true, ville: true } },
+                        },
                     },
                 },
             },
@@ -115,6 +143,62 @@ const INCLUDE = {
     emittedBy: { select: { id: true, firstName: true, lastName: true, matricule: true } },
     documents: { where: { deletedAt: null }, orderBy: { uploadedAt: 'desc' } },
 };
+/**
+ * Vérifie qu'une convention liée est éligible au type d'attestation demandé.
+ *
+ * Règles :
+ *   1. Une attestation ne peut jamais être rattachée à un AVENANT ni à une
+ *      RESILIATION — quel que soit le type d'attestation.
+ *   2. Une attestation SOLDE ou TRANSFERT_PROPRIETE ne peut être émise que
+ *      lorsque le solde de la souscription liée est strictement à zéro
+ *      (prix de vente + frais d'ouverture + frais supplémentaires
+ *      − apport − échéances payées ; les frais ACD ne sont jamais comptés).
+ *
+ * Lève une `Error` lisible en cas de violation.
+ */
+async function assertConventionEligibleForAttestation(db, conventionId, attestationType) {
+    if (!conventionId)
+        return;
+    const c = await db.convention.findUnique({
+        where: { id: conventionId, deletedAt: null },
+        select: {
+            id: true, type: true, status: true, saleAmount: true, fraisOuvertureDossier: true,
+            additionalAmount: true, apportInitial: true, paymentModalites: true,
+            installments: { select: { id: true, amount: true, status: true } },
+        },
+    });
+    if (!c)
+        throw new Error('Convention liée introuvable');
+    if (c.status === 'BROUILLON') {
+        throw new Error('Impossible d\'associer une attestation à une convention en brouillon : finalisez-la d\'abord');
+    }
+    if (c.type === 'AVENANT' || c.type === 'RESILIATION') {
+        throw new Error('Une attestation ne peut pas être liée à un avenant ni à une convention de résiliation');
+    }
+    if (attestationType === 'SOLDE' || attestationType === 'TRANSFERT_PROPRIETE') {
+        const sale = Number(c.saleAmount ?? 0);
+        if (!sale) {
+            throw new Error('La convention liée n\'a pas de montant de souscription : solde indéterminé');
+        }
+        let balance;
+        if (c.paymentModalites === 'CASH') {
+            balance = 0;
+        }
+        else {
+            const totalDu = sale
+                + Number(c.fraisOuvertureDossier ?? 0)
+                + Number(c.additionalAmount ?? 0);
+            const apport = Number(c.apportInitial ?? 0);
+            const paid = (c.installments ?? [])
+                .filter((i) => i.status === 'PAYE')
+                .reduce((s, i) => s + (Number(i.amount) || 0), 0);
+            balance = Math.max(0, totalDu - apport - paid);
+        }
+        if (balance > 0) {
+            throw new Error(`Le solde de la souscription doit être à 0 pour émettre cette attestation (solde restant : ${balance}).`);
+        }
+    }
+}
 /**
  * Met à jour les champs `numeroAttestationAttribution` / `numeroAttestationCession`
  * sur le terrain rattaché lorsqu'une attestation pertinente est émise.
@@ -203,8 +287,11 @@ function registerAttestationsIPC() {
             if (!parsed.success)
                 return { success: false, error: parsed.error.format() };
             const db = (0, db_service_1.getDb)();
-            const reference = await nextReference(db);
             const d = parsed.data;
+            // Vérifie l'éligibilité de la convention liée (pas d'avenant /
+            // résiliation, et solde = 0 pour SOLDE / TRANSFERT_PROPRIETE).
+            await assertConventionEligibleForAttestation(db, d.conventionId, d.type);
+            const reference = await nextReference(db);
             const data = {
                 reference,
                 type: d.type,
@@ -235,11 +322,23 @@ function registerAttestationsIPC() {
             if (!session)
                 return { success: false, error: 'Session expirée' };
             (0, auth_service_1.checkRole)(session, WRITE_ROLES);
-            const parsed = attestationSchema.partial().safeParse(payload);
+            const parsed = attestationUpdateSchema.safeParse(payload);
             if (!parsed.success)
                 return { success: false, error: parsed.error.format() };
             const db = (0, db_service_1.getDb)();
             const d = parsed.data;
+            // Vérifie l'éligibilité de la convention liée à partir des valeurs
+            // effectives après mise à jour : on charge l'existant pour combler
+            // les champs non transmis dans le payload partiel.
+            const existing = await db.attestation.findUnique({
+                where: { id },
+                select: { type: true, conventionId: true },
+            });
+            if (!existing)
+                return { success: false, error: 'Attestation introuvable' };
+            const effectiveType = d.type ?? existing.type;
+            const effectiveConventionId = 'conventionId' in d ? d.conventionId : existing.conventionId;
+            await assertConventionEligibleForAttestation(db, effectiveConventionId, effectiveType);
             const data = { ...d };
             if (d.emittedAt)
                 data.emittedAt = new Date(d.emittedAt);

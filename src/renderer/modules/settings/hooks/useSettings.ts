@@ -191,3 +191,26 @@ export function useUploadSlideshowMedia() {
     },
   });
 }
+
+export function useSlideshowVisibility() {
+  const token = useAuthStore((s) => s.token)!;
+  return useQuery({
+    queryKey: ['settings', 'slideshowVisibility'],
+    queryFn:  () => ipc().getSlideshowVisibility(token),
+    enabled:  !!token,
+  });
+}
+
+export function useUpdateSlideshowVisibility() {
+  const token = useAuthStore((s) => s.token)!;
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (allowedRoles: string[]) => ipc().updateSlideshowVisibility(token, { allowedRoles }),
+    onSuccess: (res) => {
+      if (res.success) {
+        qc.invalidateQueries({ queryKey: ['settings', 'slideshowVisibility'] });
+        toast.success('Visibilité du slideshow enregistrée');
+      } else toast.error(String(res.error));
+    },
+  });
+}

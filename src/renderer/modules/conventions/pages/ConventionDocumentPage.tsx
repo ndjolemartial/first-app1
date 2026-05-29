@@ -162,10 +162,20 @@ export default function ConventionDocumentPage() {
   const convention = conventionRes?.data;
   if (!convention) return <div className="p-8 text-slate-500">Convention introuvable.</div>;
 
-  const templates: any[] = (templatesRes?.data ?? []).filter((t: any) => t.type === convention.type);
-  const selected = templates.find((t) => t.id === templateId)
-    ?? templates.find((t) => t.isDefault)
-    ?? templates[0];
+  // On n'affiche que le modèle par défaut correspondant exactement au type et
+  // à la nature (avenant ou souscription) de la convention en cours.
+  const templates: any[] = (templatesRes?.data ?? []).filter((t: any) => {
+    if (t.type !== convention.type) return false;
+    if (!t.isDefault) return false;
+    if (convention.type === 'AVENANT' && convention.amendmentType) {
+      if (t.amendmentType !== convention.amendmentType) return false;
+    }
+    if (convention.type === 'SOUSCRIPTION' && convention.souscriptionType) {
+      if (t.souscriptionType !== convention.souscriptionType) return false;
+    }
+    return true;
+  });
+  const selected = templates.find((t) => t.id === templateId) ?? templates[0];
 
   const mergedHeader = mergeTemplate(selected?.header, convention, countriesMap);
   const mergedBody = mergeTemplate(selected?.body, convention, countriesMap);
@@ -192,11 +202,23 @@ export default function ConventionDocumentPage() {
   const headerTemplate = buildHeaderTemplate(mergedHeader, headerWidth, headerMm);
   const footerTemplate = buildFooterTemplate(mergedFooter, footerWidth, footerMm, footerBgColor);
 
+  // Nom de fichier exporté : référence + nom du client. Pour un particulier on
+  // privilégie « NOM Prénom », pour une entreprise la raison sociale. Les
+  // caractères interdits par Windows (\ / : * ? " < > |) sont remplacés.
+  const sanitizeFileName = (s: string) => s.replace(/[\\/:*?"<>|]/g, '').replace(/\s+/g, ' ').trim();
+  const clientLabel = convention.client?.type === 'INDIVIDUEL'
+    ? `${convention.client?.lastName ?? ''} ${convention.client?.firstName ?? ''}`
+    : (convention.client?.entreprise ?? '');
+  const sanitizedClient = sanitizeFileName(clientLabel);
+  const exportFileName = sanitizedClient
+    ? `${convention.reference}-${sanitizedClient}`
+    : convention.reference;
+
   const handleExportPdf = async () => {
     const token = useAuthStore.getState().token;
     if (!token) return;
     await window.electron.documentExport.exportDocumentPdf(token, {
-      fileName: convention.reference,
+      fileName: exportFileName,
       bodyHtml: documentBodyHtml,
       headerTemplate,
       footerTemplate,
@@ -211,7 +233,7 @@ export default function ConventionDocumentPage() {
     // Word ne supporte pas les templates PDF (style, flex, pageNumber) :
     // on utilise des templates simplifiés (HTML basique).
     await window.electron.documentExport.exportDocumentDocx(token, {
-      fileName: convention.reference,
+      fileName: exportFileName,
       bodyHtml: documentBodyHtml,
       headerTemplate: buildHeaderDocxHtml(mergedHeader),
       footerTemplate: buildFooterDocxHtml(mergedFooter, footerBgColor),
@@ -243,8 +265,8 @@ export default function ConventionDocumentPage() {
     >
       {templates.length === 0 ? (
         <EmptyState
-          title="Aucun modèle pour ce type de convention"
-          description="Créez d'abord un modèle correspondant au type de cette convention pour générer le document."
+          title="Aucun modèle par défaut pour cette convention"
+          description="Définissez un modèle par défaut correspondant au type (et à la nature) de cette convention pour générer le document."
           action={{ label: 'Créer un modèle', onClick: () => navigate('/conventions/templates/new') }}
         />
       ) : (

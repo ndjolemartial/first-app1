@@ -12,7 +12,7 @@ import EmptyState from '../../../shared/components/ui/EmptyState';
 import { useConventions, useConventionsStatusStats } from '../hooks/useConventions';
 import { formatDate, formatCurrency } from '../../../shared/utils/format';
 import StatusRecap, { type StatusRecapItem } from '../../../shared/components/ui/StatusRecap';
-import { Plus, Eye, Edit, FileText, Award, FilePen, Clock, CheckCircle2, CalendarX, PackageCheck, XCircle } from 'lucide-react';
+import { Plus, Eye, Edit, FileText, Award, FilePen, Clock, CheckCircle2, CalendarX, XCircle } from 'lucide-react';
 
 const TYPE_OPTIONS = [
   { value: '', label: 'Tous les types' },
@@ -32,7 +32,6 @@ const STATUS_OPTIONS = [
   { value: 'ATTENTE_SIGNATURE', label: 'Attente signature' },
   { value: 'ACTIVE', label: 'Active' },
   { value: 'EXPIRE', label: 'Expirée' },
-  { value: 'TERMINER', label: 'Terminée' },
   { value: 'ANNULE', label: 'Annulée' },
 ];
 
@@ -52,12 +51,34 @@ const TYPE_LABEL: Record<string, string> = {
   SOUSCRIPTION: 'Souscription', AVENANT: 'Avenant', RESILIATION: 'Résiliation',
 };
 
+const AMENDMENT_TYPE_LABEL: Record<string, string> = {
+  PROLONGATION_DELAI:  'Avenant de prolongation de délai',
+  TRANSFERT_PROPRIETE: 'Avenant de transfert de propriété',
+  TRANSFERT_SITE:      'Avenant de transfert de site / changement de lot',
+};
+
+const SOUSCRIPTION_TYPE_LABEL: Record<string, string> = {
+  STANDARD:           'Convention de souscription',
+  AVEC_ACD:           'Convention de souscription avec ACD',
+  FINANCEMENT_PROJET: 'Convention de financement sur projet',
+};
+
+/** Libellé détaillé : combine le type avec la nature de l'avenant ou de la souscription. */
+function conventionTypeLabel(c: { type?: string; amendmentType?: string | null; souscriptionType?: string | null }): string {
+  if (c.type === 'AVENANT' && c.amendmentType && AMENDMENT_TYPE_LABEL[c.amendmentType]) {
+    return AMENDMENT_TYPE_LABEL[c.amendmentType];
+  }
+  if (c.type === 'SOUSCRIPTION' && c.souscriptionType && SOUSCRIPTION_TYPE_LABEL[c.souscriptionType]) {
+    return SOUSCRIPTION_TYPE_LABEL[c.souscriptionType];
+  }
+  return TYPE_LABEL[c.type ?? ''] ?? (c.type ?? '');
+}
+
 const STATUS_RECAP_ITEMS: StatusRecapItem[] = [
   { key: 'BROUILLON',         label: 'Brouillons',    icon: FilePen,       iconBg: 'bg-slate-100',   iconColor: 'text-slate-600',   activeColor: 'text-slate-800' },
   { key: 'ATTENTE_SIGNATURE', label: 'Attente sign.', icon: Clock,         iconBg: 'bg-amber-100',   iconColor: 'text-amber-600',   activeColor: 'text-amber-700' },
   { key: 'ACTIVE',            label: 'Actives',       icon: CheckCircle2,  iconBg: 'bg-emerald-100', iconColor: 'text-emerald-600', activeColor: 'text-emerald-700' },
   { key: 'EXPIRE',            label: 'Expirées',      icon: CalendarX,     iconBg: 'bg-red-100',     iconColor: 'text-red-600',     activeColor: 'text-red-700' },
-  { key: 'TERMINER',          label: 'Terminées',     icon: PackageCheck,  iconBg: 'bg-sky-100',     iconColor: 'text-sky-600',     activeColor: 'text-sky-700' },
   { key: 'ANNULE',            label: 'Annulées',      icon: XCircle,       iconBg: 'bg-rose-100',    iconColor: 'text-rose-600',    activeColor: 'text-rose-700' },
 ];
 
@@ -164,7 +185,7 @@ export default function ConventionsListPage() {
                           <span className="font-medium text-slate-900">{c.reference}</span>
                         </div>
                       </td>
-                      <td className="px-4 py-3 text-slate-600">{TYPE_LABEL[c.type] ?? c.type}</td>
+                      <td className="px-4 py-3 text-slate-600">{conventionTypeLabel(c)}</td>
                       <td className="px-4 py-3">
                         {c.assetType === 'TERRAIN' ? (() => {
                           const refs = (c.terrains ?? [])

@@ -137,6 +137,29 @@ async function assertSingleLotissement(
 }
 
 /**
+ * Vérifie qu'une convention parente n'est pas encore en brouillon : on ne peut
+ * pas y rattacher un avenant ni une résiliation tant qu'elle n'est pas
+ * finalisée. S'applique uniquement quand le type est AVENANT ou RESILIATION.
+ */
+async function assertParentNotDraft(
+  db: ReturnType<typeof getDb>,
+  type: string | undefined,
+  parentConventionId: number | undefined,
+): Promise<void> {
+  if (!type || !AMENDMENT_TYPES.includes(type) || !parentConventionId) return;
+  const parent = await db.convention.findUnique({
+    where: { id: parentConventionId },
+    select: { status: true, reference: true },
+  });
+  if (!parent) throw new Error('Convention initiale introuvable');
+  if (parent.status === 'BROUILLON') {
+    throw new Error(
+      `La convention initiale ${parent.reference} est encore en brouillon : finalisez-la avant d'y rattacher un avenant ou une résiliation`,
+    );
+  }
+}
+
+/**
  * Vérifie qu'une convention ne possède pas déjà une résiliation.
  * Une convention peut avoir plusieurs avenants mais une seule résiliation.
  */
@@ -321,6 +344,12 @@ export function registerConventionsIPC(): void {
           installments: { orderBy: { installmentNumber: 'asc' } },
           invoices: { where: { deletedAt: null }, orderBy: { issueDate: 'desc' }, take: 20 },
           documents: { orderBy: { uploadedAt: 'desc' } },
+          // Attestations émises ou associées à cette convention.
+          attestations: {
+            where: { deletedAt: null },
+            select: { id: true, reference: true, type: true, emittedAt: true },
+            orderBy: { emittedAt: 'desc' },
+          },
         },
       });
       if (!convention) return { success: false, error: 'Convention introuvable' };
@@ -347,6 +376,7 @@ export function registerConventionsIPC(): void {
       const reference = await nextReference(db);
       const d = parsed.data;
       const isTerrain = d.assetType === 'TERRAIN';
+      await assertParentNotDraft(db, d.type, d.parentConventionId);
       await assertSingleResiliation(db, d.type, d.parentConventionId);
       const propertyIds = isTerrain ? [] : (d.propertyIds ?? []);
       const terrainIds = isTerrain ? (d.terrainIds ?? []) : [];
@@ -486,6 +516,7 @@ export function registerConventionsIPC(): void {
       if (d.parentConventionId && d.parentConventionId === id) {
         return { success: false, error: 'Une convention ne peut pas être liée à elle-même' };
       }
+      await assertParentNotDraft(db, d.type, d.parentConventionId);
       await assertSingleResiliation(db, d.type, d.parentConventionId, id);
 
       // Statut avant mise à jour, pour détecter le passage à ACTIVE

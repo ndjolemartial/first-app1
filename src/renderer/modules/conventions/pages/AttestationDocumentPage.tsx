@@ -178,11 +178,23 @@ export default function AttestationDocumentPage() {
   const headerTemplate = buildHeaderTemplate(mergedHeader, headerWidth, headerMm);
   const footerTemplate = buildFooterTemplate(mergedFooter, footerWidth, footerMm, footerBgColor);
 
+  // Nom de fichier exporté : référence + nom du bénéficiaire. Particulier
+  // → « NOM Prénom » ; entreprise → raison sociale. Les caractères interdits
+  // par Windows (\ / : * ? " < > |) sont retirés du nom client.
+  const sanitizeFileName = (s: string) => s.replace(/[\\/:*?"<>|]/g, '').replace(/\s+/g, ' ').trim();
+  const clientLabel = attestation.client?.type === 'INDIVIDUEL'
+    ? `${attestation.client?.lastName ?? ''} ${attestation.client?.firstName ?? ''}`
+    : (attestation.client?.entreprise ?? '');
+  const sanitizedClient = sanitizeFileName(clientLabel);
+  const exportFileName = sanitizedClient
+    ? `${attestation.reference}-${sanitizedClient}`
+    : attestation.reference;
+
   const handleExportPdf = async () => {
     const token = useAuthStore.getState().token;
     if (!token) return;
     await window.electron.documentExport.exportDocumentPdf(token, {
-      fileName: attestation.reference,
+      fileName: exportFileName,
       bodyHtml: documentBodyHtml,
       headerTemplate,
       footerTemplate,
@@ -197,7 +209,7 @@ export default function AttestationDocumentPage() {
     // Word ne supporte pas les templates PDF (style, flex, pageNumber) :
     // on utilise des templates simplifiés (HTML basique).
     await window.electron.documentExport.exportDocumentDocx(token, {
-      fileName: attestation.reference,
+      fileName: exportFileName,
       bodyHtml: documentBodyHtml,
       headerTemplate: buildHeaderDocxHtml(mergedHeader),
       footerTemplate: buildFooterDocxHtml(mergedFooter, footerBgColor),
