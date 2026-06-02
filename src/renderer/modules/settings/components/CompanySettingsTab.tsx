@@ -4,6 +4,7 @@ import { Save, Upload, ImagePlus, Trash2 } from 'lucide-react';
 import Button from '../../../shared/components/ui/Button';
 import Card from '../../../shared/components/ui/Card';
 import Input from '../../../shared/components/ui/Input';
+import Textarea from '../../../shared/components/ui/Textarea';
 import ConfirmDialog from '../../../shared/components/ui/ConfirmDialog';
 import {
   useCompanySettings, useUpdateCompany, useUploadLogo, useLogoData, useDeleteLogo,
@@ -14,6 +15,11 @@ interface FormData {
   slogan: string;
   registreCommerce: string;
   compteContribuable: string;
+  phoneFixed: string;
+  phoneMobile1: string;
+  phoneMobile2: string;
+  website: string;
+  address: string;
 }
 
 const ACCEPTED_LOGO_TYPES = ['image/png', 'image/jpeg', 'image/webp', 'image/svg+xml'];
@@ -30,7 +36,10 @@ export default function CompanySettingsTab() {
   const [confirmDelete, setConfirmDelete] = useState(false);
 
   const { register, handleSubmit, reset, formState: { isSubmitting } } = useForm<FormData>({
-    defaultValues: { name: '', slogan: '', registreCommerce: '', compteContribuable: '' },
+    defaultValues: {
+      name: '', slogan: '', registreCommerce: '', compteContribuable: '',
+      phoneFixed: '', phoneMobile1: '', phoneMobile2: '', website: '', address: '',
+    },
   });
 
   useEffect(() => {
@@ -40,6 +49,11 @@ export default function CompanySettingsTab() {
         slogan:             companyRes.data.slogan ?? '',
         registreCommerce:   companyRes.data.registreCommerce ?? '',
         compteContribuable: companyRes.data.compteContribuable ?? '',
+        phoneFixed:         companyRes.data.phoneFixed ?? '',
+        phoneMobile1:       companyRes.data.phoneMobile1 ?? '',
+        phoneMobile2:       companyRes.data.phoneMobile2 ?? '',
+        website:            companyRes.data.website ?? '',
+        address:            companyRes.data.address ?? '',
       });
     }
   }, [companyRes, reset]);
@@ -128,15 +142,59 @@ export default function CompanySettingsTab() {
       </Card>
 
       <Card>
-        <h3 className="font-semibold text-slate-700 mb-4">Identité</h3>
-        <form onSubmit={onSubmit} className="space-y-4">
-          <Input label="Nom de l'entreprise" {...register('name')} />
-          <Input label="Slogan" {...register('slogan')} />
-          <div className="grid grid-cols-2 gap-4">
-            <Input label="N° registre de commerce" {...register('registreCommerce')} />
-            <Input label="N° compte contribuable" {...register('compteContribuable')} />
+        <form onSubmit={onSubmit} className="space-y-6">
+          <div>
+            <h3 className="font-semibold text-slate-700 mb-4">Identité</h3>
+            <div className="space-y-4">
+              <Input label="Nom de l'entreprise" {...register('name')} />
+              <Input label="Slogan" {...register('slogan')} />
+              <div className="grid grid-cols-2 gap-4">
+                <Input label="N° registre de commerce" {...register('registreCommerce')} />
+                <Input label="N° compte contribuable" {...register('compteContribuable')} />
+              </div>
+            </div>
           </div>
-          <div className="flex justify-end pt-2">
+
+          <div>
+            <h3 className="font-semibold text-slate-700 mb-4">Coordonnées</h3>
+            <div className="space-y-4">
+              <div className="grid grid-cols-3 gap-4">
+                <Input
+                  label="Téléphone fixe"
+                  type="tel"
+                  placeholder="+225 27 …"
+                  {...register('phoneFixed')}
+                />
+                <Input
+                  label="Mobile 1"
+                  type="tel"
+                  placeholder="+225 07 …"
+                  {...register('phoneMobile1')}
+                />
+                <Input
+                  label="Mobile 2"
+                  type="tel"
+                  placeholder="+225 05 …"
+                  {...register('phoneMobile2')}
+                />
+              </div>
+              <Input
+                label="Site web"
+                type="url"
+                placeholder="https://www.afrikimmo.ci"
+                helper="URL complète avec https://"
+                {...register('website')}
+              />
+              <Textarea
+                label="Adresse"
+                placeholder="Numéro, rue, quartier, commune, ville…"
+                rows={3}
+                {...register('address')}
+              />
+            </div>
+          </div>
+
+          <div className="flex justify-end pt-2 border-t border-slate-100">
             <Button type="submit" loading={isSubmitting || update.isPending} icon={<Save className="h-4 w-4" />}>
               Enregistrer
             </Button>

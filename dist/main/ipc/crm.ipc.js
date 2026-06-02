@@ -11,6 +11,37 @@ const logger_1 = __importDefault(require("../utils/logger"));
 const zod_1 = require("zod");
 const ALL_ROLES = ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'AGENT', 'ACCOUNTANT', 'READONLY'];
 const WRITE_ROLES = ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'AGENT'];
+/**
+ * Rôles qui voient l'ensemble des activités CRM, sans filtre de propriété.
+ * Les rôles restreints (AGENT, READONLY) ne voient que les activités
+ * qui leur sont assignées (`userId`), qu'ils ont créées (`createdById`),
+ * ou qui sont rattachées à un client / prospect / convention dont ils
+ * sont l'utilisateur référent (`assignedToId` / `agentId`).
+ */
+const FULL_VIEW_ROLES = ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ACCOUNTANT'];
+function hasFullView(role) {
+    return FULL_VIEW_ROLES.includes(role);
+}
+/** Clause WHERE des activités rattachées à un utilisateur (assigné, créateur, ou référent). */
+function activitiesForUserWhere(uid) {
+    return {
+        OR: [
+            { userId: uid },
+            { createdById: uid },
+            { client: { assignedToId: uid } },
+            { prospect: { assignedToId: uid } },
+            { convention: { agentId: uid } },
+            { invoice: { convention: { agentId: uid } } },
+            { installment: { convention: { agentId: uid } } },
+        ],
+    };
+}
+/** Clause WHERE de visibilité pour les rôles restreints (vide pour full-view). */
+function buildVisibilityWhere(session) {
+    if (hasFullView(session.role))
+        return {};
+    return activitiesForUserWhere(session.userId);
+}
 const activitySchema = zod_1.z.object({
     type: zod_1.z.enum(['NOTIFICATION', 'APPEL', 'EMAIL', 'SMS', 'REUNION', 'VISITE', 'TASK', 'RAPPEL', 'DOCUMENT']),
     subject: zod_1.z.string().min(1),
@@ -43,8 +74,20 @@ function registerCrmIPC() {
                 where.type = filters.type;
             if (filters.status)
                 where.status = filters.status;
-            if (filters.userId)
-                where.userId = filters.userId;
+            if (Array.isArray(filters.statusIn) && filters.statusIn.length) {
+                where.status = { in: filters.statusIn };
+            }
+            if (filters.statusNot) {
+                if (where.status && typeof where.status === 'object') {
+                    where.status = { ...where.status, not: filters.statusNot };
+                }
+                else if (where.status !== undefined) {
+                    where.status = { equals: where.status, not: filters.statusNot };
+                }
+                else {
+                    where.status = { not: filters.statusNot };
+                }
+            }
             if (filters.clientId)
                 where.clientId = filters.clientId;
             if (filters.prospectId)
@@ -63,9 +106,19 @@ function registerCrmIPC() {
                     { description: { contains: filters.search } },
                 ];
             }
+            // Restriction de visibilité par rôle (rôles non full-view) + filtre explicite
+            // par utilisateur (réservé aux rôles full-view qui peuvent cibler n'importe qui).
+            const visibilityWhere = buildVisibilityWhere(session);
+            const andClauses = [];
+            if (Object.keys(visibilityWhere).length)
+                andClauses.push(visibilityWhere);
+            if (filters.userId && hasFullView(session.role)) {
+                andClauses.push(activitiesForUserWhere(Number(filters.userId)));
+            }
+            const finalWhere = andClauses.length ? { AND: [where, ...andClauses] } : where;
             const [data, total] = await db.$transaction([
                 db.crmActivity.findMany({
-                    where,
+                    where: finalWhere,
                     skip: (page - 1) * limit,
                     take: limit,
                     orderBy: [{ dueDate: 'asc' }, { createdAt: 'desc' }],
@@ -83,7 +136,7 @@ function registerCrmIPC() {
                         installment: { select: { id: true, installmentNumber: true, convention: { select: { reference: true } } } },
                     },
                 }),
-                db.crmActivity.count({ where }),
+                db.crmActivity.count({ where: finalWhere }),
             ]);
             return { success: true, data, total };
         }
@@ -99,8 +152,12 @@ function registerCrmIPC() {
                 return { success: false, error: 'Session expirée' };
             (0, auth_service_1.checkRole)(session, ALL_ROLES);
             const db = (0, db_service_1.getDb)();
-            const activity = await db.crmActivity.findUnique({
-                where: { id },
+            const visibilityWhere = buildVisibilityWhere(session);
+            const where = Object.keys(visibilityWhere).length
+                ? { AND: [{ id }, visibilityWhere] }
+                : { id };
+            const activity = await db.crmActivity.findFirst({
+                where,
                 include: {
                     user: { select: { id: true, firstName: true, lastName: true } },
                     client: { select: { id: true, firstName: true, lastName: true, entreprise: true, type: true } },
@@ -116,7 +173,7 @@ function registerCrmIPC() {
                 },
             });
             if (!activity)
-                return { success: false, error: 'Activité introuvable' };
+                return { success: false, error: 'Activité introuvable ou inaccessible' };
             return { success: true, data: activity };
         }
         catch (error) {
@@ -153,6 +210,7 @@ function registerCrmIPC() {
                     programmeId: d.programmeId ?? null,
                     invoiceId: d.invoiceId ?? null,
                     installmentId: d.installmentId ?? null,
+                    createdById: session.userId,
                 },
             });
             logger_1.default.info(`CRM activity created: ${activity.id}`);
@@ -172,6 +230,16 @@ function registerCrmIPC() {
             if (!parsed.success)
                 return { success: false, error: parsed.error.format() };
             const db = (0, db_service_1.getDb)();
+            const visibilityWhere = buildVisibilityWhere(session);
+            const lookupWhere = Object.keys(visibilityWhere).length
+                ? { AND: [{ id }, visibilityWhere] }
+                : { id };
+            const existing = await db.crmActivity.findFirst({
+                where: lookupWhere,
+                select: { id: true },
+            });
+            if (!existing)
+                return { success: false, error: 'Activité introuvable ou inaccessible' };
             const d = parsed.data;
             if (d.dueDate)
                 d.dueDate = new Date(d.dueDate);
@@ -205,6 +273,16 @@ function registerCrmIPC() {
                 return { success: false, error: 'Session expirée' };
             (0, auth_service_1.checkRole)(session, WRITE_ROLES);
             const db = (0, db_service_1.getDb)();
+            const visibilityWhere = buildVisibilityWhere(session);
+            const lookupWhere = Object.keys(visibilityWhere).length
+                ? { AND: [{ id }, visibilityWhere] }
+                : { id };
+            const existing = await db.crmActivity.findFirst({
+                where: lookupWhere,
+                select: { id: true },
+            });
+            if (!existing)
+                return { success: false, error: 'Activité introuvable ou inaccessible' };
             const activity = await db.crmActivity.update({
                 where: { id },
                 data: { status: 'TRAITE', completedAt: new Date() },
@@ -215,7 +293,26 @@ function registerCrmIPC() {
             return { success: false, error: error.message };
         }
     });
-    electron_1.ipcMain.handle('crm:getStats', async (_event, { token }) => {
+    electron_1.ipcMain.handle('crm:listAssignees', async (_event, { token }) => {
+        try {
+            const session = (0, auth_service_1.getSession)(token);
+            if (!session)
+                return { success: false, error: 'Session expirée' };
+            // Réservé aux rôles full-view : eux seuls peuvent filtrer par utilisateur.
+            (0, auth_service_1.checkRole)(session, FULL_VIEW_ROLES);
+            const db = (0, db_service_1.getDb)();
+            const users = await db.user.findMany({
+                where: { deletedAt: null, isActive: true },
+                select: { id: true, firstName: true, lastName: true, role: true },
+                orderBy: [{ firstName: 'asc' }, { lastName: 'asc' }],
+            });
+            return { success: true, data: users };
+        }
+        catch (error) {
+            return { success: false, error: error.message };
+        }
+    });
+    electron_1.ipcMain.handle('crm:getStats', async (_event, { token, filters = {} }) => {
         try {
             const session = (0, auth_service_1.getSession)(token);
             if (!session)
@@ -225,20 +322,33 @@ function registerCrmIPC() {
             const now = new Date();
             const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate());
             const endOfDay = new Date(startOfDay.getTime() + 86400000 - 1);
+            // Les compteurs respectent la visibilité par rôle + filtre utilisateur (full-view).
+            const visibilityWhere = buildVisibilityWhere(session);
+            const userScope = filters.userId && hasFullView(session.role)
+                ? activitiesForUserWhere(Number(filters.userId))
+                : null;
+            const withVisibility = (w) => {
+                const clauses = [];
+                if (Object.keys(visibilityWhere).length)
+                    clauses.push(visibilityWhere);
+                if (userScope)
+                    clauses.push(userScope);
+                return clauses.length ? { AND: [w, ...clauses] } : w;
+            };
             const [total, pending, overdue, todayCount] = await db.$transaction([
-                db.crmActivity.count({ where: { status: { not: 'ANNULE' } } }),
-                db.crmActivity.count({ where: { status: 'EN_ATTENTE' } }),
+                db.crmActivity.count({ where: withVisibility({ status: { not: 'ANNULE' } }) }),
+                db.crmActivity.count({ where: withVisibility({ status: 'EN_ATTENTE' }) }),
                 db.crmActivity.count({
-                    where: {
+                    where: withVisibility({
                         status: { in: ['EN_ATTENTE', 'EN_TRAITEMENT'] },
                         dueDate: { lt: now },
-                    },
+                    }),
                 }),
                 db.crmActivity.count({
-                    where: {
+                    where: withVisibility({
                         dueDate: { gte: startOfDay, lte: endOfDay },
                         status: { not: 'ANNULE' },
-                    },
+                    }),
                 }),
             ]);
             return { success: true, data: { total, pending, overdue, todayCount } };

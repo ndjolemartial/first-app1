@@ -17,7 +17,7 @@ import {
   useReferrers,
   useCommissionSettings,
 } from '../hooks/useCommissions';
-import { clientName, referrerName, TRANSACTION_TYPE_LABEL } from '../utils/commissions.utils';
+import { clientName, TRANSACTION_TYPE_LABEL } from '../utils/commissions.utils';
 import { formatCurrency } from '../../../shared/utils/format';
 import { formatPersonName } from '../../../shared/utils/format';
 import { Save } from 'lucide-react';
@@ -34,7 +34,7 @@ const schema = z.object({
   beneficiaryType: z.enum(['USER', 'REFERRER']),
   userId: z.string().optional(),
   referrerId: z.string().optional(),
-  transactionType: z.enum(['VENTE', 'LOCATION', 'SOUSCRIPTION', 'FRAIS_DOSSIER']),
+  transactionType: z.enum(['VENTE', 'LOCATION', 'SOUSCRIPTION', 'FRAIS_DOSSIER', 'FRAIS_DEMARCHES_ACD']),
   baseAmount: z.string().refine((v) => Number(v) > 0, 'Le montant de l\'assiette doit être positif'),
   rate: z.string().refine((v) => {
     const n = Number(v);
@@ -53,12 +53,10 @@ export default function CommissionFormPage() {
   const [searchParams] = useSearchParams();
   const create = useCreateCommission();
 
-  const { data: conventionsRes, isLoading: conventionsLoading } = useEligibleConventions();
   const { data: usersRes } = useCommissionUsers();
   const { data: referrersRes } = useReferrers({ isActive: true }, 1, 200);
   const { data: settingsRes } = useCommissionSettings();
 
-  const conventions: any[] = conventionsRes?.data ?? [];
   const users: any[] = usersRes?.data ?? [];
   const referrers: any[] = referrersRes?.data ?? [];
   const settings = settingsRes?.data ?? { saleRate: 0, rentalRate: 0, dossierRate: 0 };
@@ -81,13 +79,32 @@ export default function CommissionFormPage() {
 
   const conventionId = watch('conventionId');
   const beneficiaryType = watch('beneficiaryType');
+  const userId = watch('userId');
+  const referrerId = watch('referrerId');
   const transactionType = watch('transactionType');
   const baseAmount = Number(watch('baseAmount') || 0);
   const rate = Number(watch('rate') || 0);
 
+  // Conventions filtrées côté backend : seules les conventions ACTIVE / EXPIRE
+  // rattachées au bénéficiaire sélectionné (agent ou apporteur) sont éligibles.
+  // Tant qu'aucun bénéficiaire n'est choisi, la requête reste désactivée et la
+  // liste reste vide — l'utilisateur sélectionne d'abord son bénéficiaire.
+  const beneficiaryFilter = beneficiaryType === 'USER'
+    ? (userId ? { userId: Number(userId) } : undefined)
+    : (referrerId ? { referrerId: Number(referrerId) } : undefined);
+  const { data: conventionsRes, isLoading: conventionsLoading } = useEligibleConventions(beneficiaryFilter);
+  const conventions: any[] = conventionsRes?.data ?? [];
+  const hasBeneficiary = Boolean(beneficiaryFilter);
+
   const selectedConvention = conventions.find((c) => c.id === Number(conventionId));
   const naturalKind = selectedConvention ? conventionKind(selectedConvention.type) : null;
   const computedAmount = Math.round(baseAmount * (rate / 100) * 100) / 100;
+
+  // Frais de démarches ACD : éligible uniquement si la convention sélectionnée
+  // porte l'option ACD sur au moins un terrain rattaché (client ayant confié
+  // les démarches ACD à l'entreprise). Si aucune convention n'est sélectionnée
+  // ou si l'option n'est activée sur aucun terrain, le type est masqué.
+  const acdAvailable = Boolean(selectedConvention?.hasAcdDemarches);
 
   /** Pré-remplit l'assiette et le taux selon la convention et le type de commission. */
   function applyDefaults(id: number, type: string) {
@@ -102,9 +119,19 @@ export default function CommissionFormPage() {
       const v = Number(c.rentAmount ?? 0);
       setValue('baseAmount', v > 0 ? String(v) : '');
       setValue('rate', String(settings.rentalRate));
+    } else if (type === 'FRAIS_DOSSIER') {
+      // FRAIS_DOSSIER : assiette = frais d'ouverture de dossier saisis sur la
+      // convention. À défaut, on pré-remplit avec la valeur standard (100 000
+      // FCFA) — l'utilisateur peut toujours l'ajuster.
+      const frais = Number(c.fraisOuvertureDossier ?? 0);
+      setValue('baseAmount', String(frais > 0 ? frais : 100000));
+      setValue('rate', String(settings.dossierRate));
     } else {
-      // FRAIS_DOSSIER : assiette saisie manuellement, taux dédié par défaut
-      setValue('baseAmount', '');
+      // FRAIS_DEMARCHES_ACD : assiette = montant standard des frais de démarches
+      // ACD défini sur le lotissement rattaché à la convention. À défaut (champ
+      // non renseigné), on retombe sur 0 — l'utilisateur peut ensuite ajuster.
+      const acd = Number(c.lotissementFraisDemarchesAcdStandard ?? 0);
+      setValue('baseAmount', String(acd > 0 ? acd : 0));
       setValue('rate', String(settings.dossierRate));
     }
   }
@@ -121,6 +148,34 @@ export default function CommissionFormPage() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [conventions.length]);
+
+  // Lorsque le bénéficiaire (utilisateur ou apporteur) change, la liste des
+  // conventions éligibles est rechargée. Si la convention déjà sélectionnée
+  // n'appartient pas au nouveau bénéficiaire, on l'efface pour éviter
+  // qu'elle reste affichée sans correspondance dans le sélecteur.
+  useEffect(() => {
+    if (!conventionId) return;
+    if (!hasBeneficiary) {
+      setValue('conventionId', '');
+      return;
+    }
+    if (conventions.length > 0 && !conventions.some((c) => c.id === Number(conventionId))) {
+      setValue('conventionId', '');
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [beneficiaryType, userId, referrerId, conventions.length]);
+
+  // Si l'utilisateur avait choisi FRAIS_DEMARCHES_ACD puis change de
+  // convention pour une qui ne porte plus l'option ACD, on bascule sur le
+  // type naturel de la convention pour éviter un état invalide.
+  useEffect(() => {
+    if (transactionType === 'FRAIS_DEMARCHES_ACD' && !acdAvailable) {
+      const fallback = naturalKind ?? 'VENTE';
+      setValue('transactionType', fallback);
+      if (selectedConvention) applyDefaults(selectedConvention.id, fallback);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [acdAvailable]);
 
   const apiError = create.data && !create.data.success ? create.data.error : null;
 
@@ -145,21 +200,25 @@ export default function CommissionFormPage() {
     label: `${c.reference} — ${clientName(c.client)} (${TRANSACTION_TYPE_LABEL[conventionKind(c.type)]})`,
   }));
 
-  // Le type proposé est celui de la convention (vente/location/souscription) + les frais de dossier
+  // Le type proposé est celui de la convention (vente/location/souscription)
+  // + les types périphériques (frais d'ouverture de dossier, frais ACD).
   const typeOptions = [
     ...((!naturalKind || naturalKind === 'VENTE') ? [{ value: 'VENTE', label: 'Vente' }] : []),
     ...((!naturalKind || naturalKind === 'LOCATION') ? [{ value: 'LOCATION', label: 'Location' }] : []),
     ...((!naturalKind || naturalKind === 'SOUSCRIPTION') ? [{ value: 'SOUSCRIPTION', label: 'Souscription' }] : []),
     { value: 'FRAIS_DOSSIER', label: 'Frais d\'ouverture de dossier' },
+    ...(acdAvailable ? [{ value: 'FRAIS_DEMARCHES_ACD', label: 'Frais de démarches ACD' }] : []),
   ];
 
   const baseLabel = transactionType === 'FRAIS_DOSSIER'
     ? 'Montant des frais d\'ouverture de dossier'
-    : transactionType === 'LOCATION'
-      ? 'Assiette (un mois de loyer)'
-      : transactionType === 'SOUSCRIPTION'
-        ? 'Assiette (montant de la souscription)'
-        : 'Assiette (prix de vente)';
+    : transactionType === 'FRAIS_DEMARCHES_ACD'
+      ? 'Montant des frais de démarches ACD'
+      : transactionType === 'LOCATION'
+        ? 'Assiette (un mois de loyer)'
+        : transactionType === 'SOUSCRIPTION'
+          ? 'Assiette (montant de la souscription)'
+          : 'Assiette (prix de vente)';
 
   return (
     <PageLayout
@@ -170,35 +229,8 @@ export default function CommissionFormPage() {
         <Card>
           <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
 
-            {/* Convention */}
-            <div>
-              <FormSearchSelect
-                control={control}
-                name="conventionId"
-                label="Convention (vente, location ou souscription)"
-                required
-                placeholder={conventionsLoading ? 'Chargement…' : 'Sélectionnez une convention'}
-                options={conventionOptions}
-                error={errors.conventionId?.message}
-                onValueChange={(v) => {
-                  const c = conventions.find((x) => x.id === Number(v));
-                  if (!c) return;
-                  const kind = conventionKind(c.type);
-                  setValue('transactionType', kind);
-                  applyDefaults(c.id, kind);
-                }}
-              />
-              {selectedConvention && (
-                <p className="mt-1 text-xs text-slate-500">
-                  {TRANSACTION_TYPE_LABEL[conventionKind(selectedConvention.type)]} ·
-                  {' '}Bien {selectedConvention.property?.reference ?? '—'} ·
-                  {' '}Client {clientName(selectedConvention.client)}
-                </p>
-              )}
-            </div>
-
             {/* Bénéficiaire */}
-            <div className="border-t border-slate-200 pt-4 space-y-4">
+            <div className="space-y-4">
               <h3 className="text-sm font-semibold text-slate-700">Bénéficiaire de la commission</h3>
               <Select
                 label="Type de bénéficiaire"
@@ -226,7 +258,14 @@ export default function CommissionFormPage() {
                     label="Apporteur d'affaire"
                     required
                     placeholder="Sélectionnez un apporteur"
-                    options={referrers.map((r) => ({ value: String(r.id), label: referrerName(r) }))}
+                    options={referrers.map((r) => {
+                      // Pour une entreprise (companyName renseigné), on affiche
+                      // « Nom Prénom du représentant légal (Nom de l'entreprise) ».
+                      // Pour un particulier, on affiche simplement « Nom Prénom ».
+                      const person = `${r.lastName ?? ''} ${r.firstName ?? ''}`.trim();
+                      const label = r.companyName ? `${person} (${r.companyName})` : person;
+                      return { value: String(r.id), label };
+                    })}
                     {...register('referrerId')}
                   />
                   {referrers.length === 0 && (
@@ -239,6 +278,48 @@ export default function CommissionFormPage() {
                   )}
                 </div>
               )}
+            </div>
+
+            {/* Convention */}
+            <div className="border-t border-slate-200 pt-4">
+              <FormSearchSelect
+                control={control}
+                name="conventionId"
+                label="Convention (vente, location ou souscription)"
+                required
+                placeholder={
+                  !hasBeneficiary ? 'Choisissez d\'abord un bénéficiaire'
+                    : conventionsLoading ? 'Chargement…'
+                      : conventionOptions.length === 0 ? 'Aucune convention éligible pour ce bénéficiaire'
+                        : 'Sélectionnez une convention'
+                }
+                options={conventionOptions}
+                error={errors.conventionId?.message}
+                disabled={!hasBeneficiary}
+                onValueChange={(v) => {
+                  const c = conventions.find((x) => x.id === Number(v));
+                  if (!c) return;
+                  const kind = conventionKind(c.type);
+                  setValue('transactionType', kind);
+                  applyDefaults(c.id, kind);
+                }}
+              />
+              {!hasBeneficiary ? (
+                <p className="mt-1 text-xs text-amber-600">
+                  Sélectionnez d'abord l'utilisateur ou l'apporteur d'affaire ci-dessus — seules les conventions
+                  qui lui sont rattachées (statut Active ou Expirée) seront proposées.
+                </p>
+              ) : conventionOptions.length === 0 && !conventionsLoading ? (
+                <p className="mt-1 text-xs text-amber-600">
+                  Aucune convention Active ou Expirée n'est rattachée à ce bénéficiaire.
+                </p>
+              ) : selectedConvention ? (
+                <p className="mt-1 text-xs text-slate-500">
+                  {TRANSACTION_TYPE_LABEL[conventionKind(selectedConvention.type)]} ·
+                  {' '}{selectedConvention.assetType === 'TERRAIN' ? 'Terrain' : 'Bien'} {selectedConvention.property?.reference ?? '—'} ·
+                  {' '}Client {clientName(selectedConvention.client)}
+                </p>
+              ) : null}
             </div>
 
             {/* Calcul de la commission */}
@@ -254,6 +335,12 @@ export default function CommissionFormPage() {
               {transactionType === 'FRAIS_DOSSIER' && (
                 <p className="text-xs text-slate-500 -mt-2">
                   Commission appliquée sur les frais d'ouverture de dossier — saisissez le montant des frais ci-dessous.
+                </p>
+              )}
+              {transactionType === 'FRAIS_DEMARCHES_ACD' && (
+                <p className="text-xs text-slate-500 -mt-2">
+                  Commission appliquée sur les frais de démarches ACD — pré-rempli avec le montant standard
+                  du lotissement rattaché (0 si non renseigné). Ajustez si besoin.
                 </p>
               )}
               <div className="grid grid-cols-2 gap-4">

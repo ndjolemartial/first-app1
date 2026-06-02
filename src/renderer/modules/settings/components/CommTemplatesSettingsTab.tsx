@@ -1,15 +1,21 @@
 import { useState, useRef } from 'react';
-import { useForm } from 'react-hook-form';
+import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import PageLayout from '../../../shared/components/layout/PageLayout';
 import Button from '../../../shared/components/ui/Button';
 import Badge from '../../../shared/components/ui/Badge';
 import Card from '../../../shared/components/ui/Card';
 import { SkeletonTable } from '../../../shared/components/ui/Skeleton';
 import ConfirmDialog from '../../../shared/components/ui/ConfirmDialog';
-import { useTemplates, useCreateTemplate, useUpdateTemplate, useDeleteTemplate } from '../hooks/useCommunication';
-import VariablePicker from '../components/VariablePicker';
+import RichTextEditor from '../../../shared/components/ui/RichTextEditor';
+import {
+  useTemplates,
+  useCreateTemplate,
+  useUpdateTemplate,
+  useDeleteTemplate,
+} from '../../communication/hooks/useCommunication';
+import VariablePicker from '../../communication/components/VariablePicker';
+import { COMM_VARIABLE_GROUPS_FOR_EDITOR } from '../../communication/utils/variables';
 import { Mail, MessageSquare, Plus, Edit, Trash2, Save, X } from 'lucide-react';
 
 const schema = z.object({
@@ -33,7 +39,7 @@ function TemplateForm({
   onCancel: () => void;
   loading: boolean;
 }) {
-  const { register, handleSubmit, watch, setValue, getValues, formState: { errors } } = useForm<z.input<typeof schema>, any, FormData>({
+  const { register, handleSubmit, watch, setValue, getValues, control, formState: { errors } } = useForm<z.input<typeof schema>, any, FormData>({
     resolver: zodResolver(schema),
     defaultValues: initial
       ? {
@@ -49,8 +55,7 @@ function TemplateForm({
   const subjectReg = register('subject');
   const bodyReg = register('body');
 
-  /** Insère un jeton de variable à la position du curseur du champ ciblé. */
-  const insertVariable = (target: 'subject' | 'body', token: string) => {
+  const insertVariable = (target: 'subject' | 'body', token: string): void => {
     const el = target === 'subject' ? subjectRef.current : bodyRef.current;
     const current = String(getValues(target) ?? '');
     const start = el?.selectionStart ?? current.length;
@@ -59,7 +64,6 @@ function TemplateForm({
       shouldValidate: true,
       shouldDirty: true,
     });
-    // Garde la liste des variables déclarées synchronisée avec le contenu.
     const key = token.replace(/[{}]/g, '');
     const declared = String(getValues('variables') ?? '')
       .split(',')
@@ -76,7 +80,7 @@ function TemplateForm({
     });
   };
 
-  const onSubmit = (data: FormData) => {
+  const onSubmit = (data: FormData): void => {
     const vars = data.variables
       ? data.variables.split(',').map((v) => v.trim()).filter(Boolean)
       : [];
@@ -120,16 +124,48 @@ function TemplateForm({
       )}
       <div>
         <div className="flex items-center justify-between mb-1">
-          <label className="block text-xs font-medium text-slate-700">Corps du message *</label>
-          <VariablePicker onInsert={(t) => insertVariable('body', t)} />
+          <label className="block text-xs font-medium text-slate-700">
+            Corps du message *
+            {channel === 'EMAIL' && <span className="ml-2 text-slate-400 font-normal">(HTML — mise en forme, images, liens)</span>}
+          </label>
+          {channel === 'SMS' && (
+            <VariablePicker onInsert={(t) => insertVariable('body', t)} />
+          )}
         </div>
-        <textarea
-          rows={5}
-          {...bodyReg}
-          ref={(el) => { bodyReg.ref(el); bodyRef.current = el; }}
-          className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 font-mono"
-          placeholder="Saisissez le message — bouton « Insérer une variable » pour les champs dynamiques {{...}}"
-        />
+        {channel === 'EMAIL' ? (
+          <Controller
+            control={control}
+            name="body"
+            render={({ field }) => (
+              <RichTextEditor
+                value={field.value || ''}
+                onChange={(html) => {
+                  field.onChange(html);
+                  // Synchronise la liste de variables déclarées avec celles présentes dans le HTML.
+                  const found = Array.from(html.matchAll(/\{\{\s*([a-zA-Z0-9_]+)\s*\}\}/g)).map((m) => m[1]);
+                  const unique = Array.from(new Set(found));
+                  if (unique.length) {
+                    const declared = String(getValues('variables') ?? '')
+                      .split(',').map((v) => v.trim()).filter(Boolean);
+                    const merged = Array.from(new Set([...declared, ...unique]));
+                    setValue('variables', merged.join(', '), { shouldDirty: true });
+                  }
+                }}
+                variables={COMM_VARIABLE_GROUPS_FOR_EDITOR}
+                minHeight={260}
+                placeholder="Saisissez le message — barre d'outils pour mise en forme, images, liens. Insérez les variables via le bouton dédié."
+              />
+            )}
+          />
+        ) : (
+          <textarea
+            rows={5}
+            {...bodyReg}
+            ref={(el) => { bodyReg.ref(el); bodyRef.current = el; }}
+            className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 font-mono"
+            placeholder="Saisissez le message — bouton « Insérer une variable » pour les champs dynamiques {{...}}"
+          />
+        )}
         {errors.body && <p className="text-xs text-red-500 mt-1">{errors.body.message}</p>}
       </div>
       <div>
@@ -153,7 +189,7 @@ function TemplateForm({
   );
 }
 
-export default function TemplatesPage() {
+export default function CommTemplatesSettingsTab() {
   const [channelFilter, setChannelFilter] = useState<string>('');
   const [editing, setEditing] = useState<any>(null);
   const [creating, setCreating] = useState(false);
@@ -165,33 +201,39 @@ export default function TemplatesPage() {
   const updateTemplate = useUpdateTemplate();
   const deleteTemplate = useDeleteTemplate();
 
-  const handleCreate = async (data: any) => {
+  const handleCreate = async (data: any): Promise<void> => {
     const r = await createTemplate.mutateAsync(data);
     if (r.success) setCreating(false);
   };
 
-  const handleUpdate = async (data: any) => {
+  const handleUpdate = async (data: any): Promise<void> => {
     const r = await updateTemplate.mutateAsync({ id: editing.id, payload: data });
     if (r.success) setEditing(null);
   };
 
-  const handleDelete = async () => {
+  const handleDelete = async (): Promise<void> => {
     await deleteTemplate.mutateAsync(deleteTarget.id);
     setDeleteTarget(null);
   };
 
   return (
-    <PageLayout
-      title="Templates de communication"
-      breadcrumbs={[{ label: 'Communication', to: '/communication' }, { label: 'Templates' }]}
-      actions={
+    <div className="space-y-6">
+      {/* En-tête du tab */}
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <h2 className="text-lg font-semibold text-slate-900">Modèles de messages</h2>
+          <p className="text-sm text-slate-500">
+            Bibliothèque des modèles email et SMS utilisés pour les envois manuels et les relances automatiques.
+            Les variables <span className="font-mono text-xs">{'{{firstName}}'}</span>, <span className="font-mono text-xs">{'{{dueDate}}'}</span>… sont remplacées à l'envoi.
+          </p>
+        </div>
         <Button icon={<Plus className="h-4 w-4" />} onClick={() => setCreating(true)}>
-          Nouveau template
+          Nouveau modèle
         </Button>
-      }
-    >
+      </div>
+
       {/* Filtre canal */}
-      <div className="flex gap-2 mb-6">
+      <div className="flex gap-2">
         {['', 'EMAIL', 'SMS'].map((c) => (
           <button
             key={c}
@@ -209,8 +251,8 @@ export default function TemplatesPage() {
 
       {/* Formulaire création */}
       {creating && (
-        <Card className="mb-6">
-          <h3 className="font-semibold text-slate-800 mb-4">Nouveau template</h3>
+        <Card>
+          <h3 className="font-semibold text-slate-800 mb-4">Nouveau modèle</h3>
           <TemplateForm
             onSave={handleCreate}
             onCancel={() => setCreating(false)}
@@ -220,9 +262,11 @@ export default function TemplatesPage() {
       )}
 
       {isLoading ? (
-        <div className="p-6"><SkeletonTable rows={4} /></div>
+        <Card><SkeletonTable rows={4} /></Card>
       ) : templates.length === 0 ? (
-        <div className="py-16 text-center text-slate-400">Aucun template. Créez-en un.</div>
+        <Card>
+          <p className="py-8 text-center text-slate-400">Aucun modèle. Créez-en un.</p>
+        </Card>
       ) : (
         <div className="space-y-4">
           {templates.map((t: any) => (
@@ -249,8 +293,10 @@ export default function TemplatesPage() {
                       {!t.isActive && <Badge variant="default">Inactif</Badge>}
                     </div>
                     {t.subject && <p className="text-sm text-slate-500 mb-1">Sujet : {t.subject}</p>}
-                    <p className="text-sm text-slate-600 line-clamp-2 font-mono bg-slate-50 px-2 py-1 rounded">
-                      {t.body}
+                    <p className="text-sm text-slate-600 line-clamp-2 bg-slate-50 px-2 py-1 rounded">
+                      {t.channel === 'EMAIL'
+                        ? String(t.body ?? '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim()
+                        : t.body}
                     </p>
                     {Array.isArray(t.variables) && t.variables.length > 0 && (
                       <div className="flex gap-1 mt-2 flex-wrap">
@@ -277,11 +323,11 @@ export default function TemplatesPage() {
 
       <ConfirmDialog
         open={!!deleteTarget}
-        title="Supprimer le template"
-        message={`Supprimer le template "${deleteTarget?.name}" ?`}
+        title="Supprimer le modèle"
+        message={`Supprimer le modèle "${deleteTarget?.name}" ?`}
         onConfirm={handleDelete}
         onClose={() => setDeleteTarget(null)}
       />
-    </PageLayout>
+    </div>
   );
 }

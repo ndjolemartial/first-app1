@@ -5,6 +5,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.loadSmtpConfig = loadSmtpConfig;
 exports.createTransporter = createTransporter;
+exports.sendEmail = sendEmail;
 exports.sendTestEmail = sendTestEmail;
 const nodemailer_1 = __importDefault(require("nodemailer"));
 const settings_service_1 = require("./settings.service");
@@ -41,6 +42,40 @@ async function createTransporter() {
         secure: cfg.secure,
         auth: cfg.user ? { user: cfg.user, pass: cfg.password } : undefined,
     });
+}
+/** Échappe les caractères HTML d'un texte brut pour un rendu sûr en `<pre>`. */
+function escapeHtml(s) {
+    return s
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
+/**
+ * Envoie un email depuis l'application — texte brut converti en HTML simple
+ * (conserve les retours à la ligne). Lève si SMTP n'est pas configuré.
+ */
+async function sendEmail(params) {
+    const cfg = await loadSmtpConfig();
+    if (!cfg.host)
+        throw new Error('SMTP non configuré (host manquant)');
+    if (!params.to)
+        throw new Error('Adresse destinataire manquante');
+    const transporter = await createTransporter();
+    const fromHeader = cfg.fromName
+        ? `"${cfg.fromName}" <${cfg.fromAddress || cfg.user}>`
+        : (cfg.fromAddress || cfg.user);
+    const html = params.html ?? `<pre style="font-family:inherit;white-space:pre-wrap;margin:0">${escapeHtml(params.body)}</pre>`;
+    const info = await transporter.sendMail({
+        from: fromHeader,
+        to: params.to,
+        subject: params.subject,
+        text: params.body,
+        html,
+    });
+    logger_1.default.info(`Email envoyé à ${params.to} (messageId=${info.messageId})`);
+    return { messageId: info.messageId };
 }
 /** Envoie un email de test à l'adresse fournie. */
 async function sendTestEmail(toAddress) {

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import PageLayout from '../../../shared/components/layout/PageLayout';
 import Button from '../../../shared/components/ui/Button';
@@ -6,10 +6,12 @@ import Badge from '../../../shared/components/ui/Badge';
 import Card from '../../../shared/components/ui/Card';
 import { SkeletonTable } from '../../../shared/components/ui/Skeleton';
 import ConfirmDialog from '../../../shared/components/ui/ConfirmDialog';
-import { useActivities, useCrmStats, useDeleteActivity, useCompleteActivity } from '../hooks/useCrm';
+import { useActivities, useCrmStats, useDeleteActivity, useCompleteActivity, useCrmAssignees } from '../hooks/useCrm';
 import { formatDate, formatRelative } from '../../../shared/utils/format';
 import ExportMenu, { ExportColumn } from '../../../shared/components/ExportMenu';
 import { useAuthStore } from '../../../shared/stores/auth.store';
+
+const FULL_VIEW_ROLES = ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ACCOUNTANT'];
 import {
   Plus, CheckCircle2, Trash2, Phone, Mail, MessageSquare,
   Calendar, Eye, Users, Briefcase, FileText, Bell, File,
@@ -72,26 +74,91 @@ const EXPORT_COLUMNS: ExportColumn[] = [
   { header: 'Créé le',     cell: (a) => formatDate(a.createdAt) },
 ];
 
+type QuickFilter = '' | 'pending' | 'overdue' | 'today' | 'active';
+
+const QUICK_LABEL: Record<Exclude<QuickFilter, ''>, string> = {
+  pending: 'En attente',
+  overdue: 'En retard',
+  today: "Aujourd'hui",
+  active: 'Total actives',
+};
+
 export default function CrmPage() {
   const navigate = useNavigate();
   const token = useAuthStore((s) => s.token)!;
+  const currentUser = useAuthStore((s) => s.user);
+  const canFilterByUser = !!currentUser && FULL_VIEW_ROLES.includes(currentUser.role);
   const [typeFilter, setTypeFilter] = useState('');
-  const [statusFilter, setStatusFilter] = useState('EN_ATTENTE');
+  const [statusFilter, setStatusFilter] = useState('');
+  const [userFilter, setUserFilter] = useState<string>('');
+  const [quickFilter, setQuickFilter] = useState<QuickFilter>('pending');
   const [page, setPage] = useState(1);
   const [deleteTarget, setDeleteTarget] = useState<any>(null);
   const limit = 30;
 
-  const filters: any = {};
-  if (typeFilter) filters.type = typeFilter;
-  if (statusFilter) filters.status = statusFilter;
+  const assigneesQuery = useCrmAssignees(canFilterByUser);
+  const userOptions = useMemo(() => {
+    const list = (assigneesQuery.data?.data ?? []) as Array<{ id: number; firstName: string; lastName: string }>;
+    return list
+      .map((u) => ({ value: String(u.id), label: `${u.firstName ?? ''} ${u.lastName ?? ''}`.trim() || `#${u.id}` }))
+      .sort((a, b) => a.label.localeCompare(b.label, 'fr'));
+  }, [assigneesQuery.data]);
 
+  const filters: any = useMemo(() => {
+    const f: any = {};
+    if (typeFilter) f.type = typeFilter;
+    if (statusFilter) f.status = statusFilter;
+    if (canFilterByUser && userFilter) f.userId = Number(userFilter);
+
+    if (quickFilter === 'pending') {
+      f.status = 'EN_ATTENTE';
+    } else if (quickFilter === 'overdue') {
+      const now = new Date();
+      now.setSeconds(0, 0);
+      f.statusIn = ['EN_ATTENTE', 'EN_TRAITEMENT'];
+      f.dueBefore = now.toISOString();
+    } else if (quickFilter === 'today') {
+      const now = new Date();
+      const start = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      const end = new Date(start.getTime() + 86400000 - 1);
+      f.dueAfter = start.toISOString();
+      f.dueBefore = end.toISOString();
+      f.statusNot = 'ANNULE';
+    } else if (quickFilter === 'active') {
+      f.statusNot = 'ANNULE';
+    }
+    return f;
+  }, [typeFilter, statusFilter, quickFilter, userFilter, canFilterByUser]);
+
+  const statsFilters = useMemo(
+    () => (canFilterByUser && userFilter ? { userId: Number(userFilter) } : {}),
+    [canFilterByUser, userFilter],
+  );
+
+  const handleQuickFilter = (key: Exclude<QuickFilter, ''>) => {
+    setQuickFilter((prev) => (prev === key ? '' : key));
+    setStatusFilter('');
+    setPage(1);
+  };
+
+  const handleStatusChange = (val: string) => {
+    setStatusFilter(val);
+    setQuickFilter('');
+    setPage(1);
+  };
+
+  const selectedUserLabel = canFilterByUser && userFilter
+    ? userOptions.find((o) => o.value === userFilter)?.label
+    : undefined;
   const filterSummary = [
     typeFilter && `Type : ${TYPE_LABEL[typeFilter] ?? typeFilter}`,
     statusFilter && `Statut : ${STATUS_LABEL[statusFilter] ?? statusFilter}`,
+    quickFilter && `Filtre : ${QUICK_LABEL[quickFilter]}`,
+    selectedUserLabel && `Utilisateur : ${selectedUserLabel}`,
   ].filter(Boolean).join('   —   ') || undefined;
 
   const { data: res, isLoading, refetch } = useActivities(filters, page, limit);
-  const { data: statsRes } = useCrmStats();
+  const { data: statsRes } = useCrmStats(statsFilters);
   const deleteActivity = useDeleteActivity();
   const completeActivity = useCompleteActivity();
 
@@ -149,7 +216,10 @@ export default function CrmPage() {
       {/* Stats */}
       {stats && (
         <div className="grid grid-cols-4 gap-4 mb-6">
-          <Card className="flex items-center gap-3">
+          <Card
+            onClick={() => handleQuickFilter('pending')}
+            className={`flex items-center gap-3 cursor-pointer transition-all hover:shadow-md ${quickFilter === 'pending' ? 'ring-2 ring-blue-500 border-blue-200' : ''}`}
+          >
             <div className="h-10 w-10 rounded-xl bg-blue-50 flex items-center justify-center">
               <AlertCircle className="h-5 w-5 text-blue-600" />
             </div>
@@ -158,7 +228,10 @@ export default function CrmPage() {
               <p className="text-xl font-bold text-slate-900">{stats.pending}</p>
             </div>
           </Card>
-          <Card className="flex items-center gap-3">
+          <Card
+            onClick={() => handleQuickFilter('overdue')}
+            className={`flex items-center gap-3 cursor-pointer transition-all hover:shadow-md ${quickFilter === 'overdue' ? 'ring-2 ring-red-500 border-red-200' : ''}`}
+          >
             <div className="h-10 w-10 rounded-xl bg-red-50 flex items-center justify-center">
               <Clock className="h-5 w-5 text-red-600" />
             </div>
@@ -167,7 +240,10 @@ export default function CrmPage() {
               <p className="text-xl font-bold text-slate-900">{stats.overdue}</p>
             </div>
           </Card>
-          <Card className="flex items-center gap-3">
+          <Card
+            onClick={() => handleQuickFilter('today')}
+            className={`flex items-center gap-3 cursor-pointer transition-all hover:shadow-md ${quickFilter === 'today' ? 'ring-2 ring-orange-500 border-orange-200' : ''}`}
+          >
             <div className="h-10 w-10 rounded-xl bg-orange-50 flex items-center justify-center">
               <Calendar className="h-5 w-5 text-orange-600" />
             </div>
@@ -176,7 +252,10 @@ export default function CrmPage() {
               <p className="text-xl font-bold text-slate-900">{stats.todayCount}</p>
             </div>
           </Card>
-          <Card className="flex items-center gap-3">
+          <Card
+            onClick={() => handleQuickFilter('active')}
+            className={`flex items-center gap-3 cursor-pointer transition-all hover:shadow-md ${quickFilter === 'active' ? 'ring-2 ring-slate-500 border-slate-300' : ''}`}
+          >
             <div className="h-10 w-10 rounded-xl bg-slate-50 flex items-center justify-center">
               <CheckCircle2 className="h-5 w-5 text-slate-600" />
             </div>
@@ -189,7 +268,7 @@ export default function CrmPage() {
       )}
 
       {/* Filtres */}
-      <div className="flex gap-3 mb-6">
+      <div className="flex flex-wrap gap-3 mb-6">
         <select
           value={typeFilter}
           onChange={(e) => { setTypeFilter(e.target.value); setPage(1); }}
@@ -199,11 +278,24 @@ export default function CrmPage() {
         </select>
         <select
           value={statusFilter}
-          onChange={(e) => { setStatusFilter(e.target.value); setPage(1); }}
+          onChange={(e) => handleStatusChange(e.target.value)}
           className="px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
         >
           {STATUS_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
         </select>
+        {canFilterByUser && (
+          <select
+            value={userFilter}
+            onChange={(e) => { setUserFilter(e.target.value); setPage(1); }}
+            className="px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 min-w-[200px]"
+            title="Filtrer par utilisateur référent"
+          >
+            <option value="">Tous les utilisateurs</option>
+            {userOptions.map((o) => (
+              <option key={o.value} value={o.value}>{o.label}</option>
+            ))}
+          </select>
+        )}
       </div>
 
       {/* Liste */}

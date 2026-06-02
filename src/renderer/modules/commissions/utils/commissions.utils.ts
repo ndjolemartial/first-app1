@@ -28,6 +28,7 @@ export const TRANSACTION_TYPE_LABEL: Record<string, string> = {
   LOCATION: 'Location',
   SOUSCRIPTION: 'Souscription',
   FRAIS_DOSSIER: 'Frais d\'ouverture de dossier',
+  FRAIS_DEMARCHES_ACD: 'Frais de démarches ACD',
 };
 
 export const SOURCE_LABEL: Record<string, string> = {

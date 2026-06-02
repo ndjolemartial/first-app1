@@ -7,7 +7,7 @@ import { SkeletonTable } from '../../../shared/components/ui/Skeleton';
 import { useAuthStore } from '../../../shared/stores/auth.store';
 import { useBeneficiarySummary } from '../hooks/useCommissions';
 import CommissionTable from '../components/CommissionTable';
-import { PayCommissionModal, CancelCommissionModal } from '../components/CommissionModals';
+import { PayCommissionModal, EditCommissionModal, CancelCommissionModal } from '../components/CommissionModals';
 import {
   BENEFICIARY_TYPE_LABEL, COMMISSION_WRITE_ROLES,
   COMMISSION_STATUS_LABEL, TRANSACTION_TYPE_LABEL,
@@ -41,6 +41,7 @@ export default function BeneficiaryCommissionsPage() {
 
   const [tab, setTab] = useState<Tab>('A_PAYER');
   const [payTarget, setPayTarget] = useState<any>(null);
+  const [editTarget, setEditTarget] = useState<any>(null);
   const [cancelTarget, setCancelTarget] = useState<any>(null);
 
   const { data: res, isLoading } = useBeneficiarySummary(type, Number(id));
@@ -168,6 +169,7 @@ export default function BeneficiaryCommissionsPage() {
               showBeneficiary={false}
               canManage={canManage}
               onPay={setPayTarget}
+              onEdit={setEditTarget}
               onCancel={setCancelTarget}
               emptyMessage="Aucune commission dans cette catégorie."
             />
@@ -180,6 +182,13 @@ export default function BeneficiaryCommissionsPage() {
           commission={payTarget}
           onClose={() => setPayTarget(null)}
           onSuccess={() => setPayTarget(null)}
+        />
+      )}
+      {editTarget && (
+        <EditCommissionModal
+          commission={editTarget}
+          onClose={() => setEditTarget(null)}
+          onSuccess={() => setEditTarget(null)}
         />
       )}
       {cancelTarget && (

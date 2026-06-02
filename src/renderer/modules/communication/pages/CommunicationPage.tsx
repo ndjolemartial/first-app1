@@ -9,7 +9,7 @@ import { useCommunicationHistory } from '../hooks/useCommunication';
 import { formatDateTime } from '../../../shared/utils/format';
 import ExportMenu, { ExportColumn } from '../../../shared/components/ExportMenu';
 import { useAuthStore } from '../../../shared/stores/auth.store';
-import { Mail, MessageSquare, Send, BookOpen } from 'lucide-react';
+import { Mail, MessageSquare, Send } from 'lucide-react';
 
 const CHANNEL_VARIANT: Record<string, 'info' | 'success'> = { EMAIL: 'info', SMS: 'success' };
 const STATUS_VARIANT: Record<string, 'success' | 'warning' | 'danger' | 'default' | 'info'> = {
@@ -79,9 +79,6 @@ export default function CommunicationPage() {
               return r.success ? r.data ?? [] : [];
             }}
           />
-          <Button variant="secondary" icon={<BookOpen className="h-4 w-4" />} onClick={() => navigate('/communication/templates')}>
-            Templates
-          </Button>
           <Button variant="secondary" icon={<MessageSquare className="h-4 w-4" />} onClick={() => navigate('/communication/send?channel=SMS')}>
             Envoyer SMS
           </Button>

@@ -65,6 +65,20 @@ export const COMM_VARIABLE_GROUPS: CommVariableGroup[] = [
       { key: 'date', label: 'Date du jour' },
     ],
   },
+  {
+    group: 'Entreprise',
+    variables: [
+      { key: 'companyName',         label: "Raison sociale" },
+      { key: 'companySlogan',       label: 'Slogan' },
+      { key: 'companyPhoneFixed',   label: 'Téléphone fixe' },
+      { key: 'companyPhoneMobile1', label: 'Mobile 1' },
+      { key: 'companyPhoneMobile2', label: 'Mobile 2' },
+      { key: 'companyWebsite',      label: 'Site web' },
+      { key: 'companyAddress',      label: 'Adresse' },
+      { key: 'companyRegistre',     label: 'N° registre de commerce' },
+      { key: 'companyContribuable', label: 'N° compte contribuable' },
+    ],
+  },
 ];
 
 /** Liste à plat de toutes les variables du catalogue. */
@@ -74,3 +88,13 @@ export const ALL_COMM_VARIABLES: CommVariable[] = COMM_VARIABLE_GROUPS.flatMap((
 export function variableToken(key: string): string {
   return `{{${key}}}`;
 }
+
+/**
+ * Convertit le catalogue au format attendu par `RichTextEditor`
+ * (`{ group, items: [{token, label}] }`). Le `token` est la clé courte ;
+ * l'éditeur l'enrobera automatiquement en `{{...}}` à l'insertion.
+ */
+export const COMM_VARIABLE_GROUPS_FOR_EDITOR = COMM_VARIABLE_GROUPS.map((g) => ({
+  group: g.group,
+  items: g.variables.map((v) => ({ token: v.key, label: v.label })),
+}));

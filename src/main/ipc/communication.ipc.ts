@@ -1,6 +1,9 @@
 import { ipcMain } from 'electron';
 import { getDb } from '../services/db.service';
 import { getSession, checkRole } from '../services/auth.service';
+import { sendEmail } from '../services/email.service';
+import { sendSms } from '../services/sms.service';
+import { renderMessage } from '../services/templating.service';
 import logger from '../utils/logger';
 import { z } from 'zod';
 
@@ -172,23 +175,31 @@ export function registerCommunicationIPC(): void {
       const db = getDb();
       const d = parsed.data;
 
-      // Enregistre la communication (statut EN_ATTENTE — envoi asynchrone non implémenté ici)
+      // Résout les variables d'entreprise ({{companyName}}, {{companyPhoneFixed}}, …)
+      // côté serveur — les valeurs ne transitent pas par le renderer.
+      const rendered = await renderMessage(
+        { subject: d.subject, body: d.body },
+        (d.metadata as any) ?? {},
+      );
+      const finalSubject = rendered.subject ?? d.subject;
+      const finalBody    = rendered.body;
+
       const comm = await db.communication.create({
         data: {
           channel: 'EMAIL',
           direction: 'SORTANT',
           to: d.to,
-          subject: d.subject,
-          body: d.body,
+          subject: finalSubject,
+          body: finalBody,
           status: 'EN_ATTENTE',
           templateId: d.templateId ?? null,
           metadata: d.metadata ? (d.metadata as any) : undefined,
         },
       });
 
-      // Tentative d'envoi (service email à brancher selon config)
+      // Envoi via Nodemailer (SMTP) — paramétré côté AppSetting.
       try {
-        // TODO: await emailService.send({ to: d.to, subject: d.subject, body: d.body });
+        await sendEmail({ to: d.to, subject: finalSubject, body: finalBody });
         await db.communication.update({
           where: { id: comm.id },
           data: { status: 'ENVOYE', sentAt: new Date() },
@@ -220,20 +231,25 @@ export function registerCommunicationIPC(): void {
       const db = getDb();
       const d = parsed.data;
 
+      // Résout les variables d'entreprise dans le corps avant transmission.
+      const rendered = await renderMessage({ body: d.body }, (d.metadata as any) ?? {});
+      const finalBody = rendered.body;
+
       const comm = await db.communication.create({
         data: {
           channel: 'SMS',
           direction: 'SORTANT',
           to: d.to,
-          body: d.body,
+          body: finalBody,
           status: 'EN_ATTENTE',
           templateId: d.templateId ?? null,
           metadata: d.metadata ? (d.metadata as any) : undefined,
         },
       });
 
+      // Envoi via le fournisseur SMS paramétré (Twilio / OVH / Brevo).
       try {
-        // TODO: await smsService.send({ to: d.to, body: d.body });
+        await sendSms(d.to, finalBody);
         await db.communication.update({
           where: { id: comm.id },
           data: { status: 'ENVOYE', sentAt: new Date() },

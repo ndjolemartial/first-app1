@@ -37,7 +37,8 @@ model User {
   updatedAt   DateTime  @updatedAt
   deletedAt   DateTime?
 
-  activities           CrmActivity[]
+  activities           CrmActivity[]   @relation("ActivityAssignedTo")
+  createdActivities    CrmActivity[]   @relation("ActivityCreatedBy")
   conventions          Convention[]    @relation("AgentConventions")
   notes                Note[]
   archivedEntities     ArchiveRecord[] @relation("ArchivedBy")
@@ -151,6 +152,9 @@ model Client {
   notes                String?    @db.Text
   isActive             Boolean      @default(true)
   status               ClientStatus @default(ACTIF)
+  // Refus de relances automatiques par canal (politique de communication).
+  smsOptOut            Boolean      @default(false)
+  emailOptOut          Boolean      @default(false)
   // Affectation : un client peut être suivi par un utilisateur interne ET
   // apporté par un référent externe (BusinessReferrer) ; les deux coexistent.
   assignedToId         Int?
@@ -173,6 +177,7 @@ model Client {
   attestations          Attestation[] @relation("AttestationClient")
   attestationsSecondary Attestation[] @relation("AttestationSecondaryClient")
   projects             Project[]
+  communications     Communication[]
 }
 
 enum ClientType {
@@ -519,6 +524,7 @@ model Convention {
   amendmentType        ConventionAmendmentType?
   souscriptionType     ConventionSouscriptionType?
   agentId              Int?
+  referrerId           Int?
   startDate            DateTime
   endDate              DateTime?
   signedAt             DateTime?
@@ -553,6 +559,7 @@ model Convention {
   client           Client         @relation("ConventionClient", fields: [clientId], references: [id])
   secondaryClient  Client?        @relation("ConventionSecondaryClient", fields: [secondaryClientId], references: [id])
   agent            User?          @relation("AgentConventions", fields: [agentId], references: [id])
+  referrer         BusinessReferrer? @relation("ConventionReferrer", fields: [referrerId], references: [id])
   // Convention initiale/précédente (pour les avenants et résiliations)
   parentConvention Convention?    @relation("ConventionAmendments", fields: [parentConventionId], references: [id])
   amendments       Convention[]   @relation("ConventionAmendments")
@@ -918,10 +925,12 @@ model CrmActivity {
   invoiceId      Int?
   installmentId  Int?
   projectId      Int?
+  createdById    Int?
   createdAt      DateTime       @default(now())
   updatedAt      DateTime       @updatedAt
 
-  user        User?                @relation(fields: [userId], references: [id])
+  user        User?                @relation("ActivityAssignedTo", fields: [userId], references: [id])
+  createdBy   User?                @relation("ActivityCreatedBy", fields: [createdById], references: [id])
   prospect    Prospect?            @relation(fields: [prospectId], references: [id])
   client      Client?              @relation(fields: [clientId], references: [id])
   owner       Owner?               @relation(fields: [ownerId], references: [id])
@@ -965,10 +974,17 @@ model Communication {
   sentAt     DateTime?
   errorMsg   String?
   templateId Int?
+  // Empreinte d'anti-doublon — verrouille un même rappel (cas + entité + fenêtre)
+  // ex. INSTALLMENT_42_J-7. Non posée sur les envois manuels.
+  dedupeKey  String?      @unique
+  clientId   Int?
   metadata   Json?
   createdAt  DateTime     @default(now())
 
   template CommTemplate? @relation(fields: [templateId], references: [id])
+  client   Client?       @relation(fields: [clientId], references: [id])
+
+  @@index([clientId])
 }
 
 model CommTemplate {
@@ -983,6 +999,39 @@ model CommTemplate {
   updatedAt      DateTime     @updatedAt
 
   communications Communication[]
+  reminderRules  ReminderRule[]
+}
+
+// ── POLITIQUE DE RELANCE ──────────────────────────────────────
+//
+// Règles déclaratives : une ligne par cas (échéance à venir, en retard, expiration)
+// × canal (EMAIL/SMS) × fenêtre (offsetDays). Le scheduler quotidien interprète
+// ces règles, applique la déduplication via Communication.dedupeKey et journalise
+// une CrmActivity de type RAPPEL.
+model ReminderRule {
+  id           Int                  @id @default(autoincrement())
+  code         String               @unique  // ex: INSTALLMENT_UPCOMING_J-7_EMAIL
+  name         String
+  description  String?              @db.Text
+  triggerType  ReminderTriggerType
+  // Décalage par rapport à la date pivot, en jours.
+  // Négatif = avant (préventif), positif = après (relance).
+  offsetDays   Int
+  channel      CommChannel
+  templateId   Int?
+  isActive     Boolean              @default(true)
+  createdAt    DateTime             @default(now())
+  updatedAt    DateTime             @updatedAt
+
+  template     CommTemplate?        @relation(fields: [templateId], references: [id])
+
+  @@index([templateId])
+}
+
+enum ReminderTriggerType {
+  INSTALLMENT_UPCOMING    // Échéance de vente à venir (offset négatif)
+  INSTALLMENT_OVERDUE     // Échéance de vente dépassée (offset positif)
+  CONVENTION_EXPIRING     // Convention de bail qui arrive à échéance (offset négatif)
 }
 
 enum CommChannel {
@@ -1305,6 +1354,7 @@ model BusinessReferrer {
 
   commissions Commission[]
   clients     Client[]     @relation("ClientReferrer")
+  conventions Convention[] @relation("ConventionReferrer")
   documents   Document[]   @relation("DocumentReferrer")
 }
 
@@ -1356,6 +1406,7 @@ enum CommissionTransactionType {
   LOCATION
   SOUSCRIPTION
   FRAIS_DOSSIER
+  FRAIS_DEMARCHES_ACD
 }
 
 enum CommissionStatus {

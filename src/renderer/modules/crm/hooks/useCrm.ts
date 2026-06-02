@@ -20,11 +20,21 @@ export function useActivity(id: number) {
   });
 }
 
-export function useCrmStats() {
+export function useCrmStats(filters: object = {}) {
   const token = useAuthStore((s) => s.token)!;
   return useQuery({
-    queryKey: ['crm-stats'],
-    queryFn: () => ipc.getStats(token),
+    queryKey: ['crm-stats', filters],
+    queryFn: () => ipc.getStats(token, filters),
+  });
+}
+
+export function useCrmAssignees(enabled = true) {
+  const token = useAuthStore((s) => s.token)!;
+  return useQuery({
+    queryKey: ['crm-assignees'],
+    queryFn: () => ipc.listAssignees(token),
+    enabled: !!token && enabled,
+    staleTime: 5 * 60 * 1000,
   });
 }
 

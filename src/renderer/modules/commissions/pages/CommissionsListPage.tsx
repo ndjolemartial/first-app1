@@ -6,7 +6,7 @@ import Select from '../../../shared/components/ui/Select';
 import { useAuthStore } from '../../../shared/stores/auth.store';
 import { useCommissions } from '../hooks/useCommissions';
 import CommissionTable from '../components/CommissionTable';
-import { PayCommissionModal, CancelCommissionModal } from '../components/CommissionModals';
+import { PayCommissionModal, EditCommissionModal, CancelCommissionModal } from '../components/CommissionModals';
 import {
   COMMISSION_WRITE_ROLES,
   COMMISSION_STATUS_LABEL,
@@ -72,6 +72,7 @@ export default function CommissionsListPage() {
   const limit = 20;
 
   const [payTarget, setPayTarget] = useState<any>(null);
+  const [editTarget, setEditTarget] = useState<any>(null);
   const [cancelTarget, setCancelTarget] = useState<any>(null);
 
   const filters: any = {};
@@ -139,13 +140,16 @@ export default function CommissionsListPage() {
         </div>
       </div>
 
-      {/* Tableau */}
-      <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
+      {/* Tableau — overflow-x-auto pour permettre le défilement horizontal
+          quand la fenêtre est trop étroite pour les 9 colonnes (sinon les
+          colonnes de droite étaient clipped par `overflow-hidden`). */}
+      <div className="bg-white rounded-xl border border-slate-200 overflow-x-auto">
         <CommissionTable
           commissions={commissions}
           isLoading={isLoading}
           canManage={canManage}
           onPay={setPayTarget}
+          onEdit={setEditTarget}
           onCancel={setCancelTarget}
           emptyMessage="Aucune commission trouvée."
         />
@@ -172,6 +176,13 @@ export default function CommissionsListPage() {
           commission={payTarget}
           onClose={() => setPayTarget(null)}
           onSuccess={() => setPayTarget(null)}
+        />
+      )}
+      {editTarget && (
+        <EditCommissionModal
+          commission={editTarget}
+          onClose={() => setEditTarget(null)}
+          onSuccess={() => setEditTarget(null)}
         />
       )}
       {cancelTarget && (

@@ -1,13 +1,15 @@
 import { useState, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { useForm } from 'react-hook-form';
+import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import PageLayout from '../../../shared/components/layout/PageLayout';
 import Button from '../../../shared/components/ui/Button';
 import Card from '../../../shared/components/ui/Card';
+import RichTextEditor from '../../../shared/components/ui/RichTextEditor';
 import { useSendEmail, useSendSms, useTemplates } from '../hooks/useCommunication';
 import VariablePicker from '../components/VariablePicker';
+import { COMM_VARIABLE_GROUPS_FOR_EDITOR } from '../utils/variables';
 import { Send } from 'lucide-react';
 
 const emailSchema = z.object({
@@ -26,22 +28,21 @@ function EmailForm({ onSuccess }: { onSuccess: () => void }) {
   const { data: tmplRes } = useTemplates('EMAIL');
   const templates = (tmplRes?.data ?? []).filter((t: any) => t.isActive);
 
-  const { register, handleSubmit, setValue, getValues, formState: { errors, isSubmitting } } = useForm({
+  const { register, handleSubmit, setValue, getValues, control, formState: { errors, isSubmitting } } = useForm({
     resolver: zodResolver(emailSchema),
+    defaultValues: { to: '', subject: '', body: '' },
   });
 
   const subjectRef = useRef<HTMLInputElement | null>(null);
-  const bodyRef = useRef<HTMLTextAreaElement | null>(null);
   const subjectReg = register('subject');
-  const bodyReg = register('body');
 
-  /** Insère un jeton de variable à la position du curseur du champ ciblé. */
-  const insertVariable = (target: 'subject' | 'body', token: string) => {
-    const el = target === 'subject' ? subjectRef.current : bodyRef.current;
-    const current = String(getValues(target) ?? '');
+  /** Insère un jeton de variable dans le sujet à la position du curseur. */
+  const insertSubjectVariable = (token: string) => {
+    const el = subjectRef.current;
+    const current = String(getValues('subject') ?? '');
     const start = el?.selectionStart ?? current.length;
     const end = el?.selectionEnd ?? current.length;
-    setValue(target, current.slice(0, start) + token + current.slice(end), {
+    setValue('subject', current.slice(0, start) + token + current.slice(end), {
       shouldValidate: true,
       shouldDirty: true,
     });
@@ -70,12 +71,12 @@ function EmailForm({ onSuccess }: { onSuccess: () => void }) {
     <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
       {templates.length > 0 && (
         <div>
-          <label className="block text-xs font-medium text-slate-700 mb-1">Utiliser un template</label>
+          <label className="block text-xs font-medium text-slate-700 mb-1">Utiliser un modèle</label>
           <select
             className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
             onChange={(e) => { if (e.target.value) applyTemplate(e.target.value); }}
           >
-            <option value="">— Choisir un template (optionnel) —</option>
+            <option value="">— Choisir un modèle (optionnel) —</option>
             {templates.map((t: any) => <option key={t.id} value={t.id}>{t.name}</option>)}
           </select>
         </div>
@@ -89,7 +90,7 @@ function EmailForm({ onSuccess }: { onSuccess: () => void }) {
       <div>
         <div className="flex items-center justify-between mb-1">
           <label className="block text-xs font-medium text-slate-700">Sujet *</label>
-          <VariablePicker onInsert={(t) => insertVariable('subject', t)} />
+          <VariablePicker onInsert={insertSubjectVariable} />
         </div>
         <input {...subjectReg}
           ref={(el) => { subjectReg.ref(el); subjectRef.current = el; }}
@@ -97,13 +98,22 @@ function EmailForm({ onSuccess }: { onSuccess: () => void }) {
         {errors.subject && <p className="text-xs text-red-500 mt-1">{String(errors.subject.message)}</p>}
       </div>
       <div>
-        <div className="flex items-center justify-between mb-1">
-          <label className="block text-xs font-medium text-slate-700">Message *</label>
-          <VariablePicker onInsert={(t) => insertVariable('body', t)} />
-        </div>
-        <textarea rows={8} {...bodyReg}
-          ref={(el) => { bodyReg.ref(el); bodyRef.current = el; }}
-          className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+        <label className="block text-xs font-medium text-slate-700 mb-1">
+          Message * <span className="ml-2 text-slate-400 font-normal">(HTML — mise en forme, images, liens)</span>
+        </label>
+        <Controller
+          control={control}
+          name="body"
+          render={({ field }) => (
+            <RichTextEditor
+              value={field.value || ''}
+              onChange={field.onChange}
+              variables={COMM_VARIABLE_GROUPS_FOR_EDITOR}
+              minHeight={300}
+              placeholder="Rédigez votre message — barre d'outils pour mise en forme, images, liens…"
+            />
+          )}
+        />
         {errors.body && <p className="text-xs text-red-500 mt-1">{String(errors.body.message)}</p>}
       </div>
       {sendEmail.data && !sendEmail.data.success && (

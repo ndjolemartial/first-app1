@@ -57,7 +57,7 @@ const createCommissionSchema = z.object({
   beneficiaryType: z.enum(['USER', 'REFERRER']),
   userId: z.number().int().positive().optional(),
   referrerId: z.number().int().positive().optional(),
-  transactionType: z.enum(['VENTE', 'LOCATION', 'SOUSCRIPTION', 'FRAIS_DOSSIER']),
+  transactionType: z.enum(['VENTE', 'LOCATION', 'SOUSCRIPTION', 'FRAIS_DOSSIER', 'FRAIS_DEMARCHES_ACD']),
   baseAmount: z.number().positive(),
   rate: z.number().min(0).max(100),
   notes: z.string().optional(),
@@ -80,6 +80,19 @@ const payCommissionSchema = z.object({
 const cancelCommissionSchema = z.object({
   id: z.number().int().positive(),
   reason: z.string().min(1, 'Motif requis'),
+});
+
+/**
+ * Modification d'une commission existante : seuls les champs financiers
+ * (assiette, taux) et la note peuvent évoluer. La convention et le
+ * bénéficiaire sont figés à la création — toute autre correction passe par
+ * une annulation suivie d'une nouvelle création.
+ */
+const updateCommissionSchema = z.object({
+  id: z.number().int().positive(),
+  baseAmount: z.number().positive(),
+  rate: z.number().min(0).max(100),
+  notes: z.string().optional(),
 });
 
 const referrerSchema = z.object({
@@ -346,12 +359,15 @@ export function registerCommissionsIPC(): void {
       }
 
       // Une commission VENTE/LOCATION/SOUSCRIPTION doit correspondre au type de
-      // la convention ; une commission FRAIS_DOSSIER est admise quelle que soit la convention éligible.
+      // la convention ; les types « périphériques » FRAIS_DOSSIER et
+      // FRAIS_DEMARCHES_ACD sont admis quelle que soit la convention éligible.
       const naturalType =
         convention.type === 'SALE' ? 'VENTE'
         : convention.type === 'SOUSCRIPTION' ? 'SOUSCRIPTION'
         : 'LOCATION';
-      if (d.transactionType !== 'FRAIS_DOSSIER' && d.transactionType !== naturalType) {
+      const isPeripheralType = d.transactionType === 'FRAIS_DOSSIER'
+        || d.transactionType === 'FRAIS_DEMARCHES_ACD';
+      if (!isPeripheralType && d.transactionType !== naturalType) {
         return { success: false, error: 'Le type de commission ne correspond pas au type de la convention' };
       }
 
@@ -362,6 +378,28 @@ export function registerCommissionsIPC(): void {
       } else {
         const referrer = await db.businessReferrer.findUnique({ where: { id: d.referrerId }, select: { id: true } });
         if (!referrer) return { success: false, error: 'Apporteur d\'affaire introuvable' };
+      }
+
+      // Garde-fou métier : un même type de commission ne peut pas être appliqué
+      // plus d'une fois sur une même convention pour le même bénéficiaire (les
+      // commissions annulées ne comptent pas — on peut en recréer une).
+      const duplicate = await db.commission.findFirst({
+        where: {
+          conventionId: d.conventionId,
+          transactionType: d.transactionType,
+          deletedAt: null,
+          status: { not: 'ANNULEE' },
+          ...(d.beneficiaryType === 'USER'
+            ? { beneficiaryType: 'USER', userId: d.userId }
+            : { beneficiaryType: 'REFERRER', referrerId: d.referrerId }),
+        },
+        select: { reference: true },
+      });
+      if (duplicate) {
+        return {
+          success: false,
+          error: `Une commission ${d.transactionType} existe déjà sur cette convention pour ce bénéficiaire (${duplicate.reference}).`,
+        };
       }
 
       const amount = computeCommissionAmount(d.baseAmount, d.rate);
@@ -459,6 +497,51 @@ export function registerCommissionsIPC(): void {
   });
 
   /* ─── Annulation d'une commission ────────────────────────────────── */
+
+  /* ─── Modification d'une commission ──────────────────────────────── */
+
+  ipcMain.handle('commissions:update', async (_event, { token, payload }: any) => {
+    try {
+      const session = getSession(token);
+      if (!session) return { success: false, error: 'Session expirée' };
+      checkCommissionWriteRole(session, WRITE_ROLES);
+      const parsed = updateCommissionSchema.safeParse(payload);
+      if (!parsed.success) return { success: false, error: parsed.error.format() };
+      const d = parsed.data;
+      const db = getDb();
+
+      const commission = await db.commission.findUnique({
+        where: { id: d.id },
+        select: { id: true, status: true, deletedAt: true },
+      });
+      if (!commission || commission.deletedAt) return { success: false, error: 'Commission introuvable' };
+      // Seules les commissions encore à payer sont modifiables — une commission
+      // déjà réglée ou annulée est figée (passer par une annulation pour reprise).
+      if (commission.status !== 'A_PAYER') {
+        return {
+          success: false,
+          error: 'Seule une commission encore à payer peut être modifiée (statut requis : « À payer »).',
+        };
+      }
+
+      const amount = computeCommissionAmount(d.baseAmount, d.rate);
+      const updated = await db.commission.update({
+        where: { id: d.id },
+        data: {
+          baseAmount: d.baseAmount as never,
+          rate: d.rate as never,
+          amount: amount as never,
+          notes: d.notes,
+        },
+        include: commissionInclude,
+      });
+      logger.info(`Commission modifiée: id=${d.id} par user=${session.userId}`);
+      return ser({ success: true, data: updated });
+    } catch (error: any) {
+      logger.error('commissions:update error', error.message);
+      return { success: false, error: error.message };
+    }
+  });
 
   ipcMain.handle('commissions:cancel', async (_event, { token, payload }: any) => {
     try {
@@ -675,31 +758,126 @@ export function registerCommissionsIPC(): void {
     }
   });
 
-  ipcMain.handle('commissions:listEligibleConventions', async (_event, { token }: any) => {
+  ipcMain.handle('commissions:listEligibleConventions', async (_event, { token, filters = {} }: any) => {
     try {
       const session = getSession(token);
       if (!session) return { success: false, error: 'Session expirée' };
       checkRole(session, READ_ROLES);
       const db = getDb();
+      // Une convention peut désormais porter plusieurs biens OU plusieurs
+      // terrains (relations 1-N via ConventionProperty / ConventionTerrain).
+      // On expose la première référence rattachée — suffisant pour identifier
+      // la convention dans le sélecteur du formulaire de commission.
+      // Filtrage métier (formulaire de commission) :
+      //   - statut ACTIVE ou EXPIRE uniquement (une convention en brouillon,
+      //     en attente, annulée ou terminée n'est plus éligible à génération
+      //     de commission) ;
+      //   - rattachée au bénéficiaire sélectionné (utilisateur référent ou
+      //     apporteur d'affaire). Sans bénéficiaire, on renvoie une liste
+      //     vide : l'utilisateur choisit d'abord le bénéficiaire.
+      const userId = filters.userId ? Number(filters.userId) : null;
+      const referrerId = filters.referrerId ? Number(filters.referrerId) : null;
+      if (!userId && !referrerId) {
+        return { success: true, data: [] };
+      }
       const conventions = await db.convention.findMany({
         where: {
           deletedAt: null,
-          status: { not: 'ANNULE' },
+          status: { in: ['ACTIVE', 'EXPIRE'] },
           type: { in: ['SALE', 'SOUSCRIPTION', 'RENTAL_UNFURNISHED', 'RENTAL_FURNISHED', 'COMMERCIAL_LEASE'] },
+          ...(userId ? { agentId: userId } : {}),
+          ...(referrerId ? { referrerId } : {}),
         },
         orderBy: { createdAt: 'desc' },
         select: {
           id: true,
           reference: true,
           type: true,
+          assetType: true,
           saleAmount: true,
           rentAmount: true,
+          fraisOuvertureDossier: true,
           client: { select: { id: true, firstName: true, lastName: true, entreprise: true, type: true } },
-          property: { select: { id: true, reference: true } },
+          properties: {
+            orderBy: { order: 'asc' },
+            select: { property: { select: { id: true, reference: true } } },
+          },
+          terrains: {
+            orderBy: { order: 'asc' },
+            select: {
+              terrain: {
+                select: {
+                  id: true,
+                  reference: true,
+                  // `acdDemarchesEnabled` indique si le client a confié les
+                  // démarches ACD à l'entreprise sur ce terrain. Une commission
+                  // FRAIS_DEMARCHES_ACD n'est éligible que si au moins un terrain
+                  // rattaché à la convention porte cette option.
+                  acdDemarchesEnabled: true,
+                  // Le lotissement porte le montant standard des frais de
+                  // démarches ACD — assiette par défaut d'une commission de
+                  // type FRAIS_DEMARCHES_ACD.
+                  lotissement: { select: { id: true, fraisDemarchesAcdStandard: true } },
+                },
+              },
+            },
+          },
         },
       });
-      return ser({ success: true, data: conventions });
+      // Aplatit la première référence rattachée pour conserver la forme
+      // attendue par l'UI (`convention.property?.reference`), remonte au
+      // niveau racine le montant ACD du premier lotissement rattaché, et
+      // expose la flag `hasAcdDemarches` (vrai dès qu'au moins un terrain
+      // rattaché a l'option ACD activée).
+      const enriched = conventions.map((c) => {
+        const firstProperty = c.properties[0]?.property ?? null;
+        const firstTerrain = c.terrains[0]?.terrain ?? null;
+        const lotissementAcd = firstTerrain?.lotissement?.fraisDemarchesAcdStandard ?? null;
+        const hasAcdDemarches = c.terrains.some((l) => l.terrain?.acdDemarchesEnabled === true);
+        return {
+          ...c,
+          property: firstProperty ?? firstTerrain,
+          lotissementFraisDemarchesAcdStandard: lotissementAcd,
+          hasAcdDemarches,
+        };
+      });
+
+      // Filtrage des conventions de SOUSCRIPTION déjà entièrement « traitées »
+      // pour le bénéficiaire courant : si toutes les commissions attendues
+      // (SOUSCRIPTION, FRAIS_DOSSIER, et FRAIS_DEMARCHES_ACD si l'option ACD
+      // est activée) ont déjà été générées pour ce bénéficiaire (et ne sont
+      // pas annulées), on retire la convention de la liste — il n'y a plus
+      // rien à traiter dessus pour lui.
+      const souscriptionIds = enriched.filter((c) => c.type === 'SOUSCRIPTION').map((c) => c.id);
+      let data = enriched;
+      if (souscriptionIds.length > 0) {
+        const existing = await db.commission.findMany({
+          where: {
+            conventionId: { in: souscriptionIds },
+            deletedAt: null,
+            status: { not: 'ANNULEE' },
+            ...(userId ? { beneficiaryType: 'USER', userId } : {}),
+            ...(referrerId ? { beneficiaryType: 'REFERRER', referrerId } : {}),
+          },
+          select: { conventionId: true, transactionType: true },
+        });
+        const treated = new Map<number, Set<string>>();
+        for (const e of existing) {
+          if (!treated.has(e.conventionId)) treated.set(e.conventionId, new Set());
+          treated.get(e.conventionId)!.add(e.transactionType);
+        }
+        data = enriched.filter((c) => {
+          if (c.type !== 'SOUSCRIPTION') return true;
+          const required = ['SOUSCRIPTION', 'FRAIS_DOSSIER'];
+          if (c.hasAcdDemarches) required.push('FRAIS_DEMARCHES_ACD');
+          const done = treated.get(c.id) ?? new Set<string>();
+          // Garde la convention tant qu'au moins un type requis n'a pas été traité.
+          return !required.every((t) => done.has(t));
+        });
+      }
+      return ser({ success: true, data });
     } catch (error: any) {
+      logger.error('commissions:listEligibleConventions error', error.message);
       return { success: false, error: error.message };
     }
   });

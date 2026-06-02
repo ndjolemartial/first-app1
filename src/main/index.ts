@@ -33,6 +33,8 @@ import { registerDashboardIPC } from './ipc/dashboard.ipc';
 import { registerSettingsIPC, initStorageOverride } from './ipc/settings.ipc';
 import { registerDocumentExportIPC } from './ipc/document-export.ipc';
 import { seedDefaultArchivePolicies, scheduleAutoArchiving } from './services/archiving.service';
+import { registerRemindersIPC } from './ipc/reminders.ipc';
+import { seedDefaultRemindersConfig, scheduleReminders } from './services/reminders.service';
 
 const isDev = process.env.NODE_ENV === 'development';
 let mainWindow: BrowserWindow | null = null;
@@ -109,6 +111,7 @@ function registerIPC(): void {
   registerDashboardIPC();
   registerSettingsIPC();
   registerDocumentExportIPC();
+  registerRemindersIPC();
   logger.info('All IPC handlers registered');
 }
 
@@ -147,6 +150,10 @@ app.whenReady().then(async () => {
   seedDefaultArchivePolicies()
     .then(() => scheduleAutoArchiving())
     .catch((e) => logger.error(`Auto-archiving bootstrap failed: ${e.message}`));
+  // Politique de relance : seed des templates/règles par défaut puis passe quotidienne.
+  seedDefaultRemindersConfig()
+    .then(() => scheduleReminders())
+    .catch((e) => logger.error(`Reminders bootstrap failed: ${e.message}`));
   setupAppMenu();
   createWindow();
   logger.info('Application started');

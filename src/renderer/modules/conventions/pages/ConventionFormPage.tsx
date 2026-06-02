@@ -12,7 +12,8 @@ import { FormSearchSelect, default as SearchSelect, type SearchSelectOption } fr
 import Textarea from '../../../shared/components/ui/Textarea';
 import Card from '../../../shared/components/ui/Card';
 import { useConvention, useConventions, useCreateConvention, useUpdateConvention } from '../hooks/useConventions';
-import { useClients } from '../../clients/hooks/useClients';
+import { useClients, useClientAssignableUsers, useClientReferrers } from '../../clients/hooks/useClients';
+import { useAuthStore } from '../../../shared/stores/auth.store';
 import { useProperties } from '../../properties/hooks/useProperties';
 import { useTerrains } from '../../terrains/hooks/useTerrains';
 import { formatPersonName, formatCurrency } from '../../../shared/utils/format';
@@ -71,6 +72,8 @@ const schema = z.object({
   paymentModalites: z.enum(['CASH', 'SUR_3_MOIS', 'SUR_6_MOIS', 'SUR_9_MOIS', 'SUR_12_MOIS', 'SUR_24_MOIS', 'SUR_36_MOIS', 'SUR_48_MOIS', 'SUR_60_MOIS', 'SUR_PLUS_60_MOIS']).default('CASH'),
   installmentCount: optionalNumber,
   firstInstallmentDate: z.string().optional(),
+  agentId: z.string().optional(),
+  referrerId: z.string().optional(),
   notes: z.string().optional(),
 }).superRefine((d, ctx) => {
   // Avenant / résiliation : les terrains et biens rattachés sont hérités
@@ -379,10 +382,15 @@ function MultiAssetSelect({
   );
 }
 
+/** Rôles autorisés à affecter une convention à un utilisateur référent / apporteur. */
+const ASSIGN_ROLES = new Set(['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ACCOUNTANT']);
+
 export default function ConventionFormPage() {
   const { id } = useParams<{ id?: string }>();
   const isEdit = !!id;
   const navigate = useNavigate();
+  const role = useAuthStore((s) => s.user?.role) ?? '';
+  const canAssign = ASSIGN_ROLES.has(role);
   const { data: res } = useConvention(isEdit ? Number(id) : 0);
   const create = useCreateConvention();
   const update = useUpdateConvention();
@@ -390,6 +398,24 @@ export default function ConventionFormPage() {
   const { data: propertiesRes } = useProperties({}, 1, 500);
   const { data: terrainsRes } = useTerrains({}, 1, 500);
   const { data: conventionsRes } = useConventions({}, 1, 500);
+  const { data: assignableUsersRes } = useClientAssignableUsers();
+  const { data: referrersRes }       = useClientReferrers();
+  const userOptions = [
+    { value: '', label: '— Aucun —' },
+    ...((assignableUsersRes?.data ?? []) as any[]).map((u) => ({
+      value: String(u.id),
+      label: `${u.lastName ?? ''} ${u.firstName ?? ''}`.trim() || u.email,
+    })),
+  ];
+  const referrerOptions = [
+    { value: '', label: '— Aucun —' },
+    ...((referrersRes?.data ?? []) as any[]).map((r) => ({
+      value: String(r.id),
+      label: r.companyName
+        ? `${r.lastName ?? ''} ${r.firstName ?? ''} (${r.companyName})`.trim()
+        : `${r.lastName ?? ''} ${r.firstName ?? ''}`.trim(),
+    })),
+  ];
   const [isSale, setIsSale] = useState(false);
   const [isInstallment, setIsInstallment] = useState(false);
   const [durationMonths, setDurationMonths] = useState('');
@@ -753,6 +779,8 @@ export default function ConventionFormPage() {
         fraisOuvertureDossier: c.fraisOuvertureDossier ? Number(c.fraisOuvertureDossier) : undefined,
         additionalAmount: c.additionalAmount ? Number(c.additionalAmount) : undefined,
         indexType: c.indexType ?? '',
+        agentId:    c.agentId    != null ? String(c.agentId)    : '',
+        referrerId: c.referrerId != null ? String(c.referrerId) : '',
         notes: c.notes ?? '',
       });
       // Pré-sélectionne le délai si la date de fin correspond à un nombre de mois exact
@@ -796,6 +824,16 @@ export default function ConventionFormPage() {
     }
     try {
     const payload: any = { ...data };
+    // Convertit les sélecteurs d'affectation (chaînes) en number|null. Si
+    // l'utilisateur n'a pas le droit d'affecter, on retire ces champs du
+    // payload (le backend ne touchera pas à l'affectation existante).
+    if (canAssign) {
+      payload.agentId    = data.agentId    ? Number(data.agentId)    : null;
+      payload.referrerId = data.referrerId ? Number(data.referrerId) : null;
+    } else {
+      delete payload.agentId;
+      delete payload.referrerId;
+    }
     // N'envoie que les identifiants correspondant au type de rattachement choisi
     if (payload.assetType === 'TERRAIN') {
       delete payload.propertyIds;
@@ -1175,6 +1213,27 @@ export default function ConventionFormPage() {
             />
           </div>
         </Card>
+
+        {/* Affectation */}
+        {canAssign && (
+          <Card>
+            <h3 className="text-base font-semibold text-slate-800 mb-4">Affectation</h3>
+            <div className="grid grid-cols-2 gap-4">
+              <FormSearchSelect
+                control={control}
+                name="agentId"
+                label="Utilisateur référent"
+                options={userOptions}
+              />
+              <FormSearchSelect
+                control={control}
+                name="referrerId"
+                label="Apporteur d'affaire"
+                options={referrerOptions}
+              />
+            </div>
+          </Card>
+        )}
 
         {/* Notes */}
         <Card>

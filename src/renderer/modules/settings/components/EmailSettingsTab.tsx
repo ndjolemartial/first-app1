@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react';
-import { useForm } from 'react-hook-form';
+import { useForm, Controller } from 'react-hook-form';
 import { Save, Send } from 'lucide-react';
 import Button from '../../../shared/components/ui/Button';
 import Card from '../../../shared/components/ui/Card';
 import Input from '../../../shared/components/ui/Input';
+import RichTextEditor from '../../../shared/components/ui/RichTextEditor';
 import { useEmailSettings, useUpdateEmail, useTestEmail } from '../hooks/useSettings';
 import { useAuthStore } from '../../../shared/stores/auth.store';
 
@@ -17,6 +18,7 @@ interface FormData {
   password: string;
   fromAddress: string;
   fromName: string;
+  signature: string;
 }
 
 export default function EmailSettingsTab() {
@@ -26,8 +28,8 @@ export default function EmailSettingsTab() {
   const userEmail = useAuthStore((s) => s.user?.email) ?? '';
   const [testTo, setTestTo] = useState('');
 
-  const { register, handleSubmit, reset, formState: { isSubmitting } } = useForm<FormData>({
-    defaultValues: { host: '', port: 587, secure: false, user: '', password: '', fromAddress: '', fromName: '' },
+  const { register, handleSubmit, reset, control, formState: { isSubmitting } } = useForm<FormData>({
+    defaultValues: { host: '', port: 587, secure: false, user: '', password: '', fromAddress: '', fromName: '', signature: '' },
   });
 
   useEffect(() => {
@@ -40,6 +42,7 @@ export default function EmailSettingsTab() {
         password:    res.data.passwordSet ? SECRET_MASK : '',
         fromAddress: res.data.fromAddress ?? '',
         fromName:    res.data.fromName ?? '',
+        signature:   res.data.signature ?? '',
       });
     }
     if (userEmail) setTestTo(userEmail);
@@ -53,6 +56,7 @@ export default function EmailSettingsTab() {
     password:    data.password === SECRET_MASK ? undefined : data.password,
     fromAddress: data.fromAddress,
     fromName:    data.fromName,
+    signature:   data.signature,
   }));
 
   if (isLoading) return <Card>Chargement…</Card>;
@@ -80,6 +84,26 @@ export default function EmailSettingsTab() {
             <Input label="Adresse d'envoi (From)" placeholder="noreply@exemple.com" {...register('fromAddress')} />
             <Input label="Nom d'envoi (From)" placeholder="Afrikimmo" {...register('fromName')} />
           </div>
+
+          <div>
+            <label className="text-sm font-medium text-slate-700 block mb-1">Signature email</label>
+            <p className="text-xs text-slate-500 mb-2">
+              Bloc HTML inséré dans les emails via la variable <code className="px-1 py-0.5 bg-slate-100 rounded font-mono">{'{{signature}}'}</code>.
+              Logo, coordonnées, mentions légales… tout y est admis.
+            </p>
+            <Controller
+              control={control}
+              name="signature"
+              render={({ field }) => (
+                <RichTextEditor
+                  value={field.value || ''}
+                  onChange={field.onChange}
+                  minHeight={220}
+                />
+              )}
+            />
+          </div>
+
           <div className="flex justify-end pt-2">
             <Button type="submit" loading={isSubmitting || update.isPending} icon={<Save className="h-4 w-4" />}>
               Enregistrer

@@ -137,7 +137,8 @@ interface Window {
       updateActivity: (token: string, id: number, payload: object) => Promise<IpcResponse<any>>;
       deleteActivity: (token: string, id: number) => Promise<IpcResponse>;
       completeActivity: (token: string, id: number) => Promise<IpcResponse<any>>;
-      getStats: (token: string) => Promise<IpcResponse<any>>;
+      getStats: (token: string, filters?: object) => Promise<IpcResponse<any>>;
+      listAssignees: (token: string) => Promise<IpcResponse<Array<{ id: number; firstName: string; lastName: string; role: string }>>>;
     };
     archiving: {
       list: (token: string, filters?: object, page?: number, limit?: number) => Promise<IpcResponse<any[]>>;
@@ -319,6 +320,7 @@ interface Window {
       list: (token: string, filters?: object, page?: number, limit?: number) => Promise<IpcResponse<any[]>>;
       getById: (token: string, id: number) => Promise<IpcResponse<any>>;
       create: (token: string, payload: object) => Promise<IpcResponse<any>>;
+      update: (token: string, payload: object) => Promise<IpcResponse<any>>;
       pay: (token: string, payload: object) => Promise<IpcResponse<any>>;
       cancel: (token: string, payload: object) => Promise<IpcResponse<any>>;
       getBeneficiarySummary: (token: string, beneficiaryType: string, beneficiaryId: number) => Promise<IpcResponse<any>>;
@@ -328,7 +330,7 @@ interface Window {
       updateReferrer: (token: string, id: number, payload: object) => Promise<IpcResponse<any>>;
       deleteReferrer: (token: string, id: number) => Promise<IpcResponse>;
       listUsers: (token: string) => Promise<IpcResponse<any[]>>;
-      listEligibleConventions: (token: string) => Promise<IpcResponse<any[]>>;
+      listEligibleConventions: (token: string, filters?: { userId?: number; referrerId?: number }) => Promise<IpcResponse<any[]>>;
       getSettings: (token: string) => Promise<IpcResponse<any>>;
       updateSettings: (token: string, payload: object) => Promise<IpcResponse<any>>;
     };
@@ -391,6 +393,11 @@ interface Window {
         logoPath: string;
         registreCommerce: string;
         compteContribuable: string;
+        phoneFixed: string;
+        phoneMobile1: string;
+        phoneMobile2: string;
+        website: string;
+        address: string;
       }>>;
       updateCompany: (token: string, payload: object) => Promise<IpcResponse>;
       uploadLogo: (token: string, payload: { fileName: string; fileType: string; fileSize: number; fileData: string }) =>
@@ -411,6 +418,7 @@ interface Window {
         host: string; port: number; secure: boolean;
         user: string; password: string; passwordSet: boolean;
         fromAddress: string; fromName: string;
+        signature: string;
       }>>;
       updateEmail: (token: string, payload: object) => Promise<IpcResponse>;
       testEmail: (token: string, to: string) => Promise<IpcResponse<{ ok: true; messageId?: string }>>;
@@ -453,6 +461,34 @@ interface Window {
       createTitleType: (token: string, payload: object) => Promise<IpcResponse<any>>;
       updateTitleType: (token: string, id: number, payload: object) => Promise<IpcResponse<any>>;
       deleteTitleType: (token: string, id: number) => Promise<IpcResponse>;
+    };
+    reminders: {
+      getPolicy: (token: string) => Promise<IpcResponse<{
+        enabled: boolean;
+        quietHoursStart: string;
+        quietHoursEnd: string;
+        quietDays: number[];
+      }>>;
+      updatePolicy: (token: string, payload: object) => Promise<IpcResponse<{
+        enabled: boolean;
+        quietHoursStart: string;
+        quietHoursEnd: string;
+        quietDays: number[];
+      }>>;
+      listRules: (token: string) => Promise<IpcResponse<any[]>>;
+      updateRule: (token: string, id: number, payload: object) => Promise<IpcResponse<any>>;
+      runNow: (token: string) => Promise<IpcResponse<{
+        scanned: number;
+        sent: number;
+        skipped: number;
+        failed: number;
+        reasons: Record<string, number>;
+      }>>;
+      setClientOptOut: (token: string, payload: object) => Promise<IpcResponse<{
+        id: number;
+        smsOptOut: boolean;
+        emailOptOut: boolean;
+      }>>;
     };
     budget: {
       getDashboard: (token: string) => Promise<IpcResponse<any>>;

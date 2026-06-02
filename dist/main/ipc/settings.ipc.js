@@ -24,6 +24,11 @@ const companySchema = zod_1.z.object({
     slogan: zod_1.z.string().optional(),
     registreCommerce: zod_1.z.string().optional(),
     compteContribuable: zod_1.z.string().optional(),
+    phoneFixed: zod_1.z.string().optional(),
+    phoneMobile1: zod_1.z.string().optional(),
+    phoneMobile2: zod_1.z.string().optional(),
+    website: zod_1.z.string().optional(),
+    address: zod_1.z.string().optional(),
 });
 const storageSchema = zod_1.z.object({
     path: zod_1.z.string().optional(),
@@ -37,6 +42,7 @@ const emailSchema = zod_1.z.object({
     password: zod_1.z.string().optional(),
     fromAddress: zod_1.z.string().optional(),
     fromName: zod_1.z.string().optional(),
+    signature: zod_1.z.string().optional(), // HTML — inséré via la variable {{signature}}
 });
 const smsSchema = zod_1.z.object({
     provider: zod_1.z.enum(['twilio', 'ovh', 'brevo', '']).optional(),
@@ -108,6 +114,11 @@ function registerSettingsIPC() {
                 settings_service_1.SettingsKeys.companyLogo,
                 settings_service_1.SettingsKeys.companyRegistre,
                 settings_service_1.SettingsKeys.companyContribuable,
+                settings_service_1.SettingsKeys.companyPhoneFixed,
+                settings_service_1.SettingsKeys.companyPhoneMobile1,
+                settings_service_1.SettingsKeys.companyPhoneMobile2,
+                settings_service_1.SettingsKeys.companyWebsite,
+                settings_service_1.SettingsKeys.companyAddress,
             ]);
             return {
                 success: true,
@@ -117,6 +128,11 @@ function registerSettingsIPC() {
                     logoPath: map[settings_service_1.SettingsKeys.companyLogo] ?? '',
                     registreCommerce: map[settings_service_1.SettingsKeys.companyRegistre] ?? '',
                     compteContribuable: map[settings_service_1.SettingsKeys.companyContribuable] ?? '',
+                    phoneFixed: map[settings_service_1.SettingsKeys.companyPhoneFixed] ?? '',
+                    phoneMobile1: map[settings_service_1.SettingsKeys.companyPhoneMobile1] ?? '',
+                    phoneMobile2: map[settings_service_1.SettingsKeys.companyPhoneMobile2] ?? '',
+                    website: map[settings_service_1.SettingsKeys.companyWebsite] ?? '',
+                    address: map[settings_service_1.SettingsKeys.companyAddress] ?? '',
                 },
             };
         }
@@ -143,6 +159,16 @@ function registerSettingsIPC() {
                 entries.push({ key: settings_service_1.SettingsKeys.companyRegistre, value: parsed.data.registreCommerce });
             if (parsed.data.compteContribuable !== undefined)
                 entries.push({ key: settings_service_1.SettingsKeys.companyContribuable, value: parsed.data.compteContribuable });
+            if (parsed.data.phoneFixed !== undefined)
+                entries.push({ key: settings_service_1.SettingsKeys.companyPhoneFixed, value: parsed.data.phoneFixed });
+            if (parsed.data.phoneMobile1 !== undefined)
+                entries.push({ key: settings_service_1.SettingsKeys.companyPhoneMobile1, value: parsed.data.phoneMobile1 });
+            if (parsed.data.phoneMobile2 !== undefined)
+                entries.push({ key: settings_service_1.SettingsKeys.companyPhoneMobile2, value: parsed.data.phoneMobile2 });
+            if (parsed.data.website !== undefined)
+                entries.push({ key: settings_service_1.SettingsKeys.companyWebsite, value: parsed.data.website });
+            if (parsed.data.address !== undefined)
+                entries.push({ key: settings_service_1.SettingsKeys.companyAddress, value: parsed.data.address });
             await (0, settings_service_1.setSettings)(entries);
             logger_1.default.info('Paramètres entreprise mis à jour');
             return { success: true };
@@ -290,6 +316,7 @@ function registerSettingsIPC() {
             const map = await (0, settings_service_1.getSettings)([
                 settings_service_1.SettingsKeys.emailHost, settings_service_1.SettingsKeys.emailPort, settings_service_1.SettingsKeys.emailSecure,
                 settings_service_1.SettingsKeys.emailUser, settings_service_1.SettingsKeys.emailFromAddress, settings_service_1.SettingsKeys.emailFromName,
+                settings_service_1.SettingsKeys.emailSignature,
             ]);
             const passwordSet = await (0, settings_service_1.hasSecret)(settings_service_1.SettingsKeys.emailPassword);
             return {
@@ -303,6 +330,7 @@ function registerSettingsIPC() {
                     passwordSet,
                     fromAddress: map[settings_service_1.SettingsKeys.emailFromAddress] ?? '',
                     fromName: map[settings_service_1.SettingsKeys.emailFromName] ?? '',
+                    signature: map[settings_service_1.SettingsKeys.emailSignature] ?? '',
                 },
             };
         }
@@ -333,6 +361,8 @@ function registerSettingsIPC() {
                 entries.push({ key: settings_service_1.SettingsKeys.emailFromAddress, value: d.fromAddress });
             if (d.fromName !== undefined)
                 entries.push({ key: settings_service_1.SettingsKeys.emailFromName, value: d.fromName });
+            if (d.signature !== undefined)
+                entries.push({ key: settings_service_1.SettingsKeys.emailSignature, value: d.signature });
             await (0, settings_service_1.setSettings)(entries);
             // Mot de passe : ne change que si une nouvelle valeur explicite est fournie.
             if (d.password !== undefined && d.password !== settings_service_1.SECRET_MASK) {

@@ -44,6 +44,15 @@ export function useCreateCommission() {
   });
 }
 
+export function useUpdateCommission() {
+  const token = useAuthStore((s) => s.token)!;
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: object) => ipc.update(token, payload),
+    onSuccess: () => invalidateAll(qc),
+  });
+}
+
 export function usePayCommission() {
   const token = useAuthStore((s) => s.token)!;
   const qc = useQueryClient();
@@ -127,11 +136,16 @@ export function useCommissionUsers() {
   });
 }
 
-export function useEligibleConventions() {
+export function useEligibleConventions(filters?: { userId?: number; referrerId?: number }) {
   const token = useAuthStore((s) => s.token)!;
+  const hasBeneficiary = Boolean(filters?.userId || filters?.referrerId);
   return useQuery({
-    queryKey: ['commissions', 'eligible-conventions'],
-    queryFn: () => ipc.listEligibleConventions(token),
+    queryKey: ['commissions', 'eligible-conventions', filters?.userId ?? null, filters?.referrerId ?? null],
+    queryFn: () => ipc.listEligibleConventions(token, filters),
+    // Sans bénéficiaire sélectionné, la requête n'a aucun sens — l'IPC renvoie
+    // une liste vide. On évite la requête côté client pour ne pas polluer le
+    // cache avec des entrées triviales.
+    enabled: hasBeneficiary,
   });
 }
 

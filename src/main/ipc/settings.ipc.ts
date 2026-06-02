@@ -26,6 +26,11 @@ const companySchema = z.object({
   slogan:             z.string().optional(),
   registreCommerce:   z.string().optional(),
   compteContribuable: z.string().optional(),
+  phoneFixed:         z.string().optional(),
+  phoneMobile1:       z.string().optional(),
+  phoneMobile2:       z.string().optional(),
+  website:            z.string().optional(),
+  address:            z.string().optional(),
 });
 
 const storageSchema = z.object({
@@ -41,6 +46,7 @@ const emailSchema = z.object({
   password:    z.string().optional(),
   fromAddress: z.string().optional(),
   fromName:    z.string().optional(),
+  signature:   z.string().optional(),  // HTML — inséré via la variable {{signature}}
 });
 
 const smsSchema = z.object({
@@ -119,6 +125,11 @@ export function registerSettingsIPC(): void {
         SettingsKeys.companyLogo,
         SettingsKeys.companyRegistre,
         SettingsKeys.companyContribuable,
+        SettingsKeys.companyPhoneFixed,
+        SettingsKeys.companyPhoneMobile1,
+        SettingsKeys.companyPhoneMobile2,
+        SettingsKeys.companyWebsite,
+        SettingsKeys.companyAddress,
       ]);
       return {
         success: true,
@@ -128,6 +139,11 @@ export function registerSettingsIPC(): void {
           logoPath:           map[SettingsKeys.companyLogo] ?? '',
           registreCommerce:   map[SettingsKeys.companyRegistre] ?? '',
           compteContribuable: map[SettingsKeys.companyContribuable] ?? '',
+          phoneFixed:         map[SettingsKeys.companyPhoneFixed] ?? '',
+          phoneMobile1:       map[SettingsKeys.companyPhoneMobile1] ?? '',
+          phoneMobile2:       map[SettingsKeys.companyPhoneMobile2] ?? '',
+          website:            map[SettingsKeys.companyWebsite] ?? '',
+          address:            map[SettingsKeys.companyAddress] ?? '',
         },
       };
     } catch (err: any) {
@@ -148,6 +164,11 @@ export function registerSettingsIPC(): void {
       if (parsed.data.slogan !== undefined)             entries.push({ key: SettingsKeys.companySlogan, value: parsed.data.slogan });
       if (parsed.data.registreCommerce !== undefined)   entries.push({ key: SettingsKeys.companyRegistre, value: parsed.data.registreCommerce });
       if (parsed.data.compteContribuable !== undefined) entries.push({ key: SettingsKeys.companyContribuable, value: parsed.data.compteContribuable });
+      if (parsed.data.phoneFixed !== undefined)         entries.push({ key: SettingsKeys.companyPhoneFixed, value: parsed.data.phoneFixed });
+      if (parsed.data.phoneMobile1 !== undefined)       entries.push({ key: SettingsKeys.companyPhoneMobile1, value: parsed.data.phoneMobile1 });
+      if (parsed.data.phoneMobile2 !== undefined)       entries.push({ key: SettingsKeys.companyPhoneMobile2, value: parsed.data.phoneMobile2 });
+      if (parsed.data.website !== undefined)            entries.push({ key: SettingsKeys.companyWebsite, value: parsed.data.website });
+      if (parsed.data.address !== undefined)            entries.push({ key: SettingsKeys.companyAddress, value: parsed.data.address });
       await setSettings(entries);
       logger.info('Paramètres entreprise mis à jour');
       return { success: true };
@@ -285,6 +306,7 @@ export function registerSettingsIPC(): void {
       const map = await getSettings([
         SettingsKeys.emailHost, SettingsKeys.emailPort, SettingsKeys.emailSecure,
         SettingsKeys.emailUser, SettingsKeys.emailFromAddress, SettingsKeys.emailFromName,
+        SettingsKeys.emailSignature,
       ]);
       const passwordSet = await hasSecret(SettingsKeys.emailPassword);
       return {
@@ -298,6 +320,7 @@ export function registerSettingsIPC(): void {
           passwordSet,
           fromAddress: map[SettingsKeys.emailFromAddress] ?? '',
           fromName:    map[SettingsKeys.emailFromName] ?? '',
+          signature:   map[SettingsKeys.emailSignature] ?? '',
         },
       };
     } catch (err: any) {
@@ -320,6 +343,7 @@ export function registerSettingsIPC(): void {
       if (d.user !== undefined)        entries.push({ key: SettingsKeys.emailUser, value: d.user });
       if (d.fromAddress !== undefined) entries.push({ key: SettingsKeys.emailFromAddress, value: d.fromAddress });
       if (d.fromName !== undefined)    entries.push({ key: SettingsKeys.emailFromName, value: d.fromName });
+      if (d.signature !== undefined)   entries.push({ key: SettingsKeys.emailSignature, value: d.signature });
       await setSettings(entries);
       // Mot de passe : ne change que si une nouvelle valeur explicite est fournie.
       if (d.password !== undefined && d.password !== SECRET_MASK) {

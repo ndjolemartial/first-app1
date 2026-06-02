@@ -47,7 +47,6 @@ import AttestationDocumentPage from './modules/conventions/pages/AttestationDocu
 
 // Communication
 import CommunicationPage from './modules/communication/pages/CommunicationPage';
-import TemplatesPage from './modules/communication/pages/TemplatesPage';
 import SendMessagePage from './modules/communication/pages/SendMessagePage';
 
 // CRM
@@ -207,7 +206,6 @@ export const router = createHashRouter([
 
           // Communication
           { path: 'communication', element: <CommunicationPage /> },
-          { path: 'communication/templates', element: <TemplatesPage /> },
           { path: 'communication/send', element: <SendMessagePage /> },
 
           // CRM

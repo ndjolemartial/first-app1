@@ -76,6 +76,17 @@ const schema = z.object({
     if (d.clientId === '' || d.clientId == null) {
       ctx.addIssue({ code: 'custom', path: ['clientId'], message: "Un attributaire est requis pour activer les frais de démarches ACD." });
     }
+    // Un terrain DISPONIBLE n'a pas d'attributaire — l'option ACD est donc
+    // incompatible : le backend forcerait `clientId` à null sur ce statut,
+    // créant un état incohérent (ACD activé sans client). On exige un statut
+    // engagé (Réservé / Vendu / Sous option).
+    if (d.statut === 'DISPONIBLE') {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['statut'],
+        message: 'Sélectionnez un statut Réservé / Vendu / Sous option : un terrain « Disponible » ne peut pas porter l\'option ACD.',
+      });
+    }
   }
 });
 
@@ -198,31 +209,50 @@ export default function TerrainFormPage() {
     },
   });
 
-  // Un terrain DISPONIBLE n'a pas d'attributaire — on masque le champ et on
-  // vide silencieusement la valeur pour ne pas envoyer un client résiduel.
+  // Un terrain DISPONIBLE n'a en principe pas d'attributaire. Exception : si
+  // l'option ACD est activée, un attributaire est obligatoire (c'est le client
+  // qui confie les démarches), on doit donc afficher le champ même en statut
+  // DISPONIBLE — sinon l'utilisateur ne peut pas le renseigner et la
+  // validation `superRefine` échoue silencieusement sur un champ invisible.
   const watchStatut = watch('statut');
-  const showAttributaire = watchStatut !== 'DISPONIBLE';
+  const watchAcdEnabled = watch('acdDemarchesEnabled');
+  const showAttributaire = watchStatut !== 'DISPONIBLE' || !!watchAcdEnabled;
   useEffect(() => {
     if (!showAttributaire) {
       setValue('clientId', '' as any, { shouldValidate: false });
     }
   }, [showAttributaire, setValue]);
 
-  // Pré-remplissage automatique du montant des frais de démarches ACD à partir
-  // du lotissement sélectionné, lorsque l'option est activée et qu'aucun
-  // montant n'a encore été saisi sur ce terrain.
-  const watchAcdEnabled = watch('acdDemarchesEnabled');
+  // Pré-remplissage du montant des frais de démarches ACD à partir du
+  // lotissement sélectionné : la source officielle est `fraisDemarchesAcdStandard`
+  // du lotissement, le champ reste éditable pour ajustement local.
+  //   - À l'activation de l'option ACD (ou si le montant est vide / 0), on
+  //     applique le standard du lotissement courant.
+  //   - Si l'utilisateur change de lotissement, on ré-applique le standard du
+  //     nouveau lotissement (l'éventuel ajustement précédent est écrasé).
+  //   - En édition d'un terrain existant, le `reset()` initial pose le montant
+  //     enregistré ; on le préserve tant que le lotissement ne change pas
+  //     (premier run de l'effet, où `prevLotIdRef.current === undefined`).
   const watchAcdAmount = watch('acdDemarchesAmount');
   const watchLotissementId = watch('lotissementId');
-  useEffect(() => {
-    if (!watchAcdEnabled) return;
-    if (watchAcdAmount !== '' && watchAcdAmount != null) return;
+  const prevLotIdRef = useRef<number | null | undefined>(undefined);
+  const acdStandard = (() => {
     const lot = (lotsRes?.data ?? []).find((l: any) => Number(l.id) === Number(watchLotissementId));
-    const standard = lot?.fraisDemarchesAcdStandard;
-    if (standard != null && Number(standard) > 0) {
-      setValue('acdDemarchesAmount', Number(standard) as any, { shouldValidate: false });
+    const std = lot?.fraisDemarchesAcdStandard;
+    return std != null && Number(std) > 0 ? Number(std) : null;
+  })();
+  useEffect(() => {
+    const lotId = Number(watchLotissementId) || null;
+    const prevLotId = prevLotIdRef.current;
+    prevLotIdRef.current = lotId;
+    if (!watchAcdEnabled) return;
+    if (acdStandard == null) return;
+    const amountEmpty = watchAcdAmount === '' || watchAcdAmount == null || Number(watchAcdAmount) === 0;
+    const lotChangedByUser = prevLotId !== undefined && prevLotId !== null && prevLotId !== lotId;
+    if (amountEmpty || lotChangedByUser) {
+      setValue('acdDemarchesAmount', acdStandard as any, { shouldValidate: false });
     }
-  }, [watchAcdEnabled, watchLotissementId, lotsRes, setValue, watchAcdAmount]);
+  }, [watchAcdEnabled, watchLotissementId, acdStandard, watchAcdAmount, setValue]);
 
   useEffect(() => {
     if (isEdit && res?.data) {
@@ -353,7 +383,12 @@ export default function TerrainFormPage() {
               <Input label="Prix de vente (FCFA)" type="number" step="1" {...register('prixVente')} />
             </div>
             <div className="grid grid-cols-2 gap-4">
-              <Select label="Statut" options={STATUT_OPTIONS} {...register('statut')} />
+              <Select
+                label="Statut"
+                options={STATUT_OPTIONS}
+                error={(errors as any).statut?.message}
+                {...register('statut')}
+              />
               <div className="flex items-end pb-2">
                 <label className="flex items-center gap-2 cursor-pointer">
                   <input type="checkbox" className="h-4 w-4 rounded" {...register('viabilise')} />
@@ -395,6 +430,11 @@ export default function TerrainFormPage() {
                   step="1"
                   min="0"
                   placeholder="Pré-rempli depuis le lotissement"
+                  helper={
+                    acdStandard != null
+                      ? `Standard du lotissement : ${acdStandard.toLocaleString('fr-FR')} FCFA — modifiable`
+                      : 'Aucun standard défini sur le lotissement — saisissez le montant'
+                  }
                   error={(errors as any).acdDemarchesAmount?.message}
                   {...register('acdDemarchesAmount')}
                 />

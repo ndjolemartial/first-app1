@@ -130,6 +130,11 @@ exports.SettingsKeys = {
     companyLogo: 'company.logoPath', // chemin relatif dans STORAGE_PATH
     companyRegistre: 'company.registreCommerce',
     companyContribuable: 'company.compteContribuable',
+    companyPhoneFixed: 'company.phone.fixed',
+    companyPhoneMobile1: 'company.phone.mobile1',
+    companyPhoneMobile2: 'company.phone.mobile2',
+    companyWebsite: 'company.website',
+    companyAddress: 'company.address',
     // Stockage
     storagePath: 'storage.path',
     storageMaxFileSizeMb: 'storage.maxFileSizeMb',
@@ -141,6 +146,7 @@ exports.SettingsKeys = {
     emailPassword: 'email.smtp.password', // secret
     emailFromAddress: 'email.from.address',
     emailFromName: 'email.from.name',
+    emailSignature: 'email.signature', // HTML — bloc de signature ajouté en pied via {{signature}}
     // SMS
     smsProvider: 'sms.provider', // twilio | ovh | brevo
     smsAccountSid: 'sms.twilio.accountSid',
@@ -152,6 +158,11 @@ exports.SettingsKeys = {
     dashboardSlideshow: 'dashboard.slideshow',
     // Rôles autorisés à voir le slideshow du tableau de bord (JSON array de UserRole)
     dashboardSlideshowRoles: 'dashboard.slideshow.allowedRoles',
+    // Politique de relance (communication automatique)
+    remindersEnabled: 'reminders.enabled', // 'true' | 'false'
+    remindersQuietStart: 'reminders.quietHours.start', // 'HH:MM' (par défaut 08:00)
+    remindersQuietEnd: 'reminders.quietHours.end', // 'HH:MM' (par défaut 20:00)
+    remindersQuietDays: 'reminders.quietDays', // JSON array de 0..6 (0=dimanche)
 };
 /** Liste des clés correspondant à des secrets chiffrés. */
 exports.SECRET_KEYS = new Set([

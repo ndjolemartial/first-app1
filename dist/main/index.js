@@ -38,6 +38,8 @@ const dashboard_ipc_1 = require("./ipc/dashboard.ipc");
 const settings_ipc_1 = require("./ipc/settings.ipc");
 const document_export_ipc_1 = require("./ipc/document-export.ipc");
 const archiving_service_1 = require("./services/archiving.service");
+const reminders_ipc_1 = require("./ipc/reminders.ipc");
+const reminders_service_1 = require("./services/reminders.service");
 const isDev = process.env.NODE_ENV === 'development';
 let mainWindow = null;
 function createWindow() {
@@ -108,6 +110,7 @@ function registerIPC() {
     (0, dashboard_ipc_1.registerDashboardIPC)();
     (0, settings_ipc_1.registerSettingsIPC)();
     (0, document_export_ipc_1.registerDocumentExportIPC)();
+    (0, reminders_ipc_1.registerRemindersIPC)();
     logger_1.default.info('All IPC handlers registered');
 }
 /**
@@ -144,6 +147,10 @@ electron_1.app.whenReady().then(async () => {
     (0, archiving_service_1.seedDefaultArchivePolicies)()
         .then(() => (0, archiving_service_1.scheduleAutoArchiving)())
         .catch((e) => logger_1.default.error(`Auto-archiving bootstrap failed: ${e.message}`));
+    // Politique de relance : seed des templates/règles par défaut puis passe quotidienne.
+    (0, reminders_service_1.seedDefaultRemindersConfig)()
+        .then(() => (0, reminders_service_1.scheduleReminders)())
+        .catch((e) => logger_1.default.error(`Reminders bootstrap failed: ${e.message}`));
     setupAppMenu();
     createWindow();
     logger_1.default.info('Application started');

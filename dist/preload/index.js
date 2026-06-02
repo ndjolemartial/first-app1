@@ -139,6 +139,15 @@ const communication = {
     sendEmail: (token, payload) => api.invoke('communication:sendEmail', { token, payload }),
     sendSms: (token, payload) => api.invoke('communication:sendSms', { token, payload }),
 };
+// Reminders (politique de relance automatique)
+const reminders = {
+    getPolicy: (token) => api.invoke('reminders:getPolicy', { token }),
+    updatePolicy: (token, payload) => api.invoke('reminders:updatePolicy', { token, payload }),
+    listRules: (token) => api.invoke('reminders:listRules', { token }),
+    updateRule: (token, id, payload) => api.invoke('reminders:updateRule', { token, id, payload }),
+    runNow: (token) => api.invoke('reminders:runNow', { token }),
+    setClientOptOut: (token, payload) => api.invoke('reminders:setClientOptOut', { token, payload }),
+};
 // CRM
 const crm = {
     listActivities: (token, filters, page, limit) => api.invoke('crm:listActivities', { token, filters, page, limit }),
@@ -147,7 +156,8 @@ const crm = {
     updateActivity: (token, id, payload) => api.invoke('crm:updateActivity', { token, id, payload }),
     deleteActivity: (token, id) => api.invoke('crm:deleteActivity', { token, id }),
     completeActivity: (token, id) => api.invoke('crm:completeActivity', { token, id }),
-    getStats: (token) => api.invoke('crm:getStats', { token }),
+    getStats: (token, filters) => api.invoke('crm:getStats', { token, filters }),
+    listAssignees: (token) => api.invoke('crm:listAssignees', { token }),
 };
 // Archiving
 const archiving = {
@@ -237,6 +247,7 @@ const commissions = {
     list: (token, filters, page, limit) => api.invoke('commissions:list', { token, filters, page, limit }),
     getById: (token, id) => api.invoke('commissions:getById', { token, id }),
     create: (token, payload) => api.invoke('commissions:create', { token, payload }),
+    update: (token, payload) => api.invoke('commissions:update', { token, payload }),
     pay: (token, payload) => api.invoke('commissions:pay', { token, payload }),
     cancel: (token, payload) => api.invoke('commissions:cancel', { token, payload }),
     getBeneficiarySummary: (token, beneficiaryType, beneficiaryId) => api.invoke('commissions:getBeneficiarySummary', { token, beneficiaryType, beneficiaryId }),
@@ -246,7 +257,7 @@ const commissions = {
     updateReferrer: (token, id, payload) => api.invoke('commissions:updateReferrer', { token, id, payload }),
     deleteReferrer: (token, id) => api.invoke('commissions:deleteReferrer', { token, id }),
     listUsers: (token) => api.invoke('commissions:listUsers', { token }),
-    listEligibleConventions: (token) => api.invoke('commissions:listEligibleConventions', { token }),
+    listEligibleConventions: (token, filters) => api.invoke('commissions:listEligibleConventions', { token, filters }),
     getSettings: (token) => api.invoke('commissions:getSettings', { token }),
     updateSettings: (token, payload) => api.invoke('commissions:updateSettings', { token, payload }),
 };
@@ -358,4 +369,4 @@ const documents = {
     /** Résout le chemin disque d'un fichier sélectionné/déposé (Electron webUtils). */
     pathForFile: (file) => electron_1.webUtils.getPathForFile(file),
 };
-electron_1.contextBridge.exposeInMainWorld('electron', { auth, users, prospects, clients, owners, properties, conventions, conventionTemplates, attestationTemplates, attestations, accounting, communication, crm, archiving, documents, documentExport, lotissements, terrains, programmes, projects, geo, countries, commissions, exporter, invoiceTemplates, treasury, budget, dashboard, settings });
+electron_1.contextBridge.exposeInMainWorld('electron', { auth, users, prospects, clients, owners, properties, conventions, conventionTemplates, attestationTemplates, attestations, accounting, communication, crm, archiving, documents, documentExport, lotissements, terrains, programmes, projects, geo, countries, commissions, exporter, invoiceTemplates, treasury, budget, dashboard, settings, reminders });
