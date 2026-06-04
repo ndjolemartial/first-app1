@@ -267,11 +267,9 @@ export default function RemindersSettingsTab() {
                         <p className="text-xs text-slate-400 font-mono">{rule.code}</p>
                       </td>
                       <td className="py-2 pr-3">
-                        {rule.channel === 'EMAIL' ? (
-                          <Badge variant="info"><Mail className="h-3 w-3 inline mr-1" />Email</Badge>
-                        ) : (
-                          <Badge variant="success"><MessageSquare className="h-3 w-3 inline mr-1" />SMS</Badge>
-                        )}
+                        {rule.channel === 'EMAIL'    && <Badge variant="info"><Mail          className="h-3 w-3 inline mr-1" />Email</Badge>}
+                        {rule.channel === 'SMS'      && <Badge variant="success"><MessageSquare className="h-3 w-3 inline mr-1" />SMS</Badge>}
+                        {rule.channel === 'WHATSAPP' && <Badge variant="success"><MessageSquare className="h-3 w-3 inline mr-1" />WhatsApp</Badge>}
                       </td>
                       <td className="py-2 pr-3 font-mono text-slate-700">{formatOffset(rule.offsetDays)}</td>
                       <td className="py-2 pr-3">

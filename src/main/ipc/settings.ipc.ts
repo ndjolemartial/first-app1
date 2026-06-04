@@ -15,6 +15,7 @@ import {
 } from '../services/storage.service';
 import { sendTestEmail } from '../services/email.service';
 import { sendTestSms } from '../services/sms.service';
+import { sendTestWhatsapp } from '../services/whatsapp.service';
 
 /** Paramètres applicatifs : réservés aux administrateurs. */
 const ADMIN_ROLES = ['SUPER_ADMIN', 'ADMIN'];
@@ -50,12 +51,15 @@ const emailSchema = z.object({
 });
 
 const smsSchema = z.object({
-  provider:    z.enum(['twilio', 'ovh', 'brevo', '']).optional(),
+  provider:    z.enum(['twilio', 'ovh', 'brevo', 'orange', 'mtn', '']).optional(),
   accountSid:  z.string().optional(),
   authToken:   z.string().optional(),
   from:        z.string().optional(),
   apiLogin:    z.string().optional(),
   apiPassword: z.string().optional(),
+  // WhatsApp — réutilise les credentials Twilio, donc paramétré dans le même payload.
+  whatsappEnabled: z.boolean().optional(),
+  whatsappFrom:    z.string().optional(),
 });
 
 const slideshowItemSchema = z.object({
@@ -80,6 +84,46 @@ const USER_ROLES = [
 const slideshowVisibilitySchema = z.object({
   allowedRoles: z.array(z.enum(USER_ROLES)),
 });
+
+// Partage de localisation : un seul modèle global par canal, utilisé pour
+// Lotissement / Terrain / Bien. Les variables non pertinentes pour l'entité
+// courante sont substituées par une chaîne vide.
+const shareLocationSchema = z.object({
+  emailSubject:  z.string().optional(),
+  emailBody:     z.string().optional(),
+  whatsappBody:  z.string().optional(),
+});
+
+const SHARE_LOCATION_DEFAULTS = {
+  emailSubject: 'Localisation — {{entityTitle}}',
+  emailBody: [
+    'Bonjour {{recipientName}},',
+    '',
+    'Vous trouverez ci-dessous la localisation de {{entityTitle}} ({{reference}}) :',
+    '',
+    'Adresse : {{address}}',
+    'Ville : {{ville}}',
+    'Commune : {{commune}}',
+    'Quartier : {{quartier}}',
+    '',
+    'Coordonnées GPS : {{latitude}}, {{longitude}}',
+    'Carte Google Maps : {{googleMapsUrl}}',
+    'Vue Google Earth : {{googleEarthUrl}}',
+    '',
+    'Cordialement,',
+    '{{companyName}}',
+    '{{signature}}',
+  ].join('\n'),
+  whatsappBody: [
+    'Bonjour {{recipientName}}, voici la localisation de *{{entityTitle}}* ({{reference}}) :',
+    '',
+    'Adresse : {{address}}',
+    'GPS : {{latitude}}, {{longitude}}',
+    'Carte : {{googleMapsUrl}}',
+    '',
+    '— {{companyName}}',
+  ].join('\n'),
+};
 
 const fileUploadSchema = z.object({
   fileName: z.string().min(1),
@@ -381,6 +425,7 @@ export function registerSettingsIPC(): void {
       const map = await getSettings([
         SettingsKeys.smsProvider, SettingsKeys.smsAccountSid, SettingsKeys.smsFrom,
         SettingsKeys.smsApiLogin,
+        SettingsKeys.whatsappEnabled, SettingsKeys.whatsappFrom,
       ]);
       const [authTokenSet, apiPasswordSet] = await Promise.all([
         hasSecret(SettingsKeys.smsAuthToken),
@@ -397,6 +442,8 @@ export function registerSettingsIPC(): void {
           apiLogin:       map[SettingsKeys.smsApiLogin] ?? '',
           apiPassword:    apiPasswordSet ? SECRET_MASK : '',
           apiPasswordSet,
+          whatsappEnabled: map[SettingsKeys.whatsappEnabled] === 'true',
+          whatsappFrom:    map[SettingsKeys.whatsappFrom] ?? '',
         },
       };
     } catch (err: any) {
@@ -417,6 +464,8 @@ export function registerSettingsIPC(): void {
       if (d.accountSid !== undefined) entries.push({ key: SettingsKeys.smsAccountSid, value: d.accountSid });
       if (d.from !== undefined)       entries.push({ key: SettingsKeys.smsFrom, value: d.from });
       if (d.apiLogin !== undefined)   entries.push({ key: SettingsKeys.smsApiLogin, value: d.apiLogin });
+      if (d.whatsappEnabled !== undefined) entries.push({ key: SettingsKeys.whatsappEnabled, value: d.whatsappEnabled ? 'true' : 'false' });
+      if (d.whatsappFrom !== undefined)    entries.push({ key: SettingsKeys.whatsappFrom, value: d.whatsappFrom });
       await setSettings(entries);
       if (d.authToken !== undefined && d.authToken !== SECRET_MASK) {
         await setSecret(SettingsKeys.smsAuthToken, d.authToken);
@@ -442,6 +491,20 @@ export function registerSettingsIPC(): void {
       return { success: true, data: r };
     } catch (err: any) {
       logger.error('settings:testSms', err.message);
+      return { success: false, error: err.message };
+    }
+  });
+
+  ipcMain.handle('settings:testWhatsapp', async (_event, { token, to }: any) => {
+    try {
+      const session = getSession(token);
+      if (!session) return { success: false, error: 'Session expirée' };
+      checkRole(session, ADMIN_ROLES);
+      if (!to || typeof to !== 'string') return { success: false, error: 'Numéro destinataire manquant' };
+      const r = await sendTestWhatsapp(to);
+      return { success: true, data: r };
+    } catch (err: any) {
+      logger.error('settings:testWhatsapp', err.message);
       return { success: false, error: err.message };
     }
   });
@@ -571,6 +634,55 @@ export function registerSettingsIPC(): void {
         : `image/${ext === 'jpg' ? 'jpeg' : ext || 'png'}`;
       return { success: true, data: { base64: buf.toString('base64'), mimeType: mime } };
     } catch (err: any) {
+      return { success: false, error: err.message };
+    }
+  });
+
+  // ── Partage de localisation GPS ─────────────────────────────────────────────
+
+  /** Lit les modèles de message du partage de localisation (sujet/corps email + corps WhatsApp). */
+  ipcMain.handle('settings:getShareLocation', async (_event, { token }: any) => {
+    try {
+      const session = getSession(token);
+      if (!session) return { success: false, error: 'Session expirée' };
+      checkRole(session, ADMIN_ROLES);
+      const map = await getSettings([
+        SettingsKeys.shareLocationEmailSubject,
+        SettingsKeys.shareLocationEmailBody,
+        SettingsKeys.shareLocationWhatsappBody,
+      ]);
+      return {
+        success: true,
+        data: {
+          emailSubject: map[SettingsKeys.shareLocationEmailSubject] ?? SHARE_LOCATION_DEFAULTS.emailSubject,
+          emailBody:    map[SettingsKeys.shareLocationEmailBody]    ?? SHARE_LOCATION_DEFAULTS.emailBody,
+          whatsappBody: map[SettingsKeys.shareLocationWhatsappBody] ?? SHARE_LOCATION_DEFAULTS.whatsappBody,
+          defaults:     SHARE_LOCATION_DEFAULTS,
+        },
+      };
+    } catch (err: any) {
+      logger.error('settings:getShareLocation', err.message);
+      return { success: false, error: err.message };
+    }
+  });
+
+  /** Met à jour les modèles de message de partage de localisation. */
+  ipcMain.handle('settings:updateShareLocation', async (_event, { token, payload }: any) => {
+    try {
+      const session = getSession(token);
+      if (!session) return { success: false, error: 'Session expirée' };
+      checkRole(session, ADMIN_ROLES);
+      const parsed = shareLocationSchema.safeParse(payload);
+      if (!parsed.success) return { success: false, error: parsed.error.issues.map((i) => i.message).join(', ') };
+      const entries: Array<{ key: string; value: string }> = [];
+      if (parsed.data.emailSubject !== undefined)  entries.push({ key: SettingsKeys.shareLocationEmailSubject, value: parsed.data.emailSubject });
+      if (parsed.data.emailBody !== undefined)     entries.push({ key: SettingsKeys.shareLocationEmailBody,    value: parsed.data.emailBody });
+      if (parsed.data.whatsappBody !== undefined)  entries.push({ key: SettingsKeys.shareLocationWhatsappBody, value: parsed.data.whatsappBody });
+      await setSettings(entries);
+      logger.info('Modèles de partage de localisation mis à jour');
+      return { success: true };
+    } catch (err: any) {
+      logger.error('settings:updateShareLocation', err.message);
       return { success: false, error: err.message };
     }
   });

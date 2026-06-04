@@ -20,7 +20,7 @@ import { Mail, MessageSquare, Plus, Edit, Trash2, Save, X } from 'lucide-react';
 
 const schema = z.object({
   name: z.string().min(1, 'Nom requis'),
-  channel: z.enum(['EMAIL', 'SMS']),
+  channel: z.enum(['EMAIL', 'SMS', 'WHATSAPP']),
   subject: z.string().optional(),
   body: z.string().min(1, 'Corps requis'),
   variables: z.string().optional(),
@@ -106,6 +106,7 @@ function TemplateForm({
           >
             <option value="EMAIL">Email</option>
             <option value="SMS">SMS</option>
+            <option value="WHATSAPP">WhatsApp</option>
           </select>
         </div>
       </div>
@@ -234,7 +235,7 @@ export default function CommTemplatesSettingsTab() {
 
       {/* Filtre canal */}
       <div className="flex gap-2">
-        {['', 'EMAIL', 'SMS'].map((c) => (
+        {['', 'EMAIL', 'SMS', 'WHATSAPP'].map((c) => (
           <button
             key={c}
             onClick={() => setChannelFilter(c)}

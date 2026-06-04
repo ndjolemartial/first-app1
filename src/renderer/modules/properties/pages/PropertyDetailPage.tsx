@@ -5,6 +5,7 @@ import Badge from '../../../shared/components/ui/Badge';
 import Card from '../../../shared/components/ui/Card';
 import { SkeletonTable } from '../../../shared/components/ui/Skeleton';
 import LocationMap from '../../../shared/components/LocationMap';
+import ShareLocationDialog from '../../communication/components/ShareLocationDialog';
 import { useProperty, useUpdatePropertyStatus, useDeleteProperty } from '../hooks/useProperties';
 import { toast } from '../../../shared/components/ui/Toast';
 import ConfirmDialog from '../../../shared/components/ui/ConfirmDialog';
@@ -43,6 +44,7 @@ export default function PropertyDetailPage() {
   const updateStatus = useUpdatePropertyStatus();
   const deleteProperty = useDeleteProperty();
   const [showDelete, setShowDelete] = useState(false);
+  const [shareOpen, setShareOpen] = useState(false);
 
   if (isLoading) return <div className="p-8"><SkeletonTable rows={6} /></div>;
 
@@ -162,6 +164,7 @@ export default function PropertyDetailPage() {
             latitude={p.latitude}
             longitude={p.longitude}
             label={`${p.address ?? ''}${p.city ? `, ${p.city}` : ''}`.trim() || undefined}
+            onShare={() => setShareOpen(true)}
           />
 
           {/* Conventions liées */}
@@ -343,6 +346,14 @@ export default function PropertyDetailPage() {
         message={`Supprimer le bien ${p.reference} ? Cette action est irréversible.`}
         onConfirm={handleDelete}
         onClose={() => setShowDelete(false)}
+      />
+
+      <ShareLocationDialog
+        open={shareOpen}
+        onClose={() => setShareOpen(false)}
+        entityType="PROPERTY"
+        entityId={Number(id)}
+        entityLabel={`${p.reference}${p.address ? ` — ${p.address}` : ''}`}
       />
     </PageLayout>
   );

@@ -16,6 +16,7 @@ const settings_service_1 = require("../services/settings.service");
 const storage_service_1 = require("../services/storage.service");
 const email_service_1 = require("../services/email.service");
 const sms_service_1 = require("../services/sms.service");
+const whatsapp_service_1 = require("../services/whatsapp.service");
 /** Paramètres applicatifs : réservés aux administrateurs. */
 const ADMIN_ROLES = ['SUPER_ADMIN', 'ADMIN'];
 // ── Schémas Zod ──────────────────────────────────────────────────────────────
@@ -45,12 +46,15 @@ const emailSchema = zod_1.z.object({
     signature: zod_1.z.string().optional(), // HTML — inséré via la variable {{signature}}
 });
 const smsSchema = zod_1.z.object({
-    provider: zod_1.z.enum(['twilio', 'ovh', 'brevo', '']).optional(),
+    provider: zod_1.z.enum(['twilio', 'ovh', 'brevo', 'orange', 'mtn', '']).optional(),
     accountSid: zod_1.z.string().optional(),
     authToken: zod_1.z.string().optional(),
     from: zod_1.z.string().optional(),
     apiLogin: zod_1.z.string().optional(),
     apiPassword: zod_1.z.string().optional(),
+    // WhatsApp — réutilise les credentials Twilio, donc paramétré dans le même payload.
+    whatsappEnabled: zod_1.z.boolean().optional(),
+    whatsappFrom: zod_1.z.string().optional(),
 });
 const slideshowItemSchema = zod_1.z.object({
     type: zod_1.z.enum(['image', 'video']),
@@ -71,6 +75,44 @@ const USER_ROLES = [
 const slideshowVisibilitySchema = zod_1.z.object({
     allowedRoles: zod_1.z.array(zod_1.z.enum(USER_ROLES)),
 });
+// Partage de localisation : un seul modèle global par canal, utilisé pour
+// Lotissement / Terrain / Bien. Les variables non pertinentes pour l'entité
+// courante sont substituées par une chaîne vide.
+const shareLocationSchema = zod_1.z.object({
+    emailSubject: zod_1.z.string().optional(),
+    emailBody: zod_1.z.string().optional(),
+    whatsappBody: zod_1.z.string().optional(),
+});
+const SHARE_LOCATION_DEFAULTS = {
+    emailSubject: 'Localisation — {{entityTitle}}',
+    emailBody: [
+        'Bonjour {{recipientName}},',
+        '',
+        'Vous trouverez ci-dessous la localisation de {{entityTitle}} ({{reference}}) :',
+        '',
+        'Adresse : {{address}}',
+        'Ville : {{ville}}',
+        'Commune : {{commune}}',
+        'Quartier : {{quartier}}',
+        '',
+        'Coordonnées GPS : {{latitude}}, {{longitude}}',
+        'Carte Google Maps : {{googleMapsUrl}}',
+        'Vue Google Earth : {{googleEarthUrl}}',
+        '',
+        'Cordialement,',
+        '{{companyName}}',
+        '{{signature}}',
+    ].join('\n'),
+    whatsappBody: [
+        'Bonjour {{recipientName}}, voici la localisation de *{{entityTitle}}* ({{reference}}) :',
+        '',
+        'Adresse : {{address}}',
+        'GPS : {{latitude}}, {{longitude}}',
+        'Carte : {{googleMapsUrl}}',
+        '',
+        '— {{companyName}}',
+    ].join('\n'),
+};
 const fileUploadSchema = zod_1.z.object({
     fileName: zod_1.z.string().min(1),
     fileType: zod_1.z.string().min(1),
@@ -403,6 +445,7 @@ function registerSettingsIPC() {
             const map = await (0, settings_service_1.getSettings)([
                 settings_service_1.SettingsKeys.smsProvider, settings_service_1.SettingsKeys.smsAccountSid, settings_service_1.SettingsKeys.smsFrom,
                 settings_service_1.SettingsKeys.smsApiLogin,
+                settings_service_1.SettingsKeys.whatsappEnabled, settings_service_1.SettingsKeys.whatsappFrom,
             ]);
             const [authTokenSet, apiPasswordSet] = await Promise.all([
                 (0, settings_service_1.hasSecret)(settings_service_1.SettingsKeys.smsAuthToken),
@@ -419,6 +462,8 @@ function registerSettingsIPC() {
                     apiLogin: map[settings_service_1.SettingsKeys.smsApiLogin] ?? '',
                     apiPassword: apiPasswordSet ? settings_service_1.SECRET_MASK : '',
                     apiPasswordSet,
+                    whatsappEnabled: map[settings_service_1.SettingsKeys.whatsappEnabled] === 'true',
+                    whatsappFrom: map[settings_service_1.SettingsKeys.whatsappFrom] ?? '',
                 },
             };
         }
@@ -445,6 +490,10 @@ function registerSettingsIPC() {
                 entries.push({ key: settings_service_1.SettingsKeys.smsFrom, value: d.from });
             if (d.apiLogin !== undefined)
                 entries.push({ key: settings_service_1.SettingsKeys.smsApiLogin, value: d.apiLogin });
+            if (d.whatsappEnabled !== undefined)
+                entries.push({ key: settings_service_1.SettingsKeys.whatsappEnabled, value: d.whatsappEnabled ? 'true' : 'false' });
+            if (d.whatsappFrom !== undefined)
+                entries.push({ key: settings_service_1.SettingsKeys.whatsappFrom, value: d.whatsappFrom });
             await (0, settings_service_1.setSettings)(entries);
             if (d.authToken !== undefined && d.authToken !== settings_service_1.SECRET_MASK) {
                 await (0, settings_service_1.setSecret)(settings_service_1.SettingsKeys.smsAuthToken, d.authToken);
@@ -473,6 +522,22 @@ function registerSettingsIPC() {
         }
         catch (err) {
             logger_1.default.error('settings:testSms', err.message);
+            return { success: false, error: err.message };
+        }
+    });
+    electron_1.ipcMain.handle('settings:testWhatsapp', async (_event, { token, to }) => {
+        try {
+            const session = (0, auth_service_1.getSession)(token);
+            if (!session)
+                return { success: false, error: 'Session expirée' };
+            (0, auth_service_1.checkRole)(session, ADMIN_ROLES);
+            if (!to || typeof to !== 'string')
+                return { success: false, error: 'Numéro destinataire manquant' };
+            const r = await (0, whatsapp_service_1.sendTestWhatsapp)(to);
+            return { success: true, data: r };
+        }
+        catch (err) {
+            logger_1.default.error('settings:testWhatsapp', err.message);
             return { success: false, error: err.message };
         }
     });
@@ -625,6 +690,60 @@ function registerSettingsIPC() {
             return { success: true, data: { base64: buf.toString('base64'), mimeType: mime } };
         }
         catch (err) {
+            return { success: false, error: err.message };
+        }
+    });
+    // ── Partage de localisation GPS ─────────────────────────────────────────────
+    /** Lit les modèles de message du partage de localisation (sujet/corps email + corps WhatsApp). */
+    electron_1.ipcMain.handle('settings:getShareLocation', async (_event, { token }) => {
+        try {
+            const session = (0, auth_service_1.getSession)(token);
+            if (!session)
+                return { success: false, error: 'Session expirée' };
+            (0, auth_service_1.checkRole)(session, ADMIN_ROLES);
+            const map = await (0, settings_service_1.getSettings)([
+                settings_service_1.SettingsKeys.shareLocationEmailSubject,
+                settings_service_1.SettingsKeys.shareLocationEmailBody,
+                settings_service_1.SettingsKeys.shareLocationWhatsappBody,
+            ]);
+            return {
+                success: true,
+                data: {
+                    emailSubject: map[settings_service_1.SettingsKeys.shareLocationEmailSubject] ?? SHARE_LOCATION_DEFAULTS.emailSubject,
+                    emailBody: map[settings_service_1.SettingsKeys.shareLocationEmailBody] ?? SHARE_LOCATION_DEFAULTS.emailBody,
+                    whatsappBody: map[settings_service_1.SettingsKeys.shareLocationWhatsappBody] ?? SHARE_LOCATION_DEFAULTS.whatsappBody,
+                    defaults: SHARE_LOCATION_DEFAULTS,
+                },
+            };
+        }
+        catch (err) {
+            logger_1.default.error('settings:getShareLocation', err.message);
+            return { success: false, error: err.message };
+        }
+    });
+    /** Met à jour les modèles de message de partage de localisation. */
+    electron_1.ipcMain.handle('settings:updateShareLocation', async (_event, { token, payload }) => {
+        try {
+            const session = (0, auth_service_1.getSession)(token);
+            if (!session)
+                return { success: false, error: 'Session expirée' };
+            (0, auth_service_1.checkRole)(session, ADMIN_ROLES);
+            const parsed = shareLocationSchema.safeParse(payload);
+            if (!parsed.success)
+                return { success: false, error: parsed.error.issues.map((i) => i.message).join(', ') };
+            const entries = [];
+            if (parsed.data.emailSubject !== undefined)
+                entries.push({ key: settings_service_1.SettingsKeys.shareLocationEmailSubject, value: parsed.data.emailSubject });
+            if (parsed.data.emailBody !== undefined)
+                entries.push({ key: settings_service_1.SettingsKeys.shareLocationEmailBody, value: parsed.data.emailBody });
+            if (parsed.data.whatsappBody !== undefined)
+                entries.push({ key: settings_service_1.SettingsKeys.shareLocationWhatsappBody, value: parsed.data.whatsappBody });
+            await (0, settings_service_1.setSettings)(entries);
+            logger_1.default.info('Modèles de partage de localisation mis à jour');
+            return { success: true };
+        }
+        catch (err) {
+            logger_1.default.error('settings:updateShareLocation', err.message);
             return { success: false, error: err.message };
         }
     });

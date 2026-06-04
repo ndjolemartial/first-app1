@@ -1,5 +1,6 @@
 import { useNavigate, useParams } from 'react-router-dom';
 import { useState } from 'react';
+import ShareLocationDialog from '../../communication/components/ShareLocationDialog';
 import PageLayout from '../../../shared/components/layout/PageLayout';
 import Button from '../../../shared/components/ui/Button';
 import Badge from '../../../shared/components/ui/Badge';
@@ -10,6 +11,7 @@ import { formatDate, formatCurrency } from '../../../shared/utils/format';
 import { Edit, Trash2, MapPin, Layers } from 'lucide-react';
 import EntityCashflowSection from '../../treasury/components/EntityCashflowSection';
 import EntityDocumentsCard from '../../archiving/components/EntityDocumentsCard';
+import LocationMap from '../../../shared/components/LocationMap';
 
 const STATUT_VARIANT: Record<string, any> = {
   EN_COURS: 'warning', OUVERT: 'success', PARTIELLEMENT_VENDU: 'info',
@@ -32,6 +34,7 @@ export default function LotissementDetailPage() {
   const { data: res, isLoading } = useLotissement(Number(id));
   const deleteLot = useDeleteLotissement();
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [shareOpen, setShareOpen] = useState(false);
 
   const lot = res?.data;
   if (isLoading || !lot) return null;
@@ -171,6 +174,14 @@ export default function LotissementDetailPage() {
           </Card>
         )}
 
+        {/* Localisation */}
+        <LocationMap
+          latitude={lot.latitude}
+          longitude={lot.longitude}
+          label={`${lot.reference}${lot.ville ? ` · ${lot.ville}` : ''}`}
+          onShare={() => setShareOpen(true)}
+        />
+
         {/* Flux de trésorerie rattaché à ce lotissement */}
         <EntityCashflowSection
           entityType="LOTISSEMENT"
@@ -193,6 +204,14 @@ export default function LotissementDetailPage() {
         title="Supprimer le lotissement"
         message={`Supprimer "${lot.nom}" ? Tous les terrains associés devront être supprimés d'abord.`}
         confirmLabel="Supprimer"
+      />
+
+      <ShareLocationDialog
+        open={shareOpen}
+        onClose={() => setShareOpen(false)}
+        entityType="LOTISSEMENT"
+        entityId={Number(id)}
+        entityLabel={lot.nom}
       />
     </PageLayout>
   );

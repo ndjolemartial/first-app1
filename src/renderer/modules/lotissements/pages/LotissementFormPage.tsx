@@ -13,6 +13,8 @@ import Card from '../../../shared/components/ui/Card';
 import { useLotissement, useCreateLotissement, useUpdateLotissement } from '../hooks/useLotissements';
 import { useCountries } from '../../../shared/hooks/useCountries';
 import { useTitleTypes } from '../../../shared/hooks/useTitleTypes';
+import { useAuthStore } from '../../../shared/stores/auth.store';
+import MapLinkField from '../../../shared/components/MapLinkField';
 import { Save } from 'lucide-react';
 
 const schema = z.object({
@@ -29,6 +31,16 @@ const schema = z.object({
   fraisDemarchesAcdStandard: z.coerce.number().nonnegative().optional().or(z.literal('')),
   titleTypeId: z.string().optional(),
   titleNumber: z.string().optional(),
+  latitude: z
+    .string()
+    .trim()
+    .optional()
+    .refine((v) => !v || (Number.isFinite(Number(v)) && Number(v) >= -90 && Number(v) <= 90), 'Latitude entre -90 et 90'),
+  longitude: z
+    .string()
+    .trim()
+    .optional()
+    .refine((v) => !v || (Number.isFinite(Number(v)) && Number(v) >= -180 && Number(v) <= 180), 'Longitude entre -180 et 180'),
 });
 
 type FormData = z.infer<typeof schema>;
@@ -46,6 +58,7 @@ export default function LotissementFormPage() {
   const { id } = useParams<{ id?: string }>();
   const isEdit = !!id;
   const navigate = useNavigate();
+  const token = useAuthStore((s) => s.token)!;
   const { data: res } = useLotissement(isEdit ? Number(id) : 0);
   const create = useCreateLotissement();
   const update = useUpdateLotissement();
@@ -77,6 +90,8 @@ export default function LotissementFormPage() {
         fraisDemarchesAcdStandard: l.fraisDemarchesAcdStandard ?? ('' as any),
         titleTypeId: l.titleTypeId != null ? String(l.titleTypeId) : '',
         titleNumber: l.titleNumber ?? '',
+        latitude: l.latitude != null ? String(l.latitude) : '',
+        longitude: l.longitude != null ? String(l.longitude) : '',
       });
     }
   }, [res, isEdit, reset]);
@@ -97,6 +112,8 @@ export default function LotissementFormPage() {
       nombreParcelles: rest.nombreParcelles === '' ? undefined : rest.nombreParcelles,
       fraisDemarchesAcdStandard: rest.fraisDemarchesAcdStandard === '' ? null : rest.fraisDemarchesAcdStandard,
       titleTypeId: titleTypeId ? Number(titleTypeId) : null,
+      latitude: rest.latitude ? Number(rest.latitude) : null,
+      longitude: rest.longitude ? Number(rest.longitude) : null,
     };
     let r: any;
     if (isEdit) r = await update.mutateAsync({ id: Number(id), payload });
@@ -160,6 +177,38 @@ export default function LotissementFormPage() {
               placeholder="Ex: 500 000"
               {...register('fraisDemarchesAcdStandard')}
             />
+          </div>
+
+          {/* Localisation GPS */}
+          <div className="border-t border-slate-200 pt-4 space-y-4">
+            <h3 className="text-sm font-semibold text-slate-700">Localisation GPS</h3>
+            <MapLinkField
+              token={token}
+              onResolved={(la, lo) => {
+                setValue('latitude', String(la), { shouldValidate: true });
+                setValue('longitude', String(lo), { shouldValidate: true });
+              }}
+            />
+            <div className="grid grid-cols-2 gap-4">
+              <Input
+                label="Latitude"
+                type="number"
+                step="any"
+                placeholder="Ex: 5.345678"
+                helper="Coordonnée GPS — visible sur la carte de la fiche"
+                error={errors.latitude?.message}
+                {...register('latitude')}
+              />
+              <Input
+                label="Longitude"
+                type="number"
+                step="any"
+                placeholder="Ex: -4.024429"
+                helper="Coordonnée GPS — visible sur la carte de la fiche"
+                error={errors.longitude?.message}
+                {...register('longitude')}
+              />
+            </div>
           </div>
 
           <Textarea label="Description / Notes" rows={3} {...register('description')} />

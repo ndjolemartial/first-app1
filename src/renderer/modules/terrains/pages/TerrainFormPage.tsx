@@ -159,6 +159,12 @@ export default function TerrainFormPage() {
 
   const [scanFiles, setScanFiles] = useState<Partial<Record<ScanKey, File>>>({});
   const [existingDocs, setExistingDocs] = useState<Record<string, any>>({});
+  // Case à cocher (non persistée) : recopier la localisation GPS du lotissement.
+  // Tant qu'elle est active, les champs lat/long sont verrouillés et suivent le
+  // lotissement courant (utile pour les terrains qui partagent l'emplacement
+  // général du lotissement, ex. lotissement compact ou GPS approximative).
+  const [gpsSameAsLot, setGpsSameAsLot] = useState(false);
+  const initialGpsMatchRef = useRef(false);
 
   useEffect(() => {
     if (isEdit && Number(id)) {
@@ -236,11 +242,16 @@ export default function TerrainFormPage() {
   const watchAcdAmount = watch('acdDemarchesAmount');
   const watchLotissementId = watch('lotissementId');
   const prevLotIdRef = useRef<number | null | undefined>(undefined);
+  const selectedLot = (lotsRes?.data ?? []).find((l: any) => Number(l.id) === Number(watchLotissementId));
   const acdStandard = (() => {
-    const lot = (lotsRes?.data ?? []).find((l: any) => Number(l.id) === Number(watchLotissementId));
-    const std = lot?.fraisDemarchesAcdStandard;
+    const std = selectedLot?.fraisDemarchesAcdStandard;
     return std != null && Number(std) > 0 ? Number(std) : null;
   })();
+  const lotHasGps =
+    selectedLot?.latitude != null &&
+    selectedLot?.longitude != null &&
+    Number.isFinite(Number(selectedLot.latitude)) &&
+    Number.isFinite(Number(selectedLot.longitude));
   useEffect(() => {
     const lotId = Number(watchLotissementId) || null;
     const prevLotId = prevLotIdRef.current;
@@ -253,6 +264,41 @@ export default function TerrainFormPage() {
       setValue('acdDemarchesAmount', acdStandard as any, { shouldValidate: false });
     }
   }, [watchAcdEnabled, watchLotissementId, acdStandard, watchAcdAmount, setValue]);
+
+  // Tant que la case « identique au lotissement » est cochée, on aligne les
+  // coordonnées du terrain sur celles du lotissement sélectionné. Si l'utilisateur
+  // change de lotissement, on ré-applique automatiquement les nouvelles coords.
+  // Si le nouveau lotissement n'a pas de GPS, on décoche la case pour éviter
+  // d'afficher des champs verrouillés sans source de vérité.
+  useEffect(() => {
+    if (!gpsSameAsLot) return;
+    if (!lotHasGps) {
+      setGpsSameAsLot(false);
+      return;
+    }
+    setValue('latitude', String(selectedLot.latitude), { shouldValidate: true });
+    setValue('longitude', String(selectedLot.longitude), { shouldValidate: true });
+  }, [gpsSameAsLot, lotHasGps, watchLotissementId, selectedLot, setValue]);
+
+  // À l'édition d'un terrain existant, pré-cocher la case si les coords du
+  // terrain correspondent exactement à celles de son lotissement — évite que
+  // l'utilisateur découvre une case « décochée » alors qu'il avait sauvegardé
+  // l'alignement précédemment. N'est exécuté qu'une fois, dès que terrain et
+  // lotissement sont chargés.
+  useEffect(() => {
+    if (!isEdit || initialGpsMatchRef.current) return;
+    const t = res?.data;
+    if (!t || !selectedLot) return;
+    initialGpsMatchRef.current = true;
+    if (
+      t.latitude != null && t.longitude != null &&
+      selectedLot.latitude != null && selectedLot.longitude != null &&
+      Number(t.latitude) === Number(selectedLot.latitude) &&
+      Number(t.longitude) === Number(selectedLot.longitude)
+    ) {
+      setGpsSameAsLot(true);
+    }
+  }, [isEdit, res, selectedLot]);
 
   useEffect(() => {
     if (isEdit && res?.data) {
@@ -461,21 +507,47 @@ export default function TerrainFormPage() {
           {/* Localisation GPS */}
           <div className="border-t border-slate-200 pt-4 space-y-4">
             <h3 className="text-sm font-semibold text-slate-700">Localisation GPS</h3>
-            <MapLinkField
-              token={token}
-              onResolved={(la, lo) => {
-                setValue('latitude', String(la), { shouldValidate: true });
-                setValue('longitude', String(lo), { shouldValidate: true });
-              }}
-            />
+
+            <label className="flex items-start gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                className="h-4 w-4 rounded mt-0.5"
+                checked={gpsSameAsLot}
+                disabled={!lotHasGps}
+                onChange={(e) => setGpsSameAsLot(e.target.checked)}
+              />
+              <span className="text-sm text-slate-700">
+                Identique à la localisation du lotissement
+                {!lotHasGps && (
+                  <span className="block text-xs text-slate-400 italic">
+                    Le lotissement sélectionné n'a pas de coordonnées GPS — renseignez-les sur la fiche du lotissement pour activer cette option.
+                  </span>
+                )}
+              </span>
+            </label>
+
+            {!gpsSameAsLot && (
+              <MapLinkField
+                token={token}
+                onResolved={(la, lo) => {
+                  setValue('latitude', String(la), { shouldValidate: true });
+                  setValue('longitude', String(lo), { shouldValidate: true });
+                }}
+              />
+            )}
             <div className="grid grid-cols-2 gap-4">
               <Input
                 label="Latitude"
                 type="number"
                 step="any"
                 placeholder="Ex: 5.345678"
-                helper="Coordonnée GPS — visible sur la carte de la fiche"
+                helper={
+                  gpsSameAsLot
+                    ? 'Recopiée depuis le lotissement — décochez la case pour modifier'
+                    : 'Coordonnée GPS — visible sur la carte de la fiche'
+                }
                 error={errors.latitude?.message}
+                readOnly={gpsSameAsLot}
                 {...register('latitude')}
               />
               <Input
@@ -483,8 +555,13 @@ export default function TerrainFormPage() {
                 type="number"
                 step="any"
                 placeholder="Ex: -4.024429"
-                helper="Coordonnée GPS — visible sur la carte de la fiche"
+                helper={
+                  gpsSameAsLot
+                    ? 'Recopiée depuis le lotissement — décochez la case pour modifier'
+                    : 'Coordonnée GPS — visible sur la carte de la fiche'
+                }
                 error={errors.longitude?.message}
+                readOnly={gpsSameAsLot}
                 {...register('longitude')}
               />
             </div>

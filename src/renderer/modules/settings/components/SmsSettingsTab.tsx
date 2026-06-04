@@ -5,7 +5,7 @@ import Button from '../../../shared/components/ui/Button';
 import Card from '../../../shared/components/ui/Card';
 import Input from '../../../shared/components/ui/Input';
 import Select from '../../../shared/components/ui/Select';
-import { useSmsSettings, useUpdateSms, useTestSms } from '../hooks/useSettings';
+import { useSmsSettings, useUpdateSms, useTestSms, useTestWhatsapp } from '../hooks/useSettings';
 import { useAuthStore } from '../../../shared/stores/auth.store';
 
 const SECRET_MASK = '••••••••';
@@ -15,6 +15,8 @@ const PROVIDER_OPTIONS = [
   { value: 'twilio', label: 'Twilio' },
   { value: 'ovh',    label: 'OVH SMS' },
   { value: 'brevo',  label: 'Brevo (ex Sendinblue)' },
+  { value: 'orange', label: 'Orange Côte d\'Ivoire' },
+  { value: 'mtn',    label: 'MTN Côte d\'Ivoire (SMS PRO)' },
 ];
 
 interface FormData {
@@ -24,20 +26,25 @@ interface FormData {
   from:        string;
   apiLogin:    string;
   apiPassword: string;
+  whatsappEnabled: boolean;
+  whatsappFrom:    string;
 }
 
 export default function SmsSettingsTab() {
   const { data: res, isLoading } = useSmsSettings();
   const update = useUpdateSms();
   const testSms = useTestSms();
+  const testWhatsapp = useTestWhatsapp();
   const userPhone = useAuthStore((s) => s.user?.mobile ?? s.user?.phone ?? '');
   const [testTo, setTestTo] = useState('');
+  const [testWaTo, setTestWaTo] = useState('');
 
   const { register, handleSubmit, reset, watch, formState: { isSubmitting } } = useForm<FormData>({
-    defaultValues: { provider: '', accountSid: '', authToken: '', from: '', apiLogin: '', apiPassword: '' },
+    defaultValues: { provider: '', accountSid: '', authToken: '', from: '', apiLogin: '', apiPassword: '', whatsappEnabled: false, whatsappFrom: '' },
   });
 
   const provider = watch('provider');
+  const whatsappEnabled = watch('whatsappEnabled');
 
   useEffect(() => {
     if (res?.success && res.data) {
@@ -48,9 +55,11 @@ export default function SmsSettingsTab() {
         from:        res.data.from ?? '',
         apiLogin:    res.data.apiLogin ?? '',
         apiPassword: res.data.apiPasswordSet ? SECRET_MASK : '',
+        whatsappEnabled: res.data.whatsappEnabled ?? false,
+        whatsappFrom:    res.data.whatsappFrom ?? '',
       });
     }
-    if (userPhone) setTestTo(userPhone);
+    if (userPhone) { setTestTo(userPhone); setTestWaTo(userPhone); }
   }, [res, reset, userPhone]);
 
   const onSubmit = handleSubmit((data) => update.mutate({
@@ -60,6 +69,8 @@ export default function SmsSettingsTab() {
     from:        data.from,
     apiLogin:    data.apiLogin,
     apiPassword: data.apiPassword === SECRET_MASK ? undefined : data.apiPassword,
+    whatsappEnabled: data.whatsappEnabled,
+    whatsappFrom:    data.whatsappFrom,
   }));
 
   if (isLoading) return <Card>Chargement…</Card>;
@@ -94,11 +105,63 @@ export default function SmsSettingsTab() {
             </>
           )}
 
+          {provider === 'orange' && (
+            <>
+              <Input label="Client ID Orange" placeholder="client_id fourni par developer.orange.com" {...register('apiLogin')} />
+              <Input label="Client Secret Orange" type="password" placeholder={SECRET_MASK} {...register('apiPassword')} />
+              <Input label="Numéro émetteur (From)" placeholder="+2250101020304" {...register('from')} />
+              <p className="text-xs text-slate-400">
+                Authentification OAuth2 (client_credentials) — le token est mis en cache. Le numéro émetteur doit être celui que vous avez acheté/déclaré sur le portail Orange Developer.
+              </p>
+            </>
+          )}
+
+          {provider === 'mtn' && (
+            <>
+              <Input label="Identifiant SMS PRO" placeholder="login fourni par MTN CI" {...register('apiLogin')} />
+              <Input label="Mot de passe SMS PRO" type="password" placeholder={SECRET_MASK} {...register('apiPassword')} />
+              <Input label="Nom émetteur (Sender ID)" placeholder="Afrikimmo" {...register('from')} />
+              <p className="text-xs text-slate-400">
+                Authentification Basic (login : mot de passe du portail MTN SMS PRO). Le « Sender ID » doit avoir été validé par MTN avant utilisation en production.
+              </p>
+            </>
+          )}
+
           {!provider && (
             <p className="text-sm text-slate-500">
               Choisissez un fournisseur pour saisir les paramètres correspondants.
             </p>
           )}
+
+          {/* ── Section WhatsApp (Twilio) ──────────────────────────────────── */}
+          <div className="border-t border-slate-200 pt-4 mt-4">
+            <div className="flex items-start gap-2">
+              <input
+                type="checkbox"
+                id="whatsappEnabled"
+                {...register('whatsappEnabled')}
+                className="mt-1 h-4 w-4 text-indigo-600 border-slate-300 rounded focus:ring-indigo-500"
+              />
+              <label htmlFor="whatsappEnabled" className="text-sm text-slate-700">
+                <span className="font-medium">Activer WhatsApp via Twilio</span>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Réutilise l'Account SID + Auth Token Twilio configurés ci-dessus. Renseignez ci-dessous le numéro émetteur WhatsApp dédié (sandbox Twilio en dev, numéro Business approuvé en production).
+                </p>
+              </label>
+            </div>
+            {whatsappEnabled && (
+              <div className="mt-3">
+                <Input
+                  label="Numéro émetteur WhatsApp (From)"
+                  placeholder="whatsapp:+14155238886 ou +14155238886"
+                  {...register('whatsappFrom')}
+                />
+                <p className="text-xs text-slate-400 mt-1">
+                  Le préfixe <code>whatsapp:</code> est ajouté automatiquement si absent.
+                </p>
+              </div>
+            )}
+          </div>
 
           <div className="flex justify-end pt-2">
             <Button type="submit" loading={isSubmitting || update.isPending} icon={<Save className="h-4 w-4" />}>
@@ -128,6 +191,34 @@ export default function SmsSettingsTab() {
           </Button>
         </div>
       </Card>
+
+      {whatsappEnabled && (
+        <Card>
+          <h3 className="font-semibold text-slate-700 mb-4">Tester l'envoi WhatsApp</h3>
+          <p className="text-sm text-slate-500 mb-3">
+            Envoie un message WhatsApp de test. En sandbox Twilio, le destinataire doit avoir au préalable rejoint la sandbox via le code dédié.
+          </p>
+          <div className="flex gap-3 items-end">
+            <div className="flex-1">
+              <Input
+                label="Numéro destinataire"
+                placeholder="+225xxxxxxxxxx"
+                value={testWaTo}
+                onChange={(e) => setTestWaTo(e.target.value)}
+              />
+            </div>
+            <Button
+              variant="secondary"
+              icon={<Send className="h-4 w-4" />}
+              loading={testWhatsapp.isPending}
+              onClick={() => testWaTo && testWhatsapp.mutate(testWaTo)}
+              disabled={!testWaTo}
+            >
+              Envoyer un WhatsApp de test
+            </Button>
+          </div>
+        </Card>
+      )}
     </div>
   );
 }

@@ -21,7 +21,7 @@ const policySchema = zod_1.z.object({
 const ruleUpdateSchema = zod_1.z.object({
     isActive: zod_1.z.boolean().optional(),
     offsetDays: zod_1.z.number().int().min(-365).max(365).optional(),
-    channel: zod_1.z.enum(['EMAIL', 'SMS']).optional(),
+    channel: zod_1.z.enum(['EMAIL', 'SMS', 'WHATSAPP']).optional(),
     templateId: zod_1.z.number().int().positive().nullable().optional(),
     name: zod_1.z.string().min(1).optional(),
     description: zod_1.z.string().nullable().optional(),

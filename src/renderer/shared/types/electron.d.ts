@@ -129,6 +129,23 @@ interface Window {
       getHistory: (token: string, filters?: object, page?: number, limit?: number) => Promise<IpcResponse<any[]>>;
       sendEmail: (token: string, payload: object) => Promise<IpcResponse<any>>;
       sendSms: (token: string, payload: object) => Promise<IpcResponse<any>>;
+      sendWhatsapp: (token: string, payload: object) => Promise<IpcResponse<any>>;
+      resend: (token: string, id: number) => Promise<IpcResponse<any>>;
+      resolveTarget: (token: string, payload: object) => Promise<IpcResponse<{ to: string; label: string; targets: { clientId?: number; ownerId?: number; conventionId?: number } }>>;
+      shareLocation: (token: string, payload: {
+        entityType: 'LOTISSEMENT' | 'TERRAIN' | 'PROPERTY';
+        entityId: number;
+        recipientType: 'CLIENT' | 'PROSPECT' | 'REFERRER';
+        recipientId: number;
+        channel: 'EMAIL' | 'WHATSAPP';
+      }) => Promise<IpcResponse<any>>;
+      previewShareLocation: (token: string, payload: {
+        entityType: 'LOTISSEMENT' | 'TERRAIN' | 'PROPERTY';
+        entityId: number;
+        recipientType: 'CLIENT' | 'PROSPECT' | 'REFERRER';
+        recipientId: number;
+        channel: 'EMAIL' | 'WHATSAPP';
+      }) => Promise<IpcResponse<{ to: string; subject: string; body: string; entityTitle: string }>>;
     };
     crm: {
       listActivities: (token: string, filters?: object, page?: number, limit?: number) => Promise<IpcResponse<any[]>>;
@@ -429,9 +446,12 @@ interface Window {
         accountSid: string; authToken: string; authTokenSet: boolean;
         from: string;
         apiLogin: string; apiPassword: string; apiPasswordSet: boolean;
+        whatsappEnabled: boolean;
+        whatsappFrom:    string;
       }>>;
       updateSms: (token: string, payload: object) => Promise<IpcResponse>;
       testSms: (token: string, to: string) => Promise<IpcResponse<{ ok: true }>>;
+      testWhatsapp: (token: string, to: string) => Promise<IpcResponse<{ ok: true }>>;
 
       // Slideshow
       getSlideshow: (token: string) => Promise<IpcResponse<Array<{
@@ -451,6 +471,18 @@ interface Window {
         token: string,
         payload: { allowedRoles: string[] },
       ) => Promise<IpcResponse>;
+      // Modèles de partage de localisation GPS
+      getShareLocation: (token: string) => Promise<IpcResponse<{
+        emailSubject: string;
+        emailBody: string;
+        whatsappBody: string;
+        defaults: { emailSubject: string; emailBody: string; whatsappBody: string };
+      }>>;
+      updateShareLocation: (token: string, payload: {
+        emailSubject?: string;
+        emailBody?: string;
+        whatsappBody?: string;
+      }) => Promise<IpcResponse>;
       // Types de pièces d'identité (catalogue extensible)
       listIdTypes: (token: string, includeInactive?: boolean) => Promise<IpcResponse<any[]>>;
       createIdType: (token: string, payload: object) => Promise<IpcResponse<any>>;

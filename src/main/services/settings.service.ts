@@ -157,6 +157,10 @@ export const SettingsKeys = {
   smsApiLogin:            'sms.api.login',             // OVH/Brevo
   smsApiPassword:         'sms.api.password',          // secret OVH/Brevo
 
+  // WhatsApp (Twilio WhatsApp Business — réutilise sms.twilio.accountSid/authToken)
+  whatsappEnabled:        'whatsapp.enabled',          // 'true' | 'false'
+  whatsappFrom:           'whatsapp.from',             // ex. 'whatsapp:+14155238886' (sandbox) ou numéro WhatsApp approuvé
+
   // Slideshow dashboard (JSON array)
   dashboardSlideshow:     'dashboard.slideshow',
   // Rôles autorisés à voir le slideshow du tableau de bord (JSON array de UserRole)
@@ -167,6 +171,13 @@ export const SettingsKeys = {
   remindersQuietStart:     'reminders.quietHours.start',  // 'HH:MM' (par défaut 08:00)
   remindersQuietEnd:       'reminders.quietHours.end',    // 'HH:MM' (par défaut 20:00)
   remindersQuietDays:      'reminders.quietDays',         // JSON array de 0..6 (0=dimanche)
+
+  // Partage de localisation GPS — modèles de message pour Lotissement / Terrain / Bien.
+  // Un seul modèle par canal couvre les 3 types d'entités : les variables qui ne
+  // s'appliquent pas à l'entité courante sont substituées par chaîne vide.
+  shareLocationEmailSubject:  'share.location.email.subject',
+  shareLocationEmailBody:     'share.location.email.body',
+  shareLocationWhatsappBody:  'share.location.whatsapp.body',
 } as const;
 
 /** Liste des clés correspondant à des secrets chiffrés. */

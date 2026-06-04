@@ -138,6 +138,11 @@ const communication = {
     getHistory: (token, filters, page, limit) => api.invoke('communication:getHistory', { token, filters, page, limit }),
     sendEmail: (token, payload) => api.invoke('communication:sendEmail', { token, payload }),
     sendSms: (token, payload) => api.invoke('communication:sendSms', { token, payload }),
+    sendWhatsapp: (token, payload) => api.invoke('communication:sendWhatsapp', { token, payload }),
+    resend: (token, id) => api.invoke('communication:resend', { token, id }),
+    resolveTarget: (token, payload) => api.invoke('communication:resolveTarget', { token, payload }),
+    shareLocation: (token, payload) => api.invoke('communication:shareLocation', { token, payload }),
+    previewShareLocation: (token, payload) => api.invoke('communication:previewShareLocation', { token, payload }),
 };
 // Reminders (politique de relance automatique)
 const reminders = {
@@ -318,12 +323,16 @@ const settings = {
     getSms: (token) => api.invoke('settings:getSms', { token }),
     updateSms: (token, payload) => api.invoke('settings:updateSms', { token, payload }),
     testSms: (token, to) => api.invoke('settings:testSms', { token, to }),
+    testWhatsapp: (token, to) => api.invoke('settings:testWhatsapp', { token, to }),
     getSlideshow: (token) => api.invoke('settings:getSlideshow', { token }),
     updateSlideshow: (token, items) => api.invoke('settings:updateSlideshow', { token, items }),
     uploadSlideshowMedia: (token, payload) => api.invoke('settings:uploadSlideshowMedia', { token, payload }),
     getSlideshowMediaData: (token, relativePath) => api.invoke('settings:getSlideshowMediaData', { token, relativePath }),
     getSlideshowVisibility: (token) => api.invoke('settings:getSlideshowVisibility', { token }),
     updateSlideshowVisibility: (token, payload) => api.invoke('settings:updateSlideshowVisibility', { token, payload }),
+    // Modèles de partage de localisation GPS
+    getShareLocation: (token) => api.invoke('settings:getShareLocation', { token }),
+    updateShareLocation: (token, payload) => api.invoke('settings:updateShareLocation', { token, payload }),
     // Types de pièces d'identité (catalogue extensible)
     listIdTypes: (token, includeInactive = false) => api.invoke('settings:listIdTypes', { token, includeInactive }),
     createIdType: (token, payload) => api.invoke('settings:createIdType', { token, payload }),

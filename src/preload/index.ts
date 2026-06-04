@@ -201,6 +201,16 @@ const communication = {
     api.invoke('communication:sendEmail', { token, payload }),
   sendSms: (token: string, payload: object) =>
     api.invoke('communication:sendSms', { token, payload }),
+  sendWhatsapp: (token: string, payload: object) =>
+    api.invoke('communication:sendWhatsapp', { token, payload }),
+  resend: (token: string, id: number) =>
+    api.invoke('communication:resend', { token, id }),
+  resolveTarget: (token: string, payload: object) =>
+    api.invoke('communication:resolveTarget', { token, payload }),
+  shareLocation: (token: string, payload: object) =>
+    api.invoke('communication:shareLocation', { token, payload }),
+  previewShareLocation: (token: string, payload: object) =>
+    api.invoke('communication:previewShareLocation', { token, payload }),
 };
 
 // Reminders (politique de relance automatique)
@@ -488,6 +498,8 @@ const settings = {
     api.invoke('settings:updateSms', { token, payload }),
   testSms: (token: string, to: string) =>
     api.invoke('settings:testSms', { token, to }),
+  testWhatsapp: (token: string, to: string) =>
+    api.invoke('settings:testWhatsapp', { token, to }),
 
   getSlideshow: (token: string) => api.invoke('settings:getSlideshow', { token }),
   updateSlideshow: (token: string, items: object[]) =>
@@ -500,6 +512,10 @@ const settings = {
     api.invoke('settings:getSlideshowVisibility', { token }),
   updateSlideshowVisibility: (token: string, payload: { allowedRoles: string[] }) =>
     api.invoke('settings:updateSlideshowVisibility', { token, payload }),
+  // Modèles de partage de localisation GPS
+  getShareLocation: (token: string) => api.invoke('settings:getShareLocation', { token }),
+  updateShareLocation: (token: string, payload: object) =>
+    api.invoke('settings:updateShareLocation', { token, payload }),
 
   // Types de pièces d'identité (catalogue extensible)
   listIdTypes: (token: string, includeInactive = false) =>

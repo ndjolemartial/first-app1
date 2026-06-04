@@ -57,6 +57,7 @@ model User {
   createdProspects     Prospect[]          @relation("ProspectCreatedBy")
   assignedClients      Client[]            @relation("ClientAssignedTo")
   attestationsEmitted  Attestation[]       @relation("AttestationEmittedBy")
+  communicationsSent   Communication[]     @relation("CommunicationSentBy")
 }
 
 enum UserRole {
@@ -246,6 +247,7 @@ model Owner {
   documents  Document[]
   activities CrmActivity[]
   projects   Project[]
+  communications Communication[]
   idType         IdDocumentType? @relation("OwnerIdType",         fields: [idTypeId],         references: [id])
   legalRepIdType IdDocumentType? @relation("OwnerLegalRepIdType", fields: [legalRepIdTypeId], references: [id])
 }
@@ -569,6 +571,7 @@ model Convention {
   installments SaleInstallment[]
   commissions  Commission[]
   attestations Attestation[]
+  communications Communication[]
 }
 
 // Liaison Convention ↔ Bien immobilier (une convention peut couvrir plusieurs biens).
@@ -972,19 +975,33 @@ model Communication {
   body       String       @db.Text
   status     CommStatus   @default(EN_ATTENTE)
   sentAt     DateTime?
-  errorMsg   String?
+  errorMsg   String?       @db.Text
   templateId Int?
   // Empreinte d'anti-doublon — verrouille un même rappel (cas + entité + fenêtre)
   // ex. INSTALLMENT_42_J-7. Non posée sur les envois manuels.
   dedupeKey  String?      @unique
   clientId   Int?
+  // Rattachements optionnels — utilisés pour l'envoi ciblé depuis l'interface
+  // Communication (Propriétaire / Convention) et la traçabilité.
+  ownerId      Int?
+  conventionId Int?
+  // Utilisateur ayant déclenché l'envoi manuel. Null pour les envois
+  // systèmes (relances automatiques) — sert au filtrage de visibilité
+  // dans l'historique pour les rôles non privilégiés.
+  senderId   Int?
   metadata   Json?
   createdAt  DateTime     @default(now())
 
-  template CommTemplate? @relation(fields: [templateId], references: [id])
-  client   Client?       @relation(fields: [clientId], references: [id])
+  template   CommTemplate? @relation(fields: [templateId], references: [id])
+  client     Client?       @relation(fields: [clientId], references: [id])
+  owner      Owner?        @relation(fields: [ownerId], references: [id])
+  convention Convention?   @relation(fields: [conventionId], references: [id])
+  sender     User?         @relation("CommunicationSentBy", fields: [senderId], references: [id])
 
   @@index([clientId])
+  @@index([ownerId])
+  @@index([conventionId])
+  @@index([senderId])
 }
 
 model CommTemplate {
@@ -1037,6 +1054,7 @@ enum ReminderTriggerType {
 enum CommChannel {
   EMAIL
   SMS
+  WHATSAPP
 }
 
 enum CommDirection {

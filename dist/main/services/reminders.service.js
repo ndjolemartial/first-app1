@@ -11,6 +11,7 @@ exports.scheduleReminders = scheduleReminders;
 const db_service_1 = require("./db.service");
 const email_service_1 = require("./email.service");
 const sms_service_1 = require("./sms.service");
+const whatsapp_service_1 = require("./whatsapp.service");
 const settings_service_1 = require("./settings.service");
 const templating_service_1 = require("./templating.service");
 const logger_1 = __importDefault(require("../utils/logger"));
@@ -27,11 +28,14 @@ const DEFAULT_POLICY = {
 const TPL_CODES = {
     UPCOMING_EMAIL: '[Politique] Rappel — Échéance à venir (Email)',
     UPCOMING_SMS: '[Politique] Rappel — Échéance à venir (SMS)',
+    UPCOMING_WHATSAPP: '[Politique] Rappel — Échéance à venir (WhatsApp)',
     OVERDUE_EMAIL: '[Politique] Relance — Échéance dépassée (Email)',
     OVERDUE_SMS: '[Politique] Relance — Échéance dépassée (SMS)',
+    OVERDUE_WHATSAPP: '[Politique] Relance — Échéance dépassée (WhatsApp)',
     OVERDUE_FINAL_EMAIL: '[Politique] Mise en demeure — Retard important (Email)',
     CONV_EXPIRING_EMAIL: '[Politique] Convention — Expiration prochaine (Email)',
     CONV_EXPIRING_SMS: '[Politique] Convention — Expiration prochaine (SMS)',
+    CONV_EXPIRING_WHATSAPP: '[Politique] Convention — Expiration prochaine (WhatsApp)',
 };
 const SEED_TEMPLATES = [
     {
@@ -103,6 +107,28 @@ Cordialement,
         channel: 'SMS',
         body: '{{companyName}} : votre convention {{conventionRef}} expire le {{endDate}}. Merci de nous contacter pour le renouvellement.',
     },
+    // ── Variantes WhatsApp — mêmes messages que SMS, format identique ────────
+    {
+        marker: TPL_CODES.UPCOMING_WHATSAPP,
+        channel: 'WHATSAPP',
+        body: `Bonjour {{fullName}},
+Rappel {{companyName}} : votre échéance n° {{installmentNumber}} de la convention {{conventionRef}} est due le {{dueDate}} pour un montant de {{amount}} F CFA.
+Merci de prévoir le règlement dans les délais convenus.`,
+    },
+    {
+        marker: TPL_CODES.OVERDUE_WHATSAPP,
+        channel: 'WHATSAPP',
+        body: `Bonjour {{fullName}},
+{{companyName}} : votre échéance n° {{installmentNumber}} ({{conventionRef}}) est impayée depuis {{daysLate}} jour(s) (montant {{amount}} F CFA).
+Merci de régulariser ou de nous contacter rapidement.`,
+    },
+    {
+        marker: TPL_CODES.CONV_EXPIRING_WHATSAPP,
+        channel: 'WHATSAPP',
+        body: `Bonjour {{fullName}},
+{{companyName}} : votre convention {{conventionRef}} arrive à échéance le {{endDate}}.
+Merci de nous contacter pour évoquer son renouvellement.`,
+    },
 ];
 const SEED_RULES = [
     // Échéances de vente — préventif
@@ -119,6 +145,12 @@ const SEED_RULES = [
     { code: 'CONVENTION_EXPIRING_M90_EMAIL', name: 'Expiration — J-90 (Email)', triggerType: 'CONVENTION_EXPIRING', offsetDays: -90, channel: 'EMAIL', templateMarker: TPL_CODES.CONV_EXPIRING_EMAIL, isActive: true },
     { code: 'CONVENTION_EXPIRING_M30_EMAIL', name: 'Expiration — J-30 (Email)', triggerType: 'CONVENTION_EXPIRING', offsetDays: -30, channel: 'EMAIL', templateMarker: TPL_CODES.CONV_EXPIRING_EMAIL, isActive: true },
     { code: 'CONVENTION_EXPIRING_M7_SMS', name: 'Expiration — J-7 (SMS)', triggerType: 'CONVENTION_EXPIRING', offsetDays: -7, channel: 'SMS', templateMarker: TPL_CODES.CONV_EXPIRING_SMS, isActive: true },
+    // ── Variantes WhatsApp — désactivées par défaut (s'activent après paramétrage Twilio WhatsApp).
+    { code: 'INSTALLMENT_UPCOMING_M7_WHATSAPP', name: 'Échéance — J-7 (WhatsApp)', triggerType: 'INSTALLMENT_UPCOMING', offsetDays: -7, channel: 'WHATSAPP', templateMarker: TPL_CODES.UPCOMING_WHATSAPP, isActive: false },
+    { code: 'INSTALLMENT_UPCOMING_M1_WHATSAPP', name: 'Échéance — J-1 (WhatsApp)', triggerType: 'INSTALLMENT_UPCOMING', offsetDays: -1, channel: 'WHATSAPP', templateMarker: TPL_CODES.UPCOMING_WHATSAPP, isActive: false },
+    { code: 'INSTALLMENT_OVERDUE_P1_WHATSAPP', name: 'Retard — J+1 (WhatsApp)', triggerType: 'INSTALLMENT_OVERDUE', offsetDays: 1, channel: 'WHATSAPP', templateMarker: TPL_CODES.OVERDUE_WHATSAPP, isActive: false },
+    { code: 'INSTALLMENT_OVERDUE_P15_WHATSAPP', name: 'Retard — J+15 (WhatsApp)', triggerType: 'INSTALLMENT_OVERDUE', offsetDays: 15, channel: 'WHATSAPP', templateMarker: TPL_CODES.OVERDUE_WHATSAPP, isActive: false },
+    { code: 'CONVENTION_EXPIRING_M7_WHATSAPP', name: 'Expiration — J-7 (WhatsApp)', triggerType: 'CONVENTION_EXPIRING', offsetDays: -7, channel: 'WHATSAPP', templateMarker: TPL_CODES.CONV_EXPIRING_WHATSAPP, isActive: false },
 ];
 // ── Seed idempotent ──────────────────────────────────────────────────────────
 async function seedDefaultRemindersConfig() {
@@ -401,9 +433,11 @@ async function processCandidate(db, ctx, result, bump) {
         bump('email_opt_out');
         return;
     }
-    if (rule.channel === 'SMS' && client.smsOptOut) {
+    // WhatsApp partage l'opt-out SMS (même canal téléphonique). On gardera la
+    // possibilité d'un opt-out WhatsApp dédié plus tard si le besoin émerge.
+    if ((rule.channel === 'SMS' || rule.channel === 'WHATSAPP') && client.smsOptOut) {
         result.skipped += 1;
-        bump('sms_opt_out');
+        bump(rule.channel === 'WHATSAPP' ? 'whatsapp_opt_out' : 'sms_opt_out');
         return;
     }
     const recipient = rule.channel === 'EMAIL'
@@ -446,6 +480,9 @@ async function processCandidate(db, ctx, result, bump) {
     try {
         if (rule.channel === 'EMAIL') {
             await (0, email_service_1.sendEmail)({ to: recipient, subject: subject ?? '(sans objet)', body });
+        }
+        else if (rule.channel === 'WHATSAPP') {
+            await (0, whatsapp_service_1.sendWhatsapp)(recipient, body);
         }
         else {
             await (0, sms_service_1.sendSms)(recipient, body);

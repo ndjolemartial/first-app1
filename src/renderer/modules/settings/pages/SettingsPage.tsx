@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { Building2, HardDrive, Mail, MessageSquare, Images, FileText, FileSignature, Award, Briefcase, Tags, Landmark, IdCard, Layers, Bell, BookOpen, ChevronDown, ChevronRight, Inbox, Printer } from 'lucide-react';
+import { Building2, HardDrive, Mail, MessageSquare, Images, FileText, FileSignature, Award, Briefcase, Tags, Landmark, IdCard, Layers, Bell, BookOpen, ChevronDown, ChevronRight, Inbox, Printer, MapPin } from 'lucide-react';
 import PageLayout from '../../../shared/components/layout/PageLayout';
 import Card from '../../../shared/components/ui/Card';
 import { clsx } from 'clsx';
@@ -19,6 +19,7 @@ import TreasuryCategoriesSettingsTab   from '../components/TreasuryCategoriesSet
 import TreasuryAccountsSettingsTab     from '../components/TreasuryAccountsSettingsTab';
 import RemindersSettingsTab            from '../components/RemindersSettingsTab';
 import CommTemplatesSettingsTab        from '../components/CommTemplatesSettingsTab';
+import ShareLocationSettingsTab        from '../components/ShareLocationSettingsTab';
 
 type TabKey =
   | 'company'
@@ -35,7 +36,8 @@ type TabKey =
   | 'treasuryAccounts'
   | 'treasuryCategories'
   | 'reminders'
-  | 'commTemplates';
+  | 'commTemplates'
+  | 'shareLocation';
 
 type GroupKey = 'communication' | 'treasury' | 'printedTemplates';
 
@@ -53,7 +55,7 @@ interface GroupDef {
 }
 
 const GROUPS: GroupDef[] = [
-  { key: 'communication',    label: 'Gestion Mails / SMS',  icon: <Inbox className="h-4 w-4" /> },
+  { key: 'communication',    label: 'Gestion Mails / SMS / WhatsApp',  icon: <Inbox className="h-4 w-4" /> },
   { key: 'printedTemplates', label: "Modèles d'imprimés",   icon: <Printer className="h-4 w-4" /> },
   { key: 'treasury',         label: 'Opérations bancaires', icon: <Landmark className="h-4 w-4" /> },
 ];
@@ -61,10 +63,11 @@ const GROUPS: GroupDef[] = [
 const TABS: TabDef[] = [
   { key: 'company',              label: 'Entreprise',              icon: <Building2 className="h-4 w-4" /> },
   { key: 'storage',              label: 'Stockage',                icon: <HardDrive className="h-4 w-4" /> },
-  // ── Groupe « Gestion Mails / SMS » ──────────────────────────
+  // ── Groupe « Gestion Mails / SMS / WhatsApp » ───────────────
   { key: 'email',                label: 'Email (SMTP)',            icon: <Mail className="h-4 w-4" />,           group: 'communication' },
   { key: 'sms',                  label: 'SMS',                     icon: <MessageSquare className="h-4 w-4" />,  group: 'communication' },
   { key: 'commTemplates',        label: 'Modèles email / SMS',     icon: <BookOpen className="h-4 w-4" />,       group: 'communication' },
+  { key: 'shareLocation',        label: 'Partage de localisation', icon: <MapPin className="h-4 w-4" />,         group: 'communication' },
   { key: 'reminders',            label: 'Politique de relance',    icon: <Bell className="h-4 w-4" />,           group: 'communication' },
   // ─────────────────────────────────────────────────────────────
   { key: 'slideshow',            label: 'Slideshow dashboard',     icon: <Images className="h-4 w-4" /> },
@@ -232,6 +235,7 @@ export default function SettingsPage() {
           {active === 'treasuryCategories'   && <TreasuryCategoriesSettingsTab />}
           {active === 'reminders'            && <RemindersSettingsTab />}
           {active === 'commTemplates'        && <CommTemplatesSettingsTab />}
+          {active === 'shareLocation'        && <ShareLocationSettingsTab />}
         </div>
       </div>
     </PageLayout>

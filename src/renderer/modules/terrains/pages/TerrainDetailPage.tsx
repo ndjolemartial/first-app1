@@ -7,6 +7,7 @@ import Card from '../../../shared/components/ui/Card';
 import Select from '../../../shared/components/ui/Select';
 import ConfirmDialog from '../../../shared/components/ui/ConfirmDialog';
 import LocationMap from '../../../shared/components/LocationMap';
+import ShareLocationDialog from '../../communication/components/ShareLocationDialog';
 import {
   useTerrain, useDeleteTerrain, useUpdateTerrainStatut,
   useGenerateAcdInvoices, useCancelAcdInvoices,
@@ -77,6 +78,7 @@ export default function TerrainDetailPage() {
   const [confirmCancelAcd, setConfirmCancelAcd] = useState(false);
   const [showEditAcdInvoices, setShowEditAcdInvoices] = useState(false);
   const [openingDoc, setOpeningDoc] = useState<number | null>(null);
+  const [shareOpen, setShareOpen] = useState(false);
 
   const t = res?.data;
   if (isLoading || !t) return null;
@@ -237,6 +239,7 @@ export default function TerrainDetailPage() {
           latitude={t.latitude}
           longitude={t.longitude}
           label={`${t.reference}${t.lotissement?.ville ? ` · ${t.lotissement.ville}` : ''}`}
+          onShare={() => setShareOpen(true)}
         />
 
         {/* Documents officiels */}
@@ -494,6 +497,14 @@ export default function TerrainDetailPage() {
           acdDemarchesAmount={Number(t.acdDemarchesAmount)}
         />
       )}
+
+      <ShareLocationDialog
+        open={shareOpen}
+        onClose={() => setShareOpen(false)}
+        entityType="TERRAIN"
+        entityId={Number(id)}
+        entityLabel={`${t.reference}${t.lotissement?.nom ? ` — ${t.lotissement.nom}` : ''}`}
+      />
     </PageLayout>
   );
 }

@@ -158,6 +158,43 @@ export function useTestSms() {
   });
 }
 
+export function useTestWhatsapp() {
+  const token = useAuthStore((s) => s.token)!;
+  return useMutation({
+    mutationFn: (to: string) => ipc().testWhatsapp(token, to),
+    onSuccess:  (res) => {
+      if (res.success) toast.success('WhatsApp de test envoyé');
+      else toast.error(String(res.error));
+    },
+  });
+}
+
+// ── Partage de localisation GPS ─────────────────────────────────────────────
+
+export function useShareLocationSettings() {
+  const token = useAuthStore((s) => s.token)!;
+  return useQuery({
+    queryKey: ['settings', 'shareLocation'],
+    queryFn:  () => ipc().getShareLocation(token),
+    enabled:  !!token,
+  });
+}
+
+export function useUpdateShareLocation() {
+  const token = useAuthStore((s) => s.token)!;
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: { emailSubject?: string; emailBody?: string; whatsappBody?: string }) =>
+      ipc().updateShareLocation(token, payload),
+    onSuccess: (res) => {
+      if (res.success) {
+        qc.invalidateQueries({ queryKey: ['settings', 'shareLocation'] });
+        toast.success('Modèles de partage enregistrés');
+      } else toast.error(String(res.error));
+    },
+  });
+}
+
 // ── Slideshow ───────────────────────────────────────────────────────────────
 
 export function useSlideshowSettings() {

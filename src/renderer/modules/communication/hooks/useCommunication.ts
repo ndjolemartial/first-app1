@@ -49,10 +49,13 @@ export function useDeleteTemplate() {
 }
 
 export function useCommunicationHistory(filters: object = {}, page = 1, limit = 30) {
-  const token = useAuthStore((s) => s.token)!;
+  const token = useAuthStore((s) => s.token);
+  const userId = useAuthStore((s) => s.user?.id ?? 0);
   return useQuery({
-    queryKey: ['comm-history', filters, page],
-    queryFn: () => ipc.getHistory(token, filters, page, limit),
+    // userId dans la clé : refetch propre quand l'auth s'hydrate ou change.
+    queryKey: ['comm-history', userId, filters, page],
+    queryFn: () => ipc.getHistory(token!, filters, page, limit),
+    enabled: !!token,
   });
 }
 
@@ -70,6 +73,24 @@ export function useSendSms() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (payload: object) => ipc.sendSms(token, payload),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['comm-history'] }),
+  });
+}
+
+export function useSendWhatsapp() {
+  const token = useAuthStore((s) => s.token)!;
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: object) => ipc.sendWhatsapp(token, payload),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['comm-history'] }),
+  });
+}
+
+export function useResendCommunication() {
+  const token = useAuthStore((s) => s.token)!;
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: number) => ipc.resend(token, id),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['comm-history'] }),
   });
 }

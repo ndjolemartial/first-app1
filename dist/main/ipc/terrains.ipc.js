@@ -98,7 +98,7 @@ function registerTerrainsIPC() {
                     where,
                     skip: (page - 1) * limit,
                     take: limit,
-                    orderBy: [{ lotissementId: 'asc' }, { numeroIlot: 'asc' }, { numeroParcelle: 'asc' }],
+                    orderBy: { reference: 'desc' },
                     include: {
                         lotissement: { select: { id: true, reference: true, nom: true, ville: true } },
                         programme: { select: { id: true, reference: true, nom: true } },

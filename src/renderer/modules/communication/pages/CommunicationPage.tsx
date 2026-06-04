@@ -5,13 +5,18 @@ import Button from '../../../shared/components/ui/Button';
 import Badge from '../../../shared/components/ui/Badge';
 import Card from '../../../shared/components/ui/Card';
 import { SkeletonTable } from '../../../shared/components/ui/Skeleton';
-import { useCommunicationHistory } from '../hooks/useCommunication';
+import { useCommunicationHistory, useResendCommunication } from '../hooks/useCommunication';
 import { formatDateTime } from '../../../shared/utils/format';
 import ExportMenu, { ExportColumn } from '../../../shared/components/ExportMenu';
 import { useAuthStore } from '../../../shared/stores/auth.store';
-import { Mail, MessageSquare, Send } from 'lucide-react';
+import { toast } from '../../../shared/components/ui/Toast';
+import { Mail, MessageSquare, Send, RefreshCw } from 'lucide-react';
 
-const CHANNEL_VARIANT: Record<string, 'info' | 'success'> = { EMAIL: 'info', SMS: 'success' };
+const CHANNEL_VARIANT: Record<string, 'info' | 'success' | 'default'> = {
+  EMAIL: 'info',
+  SMS: 'success',
+  WHATSAPP: 'success',
+};
 const STATUS_VARIANT: Record<string, 'success' | 'warning' | 'danger' | 'default' | 'info'> = {
   EN_ATTENTE: 'warning', ENVOYE: 'success', RECU: 'info', ECHEC: 'danger', REFUSE: 'danger',
 };
@@ -23,6 +28,7 @@ const CHANNEL_OPTIONS = [
   { value: '', label: 'Tous les canaux' },
   { value: 'EMAIL', label: 'Email' },
   { value: 'SMS', label: 'SMS' },
+  { value: 'WHATSAPP', label: 'WhatsApp' },
 ];
 const STATUS_OPTIONS = [
   { value: '', label: 'Tous les statuts' },
@@ -59,6 +65,20 @@ export default function CommunicationPage() {
   ].filter(Boolean).join('   —   ') || undefined;
 
   const { data: res, isLoading } = useCommunicationHistory(filters, page, limit);
+  const resend = useResendCommunication();
+
+  const handleResend = async (id: number) => {
+    const r = await resend.mutateAsync(id);
+    if (r?.success) {
+      toast.success('Message renvoyé');
+    } else {
+      const msg = typeof r?.error === 'string' ? r.error : 'Échec du renvoi';
+      toast.error(msg);
+    }
+  };
+  // Une réponse `{ success:false }` (ex. session expirée après redémarrage du
+  // main process) doit être affichée, pas avalée comme « Aucune communication ».
+  const ipcError = res && res.success === false ? String(res.error ?? 'Erreur inconnue') : null;
   const history = res?.data ?? [];
   const total = res?.total ?? 0;
   const totalPages = Math.ceil(total / limit);
@@ -68,7 +88,7 @@ export default function CommunicationPage() {
       title="Communication"
       breadcrumbs={[{ label: 'Communication' }]}
       actions={
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2 justify-end">
           <ExportMenu
             fileName="communications"
             title="Historique des communications"
@@ -79,6 +99,9 @@ export default function CommunicationPage() {
               return r.success ? r.data ?? [] : [];
             }}
           />
+          <Button variant="secondary" icon={<MessageSquare className="h-4 w-4" />} onClick={() => navigate('/communication/send?channel=WHATSAPP')}>
+            Envoyer WhatsApp
+          </Button>
           <Button variant="secondary" icon={<MessageSquare className="h-4 w-4" />} onClick={() => navigate('/communication/send?channel=SMS')}>
             Envoyer SMS
           </Button>
@@ -107,13 +130,18 @@ export default function CommunicationPage() {
       </div>
 
       {/* Table */}
-      <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
+      <div className="bg-white rounded-xl border border-slate-200 overflow-x-auto">
         {isLoading ? (
           <div className="p-6"><SkeletonTable rows={8} /></div>
+        ) : ipcError ? (
+          <div className="py-12 text-center">
+            <p className="text-sm text-red-600 bg-red-50 inline-block px-4 py-2 rounded-lg">{ipcError}</p>
+            <p className="text-xs text-slate-400 mt-3">Reconnecte-toi si la session a expiré.</p>
+          </div>
         ) : history.length === 0 ? (
           <div className="py-16 text-center text-slate-400">Aucune communication trouvée.</div>
         ) : (
-          <table className="w-full text-sm">
+          <table className="w-full text-sm min-w-[1100px]">
             <thead className="bg-slate-50 border-b border-slate-200">
               <tr>
                 <th className="text-left px-4 py-3 font-medium text-slate-600">Canal</th>
@@ -122,6 +150,7 @@ export default function CommunicationPage() {
                 <th className="text-left px-4 py-3 font-medium text-slate-600">Template</th>
                 <th className="text-left px-4 py-3 font-medium text-slate-600">Date</th>
                 <th className="text-left px-4 py-3 font-medium text-slate-600">Statut</th>
+                <th className="text-right px-4 py-3 font-medium text-slate-600">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
@@ -129,10 +158,10 @@ export default function CommunicationPage() {
                 <tr key={comm.id} className="hover:bg-slate-50">
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-2">
-                      {comm.channel === 'EMAIL'
-                        ? <Mail className="h-4 w-4 text-blue-500" />
-                        : <MessageSquare className="h-4 w-4 text-green-500" />}
-                      <Badge variant={CHANNEL_VARIANT[comm.channel] ?? 'default'}>{comm.channel}</Badge>
+                      {comm.channel === 'EMAIL'    && <Mail          className="h-4 w-4 text-blue-500" />}
+                      {comm.channel === 'SMS'      && <MessageSquare className="h-4 w-4 text-green-500" />}
+                      {comm.channel === 'WHATSAPP' && <MessageSquare className="h-4 w-4 text-emerald-600" />}
+                      <Badge variant={CHANNEL_VARIANT[comm.channel] ?? 'default'}>{comm.channel === 'WHATSAPP' ? 'WhatsApp' : comm.channel}</Badge>
                     </div>
                   </td>
                   <td className="px-4 py-3 font-medium">{comm.to}</td>
@@ -146,7 +175,21 @@ export default function CommunicationPage() {
                     <Badge variant={STATUS_VARIANT[comm.status] ?? 'default'}>
                       {STATUS_LABEL[comm.status] ?? comm.status}
                     </Badge>
-                    {comm.errorMsg && <p className="text-xs text-red-400 mt-0.5 max-w-[160px] truncate">{comm.errorMsg}</p>}
+                    {comm.errorMsg && <p className="text-xs text-red-400 mt-0.5 max-w-[160px] truncate" title={comm.errorMsg}>{comm.errorMsg}</p>}
+                  </td>
+                  <td className="px-4 py-3 text-right">
+                    {comm.status === 'ECHEC' && (
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        icon={<RefreshCw className={`h-3.5 w-3.5 ${resend.isPending && resend.variables === comm.id ? 'animate-spin' : ''}`} />}
+                        onClick={() => handleResend(comm.id)}
+                        disabled={resend.isPending}
+                        title="Renvoyer ce message"
+                      >
+                        Renvoyer
+                      </Button>
+                    )}
                   </td>
                 </tr>
               ))}
