@@ -19,6 +19,7 @@ const convention_templates_ipc_1 = require("./ipc/convention-templates.ipc");
 const attestation_templates_ipc_1 = require("./ipc/attestation-templates.ipc");
 const attestations_ipc_1 = require("./ipc/attestations.ipc");
 const accounting_ipc_1 = require("./ipc/accounting.ipc");
+const bilan_ipc_1 = require("./ipc/bilan.ipc");
 const communication_ipc_1 = require("./ipc/communication.ipc");
 const crm_ipc_1 = require("./ipc/crm.ipc");
 const archiving_ipc_1 = require("./ipc/archiving.ipc");
@@ -92,6 +93,7 @@ function registerIPC() {
     (0, attestation_templates_ipc_1.registerAttestationTemplatesIPC)();
     (0, attestations_ipc_1.registerAttestationsIPC)();
     (0, accounting_ipc_1.registerAccountingIPC)();
+    (0, bilan_ipc_1.registerBilanIPC)();
     (0, communication_ipc_1.registerCommunicationIPC)();
     (0, crm_ipc_1.registerCrmIPC)();
     (0, archiving_ipc_1.registerArchivingIPC)();

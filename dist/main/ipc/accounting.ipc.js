@@ -420,7 +420,13 @@ function registerAccountingIPC() {
             let start;
             let end;
             let label;
-            if (period === 'quarter') {
+            if (period === 'last-month') {
+                // Mois précédent — gère le changement d'année (janvier → décembre N-1).
+                start = new Date(y, m - 1, 1);
+                end = new Date(y, m, 1);
+                label = `${MOIS[start.getMonth()]} ${start.getFullYear()}`;
+            }
+            else if (period === 'quarter') {
                 const q = Math.floor(m / 3);
                 start = new Date(y, q * 3, 1);
                 end = new Date(y, q * 3 + 3, 1);

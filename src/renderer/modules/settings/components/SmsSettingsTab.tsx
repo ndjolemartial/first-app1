@@ -26,9 +26,18 @@ interface FormData {
   from:        string;
   apiLogin:    string;
   apiPassword: string;
-  whatsappEnabled: boolean;
-  whatsappFrom:    string;
+  whatsappEnabled:        boolean;
+  whatsappProvider:       'twilio' | 'infobip';
+  whatsappFrom:           string;
+  whatsappInfobipBaseUrl: string;
+  whatsappInfobipApiKey:  string;
+  whatsappInfobipFrom:    string;
 }
+
+const WHATSAPP_PROVIDER_OPTIONS = [
+  { value: 'twilio',  label: 'Twilio' },
+  { value: 'infobip', label: 'Infobip' },
+];
 
 export default function SmsSettingsTab() {
   const { data: res, isLoading } = useSmsSettings();
@@ -40,11 +49,16 @@ export default function SmsSettingsTab() {
   const [testWaTo, setTestWaTo] = useState('');
 
   const { register, handleSubmit, reset, watch, formState: { isSubmitting } } = useForm<FormData>({
-    defaultValues: { provider: '', accountSid: '', authToken: '', from: '', apiLogin: '', apiPassword: '', whatsappEnabled: false, whatsappFrom: '' },
+    defaultValues: {
+      provider: '', accountSid: '', authToken: '', from: '', apiLogin: '', apiPassword: '',
+      whatsappEnabled: false, whatsappProvider: 'twilio', whatsappFrom: '',
+      whatsappInfobipBaseUrl: '', whatsappInfobipApiKey: '', whatsappInfobipFrom: '',
+    },
   });
 
   const provider = watch('provider');
-  const whatsappEnabled = watch('whatsappEnabled');
+  const whatsappEnabled  = watch('whatsappEnabled');
+  const whatsappProvider = watch('whatsappProvider');
 
   useEffect(() => {
     if (res?.success && res.data) {
@@ -55,8 +69,12 @@ export default function SmsSettingsTab() {
         from:        res.data.from ?? '',
         apiLogin:    res.data.apiLogin ?? '',
         apiPassword: res.data.apiPasswordSet ? SECRET_MASK : '',
-        whatsappEnabled: res.data.whatsappEnabled ?? false,
-        whatsappFrom:    res.data.whatsappFrom ?? '',
+        whatsappEnabled:        res.data.whatsappEnabled ?? false,
+        whatsappProvider:       res.data.whatsappProvider ?? 'twilio',
+        whatsappFrom:           res.data.whatsappFrom ?? '',
+        whatsappInfobipBaseUrl: res.data.whatsappInfobipBaseUrl ?? '',
+        whatsappInfobipApiKey:  res.data.whatsappInfobipApiKeySet ? SECRET_MASK : '',
+        whatsappInfobipFrom:    res.data.whatsappInfobipFrom ?? '',
       });
     }
     if (userPhone) { setTestTo(userPhone); setTestWaTo(userPhone); }
@@ -69,8 +87,12 @@ export default function SmsSettingsTab() {
     from:        data.from,
     apiLogin:    data.apiLogin,
     apiPassword: data.apiPassword === SECRET_MASK ? undefined : data.apiPassword,
-    whatsappEnabled: data.whatsappEnabled,
-    whatsappFrom:    data.whatsappFrom,
+    whatsappEnabled:        data.whatsappEnabled,
+    whatsappProvider:       data.whatsappProvider,
+    whatsappFrom:           data.whatsappFrom,
+    whatsappInfobipBaseUrl: data.whatsappInfobipBaseUrl,
+    whatsappInfobipApiKey:  data.whatsappInfobipApiKey === SECRET_MASK ? undefined : data.whatsappInfobipApiKey,
+    whatsappInfobipFrom:    data.whatsappInfobipFrom,
   }));
 
   if (isLoading) return <Card>Chargement…</Card>;
@@ -133,7 +155,7 @@ export default function SmsSettingsTab() {
             </p>
           )}
 
-          {/* ── Section WhatsApp (Twilio) ──────────────────────────────────── */}
+          {/* ── Section WhatsApp (Twilio ou Infobip) ──────────────────────── */}
           <div className="border-t border-slate-200 pt-4 mt-4">
             <div className="flex items-start gap-2">
               <input
@@ -143,22 +165,56 @@ export default function SmsSettingsTab() {
                 className="mt-1 h-4 w-4 text-indigo-600 border-slate-300 rounded focus:ring-indigo-500"
               />
               <label htmlFor="whatsappEnabled" className="text-sm text-slate-700">
-                <span className="font-medium">Activer WhatsApp via Twilio</span>
+                <span className="font-medium">Activer WhatsApp Business</span>
                 <p className="text-xs text-slate-500 mt-0.5">
-                  Réutilise l'Account SID + Auth Token Twilio configurés ci-dessus. Renseignez ci-dessous le numéro émetteur WhatsApp dédié (sandbox Twilio en dev, numéro Business approuvé en production).
+                  Choisissez votre fournisseur ci-dessous : Twilio (réutilise l'Account SID + Auth Token Twilio configurés au-dessus) ou Infobip (credentials dédiés).
                 </p>
               </label>
             </div>
             {whatsappEnabled && (
-              <div className="mt-3">
-                <Input
-                  label="Numéro émetteur WhatsApp (From)"
-                  placeholder="whatsapp:+14155238886 ou +14155238886"
-                  {...register('whatsappFrom')}
+              <div className="mt-3 space-y-3">
+                <Select
+                  label="Fournisseur WhatsApp"
+                  options={WHATSAPP_PROVIDER_OPTIONS}
+                  {...register('whatsappProvider')}
                 />
-                <p className="text-xs text-slate-400 mt-1">
-                  Le préfixe <code>whatsapp:</code> est ajouté automatiquement si absent.
-                </p>
+
+                {whatsappProvider === 'twilio' && (
+                  <>
+                    <Input
+                      label="Numéro émetteur WhatsApp (From)"
+                      placeholder="whatsapp:+14155238886 ou +14155238886"
+                      {...register('whatsappFrom')}
+                    />
+                    <p className="text-xs text-slate-400">
+                      Sandbox Twilio en développement, numéro Business approuvé en production. Le préfixe <code>whatsapp:</code> est ajouté automatiquement si absent.
+                    </p>
+                  </>
+                )}
+
+                {whatsappProvider === 'infobip' && (
+                  <>
+                    <Input
+                      label="Base URL Infobip"
+                      placeholder="xxxxx.api.infobip.com"
+                      {...register('whatsappInfobipBaseUrl')}
+                    />
+                    <Input
+                      label="API Key Infobip"
+                      type="password"
+                      placeholder={SECRET_MASK}
+                      {...register('whatsappInfobipApiKey')}
+                    />
+                    <Input
+                      label="Numéro émetteur WhatsApp (From)"
+                      placeholder="+2250101020304"
+                      {...register('whatsappInfobipFrom')}
+                    />
+                    <p className="text-xs text-slate-400">
+                      Le sous-domaine et la clé API se trouvent dans le portail Infobip. Le sender doit être un numéro WhatsApp Business approuvé et enregistré dans votre compte Infobip.
+                    </p>
+                  </>
+                )}
               </div>
             )}
           </div>

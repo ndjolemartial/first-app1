@@ -332,6 +332,68 @@ interface Window {
       ) => Promise<IpcResponse<{ path?: string; canceled?: boolean }>>;
       getSaleConventions: (token: string) => Promise<IpcResponse<any[]>>;
     };
+    bilan: {
+      getResultat: (
+        token: string,
+        payload: {
+          periodType: 'month' | 'last-month' | 'quarter' | 'semester' | 'year' | 'custom';
+          periodStart?: string;
+          periodEnd?: string;
+          scope: 'global' | 'lotissement' | 'programme' | 'owner';
+          scopeId?: number;
+        },
+      ) => Promise<IpcResponse<{
+        periode: { label: string; start: string; end: string };
+        scope:   { type: string; id?: number; label: string };
+        recettes: Array<{ categorie: string; montant: number }>;
+        depenses: Array<{ categorie: string; montant: number }>;
+        totalRecettes: number;
+        totalDepenses: number;
+        resultat:      number;
+        evolution: Array<{ label: string; recettes: number; depenses: number; resultat: number }>;
+      }>>;
+      getActifPassif: (
+        token: string,
+        payload: {
+          asOfDate?: string;
+          scope: 'global' | 'lotissement' | 'programme' | 'owner';
+          scopeId?: number;
+        },
+      ) => Promise<IpcResponse<{
+        asOfDate: string;
+        scope:    { type: string; id?: number; label: string };
+        actif: {
+          immobilisations: Array<{ label: string; montant: number }>;
+          creances:        Array<{ label: string; montant: number }>;
+          echeances:       Array<{ label: string; montant: number }>;
+          tresorerie:      Array<{ label: string; montant: number }>;
+          totalImmobilisations: number;
+          totalCreances:        number;
+          totalEcheances:       number;
+          totalTresorerie:      number;
+        };
+        passif: {
+          cautions:            Array<{ label: string; montant: number }>;
+          avances:             Array<{ label: string; montant: number }>;
+          dettesProprietaires: Array<{ label: string; montant: number }>;
+          totalCautions:            number;
+          totalAvances:             number;
+          totalDettesProprietaires: number;
+          capitauxPropres:          number;
+        };
+        totalActif:  number;
+        totalPassif: number;
+      }>>;
+      export: (
+        token: string,
+        payload: {
+          type:   'resultat' | 'actif-passif';
+          format: 'pdf' | 'xlsx';
+          data:   unknown;
+          meta:   { title: string; subtitle?: string; scope?: string };
+        },
+      ) => Promise<IpcResponse<{ path?: string; canceled?: boolean }>>;
+    };
     commissions: {
       getDashboard: (token: string) => Promise<IpcResponse<any>>;
       list: (token: string, filters?: object, page?: number, limit?: number) => Promise<IpcResponse<any[]>>;
@@ -446,8 +508,13 @@ interface Window {
         accountSid: string; authToken: string; authTokenSet: boolean;
         from: string;
         apiLogin: string; apiPassword: string; apiPasswordSet: boolean;
-        whatsappEnabled: boolean;
-        whatsappFrom:    string;
+        whatsappEnabled:  boolean;
+        whatsappProvider: 'twilio' | 'infobip';
+        whatsappFrom:     string;
+        whatsappInfobipBaseUrl:    string;
+        whatsappInfobipFrom:       string;
+        whatsappInfobipApiKey:     string;
+        whatsappInfobipApiKeySet:  boolean;
       }>>;
       updateSms: (token: string, payload: object) => Promise<IpcResponse>;
       testSms: (token: string, to: string) => Promise<IpcResponse<{ ok: true }>>;

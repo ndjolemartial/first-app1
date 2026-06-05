@@ -57,9 +57,13 @@ const smsSchema = z.object({
   from:        z.string().optional(),
   apiLogin:    z.string().optional(),
   apiPassword: z.string().optional(),
-  // WhatsApp — réutilise les credentials Twilio, donc paramétré dans le même payload.
-  whatsappEnabled: z.boolean().optional(),
-  whatsappFrom:    z.string().optional(),
+  // WhatsApp — provider dédié (twilio ou infobip), avec credentials côte à côte.
+  whatsappEnabled:        z.boolean().optional(),
+  whatsappProvider:       z.enum(['twilio', 'infobip']).optional(),
+  whatsappFrom:           z.string().optional(),
+  whatsappInfobipBaseUrl: z.string().optional(),
+  whatsappInfobipApiKey:  z.string().optional(),
+  whatsappInfobipFrom:    z.string().optional(),
 });
 
 const slideshowItemSchema = z.object({
@@ -425,11 +429,13 @@ export function registerSettingsIPC(): void {
       const map = await getSettings([
         SettingsKeys.smsProvider, SettingsKeys.smsAccountSid, SettingsKeys.smsFrom,
         SettingsKeys.smsApiLogin,
-        SettingsKeys.whatsappEnabled, SettingsKeys.whatsappFrom,
+        SettingsKeys.whatsappEnabled, SettingsKeys.whatsappProvider, SettingsKeys.whatsappFrom,
+        SettingsKeys.whatsappInfobipBaseUrl, SettingsKeys.whatsappInfobipFrom,
       ]);
-      const [authTokenSet, apiPasswordSet] = await Promise.all([
+      const [authTokenSet, apiPasswordSet, whatsappInfobipApiKeySet] = await Promise.all([
         hasSecret(SettingsKeys.smsAuthToken),
         hasSecret(SettingsKeys.smsApiPassword),
+        hasSecret(SettingsKeys.whatsappInfobipApiKey),
       ]);
       return {
         success: true,
@@ -442,8 +448,14 @@ export function registerSettingsIPC(): void {
           apiLogin:       map[SettingsKeys.smsApiLogin] ?? '',
           apiPassword:    apiPasswordSet ? SECRET_MASK : '',
           apiPasswordSet,
-          whatsappEnabled: map[SettingsKeys.whatsappEnabled] === 'true',
-          whatsappFrom:    map[SettingsKeys.whatsappFrom] ?? '',
+          whatsappEnabled:  map[SettingsKeys.whatsappEnabled] === 'true',
+          // Défaut historique = twilio (compatibilité avec configs existantes).
+          whatsappProvider: (map[SettingsKeys.whatsappProvider] as 'twilio' | 'infobip' | null) ?? 'twilio',
+          whatsappFrom:     map[SettingsKeys.whatsappFrom] ?? '',
+          whatsappInfobipBaseUrl: map[SettingsKeys.whatsappInfobipBaseUrl] ?? '',
+          whatsappInfobipFrom:    map[SettingsKeys.whatsappInfobipFrom] ?? '',
+          whatsappInfobipApiKey:  whatsappInfobipApiKeySet ? SECRET_MASK : '',
+          whatsappInfobipApiKeySet,
         },
       };
     } catch (err: any) {
@@ -464,14 +476,20 @@ export function registerSettingsIPC(): void {
       if (d.accountSid !== undefined) entries.push({ key: SettingsKeys.smsAccountSid, value: d.accountSid });
       if (d.from !== undefined)       entries.push({ key: SettingsKeys.smsFrom, value: d.from });
       if (d.apiLogin !== undefined)   entries.push({ key: SettingsKeys.smsApiLogin, value: d.apiLogin });
-      if (d.whatsappEnabled !== undefined) entries.push({ key: SettingsKeys.whatsappEnabled, value: d.whatsappEnabled ? 'true' : 'false' });
-      if (d.whatsappFrom !== undefined)    entries.push({ key: SettingsKeys.whatsappFrom, value: d.whatsappFrom });
+      if (d.whatsappEnabled !== undefined)        entries.push({ key: SettingsKeys.whatsappEnabled,        value: d.whatsappEnabled ? 'true' : 'false' });
+      if (d.whatsappProvider !== undefined)       entries.push({ key: SettingsKeys.whatsappProvider,       value: d.whatsappProvider });
+      if (d.whatsappFrom !== undefined)           entries.push({ key: SettingsKeys.whatsappFrom,           value: d.whatsappFrom });
+      if (d.whatsappInfobipBaseUrl !== undefined) entries.push({ key: SettingsKeys.whatsappInfobipBaseUrl, value: d.whatsappInfobipBaseUrl });
+      if (d.whatsappInfobipFrom !== undefined)    entries.push({ key: SettingsKeys.whatsappInfobipFrom,    value: d.whatsappInfobipFrom });
       await setSettings(entries);
       if (d.authToken !== undefined && d.authToken !== SECRET_MASK) {
         await setSecret(SettingsKeys.smsAuthToken, d.authToken);
       }
       if (d.apiPassword !== undefined && d.apiPassword !== SECRET_MASK) {
         await setSecret(SettingsKeys.smsApiPassword, d.apiPassword);
+      }
+      if (d.whatsappInfobipApiKey !== undefined && d.whatsappInfobipApiKey !== SECRET_MASK) {
+        await setSecret(SettingsKeys.whatsappInfobipApiKey, d.whatsappInfobipApiKey);
       }
       logger.info('Paramètres SMS mis à jour');
       return { success: true };

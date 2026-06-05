@@ -183,6 +183,28 @@ const accounting = {
   getSaleConventions: (token: string) => api.invoke('accounting:getSaleConventions', { token }),
 };
 
+// Bilan comptable (compte de résultat + actif/passif)
+const bilan = {
+  getResultat: (token: string, payload: {
+    periodType: 'month' | 'last-month' | 'quarter' | 'semester' | 'year' | 'custom';
+    periodStart?: string;
+    periodEnd?: string;
+    scope: 'global' | 'lotissement' | 'programme' | 'owner';
+    scopeId?: number;
+  }) => api.invoke('bilan:getResultat', { token, ...payload }),
+  getActifPassif: (token: string, payload: {
+    asOfDate?: string;
+    scope: 'global' | 'lotissement' | 'programme' | 'owner';
+    scopeId?: number;
+  }) => api.invoke('bilan:getActifPassif', { token, ...payload }),
+  export: (token: string, payload: {
+    type: 'resultat' | 'actif-passif';
+    format: 'pdf' | 'xlsx';
+    data: unknown;
+    meta: { title: string; subtitle?: string; scope?: string };
+  }) => api.invoke('bilan:export', { token, ...payload }),
+};
+
 // Communication
 const communication = {
   listTemplates: (token: string, channel?: string) =>
@@ -588,4 +610,4 @@ const documents = {
   pathForFile: (file: File) => webUtils.getPathForFile(file),
 };
 
-contextBridge.exposeInMainWorld('electron', { auth, users, prospects, clients, owners, properties, conventions, conventionTemplates, attestationTemplates, attestations, accounting, communication, crm, archiving, documents, documentExport, lotissements, terrains, programmes, projects, geo, countries, commissions, exporter, invoiceTemplates, treasury, budget, dashboard, settings, reminders });
+contextBridge.exposeInMainWorld('electron', { auth, users, prospects, clients, owners, properties, conventions, conventionTemplates, attestationTemplates, attestations, accounting, bilan, communication, crm, archiving, documents, documentExport, lotissements, terrains, programmes, projects, geo, countries, commissions, exporter, invoiceTemplates, treasury, budget, dashboard, settings, reminders });

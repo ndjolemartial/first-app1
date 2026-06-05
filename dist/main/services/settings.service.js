@@ -154,9 +154,15 @@ exports.SettingsKeys = {
     smsFrom: 'sms.from',
     smsApiLogin: 'sms.api.login', // OVH/Brevo
     smsApiPassword: 'sms.api.password', // secret OVH/Brevo
-    // WhatsApp (Twilio WhatsApp Business — réutilise sms.twilio.accountSid/authToken)
+    // WhatsApp — deux providers supportés :
+    //   - twilio  : réutilise sms.twilio.accountSid/authToken, sender préfixé `whatsapp:`
+    //   - infobip : credentials dédiés (base URL d'API + API key + sender E.164)
     whatsappEnabled: 'whatsapp.enabled', // 'true' | 'false'
-    whatsappFrom: 'whatsapp.from', // ex. 'whatsapp:+14155238886' (sandbox) ou numéro WhatsApp approuvé
+    whatsappProvider: 'whatsapp.provider', // 'twilio' | 'infobip'
+    whatsappFrom: 'whatsapp.from', // sender Twilio (`whatsapp:+...`) ou numéro approuvé
+    whatsappInfobipBaseUrl: 'whatsapp.infobip.baseUrl', // ex. 'xxxxx.api.infobip.com' (sans https://)
+    whatsappInfobipApiKey: 'whatsapp.infobip.apiKey', // secret
+    whatsappInfobipFrom: 'whatsapp.infobip.from', // sender Infobip (numéro E.164 sans `whatsapp:`)
     // Slideshow dashboard (JSON array)
     dashboardSlideshow: 'dashboard.slideshow',
     // Rôles autorisés à voir le slideshow du tableau de bord (JSON array de UserRole)
@@ -178,4 +184,5 @@ exports.SECRET_KEYS = new Set([
     exports.SettingsKeys.emailPassword,
     exports.SettingsKeys.smsAuthToken,
     exports.SettingsKeys.smsApiPassword,
+    exports.SettingsKeys.whatsappInfobipApiKey,
 ]);

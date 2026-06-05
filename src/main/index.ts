@@ -14,6 +14,7 @@ import { registerConventionTemplatesIPC } from './ipc/convention-templates.ipc';
 import { registerAttestationTemplatesIPC } from './ipc/attestation-templates.ipc';
 import { registerAttestationsIPC } from './ipc/attestations.ipc';
 import { registerAccountingIPC } from './ipc/accounting.ipc';
+import { registerBilanIPC } from './ipc/bilan.ipc';
 import { registerCommunicationIPC } from './ipc/communication.ipc';
 import { registerCrmIPC } from './ipc/crm.ipc';
 import { registerArchivingIPC } from './ipc/archiving.ipc';
@@ -93,6 +94,7 @@ function registerIPC(): void {
   registerAttestationTemplatesIPC();
   registerAttestationsIPC();
   registerAccountingIPC();
+  registerBilanIPC();
   registerCommunicationIPC();
   registerCrmIPC();
   registerArchivingIPC();

@@ -10,7 +10,7 @@ import { formatCurrency, formatDate } from '../../../shared/utils/format';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
 } from 'recharts';
-import { TrendingUp, AlertCircle, Clock, FileText, CheckCircle, Printer, ListTodo } from 'lucide-react';
+import { TrendingUp, AlertCircle, Clock, FileText, CheckCircle, Printer, ListTodo, Scale } from 'lucide-react';
 
 const MONTH_LABELS: Record<string, string> = {
   '01': 'Jan', '02': 'Fév', '03': 'Mar', '04': 'Avr',
@@ -26,10 +26,11 @@ const INSTALLMENT_STATUS_LABEL: Record<string, string> = {
 };
 
 const REVENUE_PERIOD_OPTIONS = [
-  { value: 'month', label: 'ce mois' },
-  { value: 'quarter', label: 'ce trimestre' },
-  { value: 'semester', label: 'ce semestre' },
-  { value: 'year', label: 'cette année' },
+  { value: 'month',      label: 'ce mois' },
+  { value: 'last-month', label: 'mois dernier' },
+  { value: 'quarter',    label: 'ce trimestre' },
+  { value: 'semester',   label: 'ce semestre' },
+  { value: 'year',       label: 'cette année' },
 ];
 
 const INVOICE_TYPE_LABEL: Record<string, string> = {
@@ -61,6 +62,9 @@ export default function AccountingDashboardPage() {
       breadcrumbs={[{ label: 'Comptabilité' }]}
       actions={
         <div className="flex gap-2">
+          <Button variant="secondary" icon={<Scale className="h-4 w-4" />} onClick={() => navigate('/accounting/bilan')}>
+            Bilan
+          </Button>
           <Button variant="secondary" onClick={() => navigate('/accounting/installments')}>
             Échéances
           </Button>

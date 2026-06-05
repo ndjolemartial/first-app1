@@ -67,6 +67,7 @@ import InvoicesListPage from './modules/accounting/pages/InvoicesListPage';
 import InvoiceFormPage from './modules/accounting/pages/InvoiceFormPage';
 import InvoiceDetailPage from './modules/accounting/pages/InvoiceDetailPage';
 import InstallmentsPage from './modules/accounting/pages/InstallmentsPage';
+import BilanPage from './modules/accounting/pages/BilanPage';
 
 // Lotissements
 import LotissementsListPage from './modules/lotissements/pages/LotissementsListPage';
@@ -277,6 +278,7 @@ export const router = createHashRouter([
               { path: 'accounting/invoices/new', element: <InvoiceFormPage /> },
               { path: 'accounting/invoices/:id', element: <InvoiceDetailPage /> },
               { path: 'accounting/installments', element: <InstallmentsPage /> },
+              { path: 'accounting/bilan', element: <BilanPage /> },
             ],
           },
 

@@ -128,6 +128,12 @@ const accounting = {
     reinstateInstallment: (token, installmentId) => api.invoke('accounting:reinstateInstallment', { token, installmentId }),
     getSaleConventions: (token) => api.invoke('accounting:getSaleConventions', { token }),
 };
+// Bilan comptable (compte de résultat + actif/passif)
+const bilan = {
+    getResultat: (token, payload) => api.invoke('bilan:getResultat', { token, ...payload }),
+    getActifPassif: (token, payload) => api.invoke('bilan:getActifPassif', { token, ...payload }),
+    export: (token, payload) => api.invoke('bilan:export', { token, ...payload }),
+};
 // Communication
 const communication = {
     listTemplates: (token, channel) => api.invoke('communication:listTemplates', { token, channel }),
@@ -378,4 +384,4 @@ const documents = {
     /** Résout le chemin disque d'un fichier sélectionné/déposé (Electron webUtils). */
     pathForFile: (file) => electron_1.webUtils.getPathForFile(file),
 };
-electron_1.contextBridge.exposeInMainWorld('electron', { auth, users, prospects, clients, owners, properties, conventions, conventionTemplates, attestationTemplates, attestations, accounting, communication, crm, archiving, documents, documentExport, lotissements, terrains, programmes, projects, geo, countries, commissions, exporter, invoiceTemplates, treasury, budget, dashboard, settings, reminders });
+electron_1.contextBridge.exposeInMainWorld('electron', { auth, users, prospects, clients, owners, properties, conventions, conventionTemplates, attestationTemplates, attestations, accounting, bilan, communication, crm, archiving, documents, documentExport, lotissements, terrains, programmes, projects, geo, countries, commissions, exporter, invoiceTemplates, treasury, budget, dashboard, settings, reminders });
