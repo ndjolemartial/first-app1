@@ -411,6 +411,13 @@ const invoiceTemplates = {
     api.invoke('invoiceTemplates:setDefaults', { token, defaults }),
 };
 
+// Modèle d'export de listes
+const listExportTemplates = {
+  list: (token: string) => api.invoke('listExportTemplates:list', { token }),
+  update: (token: string, id: number, payload: object) =>
+    api.invoke('listExportTemplates:update', { token, id, payload }),
+};
+
 // Commissions
 const commissions = {
   getDashboard: (token: string) => api.invoke('commissions:getDashboard', { token }),
@@ -564,6 +571,8 @@ const settings = {
 const documents = {
   uploadIdDocument: (token: string, clientId: number, payload: object) =>
     api.invoke('documents:uploadIdDocument', { token, clientId, ...payload }),
+  uploadClientDoc: (token: string, clientId: number, category: string, payload: object) =>
+    api.invoke('documents:uploadClientDoc', { token, clientId, category, ...payload }),
   getByClient: (token: string, clientId: number) =>
     api.invoke('documents:getByClient', { token, clientId }),
   uploadOwnerDoc: (token: string, ownerId: number, category: string, payload: object) =>
@@ -610,4 +619,4 @@ const documents = {
   pathForFile: (file: File) => webUtils.getPathForFile(file),
 };
 
-contextBridge.exposeInMainWorld('electron', { auth, users, prospects, clients, owners, properties, conventions, conventionTemplates, attestationTemplates, attestations, accounting, bilan, communication, crm, archiving, documents, documentExport, lotissements, terrains, programmes, projects, geo, countries, commissions, exporter, invoiceTemplates, treasury, budget, dashboard, settings, reminders });
+contextBridge.exposeInMainWorld('electron', { auth, users, prospects, clients, owners, properties, conventions, conventionTemplates, attestationTemplates, attestations, accounting, bilan, communication, crm, archiving, documents, documentExport, lotissements, terrains, programmes, projects, geo, countries, commissions, exporter, invoiceTemplates, listExportTemplates, treasury, budget, dashboard, settings, reminders });

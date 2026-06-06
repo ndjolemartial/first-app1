@@ -6,6 +6,7 @@ import { z } from 'zod';
 import PageLayout from '../../../shared/components/layout/PageLayout';
 import Button from '../../../shared/components/ui/Button';
 import Input from '../../../shared/components/ui/Input';
+import { upperField } from '../../../shared/utils/uppercase';
 import Select from '../../../shared/components/ui/Select';
 import Textarea from '../../../shared/components/ui/Textarea';
 import Card from '../../../shared/components/ui/Card';
@@ -128,13 +129,13 @@ export default function ProspectFormPage() {
               label="Nom"
               required
               error={errors.lastName?.message}
-              {...register('lastName')}
+              {...upperField(register('lastName'))}
             />
             <Input
               label="Prénom"
               required
               error={errors.firstName?.message}
-              {...register('firstName')}
+              {...upperField(register('firstName'))}
             />
           </div>
 

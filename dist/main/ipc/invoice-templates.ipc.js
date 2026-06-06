@@ -92,6 +92,7 @@ const updateTemplateSchema = zod_1.z.object({
     layout: zod_1.z.enum(['CLASSIQUE', 'MODERNE', 'COMPACT']).optional(),
     headerHtml: zod_1.z.string().optional(),
     footerHtml: zod_1.z.string().optional(),
+    endOfDocument: zod_1.z.string().optional(),
     accentColor: zod_1.z.string().optional(),
 });
 /**

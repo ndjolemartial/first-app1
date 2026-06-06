@@ -91,6 +91,7 @@ const updateTemplateSchema = z.object({
   layout: z.enum(['CLASSIQUE', 'MODERNE', 'COMPACT']).optional(),
   headerHtml: z.string().optional(),
   footerHtml: z.string().optional(),
+  endOfDocument: z.string().optional(),
   accentColor: z.string().optional(),
 });
 

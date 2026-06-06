@@ -6,6 +6,7 @@ import { z } from 'zod';
 import PageLayout from '../../../shared/components/layout/PageLayout';
 import Button from '../../../shared/components/ui/Button';
 import Input from '../../../shared/components/ui/Input';
+import { upperField } from '../../../shared/utils/uppercase';
 import Select from '../../../shared/components/ui/Select';
 import { FormSearchSelect } from '../../../shared/components/ui/SearchSelect';
 import Textarea from '../../../shared/components/ui/Textarea';
@@ -31,6 +32,12 @@ const schema = z.object({
   entreprise: z.string().optional(),
   registre_de_commerce: z.string().optional(),
   compte_contribuable: z.string().optional(),
+  // Entreprise — représentant légal
+  legalRepFirstName: z.string().optional(),
+  legalRepLastName: z.string().optional(),
+  legalRepPhone: z.string().optional(),
+  legalRepIdNumber: z.string().optional(),
+  legalRepIdTypeId: z.string().optional(),
   email: z.string().optional().or(z.literal('')),
   phone: z.string().optional(),
   mobile: z.string().optional(),
@@ -60,6 +67,16 @@ const schema = z.object({
     }
     if (!data.idNumber || data.idNumber.trim() === '') {
       ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['idNumber'], message: 'Numéro de pièce d’identité requis' });
+    }
+  }
+  // Pour un client entreprise, la pièce d'identité du représentant légal est
+  // obligatoire (alignement sur le module Propriétaires).
+  if (data.type === 'ENTREPRISE') {
+    if (!data.legalRepIdTypeId || data.legalRepIdTypeId.trim() === '') {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['legalRepIdTypeId'], message: 'Type de pièce d’identité du représentant requis' });
+    }
+    if (!data.legalRepIdNumber || data.legalRepIdNumber.trim() === '') {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['legalRepIdNumber'], message: 'Numéro de pièce d’identité du représentant requis' });
     }
   }
 });
@@ -92,6 +109,61 @@ function formatBytes(bytes: number) {
   if (bytes < 1024) return `${bytes} o`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} Ko`;
   return `${(bytes / (1024 * 1024)).toFixed(1)} Mo`;
+}
+
+interface DocUploadFieldProps {
+  label: string;
+  existingName?: string | null;
+  file: File | null;
+  error: string | null;
+  inputRef: React.RefObject<HTMLInputElement | null>;
+  onChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
+  onClear: () => void;
+}
+
+/** Champ de dépôt de fichier réutilisable (pièces jointes du représentant légal). */
+function DocUploadField({ label, existingName, file, error, inputRef, onChange, onClear }: DocUploadFieldProps) {
+  return (
+    <div>
+      <label className="block text-sm font-medium text-slate-700 mb-1">{label}</label>
+      {file ? (
+        <div className="flex items-center gap-2 p-3 border border-blue-200 rounded-lg bg-blue-50">
+          <FileText className="h-4 w-4 text-blue-600 shrink-0" />
+          <span className="text-sm text-blue-800 flex-1 truncate">{file.name} ({formatBytes(file.size)})</span>
+          <button type="button" onClick={onClear} className="text-blue-400 hover:text-blue-600">
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+      ) : existingName ? (
+        <div className="flex items-center gap-2 p-3 border border-slate-200 rounded-lg bg-slate-50">
+          <FileText className="h-4 w-4 text-slate-500 shrink-0" />
+          <span className="text-sm text-slate-700 flex-1 truncate">{existingName}</span>
+          <button
+            type="button"
+            onClick={() => inputRef.current?.click()}
+            className="text-xs text-blue-600 hover:underline"
+          >Remplacer</button>
+        </div>
+      ) : (
+        <button
+          type="button"
+          onClick={() => inputRef.current?.click()}
+          className="w-full flex items-center gap-2 p-3 border-2 border-dashed border-slate-300 rounded-lg text-slate-500 hover:border-blue-400 hover:text-blue-600 transition-colors"
+        >
+          <Upload className="h-4 w-4" />
+          <span className="text-sm">Joindre (JPG, PNG, PDF — max {MAX_MB} Mo)</span>
+        </button>
+      )}
+      <input
+        ref={inputRef}
+        type="file"
+        accept={ACCEPTED_TYPES.join(',')}
+        className="hidden"
+        onChange={onChange}
+      />
+      {error && <p className="mt-1 text-xs text-red-600">{error}</p>}
+    </div>
+  );
 }
 
 export default function ClientFormPage() {
@@ -131,6 +203,18 @@ export default function ClientFormPage() {
   const [existingIdDoc, setExistingIdDoc] = useState<{ name: string; size: number } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // Pièce d'identité du représentant légal (entreprise)
+  const [repIdDocFile, setRepIdDocFile] = useState<File | null>(null);
+  const [repIdDocError, setRepIdDocError] = useState<string | null>(null);
+  const [existingRepIdDoc, setExistingRepIdDoc] = useState<string | null>(null);
+  const repIdDocRef = useRef<HTMLInputElement>(null);
+
+  // Registre de commerce scanné (entreprise)
+  const [rcFile, setRcFile] = useState<File | null>(null);
+  const [rcError, setRcError] = useState<string | null>(null);
+  const [existingRc, setExistingRc] = useState<string | null>(null);
+  const rcRef = useRef<HTMLInputElement>(null);
+
   const { register, handleSubmit, reset, watch, control, setValue, formState: { errors, isSubmitting } } = useForm<FormData>({
     resolver: zodResolver(schema),
     defaultValues: {
@@ -157,7 +241,10 @@ export default function ClientFormPage() {
   useEffect(() => {
     if (isEdit) return;
     const def = idTypes.find((t) => t.isDefault);
-    if (def) setValue('idTypeId', String(def.id));
+    if (def) {
+      setValue('idTypeId', String(def.id));
+      setValue('legalRepIdTypeId', String(def.id));
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [idTypes.length, isEdit]);
 
@@ -176,6 +263,11 @@ export default function ClientFormPage() {
         entreprise:           c.entreprise ?? '',
         registre_de_commerce: c.registre_de_commerce ?? '',
         compte_contribuable:  c.compte_contribuable ?? '',
+        legalRepFirstName:    c.legalRepFirstName ?? '',
+        legalRepLastName:     c.legalRepLastName ?? '',
+        legalRepPhone:        c.legalRepPhone ?? '',
+        legalRepIdNumber:     c.legalRepIdNumber ?? '',
+        legalRepIdTypeId:     c.legalRepIdTypeId != null ? String(c.legalRepIdTypeId) : '',
         email:                c.email ?? '',
         phone:                c.phone ?? '',
         mobile:               c.mobile ?? '',
@@ -198,8 +290,11 @@ export default function ClientFormPage() {
         referrerId:           c.referrerId   != null ? String(c.referrerId)   : '',
       });
       setType(c.type);
-      const idDoc = c.documents?.find((d: any) => d.category === 'identité');
+      const docs: any[] = c.documents ?? [];
+      const idDoc = docs.find((d) => d.category === 'identité');
       if (idDoc) setExistingIdDoc({ name: idDoc.name, size: idDoc.size });
+      setExistingRepIdDoc(docs.find((d) => d.category === 'piece_identite_rep_legal')?.name ?? null);
+      setExistingRc(docs.find((d) => d.category === 'registre_commerce')?.name ?? null);
     }
   }, [res, isEdit, reset]);
 
@@ -240,10 +335,62 @@ export default function ClientFormPage() {
     });
   }
 
+  function makeFileHandler(
+    setFile: (f: File | null) => void,
+    setError: (e: string | null) => void,
+    ref: React.RefObject<HTMLInputElement | null>
+  ) {
+    return (e: React.ChangeEvent<HTMLInputElement>) => {
+      setError(null);
+      const file = e.target.files?.[0];
+      if (!file) return;
+      if (!ACCEPTED_TYPES.includes(file.type)) {
+        setError('Format non accepté. Utilisez JPG, PNG, WEBP ou PDF.');
+        if (ref.current) ref.current.value = '';
+        return;
+      }
+      if (file.size > MAX_MB * 1024 * 1024) {
+        setError(`Fichier trop volumineux (max ${MAX_MB} Mo).`);
+        if (ref.current) ref.current.value = '';
+        return;
+      }
+      setFile(file);
+    };
+  }
+
+  function makeClearHandler(
+    setFile: (f: File | null) => void,
+    setError: (e: string | null) => void,
+    ref: React.RefObject<HTMLInputElement | null>
+  ) {
+    return () => {
+      setFile(null);
+      setError(null);
+      if (ref.current) ref.current.value = '';
+    };
+  }
+
+  /** Upload d'un document client catégorisé (représentant légal, RC scanné…). */
+  async function uploadClientDoc(clientId: number, file: File | null, category: string) {
+    if (!file) return;
+    const base64 = await new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve((reader.result as string).split(',')[1]);
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+    await (window.electron as any).documents.uploadClientDoc(token, clientId, category, {
+      fileName: file.name,
+      fileType: file.type,
+      fileSize: file.size,
+      fileData: base64,
+    });
+  }
+
   const onSubmit = async (data: FormData) => {
     // Convertit les sélecteurs d'affectation (chaînes) en number|null|undefined.
     // Si l'utilisateur n'a pas le droit d'affecter, on retire ces champs du payload.
-    const { assignedToId, referrerId, idTypeId, ...rest } = data;
+    const { assignedToId, referrerId, idTypeId, legalRepIdTypeId, ...rest } = data;
     const payload: any = { ...rest };
     // Convertit YYYY-MM-DD en ISO datetime attendu par le schéma Zod du back-end.
     if (payload.birthDate) {
@@ -252,6 +399,7 @@ export default function ClientFormPage() {
       delete payload.birthDate;
     }
     payload.idTypeId = idTypeId ? Number(idTypeId) : null;
+    payload.legalRepIdTypeId = legalRepIdTypeId ? Number(legalRepIdTypeId) : null;
     if (canAssign) {
       payload.assignedToId = assignedToId ? Number(assignedToId) : null;
       payload.referrerId   = referrerId   ? Number(referrerId)   : null;
@@ -259,10 +407,24 @@ export default function ClientFormPage() {
     let r: any;
     if (isEdit) {
       r = await update.mutateAsync({ id: Number(id), payload });
-      if (r.success && idDocFile) await uploadIdDocument(Number(id));
+      if (r.success) {
+        const cid = Number(id);
+        if (idDocFile) await uploadIdDocument(cid);
+        await Promise.all([
+          uploadClientDoc(cid, repIdDocFile, 'piece_identite_rep_legal'),
+          uploadClientDoc(cid, rcFile, 'registre_commerce'),
+        ]);
+      }
     } else {
       r = await create.mutateAsync(payload);
-      if (r.success && idDocFile) await uploadIdDocument(r.data.id);
+      if (r.success) {
+        const cid = r.data.id;
+        if (idDocFile) await uploadIdDocument(cid);
+        await Promise.all([
+          uploadClientDoc(cid, repIdDocFile, 'piece_identite_rep_legal'),
+          uploadClientDoc(cid, rcFile, 'registre_commerce'),
+        ]);
+      }
     }
     if (r.success) navigate('/clients');
   };
@@ -283,8 +445,8 @@ export default function ClientFormPage() {
                 <Select label="Statut conjugal" options={STATUT_CONJUGAL_OPTIONS} {...register('statutConjugal')} />
               </div>
               <div className="grid grid-cols-2 gap-4">
-                <Input label="Nom" {...register('lastName')} />
-                <Input label="Prénom" {...register('firstName')} />
+                <Input label="Nom" {...upperField(register('lastName'))} />
+                <Input label="Prénom" {...upperField(register('firstName'))} />
               </div>
               <div className="grid grid-cols-3 gap-4">
                 <Select label="Type de pièce d'identité" required options={idTypeOptions} error={errors.idTypeId?.message} {...register('idTypeId')} />
@@ -357,19 +519,30 @@ export default function ClientFormPage() {
               <div className="border-t border-slate-100 pt-4">
                 <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-3">Filiation</p>
                 <div className="grid grid-cols-2 gap-4">
-                  <Input label="Nom du père" {...register('fatherLastName')} />
-                  <Input label="Prénom du père" {...register('fatherFirstName')} />
+                  <Input label="Nom du père" {...upperField(register('fatherLastName'))} />
+                  <Input label="Prénom du père" {...upperField(register('fatherFirstName'))} />
                 </div>
                 <div className="grid grid-cols-2 gap-4 mt-4">
-                  <Input label="Nom de la mère" {...register('motherLastName')} />
-                  <Input label="Prénom de la mère" {...register('motherFirstName')} />
+                  <Input label="Nom de la mère" {...upperField(register('motherLastName'))} />
+                  <Input label="Prénom de la mère" {...upperField(register('motherFirstName'))} />
                 </div>
               </div>
             </>
           ) : (
             <>
-              <Input label="Nom de l'entreprise" required {...register('entreprise')} />
-              <Input label="Registre de commerce" {...register('registre_de_commerce')} />
+              <Input label="Nom de l'entreprise" required {...upperField(register('entreprise'))} />
+              <div className="grid grid-cols-2 gap-4">
+                <Input label="Numéro registre de commerce" {...register('registre_de_commerce')} />
+                <DocUploadField
+                  label="Registre de commerce scanné"
+                  existingName={existingRc}
+                  file={rcFile}
+                  error={rcError}
+                  inputRef={rcRef}
+                  onChange={makeFileHandler(setRcFile, setRcError, rcRef)}
+                  onClear={makeClearHandler(setRcFile, setRcError, rcRef)}
+                />
+              </div>
               <Input label="Compte contribuable" {...register('compte_contribuable')} />
             </>
           )}
@@ -384,6 +557,34 @@ export default function ClientFormPage() {
             <Input label="Ville" {...register('city')} />
             <FormSearchSelect control={control} name="country" label="Pays" options={countryOptions} />
           </div>
+
+          {/* Représentant légal — uniquement pour un client entreprise */}
+          {type === 'ENTREPRISE' && (
+            <div className="border-t border-slate-100 pt-4">
+              <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-3">Représentant légal</p>
+              <div className="space-y-4">
+                <div className="grid grid-cols-2 gap-4">
+                  <Input label="Nom" {...upperField(register('legalRepLastName'))} />
+                  <Input label="Prénom" {...upperField(register('legalRepFirstName'))} />
+                </div>
+                <Input label="Contact (téléphone/email)" {...register('legalRepPhone')} />
+                <div className="grid grid-cols-2 gap-4">
+                  <Select label="Type de pièce d'identité" required options={idTypeOptions} error={errors.legalRepIdTypeId?.message} {...register('legalRepIdTypeId')} />
+                  <Input label="Numéro pièce d'identité" required placeholder="CI/Passeport/…" error={errors.legalRepIdNumber?.message} {...register('legalRepIdNumber')} />
+                </div>
+                <DocUploadField
+                  label="Pièce d'identité du représentant légal"
+                  existingName={existingRepIdDoc}
+                  file={repIdDocFile}
+                  error={repIdDocError}
+                  inputRef={repIdDocRef}
+                  onChange={makeFileHandler(setRepIdDocFile, setRepIdDocError, repIdDocRef)}
+                  onClear={makeClearHandler(setRepIdDocFile, setRepIdDocError, repIdDocRef)}
+                />
+              </div>
+            </div>
+          )}
+
           <Textarea label="Notes" rows={3} {...register('notes')} />
           <Select label="Statut" options={STATUS_OPTIONS} {...register('status')} />
 

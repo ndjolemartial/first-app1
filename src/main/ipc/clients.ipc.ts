@@ -15,6 +15,12 @@ const clientBaseSchema = z.object({
   entreprise: z.string().optional(),
   registre_de_commerce: z.string().optional(),
   compte_contribuable: z.string().optional(),
+  // Entreprise — représentant légal
+  legalRepFirstName: z.string().optional(),
+  legalRepLastName: z.string().optional(),
+  legalRepPhone: z.string().optional(),
+  legalRepIdNumber: z.string().optional(),
+  legalRepIdTypeId: z.number().int().positive().nullable().optional(),
   email: z.string().email().optional().or(z.literal('')),
   phone: z.string().optional(),
   mobile: z.string().optional(),
@@ -50,6 +56,16 @@ const requireIdForIndividuel = (data: any, ctx: z.RefinementCtx): void => {
     }
     if (!data.idNumber || String(data.idNumber).trim() === '') {
       ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['idNumber'], message: 'Numéro de pièce d’identité requis' });
+    }
+  }
+  // Client entreprise : pièce d'identité du représentant légal obligatoire
+  // (alignement sur le module Propriétaires).
+  if (data.type === 'ENTREPRISE') {
+    if (data.legalRepIdTypeId == null) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['legalRepIdTypeId'], message: 'Type de pièce d’identité du représentant requis' });
+    }
+    if (!data.legalRepIdNumber || String(data.legalRepIdNumber).trim() === '') {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['legalRepIdNumber'], message: 'Numéro de pièce d’identité du représentant requis' });
     }
   }
 };
@@ -218,6 +234,7 @@ export function registerClientsIPC(): void {
           assignedTo: { select: USER_BRIEF_SELECT },
           referrer:   { select: REFERRER_BRIEF_SELECT },
           idType:     { select: { id: true, code: true, label: true } },
+          legalRepIdType: { select: { id: true, code: true, label: true } },
         },
       });
       if (!client) return { success: false, error: 'Client introuvable' };

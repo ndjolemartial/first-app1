@@ -194,6 +194,54 @@ export function registerDocumentsIPC(): void {
   });
 
   /**
+   * Upload d'un document pour un client, catégorisé.
+   * category: 'piece_identite_rep_legal' | 'registre_commerce' | …
+   * (la pièce d'identité d'un client particulier reste gérée par
+   *  `documents:uploadIdDocument`, catégorie « identité »).
+   */
+  ipcMain.handle('documents:uploadClientDoc', async (_event, { token, clientId, category, fileName, fileType, fileSize, fileData }: any) => {
+    try {
+      const session = getSession(token);
+      if (!session) return { success: false, error: 'Session expirée' };
+      checkRole(session, WRITE_ROLES);
+
+      const maxBytes = parseInt(process.env.MAX_FILE_SIZE_MB ?? '10', 10) * 1024 * 1024;
+      if (fileSize > maxBytes) return { success: false, error: `Fichier trop volumineux (max ${process.env.MAX_FILE_SIZE_MB ?? 10} Mo)` };
+
+      const storagePath = process.env.STORAGE_PATH ?? './data/storage';
+      const dir = path.resolve(storagePath, 'clients', String(clientId), category);
+      fs.mkdirSync(dir, { recursive: true });
+
+      const ext = path.extname(fileName);
+      const uniqueName = `${category}_${Date.now()}${ext}`;
+      const absPath = path.join(dir, uniqueName);
+      const relativePath = path.posix.join('clients', String(clientId), category, uniqueName);
+
+      fs.writeFileSync(absPath, Buffer.from(fileData, 'base64'));
+
+      const db = getDb();
+
+      // Remplace l'ancien document de même catégorie pour ce client.
+      const oldDocs = await db.document.findMany({ where: { clientId, category }, select: { id: true, path: true } });
+      for (const old of oldDocs) {
+        const oldAbs = path.resolve(storagePath, old.path);
+        if (fs.existsSync(oldAbs)) fs.unlinkSync(oldAbs);
+      }
+      await db.document.deleteMany({ where: { clientId, category } });
+
+      const document = await db.document.create({
+        data: { name: fileName, type: fileType, path: relativePath, size: fileSize, category, clientId },
+      });
+
+      logger.info(`Document client #${clientId} [${category}] enregistré : ${relativePath}`);
+      return { success: true, data: document };
+    } catch (error: any) {
+      logger.error('documents:uploadClientDoc error', error.message);
+      return { success: false, error: error.message };
+    }
+  });
+
+  /**
    * Upload d'un document pour un propriétaire.
    * category: 'piece_identite' | 'piece_identite_rep_legal' | 'registre_commerce'
    */

@@ -134,6 +134,12 @@ model Client {
   entreprise           String?
   registre_de_commerce String?
   compte_contribuable  String?
+  // Entreprise — représentant légal
+  legalRepFirstName    String?
+  legalRepLastName     String?
+  legalRepPhone        String?
+  legalRepIdNumber     String?
+  legalRepIdTypeId     Int?
   email                String?
   phone                String?
   mobile               String?
@@ -168,6 +174,7 @@ model Client {
   assignedTo           User?             @relation("ClientAssignedTo", fields: [assignedToId], references: [id])
   referrer             BusinessReferrer? @relation("ClientReferrer", fields: [referrerId], references: [id])
   idType               IdDocumentType?   @relation("ClientIdType", fields: [idTypeId], references: [id])
+  legalRepIdType       IdDocumentType?   @relation("ClientLegalRepIdType", fields: [legalRepIdTypeId], references: [id])
   conventions          Convention[]      @relation("ConventionClient")
   secondaryConventions Convention[]      @relation("ConventionSecondaryClient")
   documents            Document[]
@@ -894,6 +901,7 @@ model InvoiceTemplate {
   layout      InvoiceTemplateLayout  @default(CLASSIQUE)
   headerHtml  String?               @db.LongText  // En-tête éditable (HTML)
   footerHtml  String?               @db.LongText  // Pied de page éditable (HTML)
+  endOfDocument String?             @db.LongText  // Bloc « Fin du document » (HTML)
   accentColor String                @default("#1E3A5F")
   isActive    Boolean               @default(true)
   createdAt   DateTime              @default(now())
@@ -904,6 +912,32 @@ enum InvoiceTemplateLayout {
   CLASSIQUE
   MODERNE
   COMPACT
+}
+
+// ── MODÈLE D'EXPORT DE LISTES ─────────────────────────────────
+// Modèle unique et éditable appliqué aux exports PDF / Excel des listes
+// (clients, prospects, biens, etc.). Personnalise l'orientation, la couleur
+// d'accent, l'en-tête et le pied de page.
+model ListExportTemplate {
+  id              Int                   @id @default(autoincrement())
+  uuid            String                @unique @default(cuid())
+  name            String
+  orientation     ListExportOrientation @default(PAYSAGE)
+  accentColor     String                @default("#1E3A5F")
+  headerHtml      String?               @db.LongText  // En-tête éditable (HTML)
+  footerHtml      String?               @db.LongText  // Pied de page éditable (HTML)
+  endOfDocument   String?               @db.LongText  // Bloc « Fin du document » (HTML)
+  showLogo        Boolean               @default(true) // Afficher le logo (haut à droite)
+  showGeneratedAt Boolean               @default(true) // Afficher « Généré le … »
+  showRowCount    Boolean               @default(true) // Afficher le nombre de lignes
+  isActive        Boolean               @default(true)
+  createdAt       DateTime              @default(now())
+  updatedAt       DateTime              @updatedAt
+}
+
+enum ListExportOrientation {
+  PORTRAIT
+  PAYSAGE
 }
 
 // ── CRM & COMMUNICATION ───────────────────────────────────────
@@ -1258,6 +1292,7 @@ model IdDocumentType {
   deletedAt   DateTime?
 
   clients          Client[] @relation("ClientIdType")
+  clientsLegalReps Client[] @relation("ClientLegalRepIdType")
   owners           Owner[]  @relation("OwnerIdType")
   ownersLegalReps  Owner[]  @relation("OwnerLegalRepIdType")
 }

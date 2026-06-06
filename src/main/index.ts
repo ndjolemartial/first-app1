@@ -28,6 +28,7 @@ import { registerCountriesIPC } from './ipc/countries.ipc';
 import { registerCommissionsIPC } from './ipc/commissions.ipc';
 import { registerExportIPC } from './ipc/export.ipc';
 import { registerInvoiceTemplatesIPC } from './ipc/invoice-templates.ipc';
+import { registerListExportTemplatesIPC } from './ipc/list-export-templates.ipc';
 import { registerTreasuryIPC } from './ipc/treasury.ipc';
 import { registerBudgetIPC } from './ipc/budget.ipc';
 import { registerDashboardIPC } from './ipc/dashboard.ipc';
@@ -108,6 +109,7 @@ function registerIPC(): void {
   registerCommissionsIPC();
   registerExportIPC();
   registerInvoiceTemplatesIPC();
+  registerListExportTemplatesIPC();
   registerTreasuryIPC();
   registerBudgetIPC();
   registerDashboardIPC();

@@ -10,6 +10,7 @@ import EmailSettingsTab                from '../components/EmailSettingsTab';
 import SmsSettingsTab                  from '../components/SmsSettingsTab';
 import SlideshowSettingsTab            from '../components/SlideshowSettingsTab';
 import InvoiceTemplatesSettingsTab     from '../components/InvoiceTemplatesSettingsTab';
+import ListExportTemplatesSettingsTab  from '../components/ListExportTemplatesSettingsTab';
 import ConventionTemplatesSettingsTab  from '../components/ConventionTemplatesSettingsTab';
 import AttestationTemplatesSettingsTab from '../components/AttestationTemplatesSettingsTab';
 import ProjectTypesSettingsTab         from '../components/ProjectTypesSettingsTab';
@@ -28,6 +29,7 @@ type TabKey =
   | 'sms'
   | 'slideshow'
   | 'invoiceTemplates'
+  | 'listExportTemplates'
   | 'conventionTemplates'
   | 'attestationTemplates'
   | 'projectTypes'
@@ -73,6 +75,7 @@ const TABS: TabDef[] = [
   { key: 'slideshow',            label: 'Slideshow dashboard',     icon: <Images className="h-4 w-4" /> },
   // ── Groupe « Modèles d'imprimés » ───────────────────────────
   { key: 'invoiceTemplates',     label: 'Modèles de factures',     icon: <FileText className="h-4 w-4" />,      group: 'printedTemplates' },
+  { key: 'listExportTemplates',  label: 'Modèles export de listes', icon: <Printer className="h-4 w-4" />,      group: 'printedTemplates' },
   { key: 'conventionTemplates',  label: 'Modèles de conventions',  icon: <FileSignature className="h-4 w-4" />, group: 'printedTemplates' },
   { key: 'attestationTemplates', label: "Modèles d'attestations",  icon: <Award className="h-4 w-4" />,         group: 'printedTemplates' },
   { key: 'projectTypes',         label: 'Types de projets',        icon: <Briefcase className="h-4 w-4" /> },
@@ -226,6 +229,7 @@ export default function SettingsPage() {
           {active === 'sms'                  && <SmsSettingsTab />}
           {active === 'slideshow'            && <SlideshowSettingsTab />}
           {active === 'invoiceTemplates'     && <InvoiceTemplatesSettingsTab />}
+          {active === 'listExportTemplates'  && <ListExportTemplatesSettingsTab />}
           {active === 'conventionTemplates'  && <ConventionTemplatesSettingsTab />}
           {active === 'attestationTemplates' && <AttestationTemplatesSettingsTab />}
           {active === 'projectTypes'         && <ProjectTypesSettingsTab />}

@@ -33,6 +33,7 @@ const countries_ipc_1 = require("./ipc/countries.ipc");
 const commissions_ipc_1 = require("./ipc/commissions.ipc");
 const export_ipc_1 = require("./ipc/export.ipc");
 const invoice_templates_ipc_1 = require("./ipc/invoice-templates.ipc");
+const list_export_templates_ipc_1 = require("./ipc/list-export-templates.ipc");
 const treasury_ipc_1 = require("./ipc/treasury.ipc");
 const budget_ipc_1 = require("./ipc/budget.ipc");
 const dashboard_ipc_1 = require("./ipc/dashboard.ipc");
@@ -107,6 +108,7 @@ function registerIPC() {
     (0, commissions_ipc_1.registerCommissionsIPC)();
     (0, export_ipc_1.registerExportIPC)();
     (0, invoice_templates_ipc_1.registerInvoiceTemplatesIPC)();
+    (0, list_export_templates_ipc_1.registerListExportTemplatesIPC)();
     (0, treasury_ipc_1.registerTreasuryIPC)();
     (0, budget_ipc_1.registerBudgetIPC)();
     (0, dashboard_ipc_1.registerDashboardIPC)();

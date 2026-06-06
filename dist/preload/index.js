@@ -252,6 +252,11 @@ const invoiceTemplates = {
     update: (token, id, payload) => api.invoke('invoiceTemplates:update', { token, id, payload }),
     setDefaults: (token, defaults) => api.invoke('invoiceTemplates:setDefaults', { token, defaults }),
 };
+// Modèle d'export de listes
+const listExportTemplates = {
+    list: (token) => api.invoke('listExportTemplates:list', { token }),
+    update: (token, id, payload) => api.invoke('listExportTemplates:update', { token, id, payload }),
+};
 // Commissions
 const commissions = {
     getDashboard: (token) => api.invoke('commissions:getDashboard', { token }),
@@ -353,6 +358,7 @@ const settings = {
 // Documents
 const documents = {
     uploadIdDocument: (token, clientId, payload) => api.invoke('documents:uploadIdDocument', { token, clientId, ...payload }),
+    uploadClientDoc: (token, clientId, category, payload) => api.invoke('documents:uploadClientDoc', { token, clientId, category, ...payload }),
     getByClient: (token, clientId) => api.invoke('documents:getByClient', { token, clientId }),
     uploadOwnerDoc: (token, ownerId, category, payload) => api.invoke('documents:uploadOwnerDoc', { token, ownerId, category, ...payload }),
     getByOwner: (token, ownerId) => api.invoke('documents:getByOwner', { token, ownerId }),
@@ -384,4 +390,4 @@ const documents = {
     /** Résout le chemin disque d'un fichier sélectionné/déposé (Electron webUtils). */
     pathForFile: (file) => electron_1.webUtils.getPathForFile(file),
 };
-electron_1.contextBridge.exposeInMainWorld('electron', { auth, users, prospects, clients, owners, properties, conventions, conventionTemplates, attestationTemplates, attestations, accounting, bilan, communication, crm, archiving, documents, documentExport, lotissements, terrains, programmes, projects, geo, countries, commissions, exporter, invoiceTemplates, treasury, budget, dashboard, settings, reminders });
+electron_1.contextBridge.exposeInMainWorld('electron', { auth, users, prospects, clients, owners, properties, conventions, conventionTemplates, attestationTemplates, attestations, accounting, bilan, communication, crm, archiving, documents, documentExport, lotissements, terrains, programmes, projects, geo, countries, commissions, exporter, invoiceTemplates, listExportTemplates, treasury, budget, dashboard, settings, reminders });

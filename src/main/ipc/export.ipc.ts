@@ -3,12 +3,28 @@ import path from 'path';
 import fs from 'fs';
 import ExcelJS from 'exceljs';
 import { getSession } from '../services/auth.service';
+import { getDb } from '../services/db.service';
 import { htmlToPdf } from '../services/pdf.service';
 import { getThemeForUser, hexToArgb, type ThemePalette } from '../services/theme.service';
+import { getSettings, SettingsKeys } from '../services/settings.service';
+import { resolveStoragePath } from '../services/storage.service';
+import { resolveListExportTemplate } from './list-export-templates.ipc';
 import logger from '../utils/logger';
 
 /** Format d'export pris en charge. */
 type ExportFormat = 'pdf' | 'xlsx';
+
+/** Sous-ensemble du modèle d'export de listes utilisé pour le rendu. */
+interface ExportTemplate {
+  orientation: string;
+  accentColor: string;
+  headerHtml: string | null;
+  footerHtml: string | null;
+  endOfDocument: string | null;
+  showLogo: boolean;
+  showGeneratedAt: boolean;
+  showRowCount: boolean;
+}
 
 interface ExportPayload {
   token: string;
@@ -27,11 +43,52 @@ interface ExportPayload {
   totalRow?: string[];
 }
 
+/** Convertit un fragment HTML en texte brut (pour l'en-tête / pied Excel). */
+function htmlToText(html: string | null | undefined): string {
+  if (!html) return '';
+  return String(html)
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<\/(p|div|h[1-6]|li)>/gi, '\n')
+    .replace(/<[^>]+>/g, '')
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&amp;/gi, '&')
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>')
+    .replace(/[ \t]+/g, ' ')
+    .replace(/\n\s*\n+/g, '\n')
+    .trim();
+}
+
+/** Charge le logo de l'entreprise en data-URI (`data:image/...;base64,...`) ou `null`. */
+async function loadCompanyLogo(): Promise<string | null> {
+  try {
+    const map = await getSettings([SettingsKeys.companyLogo]);
+    const logoRel = map[SettingsKeys.companyLogo];
+    if (!logoRel) return null;
+    const abs = resolveStoragePath(logoRel);
+    if (!fs.existsSync(abs)) return null;
+    const buf = fs.readFileSync(abs);
+    const ext = path.extname(logoRel).toLowerCase().replace('.', '') || 'png';
+    const mime = ext === 'svg' ? 'image/svg+xml' : `image/${ext === 'jpg' ? 'jpeg' : ext}`;
+    return `data:${mime};base64,${buf.toString('base64')}`;
+  } catch {
+    return null;
+  }
+}
+
+/** Construit la ligne de métadonnées selon les options du modèle. */
+function buildMeta(p: ExportPayload, tpl: ExportTemplate): string {
+  const parts: string[] = [];
+  if (tpl.showGeneratedAt) parts.push(`Généré le ${new Date().toLocaleString('fr-FR')}`);
+  if (tpl.showRowCount) parts.push(`${p.rows.length} ligne(s)`);
+  return parts.join(' — ');
+}
+
 /**
  * Construit un classeur Excel (.xlsx) à partir des données tabulaires.
  */
-async function buildXlsx(p: ExportPayload, theme: ThemePalette): Promise<Buffer> {
-  const NAVY = hexToArgb(theme.primary);
+async function buildXlsx(p: ExportPayload, theme: ThemePalette, tpl: ExportTemplate): Promise<Buffer> {
+  const NAVY = hexToArgb(tpl.accentColor || theme.primary);
   const { title, subtitle, headers, rows, totalRow } = p;
   const wb = new ExcelJS.Workbook();
   wb.creator = 'Afrikimmo-App';
@@ -40,6 +97,19 @@ async function buildXlsx(p: ExportPayload, theme: ThemePalette): Promise<Buffer>
   const colCount = Math.max(headers.length, 1);
 
   let r = 1;
+
+  // En-tête du modèle (texte) au-dessus du titre.
+  const headerText = htmlToText(tpl.headerHtml);
+  if (headerText) {
+    for (const line of headerText.split('\n')) {
+      ws.mergeCells(r, 1, r, colCount);
+      const cell = ws.getCell(r, 1);
+      cell.value = line;
+      cell.font = { bold: true, size: 11, color: { argb: NAVY } };
+      r++;
+    }
+  }
+
   ws.mergeCells(r, 1, r, colCount);
   const titleCell = ws.getCell(r, 1);
   titleCell.value = title;
@@ -54,11 +124,15 @@ async function buildXlsx(p: ExportPayload, theme: ThemePalette): Promise<Buffer>
     r++;
   }
 
-  ws.mergeCells(r, 1, r, colCount);
-  const metaCell = ws.getCell(r, 1);
-  metaCell.value = `Généré le ${new Date().toLocaleString('fr-FR')} — ${rows.length} ligne(s)`;
-  metaCell.font = { size: 9, color: { argb: 'FF94A3B8' } };
-  r += 2; // ligne vide de séparation
+  const meta = buildMeta(p, tpl);
+  if (meta) {
+    ws.mergeCells(r, 1, r, colCount);
+    const metaCell = ws.getCell(r, 1);
+    metaCell.value = meta;
+    metaCell.font = { size: 9, color: { argb: 'FF94A3B8' } };
+    r++;
+  }
+  r++; // ligne vide de séparation
 
   const thin = { style: 'thin' as const, color: { argb: 'FFE2E8F0' } };
   const border = { top: thin, left: thin, bottom: thin, right: thin };
@@ -104,6 +178,32 @@ async function buildXlsx(p: ExportPayload, theme: ThemePalette): Promise<Buffer>
     r++;
   }
 
+  // Bloc « Fin du document » (texte) sous le tableau.
+  const endText = htmlToText(tpl.endOfDocument);
+  if (endText) {
+    r++; // ligne vide de séparation
+    for (const line of endText.split('\n')) {
+      ws.mergeCells(r, 1, r, colCount);
+      const cell = ws.getCell(r, 1);
+      cell.value = line;
+      cell.font = { size: 10, color: { argb: 'FF0F172A' } };
+      r++;
+    }
+  }
+
+  // Pied de page du modèle (texte) sous le tableau.
+  const footerText = htmlToText(tpl.footerHtml);
+  if (footerText) {
+    r++; // ligne vide de séparation
+    for (const line of footerText.split('\n')) {
+      ws.mergeCells(r, 1, r, colCount);
+      const cell = ws.getCell(r, 1);
+      cell.value = line;
+      cell.font = { size: 9, italic: true, color: { argb: 'FF64748B' } };
+      r++;
+    }
+  }
+
   headers.forEach((h, i) => {
     let maxLen = h.length;
     for (const row of rows) {
@@ -130,26 +230,41 @@ function escapeHtml(value: unknown): string {
 }
 
 /**
- * Construit le document HTML imprimable pour la génération PDF. Les couleurs
- * d'en-tête et accents reprennent le thème actif de l'utilisateur.
+ * Construit le document HTML imprimable pour la génération PDF. La couleur
+ * d'accent, l'en-tête et le pied de page proviennent du modèle d'export ;
+ * les nuances secondaires reprennent le thème actif de l'utilisateur.
  */
-function buildHtml(p: ExportPayload, theme: ThemePalette): string {
+function buildHtml(
+  p: ExportPayload,
+  theme: ThemePalette,
+  tpl: ExportTemplate,
+  logoDataUri: string | null,
+): string {
   const { title, subtitle, headers, rows, totalRow } = p;
-  const meta = `Généré le ${new Date().toLocaleString('fr-FR')} — ${rows.length} ligne(s)`;
+  const meta = buildMeta(p, tpl);
   const thead = headers.map((h) => `<th>${escapeHtml(h)}</th>`).join('');
   const tbody =
     rows.map((row) => `<tr>${row.map((c) => `<td>${escapeHtml(c)}</td>`).join('')}</tr>`).join('') +
     (totalRow && totalRow.length
       ? `<tr class="total-row">${totalRow.map((c) => `<td>${escapeHtml(c)}</td>`).join('')}</tr>`
       : '');
-  const primary  = theme.primary;
-  const accent   = theme.accent;
+  // La couleur d'accent du modèle pilote l'en-tête de tableau et le titre.
+  const primary  = tpl.accentColor || theme.primary;
+  const accent   = tpl.accentColor || theme.accent;
   const muted    = theme.textMuted;
   const surface  = theme.surface;
   const border   = theme.border;
+  const headerHtml = (tpl.headerHtml ?? '').trim();
+  const footerHtml = (tpl.footerHtml ?? '').trim();
+  const endOfDocument = (tpl.endOfDocument ?? '').trim();
   return `<!DOCTYPE html>
 <html lang="fr"><head><meta charset="utf-8"><style>
   body { font-family: 'Segoe UI', Arial, sans-serif; color: #0f172a; margin: 0; }
+  .doc-logo { float: right; margin: 0 0 8px 12px; }
+  .doc-logo img { max-height: 64px; max-width: 170px; }
+  .doc-header { color: ${primary}; font-size: 11px; margin-bottom: 8px; }
+  .doc-endofdoc { color: #0f172a; font-size: 10px; margin-top: 16px; }
+  .doc-footer { color: ${muted}; font-size: 9px; margin-top: 12px; border-top: 1px solid ${border}; padding-top: 6px; }
   h1 { font-size: 16px; color: ${primary}; margin: 0 0 4px; border-bottom: 2px solid ${accent}; padding-bottom: 4px; display: inline-block; }
   .sub { color: ${muted}; font-style: italic; font-size: 10px; margin-bottom: 2px; }
   .meta { color: ${muted}; opacity: .7; font-size: 9px; margin-bottom: 12px; }
@@ -161,19 +276,41 @@ function buildHtml(p: ExportPayload, theme: ThemePalette): string {
   tbody tr:nth-child(even) td { background: ${surface}; }
   tbody tr.total-row td { background: ${border}; font-weight: bold; color: ${primary}; font-size: 10px; }
 </style></head><body>
+  ${logoDataUri ? `<div class="doc-logo"><img src="${logoDataUri}"/></div>` : ''}
+  ${headerHtml ? `<div class="doc-header">${headerHtml}</div>` : ''}
   <h1>${escapeHtml(title)}</h1>
   ${subtitle ? `<div class="sub">${escapeHtml(subtitle)}</div>` : ''}
-  <div class="meta">${escapeHtml(meta)}</div>
+  ${meta ? `<div class="meta">${escapeHtml(meta)}</div>` : ''}
   <table><thead><tr>${thead}</tr></thead><tbody>${tbody}</tbody></table>
+  ${endOfDocument ? `<div class="doc-endofdoc">${endOfDocument}</div>` : ''}
+  ${footerHtml ? `<div class="doc-footer">${footerHtml}</div>` : ''}
 </body></html>`;
 }
 
 /**
- * Génère un PDF paysage de la liste exportée.
+ * Génère un PDF de la liste exportée. L'orientation provient du modèle.
  */
-async function buildPdf(p: ExportPayload, theme: ThemePalette): Promise<Buffer> {
-  return htmlToPdf(buildHtml(p, theme), { landscape: true });
+async function buildPdf(
+  p: ExportPayload,
+  theme: ThemePalette,
+  tpl: ExportTemplate,
+  logoDataUri: string | null,
+): Promise<Buffer> {
+  const landscape = tpl.orientation !== 'PORTRAIT';
+  return htmlToPdf(buildHtml(p, theme, tpl, logoDataUri), { landscape });
 }
+
+/** Valeurs de repli si aucun modèle n'est disponible. */
+const FALLBACK_TEMPLATE: ExportTemplate = {
+  orientation: 'PAYSAGE',
+  accentColor: '#1E3A5F',
+  headerHtml: null,
+  footerHtml: null,
+  endOfDocument: null,
+  showLogo: true,
+  showGeneratedAt: true,
+  showRowCount: true,
+};
 
 /**
  * Enregistre le handler IPC d'export de listes (PDF / Excel).
@@ -204,8 +341,25 @@ export function registerExportIPC(): void {
       }
 
       const theme = await getThemeForUser(session.userId);
+      const resolved = await resolveListExportTemplate(getDb());
+      const tpl: ExportTemplate = resolved
+        ? {
+            orientation: resolved.orientation,
+            accentColor: resolved.accentColor,
+            headerHtml: resolved.headerHtml,
+            footerHtml: resolved.footerHtml,
+            endOfDocument: resolved.endOfDocument,
+            showLogo: resolved.showLogo,
+            showGeneratedAt: resolved.showGeneratedAt,
+            showRowCount: resolved.showRowCount,
+          }
+        : FALLBACK_TEMPLATE;
+
+      const logoDataUri = payload.format === 'pdf' && tpl.showLogo ? await loadCompanyLogo() : null;
       const fileBuffer =
-        payload.format === 'xlsx' ? await buildXlsx(payload, theme) : await buildPdf(payload, theme);
+        payload.format === 'xlsx'
+          ? await buildXlsx(payload, theme, tpl)
+          : await buildPdf(payload, theme, tpl, logoDataUri);
       fs.writeFileSync(result.filePath, fileBuffer);
       logger.info(`Export ${ext} généré: ${result.filePath} (${payload.rows.length} lignes)`);
       return { success: true, data: { path: result.filePath } };

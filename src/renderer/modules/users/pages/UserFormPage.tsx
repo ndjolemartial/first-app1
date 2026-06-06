@@ -6,6 +6,7 @@ import { z } from 'zod';
 import PageLayout from '../../../shared/components/layout/PageLayout';
 import Button from '../../../shared/components/ui/Button';
 import Input from '../../../shared/components/ui/Input';
+import { upperField } from '../../../shared/utils/uppercase';
 import Select from '../../../shared/components/ui/Select';
 import Card from '../../../shared/components/ui/Card';
 import { useUser, useCreateUser, useUpdateUser } from '../hooks/useUsers';
@@ -123,8 +124,8 @@ export default function UserFormPage() {
             <Input label="Fonction" placeholder="Ex: Agent commercial" error={errors.fonction?.message} {...register('fonction')} />
           </div>
           <div className="grid grid-cols-2 gap-4">
-            <Input label="Nom" required error={errors.lastName?.message} {...register('lastName')} />
-            <Input label="Prénom" required error={errors.firstName?.message} {...register('firstName')} />
+            <Input label="Nom" required error={errors.lastName?.message} {...upperField(register('lastName'))} />
+            <Input label="Prénom" required error={errors.firstName?.message} {...upperField(register('firstName'))} />
           </div>
           <div className="grid grid-cols-2 gap-4">
             <Input label="Matricule" required error={errors.matricule?.message} {...register('matricule')} />

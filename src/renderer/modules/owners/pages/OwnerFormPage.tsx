@@ -6,6 +6,7 @@ import { z } from 'zod';
 import PageLayout from '../../../shared/components/layout/PageLayout';
 import Button from '../../../shared/components/ui/Button';
 import Input from '../../../shared/components/ui/Input';
+import { upperField } from '../../../shared/utils/uppercase';
 import Select from '../../../shared/components/ui/Select';
 import { FormSearchSelect } from '../../../shared/components/ui/SearchSelect';
 import Textarea from '../../../shared/components/ui/Textarea';
@@ -308,8 +309,8 @@ export default function OwnerFormPage() {
             {type === 'INDIVIDUEL' && (
               <div className="space-y-4">
                 <div className="grid grid-cols-2 gap-4">
-                  <Input label="Nom" {...register('lastName')} />
-                  <Input label="Prénom" {...register('firstName')} />
+                  <Input label="Nom" {...upperField(register('lastName'))} />
+                  <Input label="Prénom" {...upperField(register('firstName'))} />
                 </div>
                 <Input label="Nationalité" placeholder="ex : Ivoirienne" {...register('nationality')} />
                 <div className="grid grid-cols-2 gap-4">
@@ -331,40 +332,18 @@ export default function OwnerFormPage() {
             {/* ── Entreprise ── */}
             {type === 'ENTREPRISE' && (
               <div className="space-y-4">
-                <Input label="Nom de la société" required {...register('companyName')} />
-                <Input label="Numéro registre de commerce" placeholder="RC-xxxx" {...register('registreCommerce')} />
-
-                <div className="border-t border-slate-200 pt-4">
-                  <h3 className="text-sm font-semibold text-slate-700 mb-4">Représentant légal</h3>
-                  <div className="space-y-4">
-                    <div className="grid grid-cols-2 gap-4">
-                      <Input label="Nom" {...register('legalRepLastName')} />
-                      <Input label="Prénom" {...register('legalRepFirstName')} />
-                    </div>
-                    <Input label="Contact (téléphone/email)" {...register('legalRepPhone')} />
-                    <div className="grid grid-cols-2 gap-4">
-                      <Select label="Type de pièce d'identité" required options={idTypeOptions} error={errors.legalRepIdTypeId?.message} {...register('legalRepIdTypeId')} />
-                      <Input label="Numéro pièce d'identité" required placeholder="CI/Passeport/…" error={errors.legalRepIdNumber?.message} {...register('legalRepIdNumber')} />
-                    </div>
-                    <DocUploadField
-                      label="Pièce d'identité du représentant légal"
-                      existingName={existingRepIdDoc}
-                      file={repIdDocFile}
-                      error={repIdDocError}
-                      inputRef={repIdDocRef}
-                      onChange={makeFileHandler(setRepIdDocFile, setRepIdDocError, repIdDocRef)}
-                      onClear={makeClearHandler(setRepIdDocFile, setRepIdDocError, repIdDocRef)}
-                    />
-                    <DocUploadField
-                      label="Registre de commerce scanné"
-                      existingName={existingRc}
-                      file={rcFile}
-                      error={rcError}
-                      inputRef={rcRef}
-                      onChange={makeFileHandler(setRcFile, setRcError, rcRef)}
-                      onClear={makeClearHandler(setRcFile, setRcError, rcRef)}
-                    />
-                  </div>
+                <Input label="Nom de la société" required {...upperField(register('companyName'))} />
+                <div className="grid grid-cols-2 gap-4">
+                  <Input label="Numéro registre de commerce" placeholder="RC-xxxx" {...register('registreCommerce')} />
+                  <DocUploadField
+                    label="Registre de commerce scanné"
+                    existingName={existingRc}
+                    file={rcFile}
+                    error={rcError}
+                    inputRef={rcRef}
+                    onChange={makeFileHandler(setRcFile, setRcError, rcRef)}
+                    onClear={makeClearHandler(setRcFile, setRcError, rcRef)}
+                  />
                 </div>
               </div>
             )}
@@ -393,6 +372,33 @@ export default function OwnerFormPage() {
               </div>
               <Input label="Compte contribuable" {...register('compte_contribuable')} />
             </div>
+
+            {/* ── Représentant légal — uniquement entreprise ── */}
+            {type === 'ENTREPRISE' && (
+              <div className="border-t border-slate-200 pt-4">
+                <h3 className="text-sm font-semibold text-slate-700 mb-4">Représentant légal</h3>
+                <div className="space-y-4">
+                  <div className="grid grid-cols-2 gap-4">
+                    <Input label="Nom" {...upperField(register('legalRepLastName'))} />
+                    <Input label="Prénom" {...upperField(register('legalRepFirstName'))} />
+                  </div>
+                  <Input label="Contact (téléphone/email)" {...register('legalRepPhone')} />
+                  <div className="grid grid-cols-2 gap-4">
+                    <Select label="Type de pièce d'identité" required options={idTypeOptions} error={errors.legalRepIdTypeId?.message} {...register('legalRepIdTypeId')} />
+                    <Input label="Numéro pièce d'identité" required placeholder="CI/Passeport/…" error={errors.legalRepIdNumber?.message} {...register('legalRepIdNumber')} />
+                  </div>
+                  <DocUploadField
+                    label="Pièce d'identité du représentant légal"
+                    existingName={existingRepIdDoc}
+                    file={repIdDocFile}
+                    error={repIdDocError}
+                    inputRef={repIdDocRef}
+                    onChange={makeFileHandler(setRepIdDocFile, setRepIdDocError, repIdDocRef)}
+                    onClear={makeClearHandler(setRepIdDocFile, setRepIdDocError, repIdDocRef)}
+                  />
+                </div>
+              </div>
+            )}
 
             <Textarea label="Notes" rows={3} {...register('notes')} />
 

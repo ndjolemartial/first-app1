@@ -78,9 +78,10 @@ function TemplateCard({ template }: { template: any }) {
   const [accentColor, setAccentColor] = useState<string>(template.accentColor);
   const [headerHtml, setHeaderHtml] = useState<string>(template.headerHtml ?? '');
   const [footerHtml, setFooterHtml] = useState<string>(template.footerHtml ?? '');
+  const [endOfDocument, setEndOfDocument] = useState<string>(template.endOfDocument ?? '');
 
   const save = () =>
-    update.mutate({ id: template.id, payload: { name, layout, accentColor, headerHtml, footerHtml } });
+    update.mutate({ id: template.id, payload: { name, layout, accentColor, headerHtml, footerHtml, endOfDocument } });
 
   return (
     <Card>
@@ -114,6 +115,13 @@ function TemplateCard({ template }: { template: any }) {
       <div className="mt-4">
         <label className="text-sm font-medium text-slate-700 block mb-1">Pied de page</label>
         <RichTextEditor value={footerHtml} onChange={setFooterHtml} minHeight={120} />
+      </div>
+      <div className="mt-4">
+        <label className="text-sm font-medium text-slate-700 block mb-1">Fin du document</label>
+        <p className="text-xs text-slate-500 mb-1">
+          Inséré à la suite du corps de la facture (signatures, mentions finales…), avant le pied de page.
+        </p>
+        <RichTextEditor value={endOfDocument} onChange={setEndOfDocument} minHeight={120} />
       </div>
 
       <div className="flex justify-end mt-4">

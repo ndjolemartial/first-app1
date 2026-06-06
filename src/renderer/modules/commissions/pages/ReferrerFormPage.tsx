@@ -7,6 +7,7 @@ import PageLayout from '../../../shared/components/layout/PageLayout';
 import Card from '../../../shared/components/ui/Card';
 import Button from '../../../shared/components/ui/Button';
 import Input from '../../../shared/components/ui/Input';
+import { upperField } from '../../../shared/utils/uppercase';
 import Select from '../../../shared/components/ui/Select';
 import { FormSearchSelect } from '../../../shared/components/ui/SearchSelect';
 import Textarea from '../../../shared/components/ui/Textarea';
@@ -99,10 +100,10 @@ export default function ReferrerFormPage() {
             <div className="space-y-4">
               <h3 className="text-sm font-semibold text-slate-700">Identité</h3>
               <div className="grid grid-cols-2 gap-4">
-                <Input label="Prénom" required error={errors.firstName?.message} {...register('firstName')} />
-                <Input label="Nom" required error={errors.lastName?.message} {...register('lastName')} />
+                <Input label="Prénom" required error={errors.firstName?.message} {...upperField(register('firstName'))} />
+                <Input label="Nom" required error={errors.lastName?.message} {...upperField(register('lastName'))} />
               </div>
-              <Input label="Société (si l'apporteur est une entreprise)" {...register('companyName')} />
+              <Input label="Société (si l'apporteur est une entreprise)" {...upperField(register('companyName'))} />
             </div>
 
             {/* Coordonnées */}

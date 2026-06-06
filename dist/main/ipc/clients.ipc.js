@@ -19,6 +19,12 @@ const clientBaseSchema = zod_1.z.object({
     entreprise: zod_1.z.string().optional(),
     registre_de_commerce: zod_1.z.string().optional(),
     compte_contribuable: zod_1.z.string().optional(),
+    // Entreprise — représentant légal
+    legalRepFirstName: zod_1.z.string().optional(),
+    legalRepLastName: zod_1.z.string().optional(),
+    legalRepPhone: zod_1.z.string().optional(),
+    legalRepIdNumber: zod_1.z.string().optional(),
+    legalRepIdTypeId: zod_1.z.number().int().positive().nullable().optional(),
     email: zod_1.z.string().email().optional().or(zod_1.z.literal('')),
     phone: zod_1.z.string().optional(),
     mobile: zod_1.z.string().optional(),
@@ -53,6 +59,16 @@ const requireIdForIndividuel = (data, ctx) => {
         }
         if (!data.idNumber || String(data.idNumber).trim() === '') {
             ctx.addIssue({ code: zod_1.z.ZodIssueCode.custom, path: ['idNumber'], message: 'Numéro de pièce d’identité requis' });
+        }
+    }
+    // Client entreprise : pièce d'identité du représentant légal obligatoire
+    // (alignement sur le module Propriétaires).
+    if (data.type === 'ENTREPRISE') {
+        if (data.legalRepIdTypeId == null) {
+            ctx.addIssue({ code: zod_1.z.ZodIssueCode.custom, path: ['legalRepIdTypeId'], message: 'Type de pièce d’identité du représentant requis' });
+        }
+        if (!data.legalRepIdNumber || String(data.legalRepIdNumber).trim() === '') {
+            ctx.addIssue({ code: zod_1.z.ZodIssueCode.custom, path: ['legalRepIdNumber'], message: 'Numéro de pièce d’identité du représentant requis' });
         }
     }
 };
@@ -211,6 +227,7 @@ function registerClientsIPC() {
                     assignedTo: { select: USER_BRIEF_SELECT },
                     referrer: { select: REFERRER_BRIEF_SELECT },
                     idType: { select: { id: true, code: true, label: true } },
+                    legalRepIdType: { select: { id: true, code: true, label: true } },
                 },
             });
             if (!client)

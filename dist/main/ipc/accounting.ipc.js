@@ -11,6 +11,7 @@ const db_service_1 = require("../services/db.service");
 const auth_service_1 = require("../services/auth.service");
 const pdf_service_1 = require("../services/pdf.service");
 const invoice_templates_ipc_1 = require("./invoice-templates.ipc");
+const settings_service_1 = require("../services/settings.service");
 const treasury_service_1 = require("../services/treasury.service");
 const logger_1 = __importDefault(require("../utils/logger"));
 const zod_1 = require("zod");
@@ -183,11 +184,22 @@ function invoiceLayoutCss(layout, accent) {
   table.items td { border-bottom: 1px solid #e2e8f0; }
   .totals .grand { border-top: 2px solid ${accent}; }`;
 }
-/**
- * Construit le document HTML imprimable d'une facture (A4 portrait), selon le
- * modèle fourni : mise en page, couleur d'accent, en-tête et pied éditables.
- */
-function buildInvoiceHtml(inv, tpl) {
+/** Charge les coordonnées de l'émetteur (entreprise) pour l'en-tête « Émetteur ». */
+async function loadCompanyEmitter() {
+    const map = await (0, settings_service_1.getSettings)([
+        settings_service_1.SettingsKeys.companyName,
+        settings_service_1.SettingsKeys.companyPhoneFixed,
+        settings_service_1.SettingsKeys.companyAddress,
+        settings_service_1.SettingsKeys.companyRegistre,
+    ]);
+    return {
+        name: map[settings_service_1.SettingsKeys.companyName] ?? 'AFRIKIMMO',
+        phoneFixed: map[settings_service_1.SettingsKeys.companyPhoneFixed] ?? '',
+        address: map[settings_service_1.SettingsKeys.companyAddress] ?? '',
+        registre: map[settings_service_1.SettingsKeys.companyRegistre] ?? '',
+    };
+}
+function buildInvoiceHtml(inv, tpl, company = null) {
     const esc = (v) => String(v ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
     const fmt = (n) => `${new Intl.NumberFormat('fr-FR').format(Math.round(Number(n ?? 0)))} FCFA`;
     const fmtDate = (d) => (d ? new Date(d).toLocaleDateString('fr-FR') : '—');
@@ -195,12 +207,25 @@ function buildInvoiceHtml(inv, tpl) {
     const layout = tpl?.layout || 'CLASSIQUE';
     const headerHtml = tpl?.headerHtml || '<p><strong style="font-size:18px">AFRIKIMMO</strong></p>';
     const footerHtml = tpl?.footerHtml || '';
+    const endOfDocument = tpl?.endOfDocument || '';
+    // Coordonnées de l'émetteur affichées sous son nom : téléphone fixe,
+    // adresse (multi-lignes) puis numéro de registre de commerce (RCCM).
+    const emitterName = company?.name || 'AFRIKIMMO';
+    const emitterLines = [];
+    if (company?.phoneFixed)
+        emitterLines.push(`Tél : ${company.phoneFixed}`);
+    if (company?.address) {
+        for (const line of company.address.split(/\r?\n/).filter(Boolean))
+            emitterLines.push(line);
+    }
+    if (company?.registre)
+        emitterLines.push(`RCCM : ${company.registre}`);
     const c = inv.client;
     const clientName = c
         ? (c.type === 'INDIVIDUEL' ? `${c.lastName ?? ''} ${c.firstName ?? ''}`.trim() : (c.entreprise ?? ''))
         : '—';
     const clientLines = c
-        ? [c.address, [c.postalCode, c.city].filter(Boolean).join(' '), c.country, c.phone, c.email].filter(Boolean)
+        ? [c.address, [c.postalCode, c.city].filter(Boolean).join(' '), c.countryName || c.country, c.phone, c.email].filter(Boolean)
         : [];
     const totalPaid = (inv.payments ?? []).reduce((s, p) => s + Number(p.amount), 0);
     const balance = Number(inv.total) - totalPaid;
@@ -226,14 +251,24 @@ function buildInvoiceHtml(inv, tpl) {
   .meta { margin-top: 18px; display: flex; gap: 28px; font-size: 11px; }
   .meta span { color: #94a3b8; }
   table.items { width: 100%; border-collapse: collapse; margin-top: 16px; }
+  table.items thead { display: table-header-group; }
   table.items th { text-align: left; padding: 6px 8px; font-size: 11px; }
   table.items td { padding: 6px 8px; }
+  table.items tr { break-inside: avoid; page-break-inside: avoid; }
   table.items .num { text-align: right; }
-  .totals { margin-top: 12px; margin-left: auto; width: 270px; font-size: 12px; }
-  .totals div { display: flex; justify-content: space-between; padding: 3px 0; }
+  /* Évite qu'un bloc soit coupé entre deux pages (totaux, pied de page…). */
+  .totals { margin-top: 12px; margin-left: auto; width: 270px; font-size: 12px; break-inside: avoid; page-break-inside: avoid; }
+  /* Bloc plus large pour les libellés longs (échéancier de la convention). */
+  .totals.recap { width: 430px; }
+  .totals div { display: flex; justify-content: space-between; gap: 12px; padding: 3px 0; }
+  .totals div span:first-child { min-width: 0; }
+  /* Le montant et sa devise restent toujours sur la même ligne. */
+  .totals div span:last-child { white-space: nowrap; }
   .totals .grand { font-weight: bold; font-size: 14px; color: ${accent}; padding-top: 6px; margin-top: 2px; }
-  .sec { margin-top: 24px; font-size: 10px; text-transform: uppercase; color: #94a3b8; }
-  .foot { margin-top: 32px; border-top: 1px solid #e2e8f0; padding-top: 10px; font-size: 11px; color: #475569; }
+  /* Le titre de section reste collé au bloc qui suit. */
+  .sec { margin-top: 24px; font-size: 10px; text-transform: uppercase; color: #94a3b8; break-after: avoid; page-break-after: avoid; }
+  .end-doc { margin-top: 28px; font-size: 11px; color: #0f172a; break-inside: avoid; page-break-inside: avoid; }
+  .foot { margin-top: 32px; padding-top: 10px; font-size: 11px; color: #475569; break-inside: avoid; page-break-inside: avoid; }
   ${invoiceLayoutCss(layout, accent)}
 </style></head><body>
   <div class="head">
@@ -245,7 +280,11 @@ function buildInvoiceHtml(inv, tpl) {
     </div>
   </div>
   <div class="parties">
-    <div><h3>Émetteur</h3><div class="name">AFRIKIMMO</div></div>
+    <div>
+      <h3>Émetteur</h3>
+      <div class="name">${esc(emitterName)}</div>
+      ${emitterLines.map((l) => `<div>${esc(l)}</div>`).join('')}
+    </div>
     <div style="text-align:right;">
       <h3>Facturé à</h3>
       <div class="name">${esc(clientName)}</div>
@@ -256,6 +295,7 @@ function buildInvoiceHtml(inv, tpl) {
     <div><span>Type</span><br>${esc(INVOICE_TYPE_LABEL[inv.type] ?? inv.type)}</div>
     <div><span>Date d'émission</span><br>${fmtDate(inv.issueDate)}</div>
     <div><span>Date d'échéance</span><br>${fmtDate(inv.dueDate)}</div>
+    ${inv.paidAt ? `<div><span>Date de paiement</span><br>${fmtDate(inv.paidAt)}</div>` : ''}
     ${inv.convention ? `<div><span>Convention</span><br>${esc(inv.convention.reference)}</div>` : ''}
   </div>
   <table class="items">
@@ -279,12 +319,12 @@ function buildInvoiceHtml(inv, tpl) {
   </div>` : ''}
   ${inv.installmentRecap ? `
   <div class="sec">Échéancier de la convention</div>
-  <div class="totals">
+  <div class="totals recap">
     <div><span>Échéances réglées</span><span>${inv.installmentRecap.paidCount} / ${inv.installmentRecap.totalCount} — ${fmt(inv.installmentRecap.paidAmount)}</span></div>
     <div class="grand"><span>Solde des échéances restantes (${inv.installmentRecap.remainingCount})</span><span>${fmt(inv.installmentRecap.remainingAmount)}</span></div>
   </div>` : ''}
+  ${endOfDocument ? `<div class="end-doc">${endOfDocument}</div>` : ''}
   ${footerHtml ? `<div class="foot">${footerHtml}</div>` : ''}
-  <div style="margin-top:14px;font-size:9px;color:#94a3b8;text-align:center;">Document généré le ${new Date().toLocaleString('fr-FR')} — Afrikimmo-App</div>
 </body></html>`;
 }
 /**
@@ -829,7 +869,9 @@ function registerAccountingIPC() {
                     where: { id: d.invoiceId },
                     data: {
                         status: newStatus,
-                        ...(newStatus === 'PAYEE' && { paidAt: new Date() }),
+                        // Facture soldée : la date de règlement de la facture reprend la
+                        // date de paiement saisie (date du jour par défaut).
+                        ...(newStatus === 'PAYEE' && { paidAt }),
                     },
                 });
                 // Encaissement rattaché à un compte → mouvement de trésorerie (entrée).
@@ -881,6 +923,12 @@ function registerAccountingIPC() {
             });
             if (!invoice || invoice.deletedAt)
                 return { success: false, error: 'Facture introuvable' };
+            // Résout le code ISO du pays du client en nom complet (ex: CI → Côte d'Ivoire).
+            if (invoice.client?.country) {
+                const country = await db.country.findUnique({ where: { isoCode: invoice.client.country } });
+                if (country)
+                    invoice.client.countryName = country.name;
+            }
             // Pour une facture d'échéance, joint le solde des échéances restantes de la convention.
             let installmentRecap = null;
             if (invoice.type === 'ECHEANCE_VENTE' && invoice.conventionId) {
@@ -899,7 +947,8 @@ function registerAccountingIPC() {
                 }
             }
             const template = await (0, invoice_templates_ipc_1.resolveInvoiceTemplate)(db, invoice.type);
-            const pdf = await (0, pdf_service_1.htmlToPdf)(buildInvoiceHtml({ ...invoice, installmentRecap }, template), { landscape: false });
+            const company = await loadCompanyEmitter();
+            const pdf = await (0, pdf_service_1.htmlToPdf)(buildInvoiceHtml({ ...invoice, installmentRecap }, template, company), { landscape: false });
             const parent = electron_1.BrowserWindow.getFocusedWindow() ?? electron_1.BrowserWindow.getAllWindows()[0] ?? undefined;
             const result = await electron_1.dialog.showSaveDialog(parent, {
                 title: 'Enregistrer la facture',

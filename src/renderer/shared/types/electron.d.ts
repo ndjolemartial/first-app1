@@ -304,6 +304,10 @@ interface Window {
         defaults: Record<string, number>,
       ) => Promise<IpcResponse<Record<string, number>>>;
     };
+    listExportTemplates: {
+      list: (token: string) => Promise<IpcResponse<{ templates: any[] }>>;
+      update: (token: string, id: number, payload: object) => Promise<IpcResponse<any>>;
+    };
     accounting: {
       getDashboard: (token: string) => Promise<IpcResponse<any>>;
       getRevenue: (
