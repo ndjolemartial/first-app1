@@ -23,7 +23,7 @@ const itemSchema = z.object({
 });
 
 const schema = z.object({
-  type: z.enum(['VENTE', 'ECHEANCE_VENTE', 'FRAIS_AGENCE', 'FRAIS_DE_GESTION', 'AVANCE', 'CAUTION', 'OTHER']),
+  type: z.enum(['VENTE', 'ECHEANCE_VENTE', 'FRAIS_AGENCE', 'FRAIS_DE_GESTION', 'FRAIS_OUVERTURE_DOSSIER', 'APPORT_INITIAL', 'AVANCE', 'CAUTION', 'OTHER']),
   clientId: z.coerce.number().int().optional(),
   conventionId: z.coerce.number().int().optional(),
   taxRate: z.coerce.number().min(0).max(100).default(0),
@@ -38,6 +38,8 @@ type FormData = z.infer<typeof schema>;
 const TYPE_OPTIONS = [
   { value: 'FRAIS_AGENCE', label: 'Frais agence' },
   { value: 'FRAIS_DE_GESTION', label: 'Frais de gestion' },
+  { value: 'FRAIS_OUVERTURE_DOSSIER', label: "Frais d'ouverture de dossier" },
+  { value: 'APPORT_INITIAL', label: 'Apport initial' },
   { value: 'AVANCE', label: 'Avance' },
   { value: 'CAUTION', label: 'Caution' },
   { value: 'VENTE', label: 'Vente comptant' },

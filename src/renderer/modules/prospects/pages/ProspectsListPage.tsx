@@ -81,6 +81,7 @@ const formatUserName = (u: any): string =>
   u ? `${u.lastName ?? ''} ${u.firstName ?? ''}`.trim() : '';
 
 const EXPORT_COLUMNS: ExportColumn[] = [
+  { header: 'Référence',        cell: (p) => p.reference },
   { header: 'Nom',              cell: (p) => p.lastName },
   { header: 'Prénom',           cell: (p) => p.firstName },
   { header: 'Email',            cell: (p) => p.email },
@@ -188,7 +189,7 @@ export default function ProspectsListPage() {
           <div className="flex-1 min-w-[220px]">
             <Input
               label="Rechercher"
-              placeholder="Nom, email, téléphone…"
+              placeholder="Référence, nom, email, téléphone…"
               value={search}
               onChange={(e) => { setSearch(e.target.value); setPage(1); }}
             />
@@ -257,6 +258,7 @@ export default function ProspectsListPage() {
             <table className="w-full text-sm">
               <thead className="bg-slate-50 border-b border-slate-200">
                 <tr>
+                  <th className="text-left px-4 py-3 font-medium text-slate-600">Réf.</th>
                   <th className="text-left px-4 py-3 font-medium text-slate-600">Prospect</th>
                   <th className="text-left px-4 py-3 font-medium text-slate-600">Contact</th>
                   <th className="text-left px-4 py-3 font-medium text-slate-600">Statut</th>
@@ -274,6 +276,9 @@ export default function ProspectsListPage() {
                     className="hover:bg-slate-50 transition-colors cursor-pointer"
                     onClick={() => navigate(`/prospects/${p.id}`)}
                   >
+                    <td className="px-4 py-3">
+                      <span className="font-mono text-xs text-slate-500">{p.reference ?? '—'}</span>
+                    </td>
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-3">
                         <div className="h-8 w-8 rounded-lg bg-purple-100 flex items-center justify-center text-xs font-bold text-purple-700 flex-shrink-0">

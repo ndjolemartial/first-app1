@@ -1,4 +1,4 @@
-import { ShoppingBag, CalendarClock, Building2, Wallet, FileSignature, ArrowDownToLine, Lock, FileQuestion, LucideIcon } from 'lucide-react';
+import { ShoppingBag, CalendarClock, Building2, Wallet, FileSignature, FolderPlus, PiggyBank, ArrowDownToLine, Lock, FileQuestion, LucideIcon } from 'lucide-react';
 
 type InvoiceType =
   | 'VENTE'
@@ -6,6 +6,8 @@ type InvoiceType =
   | 'FRAIS_AGENCE'
   | 'FRAIS_DE_GESTION'
   | 'FRAIS_DEMARCHES_ACD'
+  | 'FRAIS_OUVERTURE_DOSSIER'
+  | 'APPORT_INITIAL'
   | 'AVANCE'
   | 'CAUTION'
   | 'OTHER';
@@ -25,6 +27,8 @@ const TYPES: TypeDef[] = [
   { key: 'FRAIS_AGENCE',        label: 'Frais agence',         Icon: Building2,      color: 'bg-indigo-500'  },
   { key: 'FRAIS_DE_GESTION',    label: 'Frais de gestion',     Icon: Wallet,         color: 'bg-blue-500'    },
   { key: 'FRAIS_DEMARCHES_ACD', label: 'Frais démarches ACD',  Icon: FileSignature,  color: 'bg-violet-500'  },
+  { key: 'FRAIS_OUVERTURE_DOSSIER', label: 'Frais ouverture dossier', Icon: FolderPlus, color: 'bg-cyan-500' },
+  { key: 'APPORT_INITIAL',      label: 'Apport initial',       Icon: PiggyBank,      color: 'bg-lime-600'    },
   { key: 'AVANCE',              label: 'Avance',               Icon: ArrowDownToLine, color: 'bg-amber-500'  },
   { key: 'CAUTION',             label: 'Caution',              Icon: Lock,           color: 'bg-rose-500'    },
   { key: 'OTHER',               label: 'Autre',                Icon: FileQuestion,   color: 'bg-slate-500'   },

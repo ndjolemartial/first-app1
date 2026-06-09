@@ -131,6 +131,7 @@ export const CONVENTION_VARIABLE_GROUPS: VariableGroup[] = [
       { token: 'avenant.nombreEcheances', label: "Nombre d'échéances (montant supplémentaire)" },
       { token: 'avenant.nombreEcheances.enLettres', label: "Nombre d'échéances du montant supplémentaire (en lettres)" },
       { token: 'avenant.echeancier', label: 'Tableau des échéances (montant supplémentaire)' },
+      { token: 'convention.initiale.reference', label: 'Référence de la convention initiale' },
       { token: 'convention.initiale.dateSignature', label: 'Date de signature de la convention initiale' },
       { token: 'convention.initiale.montantSouscription', label: 'Montant de souscription (convention initiale)' },
       { token: 'convention.initiale.montantSouscription.enLettres', label: 'Montant de souscription initial (en lettres)' },
@@ -446,6 +447,7 @@ export function resolveConventionVariables(
     'avenant.echeancier': (c.type === 'AVENANT' && c.amendmentType === 'TRANSFERT_SITE')
       ? buildInstallmentsTable(c.installments)
       : '',
+    'convention.initiale.reference': c.parentConvention?.reference ?? '',
     'convention.initiale.dateSignature': date(c.parentConvention?.signedAt),
     'convention.initiale.montantSouscription': money(c.parentConvention?.saleAmount),
     'convention.initiale.montantSouscription.enLettres': moneyL(c.parentConvention?.saleAmount),

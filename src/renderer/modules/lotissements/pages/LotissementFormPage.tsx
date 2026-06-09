@@ -1,5 +1,5 @@
 import { useNavigate, useParams } from 'react-router-dom';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -15,6 +15,7 @@ import { useCountries } from '../../../shared/hooks/useCountries';
 import { useTitleTypes } from '../../../shared/hooks/useTitleTypes';
 import { useAuthStore } from '../../../shared/stores/auth.store';
 import MapLinkField from '../../../shared/components/MapLinkField';
+import SurfacePriceMatrixEditor, { type SurfacePriceMatrix } from '../../../shared/components/forms/SurfacePriceMatrixEditor';
 import { Save } from 'lucide-react';
 
 const schema = z.object({
@@ -63,6 +64,9 @@ export default function LotissementFormPage() {
   const create = useCreateLotissement();
   const update = useUpdateLotissement();
 
+  // Grille de prix par superficie × modalité ({ superficie: { modalite: montant } }), hors RHF.
+  const [priceTiers, setPriceTiers] = useState<SurfacePriceMatrix>({});
+
   const { register, handleSubmit, reset, control, setValue, formState: { errors, isSubmitting } } = useForm<z.input<typeof schema>, any, FormData>({
     resolver: zodResolver(schema),
     defaultValues: { statut: 'EN_COURS_LOTISSEMENT', pays: 'CI' },
@@ -85,6 +89,13 @@ export default function LotissementFormPage() {
       // (sinon Zod plante silencieusement et handleSubmit n'appelle jamais onSubmit).
       reset({
         ...l,
+        // Coercion des null Prisma en '' pour TOUS les champs string optional :
+        // Zod `.optional()` rejette `null`, ce qui fait échouer handleSubmit en
+        // silence (RHF focus alors le 1er champ « invalide » : promoteur, commune…).
+        commune: l.commune ?? '',
+        quartier: l.quartier ?? '',
+        promoteur: l.promoteur ?? '',
+        description: l.description ?? '',
         surface: l.surface ?? ('' as any),
         nombreParcelles: l.nombreParcelles ?? ('' as any),
         fraisDemarchesAcdStandard: l.fraisDemarchesAcdStandard ?? ('' as any),
@@ -93,6 +104,7 @@ export default function LotissementFormPage() {
         latitude: l.latitude != null ? String(l.latitude) : '',
         longitude: l.longitude != null ? String(l.longitude) : '',
       });
+      setPriceTiers((l.salePriceTiers as SurfacePriceMatrix) ?? {});
     }
   }, [res, isEdit, reset]);
 
@@ -110,10 +122,14 @@ export default function LotissementFormPage() {
       ...rest,
       surface: rest.surface === '' ? undefined : rest.surface,
       nombreParcelles: rest.nombreParcelles === '' ? undefined : rest.nombreParcelles,
+      // Champ optionnel : enregistrer null plutôt qu'une chaîne vide.
+      promoteur: rest.promoteur?.trim() ? rest.promoteur : null,
       fraisDemarchesAcdStandard: rest.fraisDemarchesAcdStandard === '' ? null : rest.fraisDemarchesAcdStandard,
       titleTypeId: titleTypeId ? Number(titleTypeId) : null,
       latitude: rest.latitude ? Number(rest.latitude) : null,
       longitude: rest.longitude ? Number(rest.longitude) : null,
+      // Grille de prix { superficie: { modalite: montant } } ; {} pour vider.
+      salePriceTiers: priceTiers,
     };
     let r: any;
     if (isEdit) r = await update.mutateAsync({ id: Number(id), payload });
@@ -132,7 +148,7 @@ export default function LotissementFormPage() {
           {/* Identité */}
           <div className="space-y-4">
             <Input label="Nom du lotissement" required error={errors.nom?.message} {...register('nom')} />
-            <Input label="Promoteur / Aménageur" {...register('promoteur')} />
+            <Input label="Promoteur / Aménageur (optionnel)" {...register('promoteur')} />
             <Select label="Statut" options={STATUT_OPTIONS} {...register('statut')} />
           </div>
 
@@ -140,12 +156,12 @@ export default function LotissementFormPage() {
           <div className="border-t border-slate-200 pt-4 space-y-4">
             <h3 className="text-sm font-semibold text-slate-700">Localisation</h3>
             <div className="grid grid-cols-2 gap-4">
-              <Input label="Commune" {...register('commune')} />
-              <Input label="Quartier" {...register('quartier')} />
-            </div>
-            <div className="grid grid-cols-2 gap-4">
               <Input label="Ville / Village" required error={errors.ville?.message} {...register('ville')} />
               <FormSearchSelect control={control} name="pays" label="Pays" options={countryOptions} />
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <Input label="Commune" {...register('commune')} />
+              <Input label="Quartier" {...register('quartier')} />
             </div>
           </div>
 
@@ -177,6 +193,11 @@ export default function LotissementFormPage() {
               placeholder="Ex: 500 000"
               {...register('fraisDemarchesAcdStandard')}
             />
+          </div>
+
+          {/* Grille de prix de vente par superficie × échéance */}
+          <div className="border-t border-slate-200 pt-4">
+            <SurfacePriceMatrixEditor value={priceTiers} onChange={setPriceTiers} />
           </div>
 
           {/* Localisation GPS */}

@@ -77,3 +77,17 @@ export function useToggleUserActive() {
     },
   });
 }
+
+export function useDeleteUser() {
+  const token = useAuthStore((s) => s.token)!;
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: number) => ipc().delete(token, id),
+    onSuccess: (res) => {
+      if (res.success) {
+        qc.invalidateQueries({ queryKey: ['users'] });
+        toast.success('Utilisateur supprimé');
+      } else toast.error(String(res.error));
+    },
+  });
+}

@@ -288,6 +288,29 @@ export function registerSettingsIPC(): void {
     }
   });
 
+  /**
+   * Logo de la page de connexion — lu DIRECTEMENT depuis le répertoire
+   * `<storage>/logo/` (aucun accès base de données), pour un affichage immédiat
+   * au démarrage à froid : la page de connexion n'attend plus une requête DB.
+   * Accessible sans session.
+   */
+  ipcMain.handle('settings:getLoginLogoData', async () => {
+    try {
+      const dir = path.join(storageRoot(), 'logo');
+      if (!fs.existsSync(dir)) return { success: true, data: null };
+      const images = fs.readdirSync(dir).filter((f) => /\.(png|jpe?g|svg|webp|gif)$/i.test(f));
+      if (images.length === 0) return { success: true, data: null };
+      // Privilégie « company-logo.* » s'il existe, sinon la première image trouvée.
+      const file = images.find((f) => /^company-logo\./i.test(f)) ?? images[0];
+      const buf = fs.readFileSync(path.join(dir, file));
+      const ext = path.extname(file).toLowerCase().replace('.', '') || 'png';
+      const mime = ext === 'svg' ? 'image/svg+xml' : `image/${ext === 'jpg' ? 'jpeg' : ext}`;
+      return { success: true, data: { base64: buf.toString('base64'), mimeType: mime } };
+    } catch (err: any) {
+      return { success: false, error: err.message };
+    }
+  });
+
   // ── Stockage ───────────────────────────────────────────────────────────────
   ipcMain.handle('settings:getStorage', async (_event, { token }: any) => {
     try {

@@ -14,16 +14,18 @@ import EntityDocumentsCard from '../../archiving/components/EntityDocumentsCard'
 import { toast } from '../../../shared/components/ui/Toast';
 
 const STATUS_VARIANT: Record<string, 'success' | 'info' | 'warning' | 'danger' | 'default'> = {
-  BROUILLON: 'default', ENVOYEE: 'info', PAYEE: 'success',
+  BROUILLON: 'default', VALIDEE: 'info', PAYEE: 'success',
   PARTIEL: 'warning', EN_RETARD: 'danger', ANNULEE: 'default',
 };
 const STATUS_LABEL: Record<string, string> = {
-  BROUILLON: 'Brouillon', ENVOYEE: 'Validée', PAYEE: 'Payée',
+  BROUILLON: 'Brouillon', VALIDEE: 'Validée', PAYEE: 'Payée',
   PARTIEL: 'Partiel', EN_RETARD: 'En retard', ANNULEE: 'Annulée',
 };
 const TYPE_LABEL: Record<string, string> = {
   VENTE: 'Vente', ECHEANCE_VENTE: 'Échéance vente', FRAIS_AGENCE: 'Frais agence',
   FRAIS_DE_GESTION: 'Frais gestion', FRAIS_DEMARCHES_ACD: 'Frais démarches ACD',
+  FRAIS_OUVERTURE_DOSSIER: "Frais d'ouverture de dossier",
+  APPORT_INITIAL: 'Apport initial',
   AVANCE: 'Avance', CAUTION: 'Caution', OTHER: 'Autre',
 };
 const PAYMENT_METHOD_OPTIONS = [
@@ -34,8 +36,8 @@ const PAYMENT_METHOD_OPTIONS = [
   { value: 'MOBILE_MONEY', label: 'Mobile Money' },
 ];
 const STATUS_TRANSITION: Record<string, string[]> = {
-  BROUILLON: ['ENVOYEE', 'ANNULEE'],
-  ENVOYEE: ['PAYEE', 'EN_RETARD', 'ANNULEE'],
+  BROUILLON: ['VALIDEE', 'ANNULEE'],
+  VALIDEE: ['PAYEE', 'EN_RETARD', 'ANNULEE'],
   EN_RETARD: ['PAYEE', 'ANNULEE'],
   PARTIEL: ['PAYEE', 'ANNULEE'],
 };
@@ -120,7 +122,7 @@ export default function InvoiceDetailPage() {
           {transitions.map((s) => (
             <Button
               key={s}
-              variant={s === 'ANNULEE' ? 'danger' : s === 'ENVOYEE' ? 'primary' : 'secondary'}
+              variant={s === 'ANNULEE' ? 'danger' : s === 'VALIDEE' ? 'primary' : 'secondary'}
               size="sm"
               loading={updateStatus.isPending}
               onClick={() => handleStatusChange(s)}
@@ -388,6 +390,13 @@ export default function InvoiceDetailPage() {
               </div>
             </div>
           </Card>
+
+          {inv.notes && (
+            <Card>
+              <h3 className="font-semibold text-slate-800 mb-3">Notes</h3>
+              <p className="text-sm text-slate-600 whitespace-pre-wrap break-words">{inv.notes}</p>
+            </Card>
+          )}
         </div>
 
         <EntityDocumentsCard

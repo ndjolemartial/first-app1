@@ -56,7 +56,7 @@ const updateProfileSchema = zod_1.z.object({
     avatar: zod_1.z.string().optional(),
     idNumber: zod_1.z.string().optional(),
     civilite: zod_1.z.enum(['MONSIEUR', 'MADAME', 'MADEMOISELLE']).optional(),
-    statutConjugal: zod_1.z.enum(['CELIBATAIRE', 'MARIEE', 'CONCUBINAGE']).optional(),
+    statutConjugal: zod_1.z.enum(['CELIBATAIRE', 'MARIEE', 'CONCUBINAGE', 'DIVORCE', 'VEUF']).optional(),
     residence: zod_1.z.string().optional(),
 });
 const PROFILE_SELECT = {

@@ -12,6 +12,7 @@ datasource db {
 model User {
   id          Int       @id @default(autoincrement())
   uuid        String    @unique @default(cuid())
+  reference   String    @unique  // Ex: USR-2026-0001
   matricule   String
   firstName   String
   lastName    String
@@ -75,6 +76,7 @@ enum UserRole {
 model Prospect {
   id           Int            @id @default(autoincrement())
   uuid         String         @unique @default(cuid())
+  reference    String         @unique  // Ex: PSP-2026-0001
   firstName    String
   lastName     String
   email        String?
@@ -126,6 +128,7 @@ enum ProspectStatus {
 model Client {
   id                   Int        @id @default(autoincrement())
   uuid                 String     @unique @default(cuid())
+  reference            String     @unique  // Ex: CLI-2026-0001
   type                 ClientType @default(INDIVIDUEL)
   firstName            String?
   lastName             String?
@@ -134,6 +137,9 @@ model Client {
   entreprise           String?
   registre_de_commerce String?
   compte_contribuable  String?
+  // Entreprise — informations complémentaires
+  website              String?  // Site web de l'entreprise
+  companyActivity      String?  // Activités de l'entreprise
   // Entreprise — représentant légal
   legalRepFirstName    String?
   legalRepLastName     String?
@@ -144,10 +150,12 @@ model Client {
   phone                String?
   mobile               String?
   address              String?
+  commune              String?
   city                 String?
   postalCode           String?
   country              String     @default("CI")
   nationality          String?
+  profession           String?  // Profession (client particulier)
   birthDate            DateTime?
   birthPlace           String?
   idNumber             String?
@@ -210,6 +218,8 @@ enum StatutConjugalType {
   CELIBATAIRE
   MARIEE
   CONCUBINAGE
+  DIVORCE      // Divorcé(e)
+  VEUF         // Veuf/Veuve
 }
 
 // ── PROPRIÉTAIRES ─────────────────────────────────────────────
@@ -286,6 +296,10 @@ model Lotissement {
   // pré-remplissage sur chaque terrain — la valeur retenue reste modifiable au
   // niveau du terrain (négociation, remise…).
   fraisDemarchesAcdStandard Decimal? @db.Decimal(15, 2)
+  // Grille de prix de vente par modalité de paiement (clé = PaymentModalites,
+  // valeur = montant FCFA). Héritée par les terrains du lotissement, surchargeable
+  // au niveau de chaque terrain. Ex : { "CASH": 5000000, "SUR_6_MOIS": 5500000 }
+  salePriceTiers  Json?
   createdAt       DateTime          @default(now())
   updatedAt       DateTime          @updatedAt
   deletedAt       DateTime?
@@ -371,6 +385,8 @@ model Terrain {
   statut         TerrainStatus @default(DISPONIBLE)
   surface        Decimal?      @db.Decimal(12, 2)  // m²
   prixVente      Decimal?      @db.Decimal(15, 2)
+  // Grille de prix par modalité (surcharge la grille héritée du lotissement).
+  salePriceTiers Json?
   viabilise      Boolean       @default(false)
   numeroADU                    String?  // Numéro ADU
   numeroAttestationAttribution String?  // Numéro attestation d'attribution
@@ -460,6 +476,8 @@ model Property {
   terrasseBalcon String?
   rentPrice     Decimal?           @db.Decimal(15, 2)
   salePrice     Decimal?           @db.Decimal(15, 2)
+  // Grille de prix de vente par modalité de paiement (clé = PaymentModalites).
+  salePriceTiers Json?
   charges       Decimal?           @db.Decimal(15, 2)
   taxeFonciere  Decimal?           @db.Decimal(15, 2)
   description   String?            @db.Text
@@ -824,6 +842,8 @@ enum InvoiceType {
   FRAIS_AGENCE
   FRAIS_DE_GESTION
   FRAIS_DEMARCHES_ACD
+  FRAIS_OUVERTURE_DOSSIER
+  APPORT_INITIAL
   AVANCE
   CAUTION
   OTHER
@@ -831,7 +851,7 @@ enum InvoiceType {
 
 enum InvoiceStatus {
   BROUILLON
-  ENVOYEE
+  VALIDEE
   PAYEE
   PARTIEL
   EN_RETARD
@@ -1110,7 +1130,7 @@ model Document {
   id             Int          @id @default(autoincrement())
   name           String
   type           String       // Type MIME
-  path           String       // Chemin relatif dans le dossier de stockage
+  path           String       @db.VarChar(500)  // Chemin de stockage (ou chemin réseau d'archives héritées)
   size           Int          // Taille en octets
   category       String?      // Catégorie technique héritée (identité, dm_scan…)
   // ── GED (gestion électronique de documents) ──────────────────

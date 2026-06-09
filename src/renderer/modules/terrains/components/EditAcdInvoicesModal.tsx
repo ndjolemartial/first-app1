@@ -12,7 +12,7 @@ type RawInvoice = {
   reference: string;
   dueDate: string;
   total: number | string;
-  status: 'BROUILLON' | 'ENVOYEE' | 'PAYEE' | 'PARTIEL' | 'EN_RETARD' | 'ANNULEE';
+  status: 'BROUILLON' | 'VALIDEE' | 'PAYEE' | 'PARTIEL' | 'EN_RETARD' | 'ANNULEE';
 };
 
 interface Props {
@@ -34,10 +34,10 @@ type Row = {
 };
 
 const STATUS_VARIANT: Record<RawInvoice['status'], 'success' | 'info' | 'warning' | 'danger' | 'default'> = {
-  PAYEE: 'success', BROUILLON: 'info', ENVOYEE: 'info', PARTIEL: 'warning', EN_RETARD: 'danger', ANNULEE: 'default',
+  PAYEE: 'success', BROUILLON: 'info', VALIDEE: 'info', PARTIEL: 'warning', EN_RETARD: 'danger', ANNULEE: 'default',
 };
 const STATUS_LABEL: Record<RawInvoice['status'], string> = {
-  PAYEE: 'Payée', BROUILLON: 'Brouillon', ENVOYEE: 'Validée', PARTIEL: 'Partielle', EN_RETARD: 'En retard', ANNULEE: 'Annulée',
+  PAYEE: 'Payée', BROUILLON: 'Brouillon', VALIDEE: 'Validée', PARTIEL: 'Partielle', EN_RETARD: 'En retard', ANNULEE: 'Annulée',
 };
 
 function toDateInputValue(d: string | Date): string {

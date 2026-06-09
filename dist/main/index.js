@@ -59,6 +59,8 @@ function createWindow() {
             contextIsolation: true,
             nodeIntegration: false,
             sandbox: false,
+            // Active le lecteur PDF intégré de Chromium (sinon aperçu PDF blanc).
+            plugins: true,
         },
         titleBarStyle: 'default',
         show: false,

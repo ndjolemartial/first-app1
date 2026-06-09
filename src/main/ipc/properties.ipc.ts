@@ -46,6 +46,10 @@ const propertyBaseSchema = z.object({
   terrasseBalcon: z.string().optional(),
   rentPrice: z.number().optional(),
   salePrice: z.number().optional(),
+  // Grille de prix de vente par modalité de paiement (clé = PaymentModalites).
+  // Objet { modalite: montant } ; {} pour vider. Clé z.string() (sous-ensemble
+  // libre) : z.record(z.enum(...)) est exhaustif en Zod v4.
+  salePriceTiers: z.record(z.string(), z.number().nonnegative()).optional(),
   charges: z.number().optional(),
   taxeFonciere: z.number().optional(),
   description: z.string().optional(),
@@ -166,7 +170,7 @@ export function registerPropertiesIPC(): void {
             orderBy: { convention: { createdAt: 'desc' } },
           },
           photos: { orderBy: { order: 'asc' } },
-          documents: { orderBy: { uploadedAt: 'desc' } },
+          documents: { where: { deletedAt: null }, orderBy: { uploadedAt: 'desc' } },
         },
       });
       if (!property) return { success: false, error: 'Bien introuvable' };
@@ -220,6 +224,8 @@ export function registerPropertiesIPC(): void {
         terrasseBalcon: d.terrasseBalcon,
         rentPrice: d.rentPrice,
         salePrice: d.salePrice,
+        // Json? : on omet (undefined) si absent — ne jamais passer null à Prisma.
+        salePriceTiers: d.salePriceTiers,
         charges: d.charges,
         taxeFonciere: d.taxeFonciere,
         description: d.description,

@@ -16,6 +16,7 @@ async function main() {
   const password = await bcrypt.hash('Admin@123', 12);
   const user = await prisma.user.create({
     data: {
+      reference: `USR-${new Date().getFullYear()}-0001`,
       matricule: 'ADM-001',
       firstName: 'Super',
       lastName: 'Admin',

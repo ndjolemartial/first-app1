@@ -1,6 +1,7 @@
 import { useNavigate, useParams } from 'react-router-dom';
 import { useEffect, useRef, useState } from 'react';
 import { useForm, Controller } from 'react-hook-form';
+import { nearestSurfaceRow } from '../../../shared/components/forms/SurfacePriceMatrixEditor';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { X } from 'lucide-react';
@@ -458,6 +459,7 @@ export default function ConventionFormPage() {
   const watchAssetType = watch('assetType');
   const watchStartDate = watch('startDate');
   const watchTerrainIds = watch('terrainIds') ?? [];
+  const watchPropertyIds = watch('propertyIds') ?? [];
   const watchClientId = watch('clientId');
   const watchInstallmentCount = watch('installmentCount');
   const watchSignedAt = watch('signedAt');
@@ -799,15 +801,61 @@ export default function ConventionFormPage() {
     }
   }, [res, isEdit, reset]);
 
-  // Quand on ajoute un terrain, on cumule son prix de vente dans saleAmount.
-  const onTerrainAdded = (terrainId: number) => {
-    const t = filteredTerrains.find((x: any) => x.id === terrainId);
-    const price = Number(t?.prixVente);
-    if (Number.isFinite(price) && price > 0) {
-      const current = Number(watchSaleAmount) || 0;
-      setValue('saleAmount', current + price, { shouldValidate: true });
+  // ── Prix de vente par échéance ──────────────────────────────────────────
+  // Prix effectif d'un actif pour une modalité : grille de l'actif, sinon grille
+  // héritée (lotissement pour un terrain), sinon repli sur le prix unique pour le
+  // comptant (prixVente / salePrice) — rétrocompatible avec les actifs sans grille.
+  const effectivePrice = (entity: any, lotTiers: any, modalite: string): number | null => {
+    const own = entity?.salePriceTiers?.[modalite];
+    if (own != null) return Number(own);
+    const inherited = lotTiers?.[modalite];
+    if (inherited != null) return Number(inherited);
+    if (modalite === 'CASH') {
+      const base = entity?.prixVente ?? entity?.salePrice;
+      if (base != null) return Number(base);
     }
+    return null;
   };
+
+  // Somme des prix effectifs des actifs sélectionnés pour la modalité courante.
+  // Renvoie null si aucun actif n'a de prix résolu (on ne touche pas à saleAmount).
+  const computeSaleTotal = (modalite: string): number | null => {
+    const allTerrains = (terrainsRes?.data ?? []) as any[];
+    const allProps = (propertiesRes?.data ?? []) as any[];
+    let total = 0;
+    let resolved = false;
+    if (watchAssetType === 'TERRAIN') {
+      for (const id of (watchTerrainIds ?? []).map(Number)) {
+        const t = allTerrains.find((x) => x.id === id);
+        // Grille du lotissement indexée par superficie puis modalité : on retient
+        // la tranche de superficie la plus proche de celle du terrain.
+        const lotRow = nearestSurfaceRow(t?.lotissement?.salePriceTiers, t?.surface);
+        const price = effectivePrice(t, lotRow, modalite);
+        if (price != null) { total += price; resolved = true; }
+      }
+    } else {
+      for (const id of (watchPropertyIds ?? []).map(Number)) {
+        const p = allProps.find((x) => x.id === id);
+        const price = effectivePrice(p, null, modalite);
+        if (price != null) { total += price; resolved = true; }
+      }
+    }
+    return resolved ? total : null;
+  };
+
+  // Recalcule automatiquement le montant de vente quand la modalité ou la
+  // sélection d'actifs change. En édition, on ignore le premier passage pour
+  // préserver le montant enregistré (l'utilisateur peut toujours changer la
+  // modalité ensuite pour re-déclencher le calcul). Le champ reste modifiable.
+  const priceInitRef = useRef(false);
+  const terrainKey = (watchTerrainIds ?? []).join(',');
+  const propertyKey = (watchPropertyIds ?? []).join(',');
+  useEffect(() => {
+    if (isEdit && !priceInitRef.current) { priceInitRef.current = true; return; }
+    const total = computeSaleTotal(watchModalites as string);
+    if (total != null) setValue('saleAmount', total, { shouldValidate: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [watchModalites, watchAssetType, terrainKey, propertyKey]);
 
   const onInvalid = () => {
     setSubmitError('Certains champs obligatoires sont manquants ou invalides — vérifiez le formulaire.');
@@ -923,7 +971,6 @@ export default function ConventionFormPage() {
                       options={terrainOptions}
                       values={(field.value ?? []) as number[]}
                       onChange={field.onChange}
-                      onAdd={onTerrainAdded}
                       error={errors.terrainIds?.message as string | undefined}
                     />
                   )}

@@ -42,7 +42,7 @@ const ser = (v) => JSON.parse(JSON.stringify(v));
  *
  * - PAYEE                                  → activités EN_ATTENTE → TRAITE
  * - ANNULEE                                → activités EN_ATTENTE → ANNULE
- * - BROUILLON / ENVOYEE / EN_RETARD / PARTIEL → activités ANNULE/TRAITE → EN_ATTENTE
+ * - BROUILLON / VALIDEE / EN_RETARD / PARTIEL → activités ANNULE/TRAITE → EN_ATTENTE
  */
 async function syncInvoiceActivities(db, invoiceId, newStatus) {
     if (newStatus === 'PAYEE') {
@@ -71,7 +71,7 @@ const invoiceItemSchema = zod_1.z.object({
     unitPrice: zod_1.z.number().positive(),
 });
 const invoiceSchema = zod_1.z.object({
-    type: zod_1.z.enum(['VENTE', 'ECHEANCE_VENTE', 'FRAIS_AGENCE', 'FRAIS_DE_GESTION', 'FRAIS_DEMARCHES_ACD', 'AVANCE', 'CAUTION', 'OTHER']),
+    type: zod_1.z.enum(['VENTE', 'ECHEANCE_VENTE', 'FRAIS_AGENCE', 'FRAIS_DE_GESTION', 'FRAIS_DEMARCHES_ACD', 'FRAIS_OUVERTURE_DOSSIER', 'APPORT_INITIAL', 'AVANCE', 'CAUTION', 'OTHER']),
     clientId: zod_1.z.number().int().optional(),
     conventionId: zod_1.z.number().int().optional(),
     taxRate: zod_1.z.number().min(0).max(100).default(0),
@@ -145,7 +145,7 @@ const INVOICE_TYPE_LABEL = {
     AVANCE: 'Avance', CAUTION: 'Caution', OTHER: 'Autre',
 };
 const INVOICE_STATUS_LABEL = {
-    BROUILLON: 'Brouillon', ENVOYEE: 'Validée', PAYEE: 'Payée',
+    BROUILLON: 'Brouillon', VALIDEE: 'Validée', PAYEE: 'Payée',
     PARTIEL: 'Partiellement payée', EN_RETARD: 'En retard', ANNULEE: 'Annulée',
 };
 /**
@@ -391,7 +391,7 @@ function registerAccountingIPC() {
                     },
                 }),
                 db.invoice.aggregate({
-                    where: { deletedAt: null, status: { in: ['ENVOYEE', 'EN_RETARD'] } },
+                    where: { deletedAt: null, status: { in: ['VALIDEE', 'EN_RETARD'] } },
                     _sum: { total: true },
                     _count: true,
                 }),
@@ -405,7 +405,7 @@ function registerAccountingIPC() {
                     _sum: { amount: true },
                 }),
             ]);
-            // Impayés : total des factures ENVOYEE / EN_RETARD + solde restant des PARTIEL.
+            // Impayés : total des factures VALIDEE / EN_RETARD + solde restant des PARTIEL.
             const unpaidAmount = Number(unpaidFull._sum.total ?? 0) +
                 Number(partialInvoices._sum.total ?? 0) -
                 Number(partialPayments._sum.amount ?? 0);
@@ -533,7 +533,7 @@ function registerAccountingIPC() {
             if (filters.type)
                 where.type = filters.type;
             if (filters.unpaid)
-                where.status = { in: ['ENVOYEE', 'EN_RETARD', 'PARTIEL'] };
+                where.status = { in: ['VALIDEE', 'EN_RETARD', 'PARTIEL'] };
             else if (filters.status)
                 where.status = filters.status;
             if (filters.clientId)
@@ -583,7 +583,7 @@ function registerAccountingIPC() {
             const db = (0, db_service_1.getDb)();
             const where = { deletedAt: null };
             if (filters.unpaid)
-                where.status = { in: ['ENVOYEE', 'EN_RETARD', 'PARTIEL'] };
+                where.status = { in: ['VALIDEE', 'EN_RETARD', 'PARTIEL'] };
             else if (filters.status)
                 where.status = filters.status;
             if (filters.clientId)
@@ -817,7 +817,7 @@ function registerAccountingIPC() {
             if (!invoice)
                 return { success: false, error: 'Facture introuvable' };
             // Une facture encore en brouillon ne peut pas être encaissée :
-            // l'émetteur doit d'abord la confirmer (statut ENVOYEE).
+            // l'émetteur doit d'abord la confirmer (statut VALIDEE).
             if (invoice.status === 'BROUILLON') {
                 return { success: false, error: 'Impossible d\'encaisser une facture en brouillon : confirmez-la d\'abord' };
             }
@@ -1255,6 +1255,7 @@ function registerAccountingIPC() {
                             issueDate: paidAt,
                             dueDate: installment.dueDate,
                             paidAt,
+                            notes: d.notes,
                             items: {
                                 create: [{
                                         description: `Échéance n°${installment.installmentNumber} — convention ${installment.convention.reference}`,
@@ -1269,6 +1270,7 @@ function registerAccountingIPC() {
                                         method: d.method,
                                         paidAt,
                                         reference: d.paymentRef,
+                                        notes: d.notes,
                                         bankAccountId: d.bankAccountId ?? null,
                                     }],
                             },

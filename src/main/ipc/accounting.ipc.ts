@@ -40,7 +40,7 @@ const ser = <T>(v: T): T => JSON.parse(JSON.stringify(v));
  *
  * - PAYEE                                  → activités EN_ATTENTE → TRAITE
  * - ANNULEE                                → activités EN_ATTENTE → ANNULE
- * - BROUILLON / ENVOYEE / EN_RETARD / PARTIEL → activités ANNULE/TRAITE → EN_ATTENTE
+ * - BROUILLON / VALIDEE / EN_RETARD / PARTIEL → activités ANNULE/TRAITE → EN_ATTENTE
  */
 async function syncInvoiceActivities(
   db: ReturnType<typeof getDb>,
@@ -73,7 +73,7 @@ const invoiceItemSchema = z.object({
 });
 
 const invoiceSchema = z.object({
-  type: z.enum(['VENTE', 'ECHEANCE_VENTE', 'FRAIS_AGENCE', 'FRAIS_DE_GESTION', 'FRAIS_DEMARCHES_ACD', 'AVANCE', 'CAUTION', 'OTHER']),
+  type: z.enum(['VENTE', 'ECHEANCE_VENTE', 'FRAIS_AGENCE', 'FRAIS_DE_GESTION', 'FRAIS_DEMARCHES_ACD', 'FRAIS_OUVERTURE_DOSSIER', 'APPORT_INITIAL', 'AVANCE', 'CAUTION', 'OTHER']),
   clientId: z.number().int().optional(),
   conventionId: z.number().int().optional(),
   taxRate: z.number().min(0).max(100).default(0),
@@ -156,7 +156,7 @@ const INVOICE_TYPE_LABEL: Record<string, string> = {
   AVANCE: 'Avance', CAUTION: 'Caution', OTHER: 'Autre',
 };
 const INVOICE_STATUS_LABEL: Record<string, string> = {
-  BROUILLON: 'Brouillon', ENVOYEE: 'Validée', PAYEE: 'Payée',
+  BROUILLON: 'Brouillon', VALIDEE: 'Validée', PAYEE: 'Payée',
   PARTIEL: 'Partiellement payée', EN_RETARD: 'En retard', ANNULEE: 'Annulée',
 };
 
@@ -434,7 +434,7 @@ export function registerAccountingIPC(): void {
           },
         }),
         db.invoice.aggregate({
-          where: { deletedAt: null, status: { in: ['ENVOYEE', 'EN_RETARD'] } },
+          where: { deletedAt: null, status: { in: ['VALIDEE', 'EN_RETARD'] } },
           _sum: { total: true },
           _count: true,
         }),
@@ -449,7 +449,7 @@ export function registerAccountingIPC(): void {
         }),
       ]);
 
-      // Impayés : total des factures ENVOYEE / EN_RETARD + solde restant des PARTIEL.
+      // Impayés : total des factures VALIDEE / EN_RETARD + solde restant des PARTIEL.
       const unpaidAmount =
         Number(unpaidFull._sum.total ?? 0) +
         Number(partialInvoices._sum.total ?? 0) -
@@ -578,7 +578,7 @@ export function registerAccountingIPC(): void {
       const db = getDb();
       const where: any = { deletedAt: null };
       if (filters.type) where.type = filters.type;
-      if (filters.unpaid) where.status = { in: ['ENVOYEE', 'EN_RETARD', 'PARTIEL'] };
+      if (filters.unpaid) where.status = { in: ['VALIDEE', 'EN_RETARD', 'PARTIEL'] };
       else if (filters.status) where.status = filters.status;
       if (filters.clientId) where.clientId = filters.clientId;
       if (filters.conventionId) where.conventionId = filters.conventionId;
@@ -623,7 +623,7 @@ export function registerAccountingIPC(): void {
       checkAccountingRole(session, READ_ROLES);
       const db = getDb();
       const where: any = { deletedAt: null };
-      if (filters.unpaid) where.status = { in: ['ENVOYEE', 'EN_RETARD', 'PARTIEL'] };
+      if (filters.unpaid) where.status = { in: ['VALIDEE', 'EN_RETARD', 'PARTIEL'] };
       else if (filters.status) where.status = filters.status;
       if (filters.clientId) where.clientId = filters.clientId;
       if (filters.conventionId) where.conventionId = filters.conventionId;
@@ -843,7 +843,7 @@ export function registerAccountingIPC(): void {
       if (!invoice) return { success: false, error: 'Facture introuvable' };
 
       // Une facture encore en brouillon ne peut pas être encaissée :
-      // l'émetteur doit d'abord la confirmer (statut ENVOYEE).
+      // l'émetteur doit d'abord la confirmer (statut VALIDEE).
       if (invoice.status === 'BROUILLON') {
         return { success: false, error: 'Impossible d\'encaisser une facture en brouillon : confirmez-la d\'abord' };
       }
@@ -1281,6 +1281,7 @@ export function registerAccountingIPC(): void {
               issueDate: paidAt,
               dueDate: installment.dueDate,
               paidAt,
+              notes: d.notes,
               items: {
                 create: [{
                   description: `Échéance n°${installment.installmentNumber} — convention ${installment.convention.reference}`,
@@ -1295,6 +1296,7 @@ export function registerAccountingIPC(): void {
                   method: d.method,
                   paidAt,
                   reference: d.paymentRef,
+                  notes: d.notes,
                   bankAccountId: d.bankAccountId ?? null,
                 }],
               },

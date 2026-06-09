@@ -64,6 +64,11 @@ export default function UserDetailPage() {
             <div className="flex-1">
               <div className="flex items-center gap-3 flex-wrap">
                 <h2 className="text-xl font-bold text-slate-900">{user.lastName} {user.firstName}</h2>
+                {user.reference && (
+                  <span className="font-mono text-xs font-semibold text-blue-700 bg-blue-50 px-2 py-0.5 rounded">
+                    {user.reference}
+                  </span>
+                )}
                 <Badge variant={ROLE_VARIANT[user.role]}>{user.role}</Badge>
                 <Badge variant={user.isActive ? 'success' : 'danger'}>{user.isActive ? 'Actif' : 'Inactif'}</Badge>
               </div>

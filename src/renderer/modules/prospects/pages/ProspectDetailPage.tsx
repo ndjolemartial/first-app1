@@ -146,6 +146,11 @@ export default function ProspectDetailPage() {
             <div className="flex-1">
               <div className="flex items-center gap-3 flex-wrap">
                 <h2 className="text-xl font-bold text-slate-900">{displayName}</h2>
+                {p.reference && (
+                  <span className="font-mono text-xs font-semibold text-purple-700 bg-purple-50 px-2 py-0.5 rounded">
+                    {p.reference}
+                  </span>
+                )}
                 <Badge variant={STATUS_VARIANT[p.status]}>
                   {STATUS_LABEL[p.status] ?? p.status}
                 </Badge>

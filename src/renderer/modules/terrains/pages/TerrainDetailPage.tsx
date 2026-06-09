@@ -46,11 +46,11 @@ const CONVENTION_STATUS_VARIANT: Record<string, any> = {
 };
 
 const INVOICE_STATUS_VARIANT: Record<string, any> = {
-  BROUILLON: 'default', ENVOYEE: 'info', PAYEE: 'success',
+  BROUILLON: 'default', VALIDEE: 'info', PAYEE: 'success',
   PARTIEL: 'warning', EN_RETARD: 'danger', ANNULEE: 'default',
 };
 const INVOICE_STATUS_LABEL: Record<string, string> = {
-  BROUILLON: 'Brouillon', ENVOYEE: 'Validée', PAYEE: 'Payée',
+  BROUILLON: 'Brouillon', VALIDEE: 'Validée', PAYEE: 'Payée',
   PARTIEL: 'Partielle', EN_RETARD: 'En retard', ANNULEE: 'Annulée',
 };
 
@@ -484,7 +484,7 @@ export default function TerrainDetailPage() {
         onConfirm={async () => { await cancelAcd.mutateAsync(Number(id)); setConfirmCancelAcd(false); }}
         loading={cancelAcd.isPending}
         title="Annuler les factures ACD non payées"
-        message="Les factures BROUILLON, ENVOYEE et EN_RETARD passeront au statut ANNULEE. Les factures déjà payées ne seront pas modifiées."
+        message="Les factures BROUILLON, VALIDEE et EN_RETARD passeront au statut ANNULEE. Les factures déjà payées ne seront pas modifiées."
         confirmLabel="Annuler les factures"
       />
 

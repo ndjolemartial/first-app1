@@ -32,6 +32,10 @@ export function storageRoot(): string {
 
 /** Chemin absolu à partir d'un chemin relatif stocké en base. */
 export function resolveStoragePath(relativePath: string): string {
+  // Les documents importés « en référence » (archives héritées) conservent un
+  // chemin ABSOLU (UNC `\\serveur\partage\...` ou `X:\...`). Il faut l'utiliser
+  // tel quel : `path.join` écraserait le préfixe réseau et casserait l'accès.
+  if (path.isAbsolute(relativePath)) return relativePath;
   return path.join(storageRoot(), relativePath);
 }
 

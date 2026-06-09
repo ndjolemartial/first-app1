@@ -53,6 +53,8 @@ const STATUT_CONJUGAL_OPTIONS = [
   { value: 'CELIBATAIRE', label: 'Célibataire' },
   { value: 'MARIEE', label: 'Marié(e)' },
   { value: 'CONCUBINAGE', label: 'Concubinage' },
+  { value: 'DIVORCE', label: 'Divorcé(e)' },
+  { value: 'VEUF', label: 'Veuf/Veuve' },
 ];
 
 const ROLE_LABELS: Record<string, string> = {

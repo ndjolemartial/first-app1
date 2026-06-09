@@ -18,6 +18,7 @@ import { useClients } from '../../clients/hooks/useClients';
 import { useCountries } from '../../../shared/hooks/useCountries';
 import { useAuthStore } from '../../../shared/stores/auth.store';
 import MapLinkField from '../../../shared/components/MapLinkField';
+import PriceTierEditor from '../../../shared/components/forms/PriceTierEditor';
 import { formatPersonName } from '../../../shared/utils/format';
 import { Save } from 'lucide-react';
 
@@ -136,6 +137,8 @@ export default function PropertyFormPage() {
 
   // Origine du bien : propriétaire par défaut, ou programme si pré-rempli.
   const [sourceType, setSourceType] = useState<SourceType>(presetProgrammeId ? 'PROGRAMME' : 'OWNER');
+  // Grille de prix de vente par modalité (objet { modalite: montant }), hors RHF.
+  const [priceTiers, setPriceTiers] = useState<Record<string, number | ''>>({});
 
   const ownerOptions = [
     { value: '', label: '— Choisir un propriétaire —' },
@@ -212,6 +215,7 @@ export default function PropertyFormPage() {
         description: p.description ?? '',
         condition: p.condition ?? undefined,
       });
+      setPriceTiers((p.salePriceTiers as Record<string, number>) ?? {});
     }
   }, [res, isEdit, reset]);
 
@@ -232,6 +236,8 @@ export default function PropertyFormPage() {
     // Client : forcé à null si le statut est DISPONIBLE (cohérence côté serveur aussi).
     payload.clientId =
       data.status !== 'DISPONIBLE' && data.clientId ? Number(data.clientId) : null;
+    // Grille de prix : objet { modalite: montant } ; {} pour vider.
+    payload.salePriceTiers = priceTiers as Record<string, number>;
     let r;
     if (isEdit) r = await update.mutateAsync({ id: Number(id), payload });
     else r = await create.mutateAsync(payload);
@@ -375,6 +381,13 @@ export default function PropertyFormPage() {
           </div>
           <div className="mt-4">
             <Input label="Charges mensuelles (FCFA)" type="number" step="1000" {...register('charges')} />
+          </div>
+          <div className="mt-4">
+            <PriceTierEditor
+              value={priceTiers}
+              onChange={setPriceTiers}
+              description="Prix de vente selon la modalité de paiement (comptant, échéances). Renseigné automatiquement dans la convention de vente selon l'échéance choisie."
+            />
           </div>
         </Card>
 

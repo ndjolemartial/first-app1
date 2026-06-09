@@ -21,6 +21,7 @@ const users = {
     update: (token, id, payload) => api.invoke('users:update', { token, id, payload }),
     resetPassword: (token, id, newPassword) => api.invoke('users:resetPassword', { token, id, newPassword }),
     toggleActive: (token, id) => api.invoke('users:toggleActive', { token, id }),
+    delete: (token, id) => api.invoke('users:delete', { token, id }),
 };
 // Prospects
 const prospects = {
@@ -326,6 +327,8 @@ const settings = {
     uploadLogo: (token, payload) => api.invoke('settings:uploadLogo', { token, payload }),
     deleteLogo: (token) => api.invoke('settings:deleteLogo', { token }),
     getLogoData: (token) => api.invoke('settings:getLogoData', { token }),
+    /** Logo de connexion lu directement depuis le dossier logo/ (sans session ni accès DB). */
+    getLoginLogoData: () => api.invoke('settings:getLoginLogoData', {}),
     getStorage: (token) => api.invoke('settings:getStorage', { token }),
     updateStorage: (token, payload) => api.invoke('settings:updateStorage', { token, payload }),
     getEmail: (token) => api.invoke('settings:getEmail', { token }),

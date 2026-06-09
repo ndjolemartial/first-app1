@@ -36,6 +36,8 @@ const REVENUE_PERIOD_OPTIONS = [
 const INVOICE_TYPE_LABEL: Record<string, string> = {
   VENTE: 'Vente', ECHEANCE_VENTE: 'Échéance vente', FRAIS_AGENCE: "Frais d'agence",
   FRAIS_DE_GESTION: 'Frais de gestion', FRAIS_DEMARCHES_ACD: 'Frais démarches ACD',
+  FRAIS_OUVERTURE_DOSSIER: "Frais d'ouverture de dossier",
+  APPORT_INITIAL: 'Apport initial',
   AVANCE: 'Avance', CAUTION: 'Caution', OTHER: 'Autre',
 };
 
@@ -354,11 +356,11 @@ export default function AccountingDashboardPage() {
                   ? `${inv.client?.firstName ?? ''} ${inv.client?.lastName ?? ''}`.trim()
                   : (inv.client?.entreprise ?? '—');
                 const STATUS_LABEL: Record<string, string> = {
-                  BROUILLON: 'Brouillon', ENVOYEE: 'Validée', PAYEE: 'Payée',
+                  BROUILLON: 'Brouillon', VALIDEE: 'Validée', PAYEE: 'Payée',
                   PARTIEL: 'Partiel', EN_RETARD: 'En retard', ANNULEE: 'Annulée',
                 };
                 const STATUS_VARIANT: Record<string, 'success' | 'info' | 'warning' | 'danger' | 'default'> = {
-                  BROUILLON: 'default', ENVOYEE: 'info', PAYEE: 'success',
+                  BROUILLON: 'default', VALIDEE: 'info', PAYEE: 'success',
                   PARTIEL: 'warning', EN_RETARD: 'danger', ANNULEE: 'default',
                 };
                 return (

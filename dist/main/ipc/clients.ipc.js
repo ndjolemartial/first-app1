@@ -15,10 +15,12 @@ const clientBaseSchema = zod_1.z.object({
     firstName: zod_1.z.string().optional(),
     lastName: zod_1.z.string().optional(),
     civilite: zod_1.z.enum(['MONSIEUR', 'MADAME', 'MADEMOISELLE']).optional(),
-    statutConjugal: zod_1.z.enum(['CELIBATAIRE', 'MARIEE', 'CONCUBINAGE']).optional(),
+    statutConjugal: zod_1.z.enum(['CELIBATAIRE', 'MARIEE', 'CONCUBINAGE', 'DIVORCE', 'VEUF']).optional(),
     entreprise: zod_1.z.string().optional(),
     registre_de_commerce: zod_1.z.string().optional(),
     compte_contribuable: zod_1.z.string().optional(),
+    website: zod_1.z.string().optional(),
+    companyActivity: zod_1.z.string().optional(),
     // Entreprise — représentant légal
     legalRepFirstName: zod_1.z.string().optional(),
     legalRepLastName: zod_1.z.string().optional(),
@@ -29,10 +31,12 @@ const clientBaseSchema = zod_1.z.object({
     phone: zod_1.z.string().optional(),
     mobile: zod_1.z.string().optional(),
     address: zod_1.z.string().optional(),
+    commune: zod_1.z.string().optional(),
     city: zod_1.z.string().optional(),
     postalCode: zod_1.z.string().optional(),
     country: zod_1.z.string().default('CI'),
     nationality: zod_1.z.string().optional(),
+    profession: zod_1.z.string().optional(),
     birthDate: zod_1.z.string().datetime().optional(),
     birthPlace: zod_1.z.string().optional(),
     idNumber: zod_1.z.string().optional(),
@@ -131,6 +135,16 @@ function stripEmpty(obj) {
 }
 /** Sérialise les objets Prisma (notamment Decimal) pour le canal IPC. */
 const ser = (v) => JSON.parse(JSON.stringify(v));
+/** Génère la prochaine référence de client : CLI-YYYY-NNNN. */
+async function nextReference(db) {
+    const year = new Date().getFullYear();
+    const last = await db.client.findFirst({
+        where: { reference: { startsWith: `CLI-${year}-` } },
+        orderBy: { reference: 'desc' },
+    });
+    const seq = last ? parseInt(last.reference.split('-')[2], 10) + 1 : 1;
+    return `CLI-${year}-${String(seq).padStart(4, '0')}`;
+}
 /**
  * Enregistre les handlers IPC pour la gestion des clients.
  */
@@ -159,6 +173,7 @@ function registerClientsIPC() {
             }
             if (filters.search) {
                 const orSearch = [
+                    { reference: { contains: filters.search } },
                     { firstName: { contains: filters.search } },
                     { lastName: { contains: filters.search } },
                     { entreprise: { contains: filters.search } },
@@ -220,7 +235,7 @@ function registerClientsIPC() {
                         },
                         orderBy: { createdAt: 'desc' },
                     },
-                    documents: { orderBy: { uploadedAt: 'desc' } },
+                    documents: { where: { deletedAt: null }, orderBy: { uploadedAt: 'desc' } },
                     activities: { orderBy: { createdAt: 'desc' }, take: 20 },
                     invoices: { where: { deletedAt: null }, orderBy: { issueDate: 'desc' }, take: 10 },
                     prospect: { select: { id: true, status: true, assignedToId: true } },
@@ -258,6 +273,7 @@ function registerClientsIPC() {
                 return { success: false, error: parsed.error.format() };
             const db = (0, db_service_1.getDb)();
             const data = { ...parsed.data };
+            data.reference = await nextReference(db);
             if (data.birthDate)
                 data.birthDate = new Date(data.birthDate);
             const client = await db.client.create({ data });

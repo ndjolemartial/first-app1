@@ -111,6 +111,11 @@ export default function ClientDetailPage() {
             <div className="flex-1">
               <div className="flex items-center gap-3 flex-wrap">
                 <h2 className="text-xl font-bold text-slate-900">{displayName}</h2>
+                {c.reference && (
+                  <span className="font-mono text-xs font-semibold text-green-700 bg-green-50 px-2 py-0.5 rounded">
+                    {c.reference}
+                  </span>
+                )}
                 <Badge variant={c.type === 'INDIVIDUEL' ? 'info' : 'purple'}>
                   {c.type === 'INDIVIDUEL' ? 'Particulier' : 'Entreprise'}
                 </Badge>
@@ -129,7 +134,7 @@ export default function ClientDetailPage() {
             <dl className="space-y-3 text-sm">
               {[
                 ...(c.type === 'INDIVIDUEL' && c.statutConjugal
-                  ? [['Statut conjugal', { CELIBATAIRE: 'Célibataire', MARIEE: 'Marié(e)', CONCUBINAGE: 'Concubinage' }[c.statutConjugal as string] ?? c.statutConjugal]]
+                  ? [['Statut conjugal', { CELIBATAIRE: 'Célibataire', MARIEE: 'Marié(e)', CONCUBINAGE: 'Concubinage', DIVORCE: 'Divorcé(e)', VEUF: 'Veuf/Veuve' }[c.statutConjugal as string] ?? c.statutConjugal]]
                   : []),
                 ...(c.type === 'INDIVIDUEL' && c.birthDate
                   ? [['Date de naissance', formatDate(c.birthDate)]]
@@ -137,9 +142,13 @@ export default function ClientDetailPage() {
                 ...(c.type === 'INDIVIDUEL' && c.birthPlace
                   ? [['Lieu de naissance', c.birthPlace]]
                   : []),
+                ...(c.type === 'INDIVIDUEL' && c.profession
+                  ? [['Profession', c.profession]]
+                  : []),
                 ['Téléphone 1', c.phone ?? '—'],
                 ['Téléphone 2', c.mobile ?? '—'],
                 ['Adresse', c.address ?? '—'],
+                ['Commune', c.commune ?? '—'],
                 ['Ville', c.city ?? '—'],
                 ['Pays', c.country],
                 ['Créé le', formatDate(c.createdAt)],
@@ -224,6 +233,25 @@ export default function ClientDetailPage() {
               </dl>
             )}
           </Card>
+
+          {c.type === 'ENTREPRISE' && (
+            <Card>
+              <h3 className="font-semibold text-slate-700 mb-4">Informations entreprise</h3>
+              <dl className="space-y-3 text-sm">
+                {[
+                  ['Registre de commerce', c.registre_de_commerce ?? '—'],
+                  ['Compte contribuable', c.compte_contribuable ?? '—'],
+                  ['Site web', c.website ?? '—'],
+                  ['Activités', c.companyActivity ?? '—'],
+                ].map(([label, value]) => (
+                  <div key={label} className="flex justify-between gap-4">
+                    <dt className="text-slate-500">{label}</dt>
+                    <dd className="font-medium text-slate-900 text-right break-words">{value}</dd>
+                  </div>
+                ))}
+              </dl>
+            </Card>
+          )}
 
           {c.type === 'INDIVIDUEL' && (c.fatherFirstName || c.fatherLastName || c.motherFirstName || c.motherLastName) && (
             <Card>

@@ -1,7 +1,6 @@
 import { ipcMain } from 'electron';
 import { getDb } from '../services/db.service';
 import { getSession, checkRole } from '../services/auth.service';
-import { autoGenerateConventionCommission } from '../services/commission.service';
 import logger from '../utils/logger';
 import { z } from 'zod';
 
@@ -346,7 +345,7 @@ export function registerConventionsIPC(): void {
           referrer: { select: { id: true, firstName: true, lastName: true, companyName: true, email: true, phone: true } },
           installments: { orderBy: { installmentNumber: 'asc' } },
           invoices: { where: { deletedAt: null }, orderBy: { issueDate: 'desc' }, take: 20 },
-          documents: { orderBy: { uploadedAt: 'desc' } },
+          documents: { where: { deletedAt: null }, orderBy: { uploadedAt: 'desc' } },
           // Attestations émises ou associées à cette convention.
           attestations: {
             where: { deletedAt: null },
@@ -452,8 +451,8 @@ export function registerConventionsIPC(): void {
         } else if (!isTerrain && propertyIds.length > 0) {
           await db.property.updateMany({ where: { id: { in: propertyIds } }, data: { status: 'EN_LOCATION' } });
         }
-        // Génère automatiquement la commission de l'agent à l'activation
-        await autoGenerateConventionCommission(db, convention.id);
+        // Les commissions ne sont PAS générées automatiquement : elles se créent
+        // manuellement via le formulaire « Nouvelle commission ».
       }
       // Crée l'échéancier saisi dans le formulaire
       if (d.installments && d.installments.length > 0) {
@@ -467,6 +466,57 @@ export function registerConventionsIPC(): void {
           })),
         });
       }
+      // Génère automatiquement des factures VALIDEE pour les frais d'ouverture
+      // de dossier et l'apport initial saisis à l'ouverture de la convention.
+      const autoInvoices: Array<{ type: 'FRAIS_OUVERTURE_DOSSIER' | 'APPORT_INITIAL' | 'VENTE'; amount: number; label: string }> = [];
+      const fraisOuverture = Number(d.fraisOuvertureDossier ?? 0);
+      const apport = Number(d.apportInitial ?? 0);
+      if (fraisOuverture > 0) autoInvoices.push({ type: 'FRAIS_OUVERTURE_DOSSIER', amount: fraisOuverture, label: "Frais d'ouverture de dossier" });
+      if (apport > 0) autoInvoices.push({ type: 'APPORT_INITIAL', amount: apport, label: 'Apport initial' });
+      // Paiement comptant : facture de vente pour le solde réglé en une fois
+      // (prix total − apport déjà facturé). Exclut de fait les locations (saleAmount nul).
+      const soldeComptant = Number(d.saleAmount ?? 0) - apport;
+      if (d.paymentModalites === 'CASH' && soldeComptant > 0) {
+        autoInvoices.push({ type: 'VENTE', amount: soldeComptant, label: 'Vente — paiement comptant' });
+      }
+      if (autoInvoices.length > 0) {
+        const year = new Date().getFullYear();
+        const lastInv = await db.invoice.findFirst({
+          where: { reference: { startsWith: `FAC-${year}-` } },
+          orderBy: { reference: 'desc' },
+          select: { reference: true },
+        });
+        let seq = lastInv ? parseInt(lastInv.reference.split('-')[2], 10) : 0;
+        const now = new Date();
+        for (const inv of autoInvoices) {
+          seq += 1;
+          await db.invoice.create({
+            data: {
+              reference: `FAC-${year}-${String(seq).padStart(4, '0')}`,
+              type: inv.type,
+              status: 'VALIDEE',
+              clientId: d.clientId,
+              conventionId: convention.id,
+              subtotal: inv.amount as any,
+              taxRate: 0 as any,
+              taxAmount: 0 as any,
+              total: inv.amount as any,
+              issueDate: now,
+              dueDate: now,
+              items: {
+                create: [{
+                  description: `${inv.label} — convention ${convention.reference}`,
+                  quantity: 1 as any,
+                  unitPrice: inv.amount as any,
+                  total: inv.amount as any,
+                }],
+              },
+            },
+          });
+        }
+        logger.info(`Convention ${convention.reference}: ${autoInvoices.length} facture(s) VALIDEE générée(s) automatiquement`);
+      }
+
       logger.info(`Convention created: ${convention.reference}`);
       return ser({ success: true, data: convention });
     } catch (error: any) {
@@ -488,7 +538,16 @@ export function registerConventionsIPC(): void {
         return { success: false, error: msg };
       }
       const db = getDb();
-      const d = parsed.data;
+      // ⚠️ `.partial()` applique tout de même les `.default()` du schéma aux champs
+      // ABSENTS (assetType→PROPERTY, paymentModalites→CASH, …). Sur une mise à jour
+      // partielle (ex. changement de statut seul), cela écraserait ces champs et
+      // supprimerait les liens terrains/biens. On ne conserve donc que les champs
+      // réellement présents dans le payload reçu.
+      const sentKeys = new Set(Object.keys(payload ?? {}));
+      const d: any = {};
+      for (const k of Object.keys(parsed.data)) {
+        if (sentKeys.has(k)) d[k] = (parsed.data as any)[k];
+      }
       const data: any = { ...d };
       // Champs traités séparément (relations / dates)
       delete data.installments;
@@ -537,7 +596,7 @@ export function registerConventionsIPC(): void {
         await db.conventionProperty.deleteMany({ where: { conventionId: id } });
         if (effectiveAssetType === 'PROPERTY' && d.propertyIds && d.propertyIds.length > 0) {
           await db.conventionProperty.createMany({
-            data: d.propertyIds.map((propertyId, i) => ({ conventionId: id, propertyId, order: i })),
+            data: d.propertyIds.map((propertyId: number, i: number) => ({ conventionId: id, propertyId, order: i })),
           });
         }
       }
@@ -548,7 +607,7 @@ export function registerConventionsIPC(): void {
         await db.conventionTerrain.deleteMany({ where: { conventionId: id } });
         if (effectiveAssetType === 'TERRAIN' && d.terrainIds && d.terrainIds.length > 0) {
           await db.conventionTerrain.createMany({
-            data: d.terrainIds.map((terrainId, i) => ({ conventionId: id, terrainId, order: i })),
+            data: d.terrainIds.map((terrainId: number, i: number) => ({ conventionId: id, terrainId, order: i })),
           });
         }
       }
@@ -558,7 +617,7 @@ export function registerConventionsIPC(): void {
         await db.saleInstallment.deleteMany({ where: { conventionId: id } });
         if (d.installments.length > 0) {
           await db.saleInstallment.createMany({
-            data: d.installments.map((inst, i) => ({
+            data: d.installments.map((inst: { dueDate: string; amount: number }, i: number) => ({
               conventionId: id,
               installmentNumber: i + 1,
               dueDate: new Date(inst.dueDate),
@@ -604,7 +663,7 @@ export function registerConventionsIPC(): void {
             await db.property.updateMany({ where: { id: { in: ids } }, data: { status: 'EN_LOCATION' } });
           }
         }
-        await autoGenerateConventionCommission(db, convention.id);
+        // Pas de génération automatique de commission : création manuelle uniquement.
       }
       return ser({ success: true, data: convention });
     } catch (error: any) {
@@ -656,15 +715,71 @@ export function registerConventionsIPC(): void {
     }
   });
 
+  /**
+   * Suppression DÉFINITIVE (hard delete) d'une convention et de ses données liées :
+   *   — supprimées : factures (+ lignes + paiements), échéances de vente,
+   *     commission(s) d'agent, et opérations de trésorerie rattachées à ces
+   *     paiements / échéances / commissions ;
+   *   — détachées (conservées) : documents, attestations, activités CRM,
+   *     communications, et avenants enfants (parentConventionId → null) ;
+   *   — les liens terrains/biens (ConventionProperty/Terrain) sont supprimés en
+   *     cascade par la base.
+   * L'ordre respecte les contraintes de clés étrangères (enfants avant parents).
+   */
   ipcMain.handle('conventions:delete', async (_event, { token, id }: any) => {
     try {
       const session = getSession(token);
       if (!session) return { success: false, error: 'Session expirée' };
       checkRole(session, ['SUPER_ADMIN', 'ADMIN']);
       const db = getDb();
-      await db.convention.update({ where: { id }, data: { deletedAt: new Date() } });
+      await db.$transaction(async (tx) => {
+        const invoices = await tx.invoice.findMany({ where: { conventionId: id }, select: { id: true } });
+        const invoiceIds = invoices.map((i) => i.id);
+        const payments = invoiceIds.length
+          ? await tx.payment.findMany({ where: { invoiceId: { in: invoiceIds } }, select: { id: true } })
+          : [];
+        const paymentIds = payments.map((p) => p.id);
+        const installments = await tx.saleInstallment.findMany({ where: { conventionId: id }, select: { id: true } });
+        const installmentIds = installments.map((s) => s.id);
+        const commissions = await tx.commission.findMany({ where: { conventionId: id }, select: { id: true } });
+        const commissionIds = commissions.map((c) => c.id);
+
+        // 1) Opérations de trésorerie rattachées aux paiements / échéances / commissions supprimés
+        const treasuryOr: any[] = [];
+        if (paymentIds.length) treasuryOr.push({ paymentId: { in: paymentIds } });
+        if (installmentIds.length) treasuryOr.push({ installmentId: { in: installmentIds } });
+        if (commissionIds.length) treasuryOr.push({ commissionId: { in: commissionIds } });
+        if (treasuryOr.length) await tx.treasuryOperation.deleteMany({ where: { OR: treasuryOr } });
+
+        // 2) Détachement des entités conservées (évite les violations de FK)
+        await tx.document.updateMany({ where: { conventionId: id }, data: { conventionId: null } });
+        if (invoiceIds.length) await tx.document.updateMany({ where: { invoiceId: { in: invoiceIds } }, data: { invoiceId: null } });
+        if (commissionIds.length) await tx.document.updateMany({ where: { commissionId: { in: commissionIds } }, data: { commissionId: null } });
+        await tx.crmActivity.updateMany({ where: { conventionId: id }, data: { conventionId: null } });
+        if (invoiceIds.length) await tx.crmActivity.updateMany({ where: { invoiceId: { in: invoiceIds } }, data: { invoiceId: null } });
+        if (installmentIds.length) await tx.crmActivity.updateMany({ where: { installmentId: { in: installmentIds } }, data: { installmentId: null } });
+        await tx.communication.updateMany({ where: { conventionId: id }, data: { conventionId: null } });
+        await tx.attestation.updateMany({ where: { conventionId: id }, data: { conventionId: null } });
+        // Avenants/résiliations enfants : détacher du parent supprimé
+        await tx.convention.updateMany({ where: { parentConventionId: id }, data: { parentConventionId: null } });
+
+        // 3) Suppression des enfants financiers (ordre : échéances avant factures car
+        //    SaleInstallment.invoiceId référence Invoice)
+        if (invoiceIds.length) {
+          await tx.payment.deleteMany({ where: { invoiceId: { in: invoiceIds } } });
+          await tx.invoiceItem.deleteMany({ where: { invoiceId: { in: invoiceIds } } });
+        }
+        await tx.saleInstallment.deleteMany({ where: { conventionId: id } });
+        if (invoiceIds.length) await tx.invoice.deleteMany({ where: { id: { in: invoiceIds } } });
+        if (commissionIds.length) await tx.commission.deleteMany({ where: { id: { in: commissionIds } } });
+
+        // 4) Suppression définitive de la convention (cascade sur les liens terrains/biens)
+        await tx.convention.delete({ where: { id } });
+      });
+      logger.info(`Convention #${id} supprimée définitivement (factures, échéances, commission, trésorerie liées)`);
       return { success: true };
     } catch (error: any) {
+      logger.error('conventions:delete', error.message);
       return { success: false, error: error.message };
     }
   });

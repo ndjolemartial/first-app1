@@ -123,7 +123,7 @@ export function registerOwnersIPC(): void {
               address: true, city: true, rentPrice: true, salePrice: true,
             },
           },
-          documents: { orderBy: { uploadedAt: 'desc' } },
+          documents: { where: { deletedAt: null }, orderBy: { uploadedAt: 'desc' } },
           activities: { orderBy: { createdAt: 'desc' }, take: 20 },
           idType:         { select: { id: true, code: true, label: true } },
           legalRepIdType: { select: { id: true, code: true, label: true } },

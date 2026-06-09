@@ -14,6 +14,10 @@ const terrainSchema = z.object({
   statut: z.enum(['DISPONIBLE', 'RESERVE', 'VENDU', 'SOUS_OPTION']).default('DISPONIBLE'),
   surface: z.coerce.number().positive().optional().nullable(),
   prixVente: z.coerce.number().positive().optional().nullable(),
+  // Grille de prix par modalité (surcharge la grille héritée du lotissement).
+  // Objet { modalite: montant } ; {} pour vider. Clé z.string() (sous-ensemble
+  // libre) : z.record(z.enum(...)) est exhaustif en Zod v4.
+  salePriceTiers: z.record(z.string(), z.number().nonnegative()).optional(),
   viabilise: z.boolean().default(false),
   numeroADU: z.string().optional(),
   numeroAttestationAttribution: z.string().optional(),
@@ -92,7 +96,7 @@ export function registerTerrainsIPC(): void {
           take: limit,
           orderBy: { reference: 'desc' },
           include: {
-            lotissement: { select: { id: true, reference: true, nom: true, ville: true } },
+            lotissement: { select: { id: true, reference: true, nom: true, ville: true, salePriceTiers: true } },
             programme: { select: { id: true, reference: true, nom: true } },
             client: { select: { id: true, firstName: true, lastName: true, entreprise: true, type: true } },
           },
@@ -119,7 +123,7 @@ export function registerTerrainsIPC(): void {
           programme: true,
           owner: true,
           client: true,
-          documents: { orderBy: { uploadedAt: 'desc' } },
+          documents: { where: { deletedAt: null }, orderBy: { uploadedAt: 'desc' } },
           photos: { orderBy: { order: 'asc' } },
           activities: { orderBy: { createdAt: 'desc' }, take: 20 },
           conventionLinks: {
@@ -437,7 +441,7 @@ export function registerTerrainsIPC(): void {
         where: {
           terrainId: id,
           type: 'FRAIS_DEMARCHES_ACD',
-          status: { in: ['BROUILLON', 'ENVOYEE', 'EN_RETARD'] },
+          status: { in: ['BROUILLON', 'VALIDEE', 'EN_RETARD'] },
           deletedAt: null,
         },
         select: { id: true },

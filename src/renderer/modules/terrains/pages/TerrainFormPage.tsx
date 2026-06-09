@@ -17,6 +17,8 @@ import { useClients } from '../../clients/hooks/useClients';
 import { useAuthStore } from '../../../shared/stores/auth.store';
 import { toast } from '../../../shared/components/ui/Toast';
 import MapLinkField from '../../../shared/components/MapLinkField';
+import PriceTierEditor from '../../../shared/components/forms/PriceTierEditor';
+import { nearestSurfaceRow, type SurfacePriceMatrix } from '../../../shared/components/forms/SurfacePriceMatrixEditor';
 import { formatPersonName } from '../../../shared/utils/format';
 import { Save, Paperclip } from 'lucide-react';
 
@@ -159,6 +161,8 @@ export default function TerrainFormPage() {
 
   const [scanFiles, setScanFiles] = useState<Partial<Record<ScanKey, File>>>({});
   const [existingDocs, setExistingDocs] = useState<Record<string, any>>({});
+  // Grille de prix par modalité, surcharge de celle du lotissement (objet { modalite: montant }).
+  const [priceTiers, setPriceTiers] = useState<Record<string, number | ''>>({});
   // Case à cocher (non persistée) : recopier la localisation GPS du lotissement.
   // Tant qu'elle est active, les champs lat/long sont verrouillés et suivent le
   // lotissement courant (utile pour les terrains qui partagent l'emplacement
@@ -331,8 +335,17 @@ export default function TerrainFormPage() {
           : '',
         acdDemarchesInstallmentCount: t.acdDemarchesInstallmentCount ?? ('' as any),
       });
+      setPriceTiers((t.salePriceTiers as Record<string, number>) ?? {});
     }
   }, [res, isEdit, reset]);
+
+  // Grille héritée : ligne du lotissement de la tranche de superficie la plus
+  // proche de celle du terrain (matrice indexée par superficie puis modalité).
+  const watchSurface = watch('surface');
+  const inheritedTiers = nearestSurfaceRow(
+    selectedLot?.salePriceTiers as SurfacePriceMatrix | undefined,
+    watchSurface as string | number,
+  ) as Record<string, number> | null;
 
   const uploadScans = async (terrainId: number) => {
     const entries: Array<[ScanKey, string]> = [
@@ -376,6 +389,8 @@ export default function TerrainFormPage() {
       acdDemarchesAmount: data.acdDemarchesAmount === '' ? null : data.acdDemarchesAmount,
       acdDemarchesStartDate: data.acdDemarchesStartDate ? new Date(data.acdDemarchesStartDate).toISOString() : null,
       acdDemarchesInstallmentCount: data.acdDemarchesInstallmentCount === '' ? null : data.acdDemarchesInstallmentCount,
+      // Grille de prix (surcharge du lotissement) : objet { modalite: montant } ; {} pour vider.
+      salePriceTiers: priceTiers as Record<string, number>,
     };
     let r: any;
     if (isEdit) r = await update.mutateAsync({ id: Number(id), payload });
@@ -452,6 +467,20 @@ export default function TerrainFormPage() {
                 error={errors.clientId?.message}
               />
             )}
+          </div>
+
+          {/* Grille de prix de vente par échéance (surcharge le lotissement) */}
+          <div className="border-t border-slate-200 pt-4">
+            <PriceTierEditor
+              value={priceTiers}
+              onChange={setPriceTiers}
+              inherited={inheritedTiers}
+              description={
+                inheritedTiers
+                  ? 'Prix hérités du lotissement pour cette superficie (affichés en gris). Laisser vide pour hériter, ou saisir pour surcharger ce terrain.'
+                  : 'Aucun prix défini dans le lotissement pour cette superficie — saisissez les prix par échéance pour ce terrain.'
+              }
+            />
           </div>
 
           {/* Frais de démarches ACD */}

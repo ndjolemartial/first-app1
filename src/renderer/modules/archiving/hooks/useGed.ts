@@ -35,7 +35,16 @@ export function useGedTags() {
 }
 
 export function useGedDashboard() {
-  return useQuery({ queryKey: ['ged-dashboard'], queryFn: () => ipc().gedDashboard(token()) });
+  return useQuery({
+    queryKey: ['ged-dashboard'],
+    queryFn: () => ipc().gedDashboard(token()),
+    // Toujours rafraîchir à l'affichage : l'espace disque / les compteurs doivent
+    // refléter tout ajout ou suppression de fichier, y compris via des voies hors
+    // GED (pièces d'identité, registre de commerce… depuis les fiches métier) qui
+    // n'invalident pas ce cache.
+    refetchOnMount: 'always',
+    staleTime: 0,
+  });
 }
 
 export function useGedAudit(limit = 100) {

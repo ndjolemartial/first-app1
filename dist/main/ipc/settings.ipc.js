@@ -292,6 +292,31 @@ function registerSettingsIPC() {
             return { success: false, error: err.message };
         }
     });
+    /**
+     * Logo de la page de connexion — lu DIRECTEMENT depuis le répertoire
+     * `<storage>/logo/` (aucun accès base de données), pour un affichage immédiat
+     * au démarrage à froid : la page de connexion n'attend plus une requête DB.
+     * Accessible sans session.
+     */
+    electron_1.ipcMain.handle('settings:getLoginLogoData', async () => {
+        try {
+            const dir = path_1.default.join((0, storage_service_1.storageRoot)(), 'logo');
+            if (!fs_1.default.existsSync(dir))
+                return { success: true, data: null };
+            const images = fs_1.default.readdirSync(dir).filter((f) => /\.(png|jpe?g|svg|webp|gif)$/i.test(f));
+            if (images.length === 0)
+                return { success: true, data: null };
+            // Privilégie « company-logo.* » s'il existe, sinon la première image trouvée.
+            const file = images.find((f) => /^company-logo\./i.test(f)) ?? images[0];
+            const buf = fs_1.default.readFileSync(path_1.default.join(dir, file));
+            const ext = path_1.default.extname(file).toLowerCase().replace('.', '') || 'png';
+            const mime = ext === 'svg' ? 'image/svg+xml' : `image/${ext === 'jpg' ? 'jpeg' : ext}`;
+            return { success: true, data: { base64: buf.toString('base64'), mimeType: mime } };
+        }
+        catch (err) {
+            return { success: false, error: err.message };
+        }
+    });
     // ── Stockage ───────────────────────────────────────────────────────────────
     electron_1.ipcMain.handle('settings:getStorage', async (_event, { token }) => {
         try {

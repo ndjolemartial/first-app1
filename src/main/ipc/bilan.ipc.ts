@@ -479,7 +479,7 @@ async function computeActifPassif(
   const unpaidInvoices = await db.invoice.findMany({
     where: {
       deletedAt: null,
-      status: { in: ['ENVOYEE', 'EN_RETARD', 'PARTIEL'] },
+      status: { in: ['VALIDEE', 'EN_RETARD', 'PARTIEL'] },
       issueDate: { lte: asOfDate },
       ...invWhere,
     },
@@ -640,7 +640,7 @@ async function computeActifPassif(
       where: {
         deletedAt: null,
         type: 'FRAIS_DE_GESTION',
-        status: { in: ['PAYEE', 'ENVOYEE', 'PARTIEL', 'EN_RETARD'] },
+        status: { in: ['PAYEE', 'VALIDEE', 'PARTIEL', 'EN_RETARD'] },
         issueDate: { lte: asOfDate },
         convention: ownerConvFilter,
       },

@@ -32,6 +32,8 @@ const schema = z.object({
   entreprise: z.string().optional(),
   registre_de_commerce: z.string().optional(),
   compte_contribuable: z.string().optional(),
+  website: z.string().optional(),
+  companyActivity: z.string().optional(),
   // Entreprise — représentant légal
   legalRepFirstName: z.string().optional(),
   legalRepLastName: z.string().optional(),
@@ -42,9 +44,11 @@ const schema = z.object({
   phone: z.string().optional(),
   mobile: z.string().optional(),
   address: z.string().optional(),
+  commune: z.string().optional(),
   city: z.string().optional(),
   country: z.string().optional(),
   nationality: z.string().optional(),
+  profession: z.string().optional(),
   idNumber: z.string().optional(),
   idTypeId: z.string().optional(),
   birthDate: z.string().optional(),
@@ -93,6 +97,8 @@ const STATUT_CONJUGAL_OPTIONS = [
   { value: 'CELIBATAIRE', label: 'Célibataire' },
   { value: 'MARIEE', label: 'Marié(e)' },
   { value: 'CONCUBINAGE', label: 'Concubinage' },
+  { value: 'DIVORCE', label: 'Divorcé(e)' },
+  { value: 'VEUF', label: 'Veuf/Veuve' },
 ];
 
 const STATUS_OPTIONS = [
@@ -263,6 +269,8 @@ export default function ClientFormPage() {
         entreprise:           c.entreprise ?? '',
         registre_de_commerce: c.registre_de_commerce ?? '',
         compte_contribuable:  c.compte_contribuable ?? '',
+        website:              c.website ?? '',
+        companyActivity:      c.companyActivity ?? '',
         legalRepFirstName:    c.legalRepFirstName ?? '',
         legalRepLastName:     c.legalRepLastName ?? '',
         legalRepPhone:        c.legalRepPhone ?? '',
@@ -272,9 +280,11 @@ export default function ClientFormPage() {
         phone:                c.phone ?? '',
         mobile:               c.mobile ?? '',
         address:              c.address ?? '',
+        commune:              c.commune ?? '',
         city:                 c.city ?? '',
         country:              c.country ?? 'CI',
         nationality:          c.nationality ?? '',
+        profession:           c.profession ?? '',
         idNumber:             c.idNumber ?? '',
         idTypeId:             c.idTypeId != null ? String(c.idTypeId) : '',
         // `<input type="date">` n'accepte que le format YYYY-MM-DD.
@@ -453,9 +463,10 @@ export default function ClientFormPage() {
                 <Input label="Numéro pièce d'identité" required error={errors.idNumber?.message} {...register('idNumber')} />
                 <Input label="Nationalité" {...register('nationality')} />
               </div>
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-3 gap-4">
                 <Input label="Date de naissance" type="date" {...register('birthDate')} />
                 <Input label="Lieu de naissance" {...register('birthPlace')} />
+                <Input label="Profession" {...register('profession')} />
               </div>
 
               {/* Pièce d'identité scannée */}
@@ -543,7 +554,11 @@ export default function ClientFormPage() {
                   onClear={makeClearHandler(setRcFile, setRcError, rcRef)}
                 />
               </div>
-              <Input label="Compte contribuable" {...register('compte_contribuable')} />
+              <div className="grid grid-cols-2 gap-4">
+                <Input label="Compte contribuable" {...register('compte_contribuable')} />
+                <Input label="Site web" placeholder="https://…" {...register('website')} />
+              </div>
+              <Textarea label="Activités de l'entreprise" rows={2} {...register('companyActivity')} />
             </>
           )}
 
@@ -552,7 +567,10 @@ export default function ClientFormPage() {
             <Input label="Téléphone 1" {...register('phone')} />
             <Input label="Téléphone 2" {...register('mobile')} />
           </div>
-          <Input label="Adresse" {...register('address')} />
+          <div className="grid grid-cols-2 gap-4">
+            <Input label="Adresse" {...register('address')} />
+            <Input label="Commune" {...register('commune')} />
+          </div>
           <div className="grid grid-cols-2 gap-4">
             <Input label="Ville" {...register('city')} />
             <FormSearchSelect control={control} name="country" label="Pays" options={countryOptions} />

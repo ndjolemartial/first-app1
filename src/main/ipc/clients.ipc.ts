@@ -11,10 +11,12 @@ const clientBaseSchema = z.object({
   firstName: z.string().optional(),
   lastName: z.string().optional(),
   civilite: z.enum(['MONSIEUR', 'MADAME', 'MADEMOISELLE']).optional(),
-  statutConjugal: z.enum(['CELIBATAIRE', 'MARIEE', 'CONCUBINAGE']).optional(),
+  statutConjugal: z.enum(['CELIBATAIRE', 'MARIEE', 'CONCUBINAGE', 'DIVORCE', 'VEUF']).optional(),
   entreprise: z.string().optional(),
   registre_de_commerce: z.string().optional(),
   compte_contribuable: z.string().optional(),
+  website: z.string().optional(),
+  companyActivity: z.string().optional(),
   // Entreprise — représentant légal
   legalRepFirstName: z.string().optional(),
   legalRepLastName: z.string().optional(),
@@ -25,10 +27,12 @@ const clientBaseSchema = z.object({
   phone: z.string().optional(),
   mobile: z.string().optional(),
   address: z.string().optional(),
+  commune: z.string().optional(),
   city: z.string().optional(),
   postalCode: z.string().optional(),
   country: z.string().default('CI'),
   nationality: z.string().optional(),
+  profession: z.string().optional(),
   birthDate: z.string().datetime().optional(),
   birthPlace: z.string().optional(),
   idNumber: z.string().optional(),
@@ -141,6 +145,17 @@ function stripEmpty(obj: Record<string, unknown>): Record<string, unknown> {
 /** Sérialise les objets Prisma (notamment Decimal) pour le canal IPC. */
 const ser = <T>(v: T): T => JSON.parse(JSON.stringify(v));
 
+/** Génère la prochaine référence de client : CLI-YYYY-NNNN. */
+async function nextReference(db: ReturnType<typeof getDb>): Promise<string> {
+  const year = new Date().getFullYear();
+  const last = await db.client.findFirst({
+    where: { reference: { startsWith: `CLI-${year}-` } },
+    orderBy: { reference: 'desc' },
+  });
+  const seq = last ? parseInt(last.reference.split('-')[2], 10) + 1 : 1;
+  return `CLI-${year}-${String(seq).padStart(4, '0')}`;
+}
+
 /**
  * Enregistre les handlers IPC pour la gestion des clients.
  */
@@ -167,6 +182,7 @@ export function registerClientsIPC(): void {
       }
       if (filters.search) {
         const orSearch = [
+          { reference: { contains: filters.search } },
           { firstName: { contains: filters.search } },
           { lastName:  { contains: filters.search } },
           { entreprise:{ contains: filters.search } },
@@ -227,7 +243,7 @@ export function registerClientsIPC(): void {
             },
             orderBy: { createdAt: 'desc' },
           },
-          documents: { orderBy: { uploadedAt: 'desc' } },
+          documents: { where: { deletedAt: null }, orderBy: { uploadedAt: 'desc' } },
           activities: { orderBy: { createdAt: 'desc' }, take: 20 },
           invoices: { where: { deletedAt: null }, orderBy: { issueDate: 'desc' }, take: 10 },
           prospect: { select: { id: true, status: true, assignedToId: true } },
@@ -264,6 +280,7 @@ export function registerClientsIPC(): void {
       if (!parsed.success) return { success: false, error: parsed.error.format() };
       const db = getDb();
       const data: any = { ...parsed.data };
+      data.reference = await nextReference(db);
       if (data.birthDate) data.birthDate = new Date(data.birthDate);
       const client = await db.client.create({ data });
       logger.info(`Client created: id=${client.id}`);

@@ -123,7 +123,7 @@ function registerProgrammesIPC() {
                         },
                         orderBy: { reference: 'asc' },
                     },
-                    documents: { orderBy: { uploadedAt: 'desc' } },
+                    documents: { where: { deletedAt: null }, orderBy: { uploadedAt: 'desc' } },
                 },
             });
             if (!programme)

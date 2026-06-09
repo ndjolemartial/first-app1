@@ -41,6 +41,7 @@ const STATUS_VARIANT: Record<string, 'success' | 'danger' | 'purple' | 'warning'
 };
 
 const EXPORT_COLUMNS: ExportColumn[] = [
+  { header: 'Référence',        cell: (c) => c.reference },
   { header: 'Nom / Entreprise', cell: (c) => (c.type === 'INDIVIDUEL' ? `${c.lastName ?? ''} ${c.firstName ?? ''}`.trim() : c.entreprise) },
   { header: 'Type',             cell: (c) => (c.type === 'INDIVIDUEL' ? 'Particulier' : 'Entreprise') },
   { header: 'Téléphone 1',      cell: (c) => c.phone },
@@ -101,7 +102,7 @@ export default function ClientsListPage() {
     >
       <Card className="mb-4 flex flex-wrap gap-3 items-end">
         <div className="flex-1 min-w-[200px]">
-          <Input label="Rechercher" placeholder="Nom, email, téléphone…" value={search}
+          <Input label="Rechercher" placeholder="Référence, nom, email, téléphone…" value={search}
             onChange={(e) => { setSearch(e.target.value); setPage(1); }} />
         </div>
         <div className="w-44">
@@ -127,6 +128,7 @@ export default function ClientsListPage() {
             <table className="w-full text-sm">
               <thead className="bg-slate-50 border-b border-slate-200">
                 <tr>
+                  <th className="text-left px-4 py-3 font-medium text-slate-600">Réf.</th>
                   <th className="text-left px-4 py-3 font-medium text-slate-600">Client</th>
                   <th className="text-left px-4 py-3 font-medium text-slate-600">Type</th>
                   <th className="text-left px-4 py-3 font-medium text-slate-600">Contact</th>
@@ -141,6 +143,9 @@ export default function ClientsListPage() {
               <tbody className="divide-y divide-slate-100">
                 {clients.map((c: any) => (
                   <tr key={c.id} className="hover:bg-slate-50 transition-colors">
+                    <td className="px-4 py-3">
+                      <span className="font-mono text-xs text-slate-500">{c.reference ?? '—'}</span>
+                    </td>
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-3">
                         <div className="h-8 w-8 rounded-full bg-green-100 flex items-center justify-center text-xs font-bold text-green-700">

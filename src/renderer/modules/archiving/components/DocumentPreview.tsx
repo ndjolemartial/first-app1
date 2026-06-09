@@ -24,14 +24,24 @@ export default function DocumentPreview({ documentId, mimeType, name }: Document
 
   useEffect(() => {
     let cancelled = false;
+    let objectUrl: string | null = null;
     setState({ status: 'loading' });
     window.electron.documents.getFileData(token, documentId).then((r: any) => {
       if (cancelled) return;
       if (!r.success) { setState({ status: 'error', message: String(r.error) }); return; }
       if (r.data?.tooLarge || !r.data?.base64) { setState({ status: 'unavailable' }); return; }
-      setState({ status: 'ready', url: `data:${r.data.mimeType};base64,${r.data.base64}` });
+      // Un blob URL est nettement plus fiable qu'un data: URI volumineux pour
+      // l'aperçu (notamment le lecteur PDF de Chromium qui reste blanc en data:).
+      const bin = atob(r.data.base64);
+      const bytes = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+      objectUrl = URL.createObjectURL(new Blob([bytes], { type: r.data.mimeType }));
+      setState({ status: 'ready', url: objectUrl });
     });
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
   }, [documentId, token]);
 
   if (state.status === 'loading') {

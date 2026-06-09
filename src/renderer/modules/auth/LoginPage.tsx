@@ -19,12 +19,13 @@ export default function LoginPage() {
   const navigate = useNavigate();
   const setAuth = useAuthStore((s) => s.setAuth);
   const [error, setError] = useState<string | null>(null);
-  // Logo configuré dans Paramètres → Entreprise (s'il existe).
-  // L'IPC `settings:getLogoData` est accessible sans session.
+  // Logo lu directement depuis le dossier local data/storage/logo/ (sans accès
+  // base de données) → affichage immédiat au démarrage, sans dépendre d'un
+  // chargement distant ni d'une requête DB qui ralentissaient l'initialisation.
   const [logoSrc, setLogoSrc] = useState<string | null>(null);
   useEffect(() => {
     let cancelled = false;
-    window.electron.settings.getLogoData('').then((r) => {
+    window.electron.settings.getLoginLogoData().then((r) => {
       if (cancelled) return;
       if (r.success && r.data) setLogoSrc(`data:${r.data.mimeType};base64,${r.data.base64}`);
     }).catch(() => { /* logo absent : on garde le placeholder */ });

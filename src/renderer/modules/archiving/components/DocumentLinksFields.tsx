@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import Select from '../../../shared/components/ui/Select';
+import SearchSelect from '../../../shared/components/ui/SearchSelect';
 import { useAuthStore } from '../../../shared/stores/auth.store';
 import { formatPersonName } from '../../../shared/utils/format';
 
@@ -141,12 +141,12 @@ export default function DocumentLinksFields({ values, onChange, compact = false 
   return (
     <div className={compact ? 'grid grid-cols-3 gap-3' : 'grid grid-cols-2 gap-3'}>
       {fields.map(([key, label, list]) => (
-        <Select
+        <SearchSelect
           key={key}
           label={label}
           options={opts(list)}
           value={values[key]}
-          onChange={(e) => onChange(key, e.target.value)}
+          onChange={(v) => onChange(key, v)}
         />
       ))}
     </div>

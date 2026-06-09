@@ -22,6 +22,7 @@ interface Window {
       update: (token: string, id: number, payload: object) => Promise<IpcResponse<any>>;
       resetPassword: (token: string, id: number, newPassword: string) => Promise<IpcResponse>;
       toggleActive: (token: string, id: number) => Promise<IpcResponse<any>>;
+      delete: (token: string, id: number) => Promise<IpcResponse>;
     };
     prospects: {
       list: (token: string, filters?: object, page?: number, limit?: number) => Promise<IpcResponse<any[]>>;
@@ -487,6 +488,7 @@ interface Window {
         Promise<IpcResponse<{ relativePath: string }>>;
       deleteLogo: (token: string) => Promise<IpcResponse>;
       getLogoData: (token: string) => Promise<IpcResponse<{ base64: string; mimeType: string } | null>>;
+      getLoginLogoData: () => Promise<IpcResponse<{ base64: string; mimeType: string } | null>>;
 
       // Stockage
       getStorage: (token: string) => Promise<IpcResponse<{

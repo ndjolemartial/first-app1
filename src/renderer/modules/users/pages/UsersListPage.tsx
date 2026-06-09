@@ -9,9 +9,11 @@ import Select from '../../../shared/components/ui/Select';
 import Pagination from '../../../shared/components/ui/Pagination';
 import { SkeletonTable } from '../../../shared/components/ui/Skeleton';
 import EmptyState from '../../../shared/components/ui/EmptyState';
-import { useUsers, useToggleUserActive } from '../hooks/useUsers';
+import ConfirmDialog from '../../../shared/components/ui/ConfirmDialog';
+import { useUsers, useToggleUserActive, useDeleteUser } from '../hooks/useUsers';
+import { useAuthStore } from '../../../shared/stores/auth.store';
 import { formatDate } from '../../../shared/utils/format';
-import { UserPlus, Search, Edit, Power } from 'lucide-react';
+import { UserPlus, Search, Edit, Power, Trash2 } from 'lucide-react';
 
 const ROLE_OPTIONS = [
   { value: '', label: 'Tous les rôles' },
@@ -42,6 +44,18 @@ export default function UsersListPage() {
   const filters = { search: search || undefined, role: role || undefined };
   const { data, isLoading } = useUsers(filters, page, 20);
   const toggleActive = useToggleUserActive();
+  const deleteUser = useDeleteUser();
+
+  // Seul un SUPER_ADMIN peut supprimer un utilisateur (et jamais son propre compte).
+  const currentUser = useAuthStore((s) => s.user);
+  const canDelete = currentUser?.role === 'SUPER_ADMIN';
+  const [deleteTarget, setDeleteTarget] = useState<any>(null);
+
+  const handleDelete = async () => {
+    if (!deleteTarget) return;
+    const r = await deleteUser.mutateAsync(deleteTarget.id);
+    if (r.success) setDeleteTarget(null);
+  };
 
   const users: any[] = data?.data ?? [];
   const total: number = data?.total ?? 0;
@@ -61,7 +75,7 @@ export default function UsersListPage() {
         <div className="flex-1 min-w-[200px]">
           <Input
             label="Rechercher"
-            placeholder="Nom, email, matricule…"
+            placeholder="Référence, nom, email, matricule…"
             value={search}
             onChange={(e) => { setSearch(e.target.value); setPage(1); }}
           />
@@ -91,6 +105,7 @@ export default function UsersListPage() {
             <table className="w-full text-sm">
               <thead className="bg-slate-50 border-b border-slate-200">
                 <tr>
+                  <th className="text-left px-4 py-3 font-medium text-slate-600">Réf.</th>
                   <th className="text-left px-4 py-3 font-medium text-slate-600">Utilisateur</th>
                   <th className="text-left px-4 py-3 font-medium text-slate-600">Matricule</th>
                   <th className="text-left px-4 py-3 font-medium text-slate-600">Rôle</th>
@@ -102,6 +117,9 @@ export default function UsersListPage() {
               <tbody className="divide-y divide-slate-100">
                 {users.map((user: any) => (
                   <tr key={user.id} className="hover:bg-slate-50 transition-colors">
+                    <td className="px-4 py-3">
+                      <span className="font-mono text-xs text-slate-500">{user.reference ?? '—'}</span>
+                    </td>
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-3">
                         <div className="h-8 w-8 rounded-full bg-blue-100 flex items-center justify-center text-xs font-bold text-blue-700">
@@ -130,6 +148,18 @@ export default function UsersListPage() {
                         <Button variant="ghost" size="sm" icon={<Power className="h-4 w-4" />}
                           loading={toggleActive.isPending}
                           onClick={() => toggleActive.mutate(user.id)} />
+                        {canDelete && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            icon={<Trash2 className="h-4 w-4 text-red-500" />}
+                            title={user.id === currentUser?.id
+                              ? 'Vous ne pouvez pas supprimer votre propre compte'
+                              : 'Supprimer'}
+                            disabled={user.id === currentUser?.id}
+                            onClick={() => { deleteUser.reset(); setDeleteTarget(user); }}
+                          />
+                        )}
                       </div>
                     </td>
                   </tr>
@@ -140,6 +170,20 @@ export default function UsersListPage() {
           </>
         )}
       </Card>
+
+      <ConfirmDialog
+        open={!!deleteTarget}
+        onClose={() => setDeleteTarget(null)}
+        onConfirm={handleDelete}
+        title="Supprimer l'utilisateur"
+        message={
+          deleteTarget
+            ? `Supprimer « ${deleteTarget.lastName ?? ''} ${deleteTarget.firstName ?? ''} » (${deleteTarget.email}) ? Le compte sera désactivé et retiré des listes. Cette action est réservée au super administrateur.`
+            : ''
+        }
+        confirmLabel="Supprimer"
+        loading={deleteUser.isPending}
+      />
     </PageLayout>
   );
 }

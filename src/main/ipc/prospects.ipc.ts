@@ -19,6 +19,33 @@ function serialize(p: any): any {
   return { ...p, budget: p.budget != null ? Number(p.budget) : null };
 }
 
+/** Génère la prochaine référence de prospect : PSP-YYYY-NNNN. */
+async function nextReference(db: ReturnType<typeof getDb>): Promise<string> {
+  const year = new Date().getFullYear();
+  const last = await db.prospect.findFirst({
+    where: { reference: { startsWith: `PSP-${year}-` } },
+    orderBy: { reference: 'desc' },
+  });
+  const seq = last ? parseInt(last.reference.split('-')[2], 10) + 1 : 1;
+  return `PSP-${year}-${String(seq).padStart(4, '0')}`;
+}
+
+/**
+ * Génère la prochaine référence de client : CLI-YYYY-NNNN.
+ * Utilisée lors de la conversion d'un prospect en client (le client est créé
+ * ici, hors du handler clients:create qui possède sa propre génération).
+ * Accepte le client Prisma ou un client transactionnel.
+ */
+async function nextClientReference(db: { client: { findFirst: Function } }): Promise<string> {
+  const year = new Date().getFullYear();
+  const last = await db.client.findFirst({
+    where: { reference: { startsWith: `CLI-${year}-` } },
+    orderBy: { reference: 'desc' },
+  });
+  const seq = last ? parseInt(last.reference.split('-')[2], 10) + 1 : 1;
+  return `CLI-${year}-${String(seq).padStart(4, '0')}`;
+}
+
 /** Rôles disposant d'une vue globale sur les prospects (sans filtrage). */
 // Exception à l'équivalence ACCOUNTANT/MANAGER : ASSISTANTE_DIRECTION dispose
 // uniquement des droits d'un AGENT sur le module Prospects (lecture filtrée,
@@ -122,6 +149,7 @@ export function registerProspectsIPC(): void {
           ...(where.AND ?? []),
           {
             OR: [
+              { reference: { contains: filters.search } },
               { firstName: { contains: filters.search } },
               { lastName:  { contains: filters.search } },
               { email:     { contains: filters.search } },
@@ -208,6 +236,7 @@ export function registerProspectsIPC(): void {
 
       const db = getDb();
       const data: any = { ...parsed.data, createdById: session.userId };
+      data.reference = await nextReference(db);
       if (data.budget !== undefined) data.budget = String(data.budget);
       // Seuls les rôles d'assignation peuvent affecter un prospect dès la création.
       if (!canAssign(session.role)) delete data.assignedToId;
@@ -403,8 +432,10 @@ export function registerProspectsIPC(): void {
       if (prospect.status === 'CONVERTI') return { success: false, error: 'Prospect déjà converti' };
 
       const result = await db.$transaction(async (tx) => {
+        const reference = await nextClientReference(tx);
         const client = await tx.client.create({
           data: {
+            reference,
             firstName: clientData?.firstName ?? prospect.firstName,
             lastName:  clientData?.lastName  ?? prospect.lastName,
             email:     clientData?.email  ?? prospect.email  ?? undefined,

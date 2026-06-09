@@ -117,7 +117,7 @@ export function registerProgrammesIPC(): void {
             },
             orderBy: { reference: 'asc' },
           },
-          documents: { orderBy: { uploadedAt: 'desc' } },
+          documents: { where: { deletedAt: null }, orderBy: { uploadedAt: 'desc' } },
         },
       });
       if (!programme) return { success: false, error: 'Programme immobilier introuvable' };

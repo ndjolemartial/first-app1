@@ -12,13 +12,21 @@ const lotissementSchema = z.object({
   pays: z.string().default('CI'),
   surface: z.coerce.number().positive().optional(),
   nombreParcelles: z.coerce.number().int().positive().optional(),
-  promoteur: z.string().optional(),
+  promoteur: z.string().nullable().optional(),
   statut: z.enum(['EN_COURS_LOTISSEMENT', 'EN_COURS', 'OUVERT', 'PARTIELLEMENT_VENDU', 'COMPLET', 'FERME']).default('EN_COURS_LOTISSEMENT'),
   description: z.string().optional(),
   latitude: z.coerce.number().optional(),
   longitude: z.coerce.number().optional(),
   // Montant standard des frais de démarches ACD applicable sur ce lotissement.
   fraisDemarchesAcdStandard: z.coerce.number().nonnegative().optional().nullable(),
+  // Grille de prix par superficie ET modalité, héritée par les terrains.
+  // Objet { superficie: { modalite: montant } } ; {} pour vider (jamais null).
+  // Clés en z.string() (sous-ensemble libre) : z.record(z.enum(...)) est
+  // exhaustif en Zod v4 et exigerait toutes les modalités présentes.
+  salePriceTiers: z.record(
+    z.string(),
+    z.record(z.string(), z.number().nonnegative()),
+  ).optional(),
   // Nature du titre administratif sollicité (référentiel) et numéro du titre obtenu.
   titleTypeId: z.coerce.number().int().positive().nullable().optional(),
   titleNumber: z.string().optional(),
@@ -100,7 +108,7 @@ export function registerLotissementsIPC(): void {
             },
             orderBy: { reference: 'asc' },
           },
-          documents: { orderBy: { uploadedAt: 'desc' } },
+          documents: { where: { deletedAt: null }, orderBy: { uploadedAt: 'desc' } },
           titleType: { select: { id: true, code: true, label: true, documentsLivres: true } },
         },
       });

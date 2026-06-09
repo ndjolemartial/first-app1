@@ -16,7 +16,7 @@ import { Plus, Search, Printer } from 'lucide-react';
 const STATUS_OPTIONS = [
   { value: '', label: 'Tous les statuts' },
   { value: 'BROUILLON', label: 'Brouillon' },
-  { value: 'ENVOYEE', label: 'Validée' },
+  { value: 'VALIDEE', label: 'Validée' },
   { value: 'PAYEE', label: 'Payée' },
   { value: 'PARTIEL', label: 'Partiel' },
   { value: 'EN_RETARD', label: 'En retard' },
@@ -31,23 +31,27 @@ const TYPE_OPTIONS = [
   { value: 'FRAIS_AGENCE', label: 'Frais agence' },
   { value: 'FRAIS_DE_GESTION', label: 'Frais de gestion' },
   { value: 'FRAIS_DEMARCHES_ACD', label: 'Frais démarches ACD' },
+  { value: 'FRAIS_OUVERTURE_DOSSIER', label: "Frais d'ouverture de dossier" },
+  { value: 'APPORT_INITIAL', label: 'Apport initial' },
   { value: 'AVANCE', label: 'Avance' },
   { value: 'CAUTION', label: 'Caution' },
   { value: 'OTHER', label: 'Autre' },
 ];
 
 const STATUS_VARIANT: Record<string, 'success' | 'info' | 'warning' | 'danger' | 'default'> = {
-  BROUILLON: 'default', ENVOYEE: 'info', PAYEE: 'success',
+  BROUILLON: 'default', VALIDEE: 'info', PAYEE: 'success',
   PARTIEL: 'warning', EN_RETARD: 'danger', ANNULEE: 'default',
 };
 const STATUS_LABEL: Record<string, string> = {
-  BROUILLON: 'Brouillon', ENVOYEE: 'Validée', PAYEE: 'Payée',
+  BROUILLON: 'Brouillon', VALIDEE: 'Validée', PAYEE: 'Payée',
   PARTIEL: 'Partiel', EN_RETARD: 'En retard', ANNULEE: 'Annulée',
   UNPAID: 'Impayés',
 };
 const TYPE_LABEL: Record<string, string> = {
   VENTE: 'Vente', ECHEANCE_VENTE: 'Échéance vente', FRAIS_AGENCE: 'Frais agence',
   FRAIS_DE_GESTION: 'Frais gestion', FRAIS_DEMARCHES_ACD: 'Frais démarches ACD',
+  FRAIS_OUVERTURE_DOSSIER: "Frais d'ouverture de dossier",
+  APPORT_INITIAL: 'Apport initial',
   AVANCE: 'Avance', CAUTION: 'Caution', OTHER: 'Autre',
 };
 

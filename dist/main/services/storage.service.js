@@ -42,6 +42,11 @@ function storageRoot() {
 }
 /** Chemin absolu à partir d'un chemin relatif stocké en base. */
 function resolveStoragePath(relativePath) {
+    // Les documents importés « en référence » (archives héritées) conservent un
+    // chemin ABSOLU (UNC `\\serveur\partage\...` ou `X:\...`). Il faut l'utiliser
+    // tel quel : `path.join` écraserait le préfixe réseau et casserait l'accès.
+    if (path_1.default.isAbsolute(relativePath))
+        return relativePath;
     return path_1.default.join(storageRoot(), relativePath);
 }
 /** Extension de fichier (point inclus), en minuscules. */

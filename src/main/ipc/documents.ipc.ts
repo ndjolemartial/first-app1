@@ -5,8 +5,7 @@ import { z } from 'zod';
 import { getDb } from '../services/db.service';
 import { getSession, checkRole } from '../services/auth.service';
 import {
-  importGedFile, writeGedFile, resolveStoragePath, readStorageFile,
-  storageRoot, directorySize,
+  importGedFile, writeGedFile, resolveStoragePath, readStorageFile, removeStorageFile,
 } from '../services/storage.service';
 import logger from '../utils/logger';
 
@@ -184,7 +183,7 @@ export function registerDocumentsIPC(): void {
       checkRole(session, [...WRITE_ROLES, 'ACCOUNTANT', 'READONLY']);
       const db = getDb();
       const documents = await db.document.findMany({
-        where: { clientId },
+        where: { clientId, deletedAt: null },
         orderBy: { uploadedAt: 'desc' },
       });
       return { success: true, data: documents };
@@ -294,7 +293,7 @@ export function registerDocumentsIPC(): void {
       checkRole(session, [...WRITE_ROLES, 'ACCOUNTANT', 'READONLY']);
       const db = getDb();
       const documents = await db.document.findMany({
-        where: { ownerId },
+        where: { ownerId, deletedAt: null },
         orderBy: { uploadedAt: 'desc' },
       });
       return { success: true, data: documents };
@@ -356,7 +355,7 @@ export function registerDocumentsIPC(): void {
       checkRole(session, [...WRITE_ROLES, 'ACCOUNTANT', 'READONLY']);
       const db = getDb();
       const documents = await db.document.findMany({
-        where: { terrainId },
+        where: { terrainId, deletedAt: null },
         orderBy: { uploadedAt: 'desc' },
       });
       return { success: true, data: documents };
@@ -566,8 +565,21 @@ export function registerDocumentsIPC(): void {
       if (!session) return { success: false, error: 'Session expirée' };
       checkRole(session, DELETE_ROLES);
       const db = getDb();
-      await db.document.update({ where: { id: Number(id) }, data: { deletedAt: new Date() } });
-      await logAudit(db, Number(id), 'SUPPRESSION', session.userId, 'Document mis à la corbeille');
+      const docId = Number(id);
+      const doc = await db.document.findUnique({ where: { id: docId }, select: { path: true } });
+      if (!doc) return { success: false, error: 'Document introuvable' };
+      await db.document.update({ where: { id: docId }, data: { deletedAt: new Date() } });
+      // Supprime le fichier physique pour les documents gérés par l'application
+      // (chemin relatif dans le dossier de stockage). Les archives importées
+      // « en référence » ont un chemin ABSOLU (UNC) pointant vers l'original sur
+      // le partage réseau : on ne supprime pas ces fichiers maîtres.
+      let fileRemoved = false;
+      if (doc.path && !path.isAbsolute(doc.path)) {
+        removeStorageFile(doc.path);
+        fileRemoved = true;
+      }
+      await logAudit(db, docId, 'SUPPRESSION', session.userId,
+        fileRemoved ? 'Document supprimé (fichier retiré du stockage)' : 'Document supprimé (référence externe conservée)');
       return { success: true };
     } catch (error: any) {
       return { success: false, error: error.message };
@@ -862,7 +874,7 @@ export function registerDocumentsIPC(): void {
       const db = getDb();
       const now = new Date();
       const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
-      const [total, recent, monthCount, physicalCount, uncategorized, types, byCategory] =
+      const [total, recent, monthCount, physicalCount, uncategorized, types, byCategory, sizeAgg] =
         await db.$transaction([
           db.document.count({ where: { deletedAt: null } }),
           db.document.findMany({
@@ -882,6 +894,9 @@ export function registerDocumentsIPC(): void {
               _count: { select: { documents: { where: { deletedAt: null } } } },
             },
           }),
+          // Espace disque = somme des tailles réelles de tous les documents
+          // (inclut les archives référencées dont la taille a été renseignée).
+          db.document.aggregate({ where: { deletedAt: null }, _sum: { size: true } }),
         ]);
       const byTypeGroup: Record<string, number> = { PDF: 0, IMAGE: 0, VIDEO: 0, AUDIO: 0, OFFICE: 0, AUTRE: 0 };
       for (const t of types) byTypeGroup[typeGroupOf(t.type)]++;
@@ -889,7 +904,7 @@ export function registerDocumentsIPC(): void {
         success: true,
         data: {
           total, recent, monthCount, physicalCount, uncategorized,
-          byTypeGroup, byCategory, diskBytes: directorySize(storageRoot()),
+          byTypeGroup, byCategory, diskBytes: Number(sizeAgg._sum.size ?? 0),
         },
       };
     } catch (error: any) {

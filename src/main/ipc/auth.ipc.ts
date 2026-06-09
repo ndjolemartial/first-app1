@@ -18,7 +18,7 @@ const updateProfileSchema = z.object({
   avatar: z.string().optional(),
   idNumber: z.string().optional(),
   civilite: z.enum(['MONSIEUR', 'MADAME', 'MADEMOISELLE']).optional(),
-  statutConjugal: z.enum(['CELIBATAIRE', 'MARIEE', 'CONCUBINAGE']).optional(),
+  statutConjugal: z.enum(['CELIBATAIRE', 'MARIEE', 'CONCUBINAGE', 'DIVORCE', 'VEUF']).optional(),
   residence: z.string().optional(),
 });
 

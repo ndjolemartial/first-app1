@@ -138,7 +138,7 @@ export function registerProjectsIPC(): void {
           lotissement: { select: { id: true, reference: true, nom: true } },
           programme: { select: { id: true, reference: true, nom: true } },
           photos: { orderBy: [{ order: 'asc' }, { id: 'asc' }] },
-          documents: { orderBy: { uploadedAt: 'desc' } },
+          documents: { where: { deletedAt: null }, orderBy: { uploadedAt: 'desc' } },
         },
       });
       if (!project) return { success: false, error: 'Projet introuvable' };
