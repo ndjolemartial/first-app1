@@ -195,6 +195,29 @@ export function useUpdateShareLocation() {
   });
 }
 
+// ── Conditions particulières (conventions héritées) ──────────────────────────
+
+export function useConditionsParticulieres() {
+  const token = useAuthStore((s) => s.token)!;
+  return useQuery({
+    queryKey: ['settings', 'conditionsParticulieres'],
+    queryFn:  () => ipc().getConditionsParticulieres(token),
+    enabled:  !!token,
+  });
+}
+
+export function useUpdateConditionsParticulieres() {
+  const token = useAuthStore((s) => s.token)!;
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (items: Array<{ title: string; text: string }>) => ipc().updateConditionsParticulieres(token, items),
+    onSuccess:  (res) => {
+      if (res.success) { qc.invalidateQueries({ queryKey: ['settings', 'conditionsParticulieres'] }); toast.success('Informations particulières enregistrées'); }
+      else toast.error(String(res.error));
+    },
+  });
+}
+
 // ── Slideshow ───────────────────────────────────────────────────────────────
 
 export function useSlideshowSettings() {

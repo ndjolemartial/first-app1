@@ -277,6 +277,21 @@ const INVOICE_TYPE_LABEL: Record<string, string> = {
   OTHER:               'Autres recettes',
 };
 
+// Recettes « souscription client » : les paiements d'échéances de vente ainsi que
+// les factures auto-générées à l'ouverture d'une convention (apport initial, frais
+// d'ouverture de dossier) sont regroupés dans une seule catégorie de recette
+// intitulée « VERSEMENT SOUSCRIPTION CLIENT » au compte comptable 585.
+const SOUSCRIPTION_LABEL = 'VERSEMENT SOUSCRIPTION CLIENT';
+const SOUSCRIPTION_CODE = '585';
+const SOUSCRIPTION_INVOICE_TYPES = new Set(['ECHEANCE_VENTE', 'APPORT_INITIAL', 'FRAIS_OUVERTURE_DOSSIER']);
+
+/** Catégorie de recette (libellé + code comptable éventuel) d'un type de facture. */
+function invoiceRecetteCategory(type: string | null | undefined): { label: string; code?: string } {
+  const t = type ?? 'OTHER';
+  if (SOUSCRIPTION_INVOICE_TYPES.has(t)) return { label: SOUSCRIPTION_LABEL, code: SOUSCRIPTION_CODE };
+  return { label: INVOICE_TYPE_LABEL[t] ?? 'Autres recettes' };
+}
+
 // ── Récupération du label de la dimension ────────────────────────────────────
 
 async function resolveScopeLabel(db: ReturnType<typeof getDb>, scope: Scope, scopeId?: number): Promise<string> {
@@ -351,12 +366,14 @@ async function computePeriodTotals(
   const recettes: Record<string, number> = {};
   const recettesCodes: Record<string, string> = {};
   for (const p of payments) {
-    const label = INVOICE_TYPE_LABEL[p.invoice?.type ?? 'OTHER'] ?? 'Autres recettes';
+    const { label, code } = invoiceRecetteCategory(p.invoice?.type);
     recettes[label] = (recettes[label] ?? 0) + Number(p.amount);
+    if (code && !recettesCodes[label]) recettesCodes[label] = code;
   }
   for (const inv of directPaid) {
-    const label = INVOICE_TYPE_LABEL[inv.type] ?? 'Autres recettes';
+    const { label, code } = invoiceRecetteCategory(inv.type);
     recettes[label] = (recettes[label] ?? 0) + Number(inv.total);
+    if (code && !recettesCodes[label]) recettesCodes[label] = code;
   }
 
   // Recettes — partie 3 : opérations de trésorerie ENTREE purement manuelles
@@ -797,7 +814,7 @@ function buildResultatHtml(data: ResultatData, meta: { title: string; subtitle?:
   const border  = theme.border;
 
   const recettesRows = data.recettes.map((r) =>
-    `<tr><td>${escapeHtml(r.categorie)}</td><td class="num">${formatXOF(r.montant)}</td><td class="num">${data.totalRecettes ? ((r.montant / data.totalRecettes) * 100).toFixed(1) : '0.0'} %</td></tr>`
+    `<tr><td class="code">${escapeHtml(r.code ?? '—')}</td><td>${escapeHtml(r.categorie)}</td><td class="num">${formatXOF(r.montant)}</td><td class="num">${data.totalRecettes ? ((r.montant / data.totalRecettes) * 100).toFixed(1) : '0.0'} %</td></tr>`
   ).join('');
   const depensesRows = data.depenses.map((d) =>
     `<tr><td class="code">${escapeHtml(d.code ?? '—')}</td><td>${escapeHtml(d.categorie)}</td><td class="num">${formatXOF(d.montant)}</td><td class="num">${data.totalDepenses ? ((d.montant / data.totalDepenses) * 100).toFixed(1) : '0.0'} %</td></tr>`
@@ -849,9 +866,9 @@ function buildResultatHtml(data: ResultatData, meta: { title: string; subtitle?:
       <div class="kpi"><div class="lbl">Résultat net</div><div class="val ${data.resultat < 0 ? 'neg' : 'pos'}">${formatXOF(data.resultat)}</div></div>
     </div>
     <h2>Recettes par catégorie</h2>
-    <table><thead><tr><th>Catégorie</th><th class="num">Montant</th><th class="num">Part</th></tr></thead>
-      <tbody>${recettesRows || '<tr><td colspan="3" style="text-align:center;color:#94a3b8">Aucune recette sur la période</td></tr>'}
-      <tr class="total-row"><td>TOTAL RECETTES</td><td class="num">${formatXOF(data.totalRecettes)}</td><td class="num">100.0 %</td></tr>
+    <table><thead><tr><th>N° compte</th><th>Catégorie</th><th class="num">Montant</th><th class="num">Part</th></tr></thead>
+      <tbody>${recettesRows || '<tr><td colspan="4" style="text-align:center;color:#94a3b8">Aucune recette sur la période</td></tr>'}
+      <tr class="total-row"><td colspan="2">TOTAL RECETTES</td><td class="num">${formatXOF(data.totalRecettes)}</td><td class="num">100.0 %</td></tr>
       </tbody></table>
     <h2>Dépenses par catégorie</h2>
     <table><thead><tr><th>N° compte</th><th>Catégorie</th><th class="num">Montant</th><th class="num">Part</th></tr></thead>
@@ -1012,9 +1029,10 @@ async function buildXlsxResultat(data: ResultatData, meta: { title: string; subt
     headers.forEach((_, i) => { sh.getColumn(i + 1).width = widths?.[i] ?? (i === 0 ? 36 : 18); });
   };
 
-  addSection('Recettes', ['Catégorie', 'Montant (XOF)', 'Part %'],
-    data.recettes.map((r) => [r.categorie, r.montant, data.totalRecettes ? Number(((r.montant / data.totalRecettes) * 100).toFixed(1)) : 0]),
-    ['TOTAL', data.totalRecettes, 100],
+  addSection('Recettes', ['N° compte', 'Catégorie', 'Montant (XOF)', 'Part %'],
+    data.recettes.map((r) => [r.code ?? '—', r.categorie, r.montant, data.totalRecettes ? Number(((r.montant / data.totalRecettes) * 100).toFixed(1)) : 0]),
+    ['', 'TOTAL', data.totalRecettes, 100],
+    [14, 36, 18, 12],
   );
   addSection('Dépenses', ['N° compte', 'Catégorie', 'Montant (XOF)', 'Part %'],
     data.depenses.map((d) => [d.code ?? '—', d.categorie, d.montant, data.totalDepenses ? Number(((d.montant / data.totalDepenses) * 100).toFixed(1)) : 0]),

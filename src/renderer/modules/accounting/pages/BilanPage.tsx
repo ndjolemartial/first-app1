@@ -80,7 +80,7 @@ function KpiCard({ label, value, variant, icon: Icon }: {
 
 function SectionTable({ title, rows, total, emptyMsg }: {
   title: string;
-  rows: Array<{ label: string; montant: number }>;
+  rows: Array<{ label: string; montant: number; code?: string | null }>;
   total?: number;
   emptyMsg?: string;
 }) {
@@ -103,7 +103,10 @@ function SectionTable({ title, rows, total, emptyMsg }: {
             <tr><td colSpan={3} className="text-center text-slate-400 italic py-6">{emptyMsg ?? 'Aucune donnée'}</td></tr>
           ) : rows.map((r) => (
             <tr key={r.label} className="hover:bg-slate-50">
-              <td className="px-4 py-2 text-slate-700">{r.label}</td>
+              <td className="px-4 py-2 text-slate-700">
+                {r.code && <span className="mr-2 font-mono text-xs text-slate-400">{r.code}</span>}
+                {r.label}
+              </td>
               <td className="px-4 py-2 text-right tabular-nums text-slate-900 font-medium">{formatCurrency(r.montant)}</td>
               <td className="px-4 py-2 text-right tabular-nums text-slate-500 text-xs">
                 {t > 0 ? `${((r.montant / t) * 100).toFixed(1)} %` : '—'}
@@ -429,13 +432,13 @@ export default function BilanPage() {
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
             <SectionTable
               title="Recettes par catégorie"
-              rows={resultat.recettes.map((r) => ({ label: r.categorie, montant: r.montant }))}
+              rows={resultat.recettes.map((r) => ({ label: r.categorie, montant: r.montant, code: r.code }))}
               total={resultat.totalRecettes}
               emptyMsg="Aucune recette sur la période"
             />
             <SectionTable
               title="Dépenses par catégorie"
-              rows={resultat.depenses.map((d) => ({ label: d.categorie, montant: d.montant }))}
+              rows={resultat.depenses.map((d) => ({ label: d.categorie, montant: d.montant, code: d.code }))}
               total={resultat.totalDepenses}
               emptyMsg="Aucune dépense sur la période"
             />

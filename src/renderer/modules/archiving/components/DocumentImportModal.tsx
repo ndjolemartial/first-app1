@@ -235,7 +235,7 @@ export default function DocumentImportModal({ open, onClose, defaultFolderId, de
                 </span>
               )}
               <span className="text-xs font-normal text-slate-500">
-                — client, propriétaire, prospect, apporteur, utilisateur, bien, terrain…
+                — client, propriétaire, prospect, apporteur, bien, terrain, opération de trésorerie…
               </span>
             </span>
             <span className="text-xs text-slate-400">{showLinks ? 'Masquer' : 'Afficher'}</span>

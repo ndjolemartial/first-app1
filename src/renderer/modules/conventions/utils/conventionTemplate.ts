@@ -27,6 +27,8 @@ export const CONVENTION_VARIABLE_GROUPS: VariableGroup[] = [
       { token: 'convention.delai', label: 'Délai (durée)' },
       { token: 'convention.delai.enLettres', label: 'Délai (en lettres)' },
       { token: 'convention.dateSignature', label: 'Date de signature' },
+      { token: 'convention.dateConventionAnterieure', label: 'Date convention antérieure' },
+      { token: 'convention.conditionsParticulieres', label: 'Informations particulières' },
       { token: 'convention.nombreTerrains', label: 'Nombre de terrains rattachés' },
       { token: 'convention.nombreTerrains.enLettres', label: 'Nombre de terrains rattachés (en lettres)' },
       { token: 'convention.lotsSouscrits', label: 'Énumération des lots souscrits' },
@@ -157,6 +159,8 @@ const TYPE_LABELS: Record<string, string> = {
   RENTAL_UNFURNISHED: 'Location non meublée', RENTAL_FURNISHED: 'Location meublée',
   SALE: 'Vente', MANAGEMENT: 'Gestion', COMMERCIAL_LEASE: 'Bail commercial',
   SOUSCRIPTION: 'Souscription', AVENANT: 'Avenant', RESILIATION: 'Résiliation',
+  AVENANT_DELAI_HERITE: 'Avenant Délai - convention héritée',
+  AVENANT_RESILIATION_HERITE: 'Résiliation - convention héritée',
 };
 const STATUS_LABELS: Record<string, string> = {
   BROUILLON: 'Brouillon', ACTIVE: 'Actif', EXPIRE: 'Expiré',
@@ -338,6 +342,10 @@ export function resolveConventionVariables(
     'convention.delai': delayLabel(c.startDate, c.endDate),
     'convention.delai.enLettres': delayLabelInWords(c.startDate, c.endDate),
     'convention.dateSignature': date(c.signedAt),
+    'convention.dateConventionAnterieure': date(c.priorConventionDate),
+    'convention.conditionsParticulieres': c.conditionsParticulieres
+      ? String(c.conditionsParticulieres).replace(/\n/g, '<br>')
+      : '',
     'convention.nombreTerrains': String(terrains.length),
     'convention.nombreTerrains.enLettres': numL(terrains.length),
     'convention.lotsSouscrits': lotsEnumeration(terrains),

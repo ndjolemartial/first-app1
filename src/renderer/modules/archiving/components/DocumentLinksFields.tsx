@@ -19,13 +19,14 @@ export type DocumentLinks = {
   invoiceId: string;
   commissionId: string;
   attestationId: string;
+  treasuryOperationId: string;
 };
 
 export const EMPTY_LINKS: DocumentLinks = {
   clientId: '', ownerId: '', propertyId: '', conventionId: '',
   terrainId: '', lotissementId: '', programmeId: '', projectId: '',
   prospectId: '', referrerId: '', linkedUserId: '', invoiceId: '',
-  commissionId: '', attestationId: '',
+  commissionId: '', attestationId: '', treasuryOperationId: '',
 };
 
 type SelectOption = { value: string; label: string };
@@ -78,7 +79,7 @@ export default function DocumentLinksFields({ values, onChange, compact = false 
     (r) => r.companyName || personLabel(r, `Apporteur #${r.id}`),
   );
   const users = useEntityOptions(
-    () => window.electron.users.list(token, {}, 1, 500),
+    () => window.electron.users.list(token, { sort: 'idAsc' }, 1, 500),
     (u) => `${personLabel(u, `Utilisateur #${u.id}`)}${u.matricule ? ` (${u.matricule})` : ''}`,
   );
   const properties = useEntityOptions(
@@ -117,6 +118,10 @@ export default function DocumentLinksFields({ values, onChange, compact = false 
     () => window.electron.commissions.list(token, {}, 1, 500),
     (c) => c.reference,
   );
+  const treasuryOperations = useEntityOptions(
+    () => window.electron.treasury.listOperations(token, {}, 1, 500),
+    (o) => `${o.reference} · ${o.label}`,
+  );
 
   const opts = (list: SelectOption[], placeholder = '— Aucun —') =>
     [{ value: '', label: placeholder }, ...list];
@@ -136,6 +141,7 @@ export default function DocumentLinksFields({ values, onChange, compact = false 
     ['invoiceId',     'Facture',             invoices],
     ['attestationId', 'Attestation',         attestations],
     ['commissionId',  'Commission',          commissions],
+    ['treasuryOperationId', 'Opération de trésorerie', treasuryOperations],
   ];
 
   return (

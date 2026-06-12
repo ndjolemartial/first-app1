@@ -404,8 +404,8 @@ interface Window {
       ) => Promise<IpcResponse<{
         periode: { label: string; start: string; end: string };
         scope:   { type: string; id?: number; label: string };
-        recettes: Array<{ categorie: string; montant: number }>;
-        depenses: Array<{ categorie: string; montant: number }>;
+        recettes: Array<{ categorie: string; montant: number; code: string | null }>;
+        depenses: Array<{ categorie: string; montant: number; code: string | null }>;
         totalRecettes: number;
         totalDepenses: number;
         resultat:      number;
@@ -481,6 +481,7 @@ interface Window {
       createAccount: (token: string, payload: object) => Promise<IpcResponse<any>>;
       updateAccount: (token: string, id: number, payload: object) => Promise<IpcResponse<any>>;
       deleteAccount: (token: string, id: number) => Promise<IpcResponse>;
+      setAccountViewers: (token: string, id: number, userIds: number[]) => Promise<IpcResponse<{ bankAccountId: number; userIds: number[] }>>;
       listOperations: (token: string, filters?: object, page?: number, limit?: number) => Promise<IpcResponse<any[]> & { totalEntree?: number; totalSortie?: number }>;
       createOperation: (token: string, payload: object) => Promise<IpcResponse<any>>;
       updateOperation: (token: string, id: number, payload: object) => Promise<IpcResponse<any>>;
@@ -501,6 +502,10 @@ interface Window {
       createCategory: (token: string, payload: object) => Promise<IpcResponse<any>>;
       updateCategory: (token: string, id: number, payload: object) => Promise<IpcResponse<any>>;
       deleteCategory: (token: string, id: number) => Promise<IpcResponse>;
+      listThirdParties: (token: string, filters?: object) => Promise<IpcResponse<any[]>>;
+      createThirdParty: (token: string, payload: object) => Promise<IpcResponse<any>>;
+      updateThirdParty: (token: string, id: number, payload: object) => Promise<IpcResponse<any>>;
+      deleteThirdParty: (token: string, id: number) => Promise<IpcResponse>;
       listUsers: (token: string) => Promise<IpcResponse<any[]>>;
     };
     dashboard: {
@@ -599,6 +604,8 @@ interface Window {
       testWhatsapp: (token: string, to: string) => Promise<IpcResponse<{ ok: true }>>;
 
       // Slideshow
+      getConditionsParticulieres: (token: string) => Promise<IpcResponse<Array<{ title: string; text: string }>>>;
+      updateConditionsParticulieres: (token: string, items: Array<{ title: string; text: string }>) => Promise<IpcResponse>;
       getSlideshow: (token: string) => Promise<IpcResponse<Array<{
         type: 'image' | 'video';
         src: string;

@@ -949,7 +949,7 @@ function registerCommissionsIPC() {
             const users = await db.user.findMany({
                 where: { deletedAt: null, isActive: true },
                 select: { id: true, firstName: true, lastName: true, role: true, matricule: true },
-                orderBy: [{ firstName: 'asc' }, { lastName: 'asc' }],
+                orderBy: { id: 'asc' },
             });
             return ser({ success: true, data: users });
         }

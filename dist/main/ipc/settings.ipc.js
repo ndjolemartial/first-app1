@@ -593,6 +593,66 @@ function registerSettingsIPC() {
             return { success: false, error: err.message };
         }
     });
+    // ── Conditions particulières (conventions héritées) ─────────────────────────
+    // Lecture accessible à toute session valide : le formulaire de convention en a
+    // besoin pour alimenter le sélecteur, quel que soit le rôle de l'utilisateur.
+    electron_1.ipcMain.handle('settings:getConditionsParticulieres', async (_event, { token }) => {
+        try {
+            const session = (0, auth_service_1.getSession)(token);
+            if (!session)
+                return { success: false, error: 'Session expirée' };
+            const raw = await (0, settings_service_1.getSetting)(settings_service_1.SettingsKeys.conventionConditionsParticulieres);
+            let items = [];
+            if (raw) {
+                try {
+                    const p = JSON.parse(raw);
+                    if (Array.isArray(p)) {
+                        // Rétrocompatibilité : anciennes entrées stockées comme simples chaînes.
+                        items = p
+                            .map((x) => (typeof x === 'string'
+                            ? { title: '', text: x }
+                            : { title: String(x?.title ?? ''), text: String(x?.text ?? '') }))
+                            .filter((x) => x.text.length > 0);
+                    }
+                }
+                catch {
+                    items = [];
+                }
+            }
+            return { success: true, data: items };
+        }
+        catch (err) {
+            return { success: false, error: err.message };
+        }
+    });
+    electron_1.ipcMain.handle('settings:updateConditionsParticulieres', async (_event, { token, items }) => {
+        try {
+            const session = (0, auth_service_1.getSession)(token);
+            if (!session)
+                return { success: false, error: 'Session expirée' };
+            // Édition ouverte aux managers et comptables (ACCOUNTANT hérite de MANAGER).
+            (0, auth_service_1.checkRole)(session, ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ACCOUNTANT']);
+            const parsed = zod_1.z.array(zod_1.z.object({ title: zod_1.z.string(), text: zod_1.z.string() })).safeParse(items);
+            if (!parsed.success)
+                return { success: false, error: parsed.error.issues.map((i) => i.message).join(', ') };
+            // Nettoyage : on retire les entrées sans texte et on déduplique par texte.
+            const seen = new Set();
+            const cleaned = [];
+            for (const it of parsed.data.map((it) => ({ title: it.title.trim(), text: it.text.trim() }))) {
+                if (!it.text || seen.has(it.text))
+                    continue;
+                seen.add(it.text);
+                cleaned.push(it);
+            }
+            await (0, settings_service_1.setSettings)([{ key: settings_service_1.SettingsKeys.conventionConditionsParticulieres, value: JSON.stringify(cleaned) }]);
+            logger_1.default.info(`Informations particulières mises à jour (${cleaned.length} éléments)`);
+            return { success: true };
+        }
+        catch (err) {
+            logger_1.default.error('settings:updateConditionsParticulieres', err.message);
+            return { success: false, error: err.message };
+        }
+    });
     // ── Slideshow ──────────────────────────────────────────────────────────────
     electron_1.ipcMain.handle('settings:getSlideshow', async (_event, { token }) => {
         try {

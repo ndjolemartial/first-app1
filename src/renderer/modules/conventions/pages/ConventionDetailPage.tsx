@@ -29,6 +29,8 @@ const TYPE_LABEL: Record<string, string> = {
   RENTAL_UNFURNISHED: 'Location non meublée', RENTAL_FURNISHED: 'Location meublée',
   SALE: 'Vente', MANAGEMENT: 'Gestion', COMMERCIAL_LEASE: 'Bail commercial',
   SOUSCRIPTION: 'Souscription', AVENANT: 'Avenant', RESILIATION: 'Résiliation',
+  AVENANT_DELAI_HERITE: 'Avenant Délai - convention héritée',
+  AVENANT_RESILIATION_HERITE: 'Résiliation - convention héritée',
 };
 const AMENDMENT_NATURE_LABEL: Record<string, string> = {
   PROLONGATION_DELAI: 'Avenant de prolongation de délai',

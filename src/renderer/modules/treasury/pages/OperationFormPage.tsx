@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import PageLayout from '../../../shared/components/layout/PageLayout';
@@ -8,13 +8,15 @@ import Input from '../../../shared/components/ui/Input';
 import Select from '../../../shared/components/ui/Select';
 import { FormSearchSelect } from '../../../shared/components/ui/SearchSelect';
 import Textarea from '../../../shared/components/ui/Textarea';
-import { useTreasuryAccounts, useTreasuryCategories, useCreateTreasuryOperation } from '../hooks/useTreasury';
+import { useTreasuryAccounts, useTreasuryCategories, useCreateTreasuryOperation, useTreasuryThirdParties } from '../hooks/useTreasury';
+import TreasuryThirdPartyModal from '../components/TreasuryThirdPartyModal';
 import { useAccessibleBudgetLines } from '../../budget/hooks/useBudget';
 import { DIRECTION_OPTIONS, PAYMENT_METHOD_OPTIONS, categoryLabel } from '../utils/treasury.utils';
 import { formatCurrency } from '../../../shared/utils/format';
 import { useAuthStore } from '../../../shared/stores/auth.store';
-import { Save, Briefcase, Map, Building } from 'lucide-react';
+import { Save, Briefcase, Map, Building, UploadCloud, File as FileIcon, X, Plus } from 'lucide-react';
 import { clsx } from 'clsx';
+import { formatBytes } from '../../archiving/utils/gedTree';
 
 interface FormData {
   bankAccountId: string;
@@ -22,6 +24,7 @@ interface FormData {
   amount: string;
   operationDate: string;
   categoryId: string;
+  thirdPartyId: string;
   label: string;
   paymentMethod: string;
   paymentRef: string;
@@ -53,6 +56,8 @@ function useEntityOptions(
 
 const today = () => new Date().toISOString().slice(0, 10);
 
+const FILE_ACCEPT = '.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,image/*,video/*,audio/*';
+
 export default function OperationFormPage() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
@@ -75,6 +80,22 @@ export default function OperationFormPage() {
   const currentUser = useAuthStore((s) => s.user);
   const token = useAuthStore((s) => s.token)!;
 
+  // Tiers (bénéficiaire / émetteur) : liste paramétrable + fenêtre d'édition.
+  const { data: thirdPartiesRes } = useTreasuryThirdParties();
+  const thirdParties = thirdPartiesRes?.data ?? [];
+  const [thirdPartyModalOpen, setThirdPartyModalOpen] = useState(false);
+
+  // Pièces jointes à archiver et rattacher à l'opération créée.
+  const [files, setFiles] = useState<File[]>([]);
+  const [dragOver, setDragOver] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const addFiles = (list: FileList | File[]) =>
+    setFiles((prev) => [...prev, ...Array.from(list)]);
+
+  // Devient vrai dès que l'utilisateur choisit un compte manuellement : on cesse
+  // alors de reprendre automatiquement le compte par défaut au changement de sens.
+  const accountTouchedRef = useRef(false);
+
   // Listes pour les selects d'imputation analytique (chargées une fois).
   const projectOptions = useEntityOptions(
     () => window.electron.projects.list(token, {}, 1, 500),
@@ -96,6 +117,7 @@ export default function OperationFormPage() {
       amount: '',
       operationDate: today(),
       categoryId: '',
+      thirdPartyId: '',
       label: '',
       paymentMethod: 'ESPECE',
       paymentRef: '',
@@ -108,16 +130,25 @@ export default function OperationFormPage() {
     },
   });
 
-  // Pré-sélectionne le compte rattaché à l'utilisateur connecté, si présent
-  // dans la liste des comptes accessibles et qu'aucun compte n'a été imposé via l'URL.
+  const direction = watch('direction');
+
+  // Préremplit le champ « Compte » selon le sens choisi : compte par défaut
+  // « entrée » ou « sortie » configuré sur la fiche de l'utilisateur connecté.
+  // Ignoré si un compte est imposé via l'URL ou si l'utilisateur a déjà choisi un
+  // compte manuellement. Repli sur le compte privé rattaché à l'utilisateur.
   useEffect(() => {
     if (presetAccount) return;
+    if (accountTouchedRef.current) return;
     if (!currentUser || accounts.length === 0) return;
-    const linked = accounts.find((a: any) => a.linkedUserId === currentUser.id);
-    if (linked) setValue('bankAccountId', String(linked.id));
-  }, [presetAccount, currentUser, accounts, setValue]);
+    const wantedId = direction === 'ENTREE'
+      ? currentUser.defaultAccountEntreeId
+      : currentUser.defaultAccountSortieId;
+    const target =
+      (wantedId != null && accounts.find((a: any) => a.id === wantedId)) ||
+      accounts.find((a: any) => a.linkedUserId === currentUser.id);
+    setValue('bankAccountId', target ? String(target.id) : '');
+  }, [direction, presetAccount, currentUser, accounts, setValue]);
 
-  const direction = watch('direction');
   const { data: categoriesRes } = useTreasuryCategories({ direction, isActive: 'true' });
   const categories = categoriesRes?.data ?? [];
   // Lignes budgétaires utilisables par l'utilisateur courant pour une sortie.
@@ -144,6 +175,7 @@ export default function OperationFormPage() {
       amount: Number(data.amount),
       operationDate: new Date(`${data.operationDate}T12:00:00`).toISOString(),
       categoryId: data.categoryId ? Number(data.categoryId) : undefined,
+      thirdPartyId: data.thirdPartyId ? Number(data.thirdPartyId) : null,
       label: data.label || undefined,
       paymentMethod: data.paymentMethod || undefined,
       paymentRef: data.paymentRef || undefined,
@@ -156,13 +188,41 @@ export default function OperationFormPage() {
       notes: data.notes || undefined,
     };
     const r = await create.mutateAsync(payload);
-    if (r.success) navigate(`/treasury/accounts/${payload.bankAccountId}`);
+    if (!r.success) return;
+
+    // Archivage des pièces jointes : importées dans la GED et rattachées à
+    // l'opération créée. Un échec d'archivage n'annule pas l'opération.
+    const operationId = (r.data as any)?.id;
+    if (operationId && files.length > 0) {
+      try {
+        await window.electron.documents.import(token, {
+          files: files.map((f) => ({
+            sourcePath: window.electron.documents.pathForFile(f),
+            originalName: f.name,
+            mimeType: f.type || 'application/octet-stream',
+            size: f.size,
+          })),
+          treasuryOperationId: operationId,
+        });
+      } catch {
+        // L'opération est créée ; on n'interrompt pas la navigation si
+        // l'archivage des pièces échoue.
+      }
+    }
+
+    navigate(`/treasury/accounts/${payload.bankAccountId}`);
   };
 
   const imputationKind = watch('imputationKind');
 
   const accountOptions = accounts.map((a: any) => ({ value: String(a.id), label: a.name }));
   const categoryOptions = categories.map((c: any) => ({ value: String(c.id), label: categoryLabel(c) }));
+  const thirdPartyOptions = thirdParties.map((t: any) => ({
+    value: String(t.id),
+    label: t.contacts ? `${t.fullName} — ${t.contacts}` : t.fullName,
+  }));
+  // Libellé du champ tiers selon le sens de l'opération.
+  const thirdPartyLabel = direction === 'SORTIE' ? 'À destination de' : 'En provenance de';
 
   return (
     <PageLayout
@@ -184,15 +244,21 @@ export default function OperationFormPage() {
               <div className="space-y-4">
                 <h3 className="text-sm font-semibold text-slate-700">Opération</h3>
                 <div className="grid grid-cols-2 gap-4">
-                  <Select
-                    label="Compte"
-                    required
-                    options={accountOptions}
-                    placeholder="Choisir un compte"
-                    error={errors.bankAccountId && 'Compte requis'}
-                    {...register('bankAccountId', { required: true })}
-                  />
                   <Select label="Sens" required options={DIRECTION_OPTIONS} {...register('direction')} />
+                  {(() => {
+                    const reg = register('bankAccountId', { required: true });
+                    return (
+                      <Select
+                        label="Compte"
+                        required
+                        options={accountOptions}
+                        placeholder="Choisir un compte"
+                        error={errors.bankAccountId && 'Compte requis'}
+                        {...reg}
+                        onChange={(e) => { accountTouchedRef.current = true; reg.onChange(e); }}
+                      />
+                    );
+                  })()}
                 </div>
                 <div className="grid grid-cols-2 gap-4">
                   <Input
@@ -205,19 +271,43 @@ export default function OperationFormPage() {
                   />
                   <Input label="Date de l'opération" type="date" {...register('operationDate')} />
                 </div>
-                <div>
-                  <FormSearchSelect
-                    control={control}
-                    name="categoryId"
-                    label="Objet d'opération (compte comptable)"
-                    required
-                    options={categoryOptions}
-                    placeholder="Rechercher un objet…"
-                    rules={{ required: 'Objet requis' }}
-                  />
-                  <p className="text-xs text-slate-500 mt-1">
-                    Nature de l'opération rattachée à un numéro de compte comptable.
-                  </p>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <FormSearchSelect
+                      control={control}
+                      name="categoryId"
+                      label="Objet d'opération (compte comptable)"
+                      required
+                      options={categoryOptions}
+                      placeholder="Rechercher un objet…"
+                      rules={{ required: 'Objet requis' }}
+                    />
+                    <p className="text-xs text-slate-500 mt-1">
+                      Nature de l'opération rattachée à un numéro de compte comptable.
+                    </p>
+                  </div>
+                  <div>
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="text-sm font-medium text-slate-700">{thirdPartyLabel}</label>
+                      <button
+                        type="button"
+                        onClick={() => setThirdPartyModalOpen(true)}
+                        title="Gérer les tiers"
+                        className="flex items-center gap-1 rounded-md border border-slate-300 px-1.5 py-0.5 text-xs font-medium text-slate-600 hover:border-blue-400 hover:text-blue-600 transition-colors"
+                      >
+                        <Plus className="h-3.5 w-3.5" /> Gérer
+                      </button>
+                    </div>
+                    <FormSearchSelect
+                      control={control}
+                      name="thirdPartyId"
+                      options={[{ value: '', label: '— Aucun —' }, ...thirdPartyOptions]}
+                      placeholder="Rechercher un tiers…"
+                    />
+                    <p className="text-xs text-slate-500 mt-1">
+                      Facultatif — bénéficiaire ou émetteur de l'opération.
+                    </p>
+                  </div>
                 </div>
                 <Input
                   label="Libellé"
@@ -315,6 +405,63 @@ export default function OperationFormPage() {
                 <Textarea label="Notes" rows={3} {...register('notes')} />
               </div>
 
+              {/* ─── Pièces jointes : archivées dans la GED et rattachées à l'opération ─── */}
+              <div className="border-t border-slate-200 pt-4 space-y-3">
+                <div>
+                  <h3 className="text-sm font-semibold text-slate-700">Pièces jointes</h3>
+                  <p className="text-xs text-slate-500">
+                    Joignez des justificatifs (reçu, chèque, facture…). Ils seront archivés
+                    dans la GED et rattachés à cette opération.
+                  </p>
+                </div>
+                <div
+                  onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+                  onDragLeave={() => setDragOver(false)}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    setDragOver(false);
+                    if (e.dataTransfer.files.length) addFiles(e.dataTransfer.files);
+                  }}
+                  onClick={() => fileInputRef.current?.click()}
+                  className={clsx(
+                    'flex flex-col items-center justify-center gap-1.5 rounded-xl border-2 border-dashed py-6 cursor-pointer transition-colors',
+                    dragOver ? 'border-blue-400 bg-blue-50' : 'border-slate-300 hover:border-blue-400 hover:bg-slate-50',
+                  )}
+                >
+                  <UploadCloud className="h-7 w-7 text-slate-400" />
+                  <p className="text-sm font-medium text-slate-600">Glissez des fichiers ici ou cliquez pour parcourir</p>
+                  <p className="text-xs text-slate-400">PDF, Word, Excel, images, vidéos, audios</p>
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    multiple
+                    accept={FILE_ACCEPT}
+                    className="sr-only"
+                    tabIndex={-1}
+                    onClick={(e) => e.stopPropagation()}
+                    onChange={(e) => { if (e.target.files?.length) addFiles(e.target.files); e.target.value = ''; }}
+                  />
+                </div>
+                {files.length > 0 && (
+                  <div className="max-h-44 space-y-1 overflow-y-auto rounded-lg border border-slate-100 p-2">
+                    {files.map((f, i) => (
+                      <div key={`${f.name}-${i}`} className="flex items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-slate-50">
+                        <FileIcon className="h-4 w-4 shrink-0 text-slate-400" />
+                        <span className="flex-1 truncate text-slate-700">{f.name}</span>
+                        <span className="text-xs text-slate-400">{formatBytes(f.size)}</span>
+                        <button
+                          type="button"
+                          onClick={() => setFiles((prev) => prev.filter((_, idx) => idx !== i))}
+                          className="text-slate-400 hover:text-red-500"
+                        >
+                          <X className="h-4 w-4" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
               {apiError && (
                 <p className="text-sm text-red-600">
                   {typeof apiError === 'string' ? apiError : 'Erreur lors de l\'enregistrement'}
@@ -333,6 +480,12 @@ export default function OperationFormPage() {
           )}
         </Card>
       </div>
+
+      <TreasuryThirdPartyModal
+        open={thirdPartyModalOpen}
+        onClose={() => setThirdPartyModalOpen(false)}
+        onCreated={(id) => setValue('thirdPartyId', String(id))}
+      />
     </PageLayout>
   );
 }

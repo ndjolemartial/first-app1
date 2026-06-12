@@ -25,6 +25,7 @@ import CommTemplatesSettingsTab        from '../components/CommTemplatesSettings
 import ShareLocationSettingsTab        from '../components/ShareLocationSettingsTab';
 import CatalogSettingsTab              from '../components/CatalogSettingsTab';
 import QuoteTemplatesSettingsTab       from '../components/QuoteTemplatesSettingsTab';
+import ConditionsParticulieresSettingsTab from '../components/ConditionsParticulieresSettingsTab';
 
 type TabKey =
   | 'company'
@@ -46,7 +47,8 @@ type TabKey =
   | 'treasuryCategories'
   | 'reminders'
   | 'commTemplates'
-  | 'shareLocation';
+  | 'shareLocation'
+  | 'conditionsParticulieres';
 
 type GroupKey = 'communication' | 'treasury' | 'printedTemplates';
 
@@ -92,6 +94,7 @@ const TABS: TabDef[] = [
   { key: 'conventionTemplates',  label: 'Modèles de conventions',  icon: <FileSignature className="h-4 w-4" />, group: 'printedTemplates' },
   { key: 'attestationTemplates', label: "Modèles d'attestations",  icon: <Award className="h-4 w-4" />,         group: 'printedTemplates' },
   { key: 'quoteTemplates',       label: 'Modèles de devis',        icon: <FileText className="h-4 w-4" />,      group: 'printedTemplates' },
+  { key: 'conditionsParticulieres', label: 'Informations particulières', icon: <FileSignature className="h-4 w-4" />, group: 'printedTemplates', roles: ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ACCOUNTANT'] },
   { key: 'projectTypes',         label: 'Types de projets',        icon: <Briefcase className="h-4 w-4" /> },
   { key: 'idDocumentTypes',      label: "Types de pièces d'identité", icon: <IdCard className="h-4 w-4" /> },
   { key: 'lotissementTitleTypes', label: 'Natures de titres de lotissement', icon: <Layers className="h-4 w-4" /> },
@@ -267,6 +270,7 @@ export default function SettingsPage() {
           {active === 'reminders'            && <RemindersSettingsTab />}
           {active === 'commTemplates'        && <CommTemplatesSettingsTab />}
           {active === 'shareLocation'        && <ShareLocationSettingsTab />}
+          {active === 'conditionsParticulieres' && <ConditionsParticulieresSettingsTab />}
         </div>
       </div>
     </PageLayout>

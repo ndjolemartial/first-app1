@@ -556,6 +556,59 @@ export function registerSettingsIPC(): void {
     }
   });
 
+  // ── Conditions particulières (conventions héritées) ─────────────────────────
+  // Lecture accessible à toute session valide : le formulaire de convention en a
+  // besoin pour alimenter le sélecteur, quel que soit le rôle de l'utilisateur.
+  ipcMain.handle('settings:getConditionsParticulieres', async (_event, { token }: any) => {
+    try {
+      const session = getSession(token);
+      if (!session) return { success: false, error: 'Session expirée' };
+      const raw = await getSetting(SettingsKeys.conventionConditionsParticulieres);
+      let items: Array<{ title: string; text: string }> = [];
+      if (raw) {
+        try {
+          const p = JSON.parse(raw);
+          if (Array.isArray(p)) {
+            // Rétrocompatibilité : anciennes entrées stockées comme simples chaînes.
+            items = p
+              .map((x: any) => (typeof x === 'string'
+                ? { title: '', text: x }
+                : { title: String(x?.title ?? ''), text: String(x?.text ?? '') }))
+              .filter((x) => x.text.length > 0);
+          }
+        } catch { items = []; }
+      }
+      return { success: true, data: items };
+    } catch (err: any) {
+      return { success: false, error: err.message };
+    }
+  });
+
+  ipcMain.handle('settings:updateConditionsParticulieres', async (_event, { token, items }: any) => {
+    try {
+      const session = getSession(token);
+      if (!session) return { success: false, error: 'Session expirée' };
+      // Édition ouverte aux managers et comptables (ACCOUNTANT hérite de MANAGER).
+      checkRole(session, ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ACCOUNTANT']);
+      const parsed = z.array(z.object({ title: z.string(), text: z.string() })).safeParse(items);
+      if (!parsed.success) return { success: false, error: parsed.error.issues.map((i) => i.message).join(', ') };
+      // Nettoyage : on retire les entrées sans texte et on déduplique par texte.
+      const seen = new Set<string>();
+      const cleaned: Array<{ title: string; text: string }> = [];
+      for (const it of parsed.data.map((it) => ({ title: it.title.trim(), text: it.text.trim() }))) {
+        if (!it.text || seen.has(it.text)) continue;
+        seen.add(it.text);
+        cleaned.push(it);
+      }
+      await setSettings([{ key: SettingsKeys.conventionConditionsParticulieres, value: JSON.stringify(cleaned) }]);
+      logger.info(`Informations particulières mises à jour (${cleaned.length} éléments)`);
+      return { success: true };
+    } catch (err: any) {
+      logger.error('settings:updateConditionsParticulieres', err.message);
+      return { success: false, error: err.message };
+    }
+  });
+
   // ── Slideshow ──────────────────────────────────────────────────────────────
   ipcMain.handle('settings:getSlideshow', async (_event, { token }: any) => {
     try {

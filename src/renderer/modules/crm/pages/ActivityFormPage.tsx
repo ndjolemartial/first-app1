@@ -19,6 +19,7 @@ import { useTerrains } from '../../terrains/hooks/useTerrains';
 import { useLotissements } from '../../lotissements/hooks/useLotissements';
 import { useProgrammes } from '../../programmes/hooks/useProgrammes';
 import { useInvoices, useAllInstallments } from '../../accounting/hooks/useAccounting';
+import { useUsers } from '../../users/hooks/useUsers';
 import { formatPersonName } from '../../../shared/utils/format';
 import { Save } from 'lucide-react';
 
@@ -28,6 +29,7 @@ const schema = z.object({
   description: z.string().optional(),
   status: z.enum(['EN_ATTENTE', 'EN_TRAITEMENT', 'TRAITE', 'ANNULE']).default('EN_ATTENTE'),
   dueDate: z.string().optional(),
+  userId: z.coerce.number().optional(),
   clientId: z.coerce.number().optional(),
   prospectId: z.coerce.number().optional(),
   propertyId: z.coerce.number().optional(),
@@ -62,7 +64,7 @@ const STATUS_OPTIONS = [
 
 /** Champs de rattachement à une entité — tous optionnels. */
 const ENTITY_FIELDS = [
-  'clientId', 'prospectId', 'propertyId', 'programmeId',
+  'userId', 'clientId', 'prospectId', 'propertyId', 'programmeId',
   'lotissementId', 'terrainId', 'conventionId', 'invoiceId', 'installmentId',
 ] as const;
 
@@ -86,6 +88,7 @@ export default function ActivityFormPage() {
   const create = useCreateActivity();
   const update = useUpdateActivity();
 
+  const { data: usersRes } = useUsers({ sort: 'idAsc' }, 1, 500);
   const { data: clientsRes } = useClients({}, 1, 500);
   const { data: prospectsRes } = useProspects({}, 1, 500);
   const { data: propertiesRes } = useProperties({}, 1, 500);
@@ -95,6 +98,14 @@ export default function ActivityFormPage() {
   const { data: conventionsRes } = useConventions({}, 1, 500);
   const { data: invoicesRes } = useInvoices({}, 1, 500);
   const { data: installmentsRes } = useAllInstallments();
+
+  const userOptions = [
+    { value: '', label: '— Utilisateur (optionnel) —' },
+    ...(usersRes?.data ?? []).map((u: any) => ({
+      value: String(u.id),
+      label: `${formatPersonName(u, `Utilisateur #${u.id}`)}${u.matricule ? ` (${u.matricule})` : ''}`,
+    })),
+  ];
 
   const clientOptions = [
     { value: '', label: '— Client (optionnel) —' },
@@ -198,6 +209,7 @@ export default function ActivityFormPage() {
         description: act.description ?? '',
         status: act.status,
         dueDate: toDateTimeLocal(act.dueDate),
+        userId: act.userId ?? undefined,
         clientId: act.clientId ?? undefined,
         prospectId: act.prospectId ?? undefined,
         propertyId: act.propertyId ?? undefined,
@@ -255,6 +267,7 @@ export default function ActivityFormPage() {
             Rattachez l'activité à une ou plusieurs entités — tous les champs sont optionnels.
           </p>
           <div className="grid grid-cols-2 gap-4">
+            <FormSearchSelect control={control} name="userId" label="Utilisateur" options={userOptions} />
             <FormSearchSelect control={control} name="clientId" label="Client" options={clientOptions} />
             <FormSearchSelect control={control} name="prospectId" label="Prospect" options={prospectOptions} />
             <FormSearchSelect control={control} name="propertyId" label="Bien immobilier" options={propertyOptions} />

@@ -64,7 +64,7 @@ const PROFILE_SELECT = {
     email: true, login: true, role: true, isActive: true, avatar: true,
     phone: true, mobile: true, fonction: true, idNumber: true, civilite: true,
     statutConjugal: true, hireDate: true, cnpsNumber: true, residence: true,
-    theme: true,
+    theme: true, defaultAccountEntreeId: true, defaultAccountSortieId: true,
     lastLoginAt: true, createdAt: true, updatedAt: true,
 };
 /** Identifiants des thèmes graphiques disponibles. */

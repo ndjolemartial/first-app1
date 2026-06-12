@@ -401,7 +401,7 @@ export function registerProspectsIPC(): void {
       const users = await db.user.findMany({
         where:   { deletedAt: null, isActive: true },
         select:  USER_BRIEF_SELECT,
-        orderBy: [{ lastName: 'asc' }, { firstName: 'asc' }],
+        orderBy: { id: 'asc' },
       });
       return { success: true, data: users };
     } catch (error: any) {

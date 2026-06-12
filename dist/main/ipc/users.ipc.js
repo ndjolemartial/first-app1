@@ -28,6 +28,9 @@ const createUserSchema = zod_1.z.object({
     hireDate: zod_1.z.string().optional(),
     cnpsNumber: zod_1.z.string().optional(),
     residence: zod_1.z.string().optional(),
+    // Comptes de trésorerie par défaut (préremplis dans le formulaire d'opération).
+    defaultAccountEntreeId: zod_1.z.number().int().positive().nullable().optional(),
+    defaultAccountSortieId: zod_1.z.number().int().positive().nullable().optional(),
 });
 const updateUserSchema = createUserSchema
     .omit({ password: true })
@@ -126,7 +129,9 @@ function registerUsersIPC() {
                     },
                     skip: (page - 1) * limit,
                     take: limit,
-                    orderBy: { createdAt: 'desc' },
+                    // Tri par défaut : plus récents d'abord (liste de gestion). Les champs de
+                    // sélection/recherche d'utilisateurs demandent un tri par id croissant.
+                    orderBy: filters.sort === 'idAsc' ? { id: 'asc' } : { createdAt: 'desc' },
                 }),
                 db.user.count({ where }),
             ]);
@@ -151,6 +156,7 @@ function registerUsersIPC() {
                     email: true, login: true, role: true, isActive: true, avatar: true, phone: true,
                     mobile: true, fonction: true, nomCommercial: true, idNumber: true, civilite: true,
                     statutConjugal: true, hireDate: true, cnpsNumber: true, residence: true,
+                    defaultAccountEntreeId: true, defaultAccountSortieId: true,
                     lastLoginAt: true, createdAt: true, updatedAt: true,
                     linkedDocuments: { where: { deletedAt: null }, orderBy: { uploadedAt: 'desc' } },
                 },

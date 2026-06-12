@@ -14,7 +14,8 @@ import {
   ACCOUNT_TYPE_VARIANT,
 } from '../../treasury/utils/treasury.utils';
 import { formatCurrency } from '../../../shared/utils/format';
-import { Plus, Pencil, Trash2, Landmark, Lock, Globe } from 'lucide-react';
+import { Plus, Pencil, Trash2, Landmark, Lock, Globe, Users } from 'lucide-react';
+import AccountViewersModal from './AccountViewersModal';
 
 /**
  * Onglet « Comptes d'opérations » dans Paramètres.
@@ -28,6 +29,7 @@ export default function TreasuryAccountsSettingsTab() {
   const accounts: any[] = res?.data ?? [];
   const deleteAccount = useDeleteTreasuryAccount();
   const [deleteTarget, setDeleteTarget] = useState<any>(null);
+  const [viewersTarget, setViewersTarget] = useState<any>(null);
 
   const handleDelete = async () => {
     if (!deleteTarget) return;
@@ -70,6 +72,7 @@ export default function TreasuryAccountsSettingsTab() {
               <th className="text-left px-3 py-2 font-medium text-slate-600">Banque / Opérateur</th>
               <th className="text-right px-3 py-2 font-medium text-slate-600">Solde</th>
               <th className="text-center px-3 py-2 font-medium text-slate-600">Accès</th>
+              <th className="text-center px-3 py-2 font-medium text-slate-600">Affichage</th>
               <th className="text-center px-3 py-2 font-medium text-slate-600">Statut</th>
               <th className="px-3 py-2" />
             </tr>
@@ -109,6 +112,18 @@ export default function TreasuryAccountsSettingsTab() {
                   )}
                 </td>
                 <td className="px-3 py-2 text-center">
+                  <button
+                    onClick={() => setViewersTarget(a)}
+                    title="Paramétrer les utilisateurs qui voient ce compte dans la trésorerie"
+                    className="inline-flex items-center gap-1 rounded-md border border-slate-200 px-2 py-1 text-xs font-medium text-slate-600 hover:border-blue-400 hover:text-blue-600 transition-colors"
+                  >
+                    <Users className="h-3.5 w-3.5" />
+                    {(a.viewers?.length ?? 0) > 0
+                      ? `${a.viewers.length} utilisateur${a.viewers.length > 1 ? 's' : ''}`
+                      : 'Admins seuls'}
+                  </button>
+                </td>
+                <td className="px-3 py-2 text-center">
                   <Badge variant={a.isActive ? 'success' : 'default'}>
                     {a.isActive ? 'Actif' : 'Inactif'}
                   </Badge>
@@ -144,6 +159,12 @@ export default function TreasuryAccountsSettingsTab() {
         }
         confirmLabel="Supprimer"
         loading={deleteAccount.isPending}
+      />
+
+      <AccountViewersModal
+        open={!!viewersTarget}
+        onClose={() => setViewersTarget(null)}
+        account={viewersTarget}
       />
     </Card>
   );

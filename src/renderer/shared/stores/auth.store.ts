@@ -22,6 +22,8 @@ export interface AuthUser {
   cnpsNumber?: string | null;
   residence?: string | null;
   theme?: string | null;
+  defaultAccountEntreeId?: number | null;
+  defaultAccountSortieId?: number | null;
   lastLoginAt?: string | null;
 }
 

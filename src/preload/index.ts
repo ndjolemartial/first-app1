@@ -537,6 +537,8 @@ const treasury = {
   updateAccount: (token: string, id: number, payload: object) =>
     api.invoke('treasury:updateAccount', { token, id, payload }),
   deleteAccount: (token: string, id: number) => api.invoke('treasury:deleteAccount', { token, id }),
+  setAccountViewers: (token: string, id: number, userIds: number[]) =>
+    api.invoke('treasury:setAccountViewers', { token, id, userIds }),
   listOperations: (token: string, filters?: object, page?: number, limit?: number) =>
     api.invoke('treasury:listOperations', { token, filters, page, limit }),
   createOperation: (token: string, payload: object) => api.invoke('treasury:createOperation', { token, payload }),
@@ -555,6 +557,12 @@ const treasury = {
   updateCategory: (token: string, id: number, payload: object) =>
     api.invoke('treasury:updateCategory', { token, id, payload }),
   deleteCategory: (token: string, id: number) => api.invoke('treasury:deleteCategory', { token, id }),
+  listThirdParties: (token: string, filters?: object) =>
+    api.invoke('treasury:listThirdParties', { token, filters }),
+  createThirdParty: (token: string, payload: object) => api.invoke('treasury:createThirdParty', { token, payload }),
+  updateThirdParty: (token: string, id: number, payload: object) =>
+    api.invoke('treasury:updateThirdParty', { token, id, payload }),
+  deleteThirdParty: (token: string, id: number) => api.invoke('treasury:deleteThirdParty', { token, id }),
   listUsers: (token: string) => api.invoke('treasury:listUsers', { token }),
 };
 
@@ -600,6 +608,9 @@ const settings = {
   testWhatsapp: (token: string, to: string) =>
     api.invoke('settings:testWhatsapp', { token, to }),
 
+  getConditionsParticulieres: (token: string) => api.invoke('settings:getConditionsParticulieres', { token }),
+  updateConditionsParticulieres: (token: string, items: Array<{ title: string; text: string }>) =>
+    api.invoke('settings:updateConditionsParticulieres', { token, items }),
   getSlideshow: (token: string) => api.invoke('settings:getSlideshow', { token }),
   updateSlideshow: (token: string, items: object[]) =>
     api.invoke('settings:updateSlideshow', { token, items }),

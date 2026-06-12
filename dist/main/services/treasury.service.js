@@ -41,6 +41,7 @@ async function recordTreasuryOperation(db, params) {
             installmentId: params.installmentId ?? null,
             commissionId: params.commissionId ?? null,
             budgetLineId: params.budgetLineId ?? null,
+            thirdPartyId: params.thirdPartyId ?? null,
             projectId: params.projectId ?? null,
             lotissementId: params.lotissementId ?? null,
             programmeId: params.programmeId ?? null,

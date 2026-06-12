@@ -25,6 +25,8 @@ const TYPE_OPTIONS = [
   { value: 'SOUSCRIPTION', label: 'Souscription' },
   { value: 'AVENANT', label: 'Avenant' },
   { value: 'RESILIATION', label: 'Résiliation' },
+  { value: 'AVENANT_DELAI_HERITE', label: 'Avenant Délai - convention héritée' },
+  { value: 'AVENANT_RESILIATION_HERITE', label: 'Résiliation - convention héritée' },
 ];
 
 const STATUS_OPTIONS = [
@@ -50,6 +52,8 @@ const TYPE_LABEL: Record<string, string> = {
   RENTAL_UNFURNISHED: 'Location', RENTAL_FURNISHED: 'Loc. meublée',
   SALE: 'Vente', MANAGEMENT: 'Gestion', COMMERCIAL_LEASE: 'Bail comm.',
   SOUSCRIPTION: 'Souscription', AVENANT: 'Avenant', RESILIATION: 'Résiliation',
+  AVENANT_DELAI_HERITE: 'Avenant délai (hérité)',
+  AVENANT_RESILIATION_HERITE: 'Résiliation (hérité)',
 };
 
 const AMENDMENT_TYPE_LABEL: Record<string, string> = {

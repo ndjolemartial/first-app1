@@ -343,6 +343,7 @@ const treasury = {
     createAccount: (token, payload) => api.invoke('treasury:createAccount', { token, payload }),
     updateAccount: (token, id, payload) => api.invoke('treasury:updateAccount', { token, id, payload }),
     deleteAccount: (token, id) => api.invoke('treasury:deleteAccount', { token, id }),
+    setAccountViewers: (token, id, userIds) => api.invoke('treasury:setAccountViewers', { token, id, userIds }),
     listOperations: (token, filters, page, limit) => api.invoke('treasury:listOperations', { token, filters, page, limit }),
     createOperation: (token, payload) => api.invoke('treasury:createOperation', { token, payload }),
     updateOperation: (token, id, payload) => api.invoke('treasury:updateOperation', { token, id, payload }),
@@ -352,6 +353,10 @@ const treasury = {
     createCategory: (token, payload) => api.invoke('treasury:createCategory', { token, payload }),
     updateCategory: (token, id, payload) => api.invoke('treasury:updateCategory', { token, id, payload }),
     deleteCategory: (token, id) => api.invoke('treasury:deleteCategory', { token, id }),
+    listThirdParties: (token, filters) => api.invoke('treasury:listThirdParties', { token, filters }),
+    createThirdParty: (token, payload) => api.invoke('treasury:createThirdParty', { token, payload }),
+    updateThirdParty: (token, id, payload) => api.invoke('treasury:updateThirdParty', { token, id, payload }),
+    deleteThirdParty: (token, id) => api.invoke('treasury:deleteThirdParty', { token, id }),
     listUsers: (token) => api.invoke('treasury:listUsers', { token }),
 };
 // Dashboard
@@ -382,6 +387,8 @@ const settings = {
     updateSms: (token, payload) => api.invoke('settings:updateSms', { token, payload }),
     testSms: (token, to) => api.invoke('settings:testSms', { token, to }),
     testWhatsapp: (token, to) => api.invoke('settings:testWhatsapp', { token, to }),
+    getConditionsParticulieres: (token) => api.invoke('settings:getConditionsParticulieres', { token }),
+    updateConditionsParticulieres: (token, items) => api.invoke('settings:updateConditionsParticulieres', { token, items }),
     getSlideshow: (token) => api.invoke('settings:getSlideshow', { token }),
     updateSlideshow: (token, items) => api.invoke('settings:updateSlideshow', { token, items }),
     uploadSlideshowMedia: (token, payload) => api.invoke('settings:uploadSlideshowMedia', { token, payload }),

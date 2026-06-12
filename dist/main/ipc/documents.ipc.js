@@ -98,6 +98,7 @@ const importSchema = zod_1.z.object({
     invoiceId: zod_1.z.number().int().positive().optional(),
     commissionId: zod_1.z.number().int().positive().optional(),
     attestationId: zod_1.z.number().int().positive().optional(),
+    treasuryOperationId: zod_1.z.number().int().positive().optional(),
 });
 const updateGedSchema = zod_1.z.object({
     name: zod_1.z.string().min(1).optional(),
@@ -124,6 +125,7 @@ const updateGedSchema = zod_1.z.object({
     invoiceId: zod_1.z.number().int().positive().nullable().optional(),
     commissionId: zod_1.z.number().int().positive().nullable().optional(),
     attestationId: zod_1.z.number().int().positive().nullable().optional(),
+    treasuryOperationId: zod_1.z.number().int().positive().nullable().optional(),
 });
 /**
  * Enregistre les handlers IPC pour la gestion des documents.
@@ -385,6 +387,7 @@ function registerDocumentsIPC() {
                 'clientId', 'ownerId', 'propertyId', 'conventionId', 'terrainId',
                 'lotissementId', 'programmeId', 'projectId', 'prospectId',
                 'referrerId', 'linkedUserId', 'invoiceId', 'commissionId', 'attestationId',
+                'treasuryOperationId',
             ]) {
                 if (filters[fk])
                     where[fk] = Number(filters[fk]);
@@ -453,6 +456,7 @@ function registerDocumentsIPC() {
                     invoice: { select: { id: true, reference: true } },
                     commission: { select: { id: true, reference: true } },
                     attestation: { select: { id: true, reference: true, type: true } },
+                    treasuryOperation: { select: { id: true, reference: true, bankAccountId: true } },
                     auditLogs: {
                         orderBy: { createdAt: 'desc' },
                         take: 50,
@@ -517,6 +521,7 @@ function registerDocumentsIPC() {
                         invoiceId: d.invoiceId ?? null,
                         commissionId: d.commissionId ?? null,
                         attestationId: d.attestationId ?? null,
+                        treasuryOperationId: d.treasuryOperationId ?? null,
                         tags: d.tagIds && d.tagIds.length
                             ? { create: d.tagIds.map((tagId) => ({ tagId })) }
                             : undefined,

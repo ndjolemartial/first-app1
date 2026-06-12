@@ -69,6 +69,7 @@ export default function GedDocumentDetailPage() {
         invoiceId:     doc.invoiceId     ? String(doc.invoiceId)     : '',
         commissionId:  doc.commissionId  ? String(doc.commissionId)  : '',
         attestationId: doc.attestationId ? String(doc.attestationId) : '',
+        treasuryOperationId: doc.treasuryOperationId ? String(doc.treasuryOperationId) : '',
       });
     }
   }, [doc]);
@@ -100,6 +101,7 @@ export default function GedDocumentDetailPage() {
     doc.invoice     && { label: 'Facture',             to: `/accounting/invoices/${doc.invoice.id}`, name: doc.invoice.reference },
     doc.attestation && { label: 'Attestation',         to: `/conventions/attestations/${doc.attestation.id}`, name: doc.attestation.reference },
     doc.commission  && { label: 'Commission',          to: `/commissions/all`,                    name: doc.commission.reference },
+    doc.treasuryOperation && { label: 'Opération de trésorerie', to: `/treasury/accounts/${doc.treasuryOperation.bankAccountId}`, name: doc.treasuryOperation.reference },
   ].filter(Boolean) as Array<{ label: string; to: string; name: string }>;
 
   const handleSave = async () => {

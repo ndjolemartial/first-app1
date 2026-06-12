@@ -101,6 +101,7 @@ const importSchema = z.object({
   invoiceId: z.number().int().positive().optional(),
   commissionId: z.number().int().positive().optional(),
   attestationId: z.number().int().positive().optional(),
+  treasuryOperationId: z.number().int().positive().optional(),
 });
 
 const updateGedSchema = z.object({
@@ -128,6 +129,7 @@ const updateGedSchema = z.object({
   invoiceId: z.number().int().positive().nullable().optional(),
   commissionId: z.number().int().positive().nullable().optional(),
   attestationId: z.number().int().positive().nullable().optional(),
+  treasuryOperationId: z.number().int().positive().nullable().optional(),
 });
 
 /**
@@ -400,6 +402,7 @@ export function registerDocumentsIPC(): void {
         'clientId', 'ownerId', 'propertyId', 'conventionId', 'terrainId',
         'lotissementId', 'programmeId', 'projectId', 'prospectId',
         'referrerId', 'linkedUserId', 'invoiceId', 'commissionId', 'attestationId',
+        'treasuryOperationId',
       ] as const) {
         if (filters[fk]) where[fk] = Number(filters[fk]);
       }
@@ -462,6 +465,7 @@ export function registerDocumentsIPC(): void {
           invoice: { select: { id: true, reference: true } },
           commission: { select: { id: true, reference: true } },
           attestation: { select: { id: true, reference: true, type: true } },
+          treasuryOperation: { select: { id: true, reference: true, bankAccountId: true } },
           auditLogs: {
             orderBy: { createdAt: 'desc' },
             take: 50,
@@ -521,6 +525,7 @@ export function registerDocumentsIPC(): void {
             invoiceId: d.invoiceId ?? null,
             commissionId: d.commissionId ?? null,
             attestationId: d.attestationId ?? null,
+            treasuryOperationId: d.treasuryOperationId ?? null,
             tags: d.tagIds && d.tagIds.length
               ? { create: d.tagIds.map((tagId) => ({ tagId })) }
               : undefined,

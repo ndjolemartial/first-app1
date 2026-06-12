@@ -244,6 +244,10 @@ export const SettingsKeys = {
   shareLocationEmailSubject:  'share.location.email.subject',
   shareLocationEmailBody:     'share.location.email.body',
   shareLocationWhatsappBody:  'share.location.whatsapp.body',
+
+  // Conditions particulières (liste de textes multi-lignes, JSON array) — proposées
+  // dans le formulaire de convention pour les types hérités.
+  conventionConditionsParticulieres: 'conventions.conditionsParticulieres',
 } as const;
 
 /** Liste des clés correspondant à des secrets chiffrés. */

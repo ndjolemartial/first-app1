@@ -40,11 +40,15 @@ const conventionBaseSchema = zod_1.z.object({
     souscriptionType: zod_1.z.enum(['STANDARD', 'AVEC_ACD', 'FINANCEMENT_PROJET']).optional(),
     agentId: zod_1.z.number().int().nullable().optional(),
     referrerId: zod_1.z.number().int().nullable().optional(),
-    type: zod_1.z.enum(['RENTAL_UNFURNISHED', 'RENTAL_FURNISHED', 'SALE', 'MANAGEMENT', 'COMMERCIAL_LEASE', 'SOUSCRIPTION', 'AVENANT', 'RESILIATION']),
+    type: zod_1.z.enum(['RENTAL_UNFURNISHED', 'RENTAL_FURNISHED', 'SALE', 'MANAGEMENT', 'COMMERCIAL_LEASE', 'SOUSCRIPTION', 'AVENANT', 'RESILIATION', 'AVENANT_DELAI_HERITE', 'AVENANT_RESILIATION_HERITE']),
     status: zod_1.z.enum(['BROUILLON', 'ACTIVE', 'EXPIRE', 'TERMINER', 'ANNULE', 'ATTENTE_SIGNATURE']).default('BROUILLON'),
     startDate: zod_1.z.string().datetime(),
     endDate: zod_1.z.string().datetime().optional(),
     signedAt: zod_1.z.string().datetime().optional(),
+    // Date de la convention héritée (types AVENANT_DELAI_HERITE / AVENANT_RESILIATION_HERITE).
+    priorConventionDate: zod_1.z.string().datetime().optional(),
+    // Conditions particulières (texte multi-lignes) — types hérités uniquement.
+    conditionsParticulieres: zod_1.z.string().optional(),
     rentAmount: zod_1.z.number().optional(),
     saleAmount: zod_1.z.number().optional(),
     apportInitial: zod_1.z.number().optional(),
@@ -73,11 +77,26 @@ const conventionBaseSchema = zod_1.z.object({
     notes: zod_1.z.string().optional(),
 });
 /** Types de convention autorisés pour un terrain. */
-const TERRAIN_CONVENTION_TYPES = ['SOUSCRIPTION', 'SALE', 'AVENANT', 'RESILIATION'];
+const TERRAIN_CONVENTION_TYPES = ['SOUSCRIPTION', 'SALE', 'AVENANT', 'RESILIATION', 'AVENANT_DELAI_HERITE', 'AVENANT_RESILIATION_HERITE'];
 /** Types de convention autorisés pour un bien immobilier. */
 const PROPERTY_CONVENTION_TYPES = ['RENTAL_UNFURNISHED', 'RENTAL_FURNISHED', 'SALE', 'MANAGEMENT', 'COMMERCIAL_LEASE'];
 /** Types de convention devant être liés à une convention initiale/précédente. */
 const AMENDMENT_TYPES = ['AVENANT', 'RESILIATION'];
+/** Types proposant un paiement additionnel facultatif (« Avec / Sans paiement »). */
+const PAYMENT_OPTION_TYPES = ['RESILIATION', 'AVENANT', 'AVENANT_DELAI_HERITE', 'AVENANT_RESILIATION_HERITE'];
+/** Types de convention héritée (base antérieure) portant une « date convention antérieure ». */
+const INHERITED_CONVENTION_TYPES = ['AVENANT_DELAI_HERITE', 'AVENANT_RESILIATION_HERITE'];
+/**
+ * Vrai si la convention relève de l'option « Avec / Sans paiement » : un paiement
+ * additionnel facultatif, sans frais d'ouverture ni facture de vente. L'avenant de
+ * transfert de site est exclu (il conserve son propre flux : montant supplémentaire
+ * + échéancier).
+ */
+function isPaymentOptionType(type, amendmentType) {
+    if (!type || !PAYMENT_OPTION_TYPES.includes(type))
+        return false;
+    return !(type === 'AVENANT' && amendmentType === 'TRANSFERT_SITE');
+}
 /** Vérifie la cohérence rattachement (bien/terrain) ↔ élément sélectionné et type de convention. */
 const conventionSchema = conventionBaseSchema
     .refine((d) => (d.assetType === 'TERRAIN'
@@ -400,6 +419,12 @@ function registerConventionsIPC() {
                     startDate: new Date(d.startDate),
                     endDate: d.endDate ? new Date(d.endDate) : undefined,
                     signedAt: d.signedAt ? new Date(d.signedAt) : undefined,
+                    priorConventionDate: INHERITED_CONVENTION_TYPES.includes(d.type) && d.priorConventionDate
+                        ? new Date(d.priorConventionDate)
+                        : null,
+                    conditionsParticulieres: INHERITED_CONVENTION_TYPES.includes(d.type)
+                        ? (d.conditionsParticulieres || null)
+                        : null,
                     rentAmount: toDecimal(d.rentAmount),
                     saleAmount: toDecimal(d.saleAmount),
                     apportInitial: toDecimal(d.apportInitial),
@@ -408,8 +433,10 @@ function registerConventionsIPC() {
                     agencyFees: isTerrain ? null : toDecimal(d.agencyFees),
                     charges: toDecimal(d.charges),
                     fraisOuvertureDossier: toDecimal(d.fraisOuvertureDossier),
-                    // additionalAmount n'a de sens que pour l'avenant de transfert de site
-                    additionalAmount: (d.type === 'AVENANT' && d.amendmentType === 'TRANSFERT_SITE')
+                    // additionalAmount : avenant de transfert de site (échéancier) OU paiement
+                    // additionnel facultatif des résiliations / avenants (« Avec paiement »).
+                    additionalAmount: ((d.type === 'AVENANT' && d.amendmentType === 'TRANSFERT_SITE')
+                        || isPaymentOptionType(d.type, d.amendmentType))
                         ? toDecimal(d.additionalAmount)
                         : null,
                     paymentDay: d.paymentDay,
@@ -478,17 +505,27 @@ function registerConventionsIPC() {
             //   - BROUILLON / ATTENTE_SIGNATURE → BROUILLON (en attente de validation)
             //   - EXPIRE / ANNULE / TERMINER    → aucune facture générée
             const autoInvoices = [];
-            const fraisOuverture = Number(d.fraisOuvertureDossier ?? 0);
-            const apport = Number(d.apportInitial ?? 0);
-            if (fraisOuverture > 0)
-                autoInvoices.push({ type: 'FRAIS_OUVERTURE_DOSSIER', amount: fraisOuverture, label: "Frais d'ouverture de dossier" });
-            if (apport > 0)
-                autoInvoices.push({ type: 'APPORT_INITIAL', amount: apport, label: 'Apport initial' });
-            // Paiement comptant : facture de vente pour le solde réglé en une fois
-            // (prix total − apport déjà facturé). Exclut de fait les locations (saleAmount nul).
-            const soldeComptant = Number(d.saleAmount ?? 0) - apport;
-            if (d.paymentModalites === 'CASH' && soldeComptant > 0) {
-                autoInvoices.push({ type: 'VENTE', amount: soldeComptant, label: 'Vente — paiement comptant' });
+            if (isPaymentOptionType(d.type, d.amendmentType)) {
+                // Résiliations / avenants à paiement additionnel facultatif : aucune facture
+                // de frais d'ouverture ni de vente. Une seule facture, pour le paiement
+                // additionnel (« Avec paiement »), générée si le montant saisi est > 0.
+                const additionnel = Number(d.additionalAmount ?? 0);
+                if (additionnel > 0)
+                    autoInvoices.push({ type: 'OTHER', amount: additionnel, label: 'Paiement additionnel' });
+            }
+            else {
+                const fraisOuverture = Number(d.fraisOuvertureDossier ?? 0);
+                const apport = Number(d.apportInitial ?? 0);
+                if (fraisOuverture > 0)
+                    autoInvoices.push({ type: 'FRAIS_OUVERTURE_DOSSIER', amount: fraisOuverture, label: "Frais d'ouverture de dossier" });
+                if (apport > 0)
+                    autoInvoices.push({ type: 'APPORT_INITIAL', amount: apport, label: 'Apport initial' });
+                // Paiement comptant : facture de vente pour le solde réglé en une fois
+                // (prix total − apport déjà facturé). Exclut de fait les locations (saleAmount nul).
+                const soldeComptant = Number(d.saleAmount ?? 0) - apport;
+                if (d.paymentModalites === 'CASH' && soldeComptant > 0) {
+                    autoInvoices.push({ type: 'VENTE', amount: soldeComptant, label: 'Vente — paiement comptant' });
+                }
             }
             const autoInvoiceStatus = convention.status === 'ACTIVE' ? 'VALIDEE'
                 : (convention.status === 'BROUILLON' || convention.status === 'ATTENTE_SIGNATURE') ? 'BROUILLON'
@@ -577,6 +614,8 @@ function registerConventionsIPC() {
                 data.endDate = new Date(d.endDate);
             if (d.signedAt)
                 data.signedAt = new Date(d.signedAt);
+            if (d.priorConventionDate)
+                data.priorConventionDate = new Date(d.priorConventionDate);
             if (d.firstInstallmentDate)
                 data.firstInstallmentDate = new Date(d.firstInstallmentDate);
             // Si le rattachement change, neutralise les liens du type non sélectionné
@@ -602,9 +641,19 @@ function registerConventionsIPC() {
             // La nature de la souscription ne s'applique qu'aux souscriptions
             if (d.type && d.type !== 'SOUSCRIPTION')
                 data.souscriptionType = null;
-            // Le montant supplémentaire ne concerne que l'avenant de transfert de site —
-            // pour tout autre type / nature, on neutralise la valeur côté base.
-            if (d.type && !(d.type === 'AVENANT' && d.amendmentType === 'TRANSFERT_SITE')) {
+            // La date de convention antérieure ne concerne que les conventions héritées.
+            if (d.type && !INHERITED_CONVENTION_TYPES.includes(d.type))
+                data.priorConventionDate = null;
+            // Les conditions particulières ne concernent que les conventions héritées.
+            if (d.type && !INHERITED_CONVENTION_TYPES.includes(d.type))
+                data.conditionsParticulieres = null;
+            if ('conditionsParticulieres' in data)
+                data.conditionsParticulieres = data.conditionsParticulieres || null;
+            // Le montant supplémentaire concerne l'avenant de transfert de site (échéancier)
+            // et le paiement additionnel facultatif des résiliations / avenants — sinon
+            // on neutralise la valeur côté base.
+            if (d.type && !((d.type === 'AVENANT' && d.amendmentType === 'TRANSFERT_SITE')
+                || isPaymentOptionType(d.type, d.amendmentType))) {
                 data.additionalAmount = null;
             }
             if (d.parentConventionId && d.parentConventionId === id) {

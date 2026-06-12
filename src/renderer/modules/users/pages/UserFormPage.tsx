@@ -1,5 +1,5 @@
 import { useNavigate, useParams } from 'react-router-dom';
-import { useEffect } from 'react';
+import { useEffect, useMemo } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -10,6 +10,7 @@ import { upperField } from '../../../shared/utils/uppercase';
 import Select from '../../../shared/components/ui/Select';
 import Card from '../../../shared/components/ui/Card';
 import { useUser, useCreateUser, useUpdateUser } from '../hooks/useUsers';
+import { useTreasuryAccounts } from '../../treasury/hooks/useTreasury';
 import { useAuthStore } from '../../../shared/stores/auth.store';
 import { Save } from 'lucide-react';
 
@@ -31,6 +32,8 @@ const schema = z.object({
   hireDate: z.string().optional(),
   cnpsNumber: z.string().optional(),
   residence: z.string().optional(),
+  defaultAccountEntreeId: z.string().optional(),
+  defaultAccountSortieId: z.string().optional(),
 });
 
 type FormData = z.infer<typeof schema>;
@@ -73,6 +76,16 @@ export default function UserFormPage() {
   const createUser = useCreateUser();
   const updateUser = useUpdateUser();
 
+  // Comptes de trésorerie proposés pour les comptes par défaut de l'utilisateur.
+  const { data: accountsRes } = useTreasuryAccounts();
+  const accountOptions = useMemo(
+    () => [
+      { value: '', label: '— Aucun —' },
+      ...(accountsRes?.data ?? []).map((a: any) => ({ value: String(a.id), label: a.name })),
+    ],
+    [accountsRes],
+  );
+
   // Un AGENT_TECHNIQUE ne peut attribuer que les rôles AGENT / AGENT_TECHNIQUE / READONLY.
   const currentRole = useAuthStore((s) => s.user?.role) ?? '';
   const roleOptions = currentRole === 'AGENT_TECHNIQUE'
@@ -101,6 +114,8 @@ export default function UserFormPage() {
         hireDate: u.hireDate ? String(u.hireDate).slice(0, 10) : '',
         cnpsNumber: u.cnpsNumber ?? '',
         residence: u.residence ?? '',
+        defaultAccountEntreeId: u.defaultAccountEntreeId ? String(u.defaultAccountEntreeId) : '',
+        defaultAccountSortieId: u.defaultAccountSortieId ? String(u.defaultAccountSortieId) : '',
       });
     }
   }, [userRes, isEdit, reset]);
@@ -113,6 +128,9 @@ export default function UserFormPage() {
     // Les énumérations vides ne doivent pas être transmises (valeur non valide).
     if (!payload.civilite) delete payload.civilite;
     if (!payload.statutConjugal) delete payload.statutConjugal;
+    // Comptes par défaut : convertis en nombre, ou null si « Aucun ».
+    payload.defaultAccountEntreeId = data.defaultAccountEntreeId ? Number(data.defaultAccountEntreeId) : null;
+    payload.defaultAccountSortieId = data.defaultAccountSortieId ? Number(data.defaultAccountSortieId) : null;
 
     let res;
     if (isEdit) {
@@ -176,6 +194,17 @@ export default function UserFormPage() {
             <Input label="Date d'embauche" type="date" error={errors.hireDate?.message} {...register('hireDate')} />
           </div>
           <Input label="Lieu d'habitation" placeholder="Quartier, commune, ville…" error={errors.residence?.message} {...register('residence')} />
+          <div className="border-t border-slate-200 pt-4">
+            <h3 className="text-sm font-semibold text-slate-700 mb-1">Comptes de trésorerie par défaut</h3>
+            <p className="text-xs text-slate-500 mb-3">
+              Préremplissent le champ « Compte » du formulaire de nouvelle opération selon le sens
+              choisi. Optionnels.
+            </p>
+            <div className="grid grid-cols-2 gap-4">
+              <Select label="Compte par défaut — Entrées" options={accountOptions} {...register('defaultAccountEntreeId')} />
+              <Select label="Compte par défaut — Sorties" options={accountOptions} {...register('defaultAccountSortieId')} />
+            </div>
+          </div>
           <div className="flex justify-end gap-3 pt-2">
             <Button variant="secondary" type="button" onClick={() => navigate('/users')}>Annuler</Button>
             <Button type="submit" loading={isSubmitting} icon={<Save className="h-4 w-4" />}>

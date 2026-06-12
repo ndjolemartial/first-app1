@@ -87,6 +87,8 @@ export const ATTESTATION_VARIABLE_GROUPS: VariableGroup[] = [
     items: [
       { token: 'convention.reference', label: 'Référence' },
       { token: 'convention.dateSignature', label: 'Date de signature' },
+      { token: 'convention.dateConventionAnterieure', label: 'Date convention antérieure' },
+      { token: 'convention.conditionsParticulieres', label: 'Informations particulières' },
       { token: 'convention.delai', label: 'Délai (durée)' },
       { token: 'convention.delai.enLettres', label: 'Délai (en lettres)' },
       { token: 'convention.nombreTerrains', label: 'Nombre de terrains rattachés' },
@@ -306,6 +308,10 @@ export function resolveAttestationVariables(
     'bien.superficie.enLettres': numL(a.property?.surface),
     'convention.reference': a.convention?.reference ?? '',
     'convention.dateSignature': date(a.convention?.signedAt),
+    'convention.dateConventionAnterieure': date(a.convention?.priorConventionDate),
+    'convention.conditionsParticulieres': a.convention?.conditionsParticulieres
+      ? String(a.convention.conditionsParticulieres).replace(/\n/g, '<br>')
+      : '',
     'convention.delai': delayLabel(a.convention?.startDate, a.convention?.endDate),
     'convention.delai.enLettres': delayLabelInWords(a.convention?.startDate, a.convention?.endDate),
     'convention.nombreTerrains': a.convention?._count?.terrains != null

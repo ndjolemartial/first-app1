@@ -23,6 +23,8 @@ const TYPE_OPTIONS = [
   { value: 'SOUSCRIPTION', label: 'Souscription' },
   { value: 'AVENANT', label: 'Avenant' },
   { value: 'RESILIATION', label: 'Résiliation' },
+  { value: 'AVENANT_DELAI_HERITE', label: 'Avenant Délai - convention héritée' },
+  { value: 'AVENANT_RESILIATION_HERITE', label: 'Résiliation - convention héritée' },
 ];
 
 const AMENDMENT_NATURE_OPTIONS = [

@@ -64,6 +64,17 @@ export function useDeleteTreasuryAccount() {
   });
 }
 
+/** Définit la liste d'affichage (utilisateurs) d'un compte de trésorerie. */
+export function useSetAccountViewers() {
+  const token = useAuthStore((s) => s.token)!;
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, userIds }: { id: number; userIds: number[] }) =>
+      ipc.setAccountViewers(token, id, userIds),
+    onSuccess: () => invalidateAll(qc),
+  });
+}
+
 /* ─── Opérations de trésorerie ────────────────────────────────────── */
 
 export function useTreasuryOperations(filters: object = {}, page = 1, limit = 20) {
@@ -153,6 +164,43 @@ export function useDeleteTreasuryCategory() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (id: number) => ipc.deleteCategory(token, id),
+    onSuccess: () => invalidateAll(qc),
+  });
+}
+
+/* ─── Tiers de trésorerie (bénéficiaire / émetteur) ───────────────── */
+
+export function useTreasuryThirdParties(filters: object = {}) {
+  const token = useAuthStore((s) => s.token)!;
+  return useQuery({
+    queryKey: ['treasury', 'third-parties', filters],
+    queryFn: () => ipc.listThirdParties(token, filters),
+  });
+}
+
+export function useCreateTreasuryThirdParty() {
+  const token = useAuthStore((s) => s.token)!;
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: object) => ipc.createThirdParty(token, payload),
+    onSuccess: () => invalidateAll(qc),
+  });
+}
+
+export function useUpdateTreasuryThirdParty() {
+  const token = useAuthStore((s) => s.token)!;
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, payload }: { id: number; payload: object }) => ipc.updateThirdParty(token, id, payload),
+    onSuccess: () => invalidateAll(qc),
+  });
+}
+
+export function useDeleteTreasuryThirdParty() {
+  const token = useAuthStore((s) => s.token)!;
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: number) => ipc.deleteThirdParty(token, id),
     onSuccess: () => invalidateAll(qc),
   });
 }

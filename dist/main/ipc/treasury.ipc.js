@@ -87,6 +87,11 @@ const categorySchema = zod_1.z.object({
     accountingCode: zod_1.z.string().optional(),
     isActive: zod_1.z.boolean().optional(),
 });
+const thirdPartySchema = zod_1.z.object({
+    fullName: zod_1.z.string().min(1, 'Nom complet requis'),
+    contacts: zod_1.z.string().optional(),
+    isActive: zod_1.z.boolean().optional(),
+});
 const operationSchema = zod_1.z
     .object({
     bankAccountId: zod_1.z.number().int().positive(),
@@ -100,6 +105,8 @@ const operationSchema = zod_1.z
     paymentMethod: zod_1.z.enum(PAYMENT_METHODS).optional(),
     paymentRef: zod_1.z.string().optional(),
     budgetLineId: zod_1.z.number().int().positive().nullable().optional(),
+    // Tiers (bénéficiaire d'une sortie / émetteur d'une entrée). Facultatif.
+    thirdPartyId: zod_1.z.number().int().positive().nullable().optional(),
     // Imputation analytique exclusive : au plus un seul des trois.
     projectId: zod_1.z.number().int().positive().nullable().optional(),
     lotissementId: zod_1.z.number().int().positive().nullable().optional(),
@@ -129,6 +136,7 @@ const operationInclude = {
     project: { select: { id: true, reference: true, nom: true } },
     lotissement: { select: { id: true, reference: true, nom: true } },
     programme: { select: { id: true, reference: true, nom: true } },
+    thirdParty: { select: { id: true, fullName: true, contacts: true } },
 };
 /** Construit la clause `where` d'une recherche d'opérations à partir des filtres. */
 function buildOperationWhere(filters) {
@@ -180,19 +188,28 @@ function registerTreasuryIPC() {
             const db = (0, db_service_1.getDb)();
             const now = new Date();
             const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
-            // Comptes visibles par la session : les comptes privés d'autres utilisateurs sont exclus.
-            const accountsWhere = { deletedAt: null };
-            applyAccountAccess(accountsWhere, session);
+            const isAdmin = ACCOUNT_FULL_ACCESS_ROLES.includes(session.role);
+            // Comptes affichés dans le bloc « Comptes de trésorerie » : régis par la
+            // liste d'affichage paramétrée par compte. Les SUPER_ADMIN / ADMIN voient
+            // tous les comptes ; les autres rôles ne voient que les comptes dont ils
+            // figurent explicitement dans la liste d'affichage (liste vide = admins seuls).
+            const displayWhere = { deletedAt: null };
+            if (!isAdmin)
+                displayWhere.viewers = { some: { userId: session.userId } };
             const accounts = await db.bankAccount.findMany({
-                where: accountsWhere,
+                where: displayWhere,
                 orderBy: [{ isActive: 'desc' }, { name: 'asc' }],
                 include: { linkedUser: linkedUserInclude },
             });
             const accountIds = accounts.map((a) => a.id);
-            // Les opérations du tableau de bord se limitent aux comptes visibles.
-            const opWhere = { deletedAt: null, bankAccountId: { in: accountIds } };
+            // Opérations & indicateurs : fondés sur les comptes accessibles en écriture
+            // (modèle « compte privé / commun » existant), indépendamment de l'affichage.
+            const accessWhere = { deletedAt: null };
+            applyAccountAccess(accessWhere, session);
+            const accessAccounts = await db.bankAccount.findMany({ where: accessWhere, select: { id: true } });
+            const accessAccountIds = accessAccounts.map((a) => a.id);
+            const opWhere = { deletedAt: null, bankAccountId: { in: accessAccountIds } };
             // Hors SUPER_ADMIN/ADMIN, l'utilisateur ne voit que les opérations qu'il a saisies.
-            const isAdmin = ACCOUNT_FULL_ACCESS_ROLES.includes(session.role);
             const recentWhere = isAdmin ? opWhere : { ...opWhere, createdById: session.userId };
             const [balances, monthAgg, recent, operationsCount] = await Promise.all([
                 (0, treasury_service_1.computeBalances)(db, accountIds),
@@ -262,7 +279,7 @@ function registerTreasuryIPC() {
             const accounts = await db.bankAccount.findMany({
                 where,
                 orderBy: [{ isActive: 'desc' }, { name: 'asc' }],
-                include: { linkedUser: linkedUserInclude },
+                include: { linkedUser: linkedUserInclude, viewers: { select: { userId: true } } },
             });
             const balances = await (0, treasury_service_1.computeBalances)(db, accounts.map((a) => a.id));
             const data = accounts.map((a) => ({
@@ -285,7 +302,7 @@ function registerTreasuryIPC() {
             const db = (0, db_service_1.getDb)();
             const account = await db.bankAccount.findUnique({
                 where: { id },
-                include: { linkedUser: linkedUserInclude },
+                include: { linkedUser: linkedUserInclude, viewers: { select: { userId: true } } },
             });
             if (!account || account.deletedAt)
                 return { success: false, error: 'Compte introuvable' };
@@ -411,6 +428,44 @@ function registerTreasuryIPC() {
             return { success: false, error: error.message };
         }
     });
+    /**
+     * Définit la liste d'affichage d'un compte : les utilisateurs (non-admin) pour
+     * lesquels le compte apparaît dans le bloc « Comptes de trésorerie ». Réservé
+     * aux administrateurs (paramétrage). Remplace intégralement la liste existante.
+     */
+    electron_1.ipcMain.handle('treasury:setAccountViewers', async (_event, { token, id, userIds }) => {
+        try {
+            const session = (0, auth_service_1.getSession)(token);
+            if (!session)
+                return { success: false, error: 'Session expirée' };
+            checkTreasuryRole(session, ADMIN_ROLES);
+            const accountId = Number(id);
+            const ids = Array.isArray(userIds)
+                ? Array.from(new Set(userIds.map((v) => Number(v)).filter((n) => Number.isInteger(n) && n > 0)))
+                : [];
+            const db = (0, db_service_1.getDb)();
+            const account = await db.bankAccount.findUnique({ where: { id: accountId } });
+            if (!account || account.deletedAt)
+                return { success: false, error: 'Compte introuvable' };
+            // Ne conserve que des utilisateurs existants et actifs.
+            const validUsers = ids.length
+                ? await db.user.findMany({ where: { id: { in: ids }, deletedAt: null }, select: { id: true } })
+                : [];
+            const validIds = validUsers.map((u) => u.id);
+            await db.$transaction([
+                db.bankAccountViewer.deleteMany({ where: { bankAccountId: accountId } }),
+                ...(validIds.length
+                    ? [db.bankAccountViewer.createMany({ data: validIds.map((userId) => ({ bankAccountId: accountId, userId })) })]
+                    : []),
+            ]);
+            logger_1.default.info(`Liste d'affichage du compte id=${accountId} mise à jour (${validIds.length} utilisateur(s))`);
+            return { success: true, data: { bankAccountId: accountId, userIds: validIds } };
+        }
+        catch (error) {
+            logger_1.default.error('treasury:setAccountViewers error', error.message);
+            return { success: false, error: error.message };
+        }
+    });
     /* ─── Opérations de trésorerie ───────────────────────────────────── */
     electron_1.ipcMain.handle('treasury:listOperations', async (_event, { token, filters = {}, page = 1, limit = 20 }) => {
         try {
@@ -490,6 +545,12 @@ function registerTreasuryIPC() {
             if (!effectiveLabel) {
                 return { success: false, error: 'Un libellé ou un objet d\'opération est requis' };
             }
+            // Tiers de l'opération : valider l'existence si fourni.
+            if (d.thirdPartyId != null) {
+                const exists = await db.treasuryThirdParty.findFirst({ where: { id: d.thirdPartyId, deletedAt: null } });
+                if (!exists)
+                    return { success: false, error: 'Tiers introuvable' };
+            }
             // Imputation analytique : valider l'existence de l'entité rattachée (un seul des trois).
             if (d.projectId != null) {
                 const exists = await db.project.findFirst({ where: { id: d.projectId, deletedAt: null } });
@@ -538,6 +599,7 @@ function registerTreasuryIPC() {
                 paymentRef: d.paymentRef,
                 source: 'MANUEL',
                 budgetLineId: d.budgetLineId ?? null,
+                thirdPartyId: d.thirdPartyId ?? null,
                 projectId: d.projectId ?? null,
                 lotissementId: d.lotissementId ?? null,
                 programmeId: d.programmeId ?? null,
@@ -642,6 +704,11 @@ function registerTreasuryIPC() {
                 const exists = await db.programmeImmobilier.findFirst({ where: { id: d.programmeId, deletedAt: null } });
                 if (!exists)
                     return { success: false, error: 'Programme immobilier introuvable' };
+            }
+            if (d.thirdPartyId != null && d.thirdPartyId !== existing.thirdPartyId) {
+                const exists = await db.treasuryThirdParty.findFirst({ where: { id: d.thirdPartyId, deletedAt: null } });
+                if (!exists)
+                    return { success: false, error: 'Tiers introuvable' };
             }
             const data = { ...d };
             if (d.amount !== undefined)
@@ -831,6 +898,98 @@ function registerTreasuryIPC() {
             return { success: false, error: error.message };
         }
     });
+    /* ─── Tiers de trésorerie (bénéficiaire / émetteur) ──────────────── */
+    electron_1.ipcMain.handle('treasury:listThirdParties', async (_event, { token, filters = {} }) => {
+        try {
+            const session = (0, auth_service_1.getSession)(token);
+            if (!session)
+                return { success: false, error: 'Session expirée' };
+            checkTreasuryRole(session, READ_ROLES);
+            const db = (0, db_service_1.getDb)();
+            const where = { deletedAt: null };
+            if (filters.isActive !== undefined && filters.isActive !== '') {
+                where.isActive = filters.isActive === true || filters.isActive === 'true';
+            }
+            if (filters.search) {
+                where.OR = [
+                    { fullName: { contains: filters.search } },
+                    { contacts: { contains: filters.search } },
+                ];
+            }
+            const data = await db.treasuryThirdParty.findMany({
+                where,
+                orderBy: { fullName: 'asc' },
+            });
+            return ser({ success: true, data, total: data.length });
+        }
+        catch (error) {
+            logger_1.default.error('treasury:listThirdParties error', error.message);
+            return { success: false, error: error.message };
+        }
+    });
+    electron_1.ipcMain.handle('treasury:createThirdParty', async (_event, { token, payload }) => {
+        try {
+            const session = (0, auth_service_1.getSession)(token);
+            if (!session)
+                return { success: false, error: 'Session expirée' };
+            checkTreasuryRole(session, WRITE_ROLES);
+            const parsed = thirdPartySchema.safeParse(payload);
+            if (!parsed.success)
+                return { success: false, error: parsed.error.format() };
+            const d = parsed.data;
+            const db = (0, db_service_1.getDb)();
+            const thirdParty = await db.treasuryThirdParty.create({
+                data: {
+                    fullName: d.fullName,
+                    contacts: d.contacts,
+                    isActive: d.isActive ?? true,
+                },
+            });
+            logger_1.default.info(`Tiers de trésorerie créé: id=${thirdParty.id} (${thirdParty.fullName})`);
+            return ser({ success: true, data: thirdParty });
+        }
+        catch (error) {
+            logger_1.default.error('treasury:createThirdParty error', error.message);
+            return { success: false, error: error.message };
+        }
+    });
+    electron_1.ipcMain.handle('treasury:updateThirdParty', async (_event, { token, id, payload }) => {
+        try {
+            const session = (0, auth_service_1.getSession)(token);
+            if (!session)
+                return { success: false, error: 'Session expirée' };
+            checkTreasuryRole(session, WRITE_ROLES);
+            const parsed = thirdPartySchema.partial().safeParse(payload);
+            if (!parsed.success)
+                return { success: false, error: parsed.error.format() };
+            const db = (0, db_service_1.getDb)();
+            const thirdParty = await db.treasuryThirdParty.update({ where: { id }, data: parsed.data });
+            return ser({ success: true, data: thirdParty });
+        }
+        catch (error) {
+            logger_1.default.error('treasury:updateThirdParty error', error.message);
+            return { success: false, error: error.message };
+        }
+    });
+    electron_1.ipcMain.handle('treasury:deleteThirdParty', async (_event, { token, id }) => {
+        try {
+            const session = (0, auth_service_1.getSession)(token);
+            if (!session)
+                return { success: false, error: 'Session expirée' };
+            checkTreasuryRole(session, WRITE_ROLES);
+            const db = (0, db_service_1.getDb)();
+            await db.treasuryThirdParty.update({
+                where: { id },
+                data: { deletedAt: new Date(), isActive: false },
+            });
+            logger_1.default.info(`Tiers de trésorerie supprimé: id=${id}`);
+            return { success: true };
+        }
+        catch (error) {
+            logger_1.default.error('treasury:deleteThirdParty error', error.message);
+            return { success: false, error: error.message };
+        }
+    });
     /* ─── Utilisateurs (pour le rattachement d'un compte privé) ──────── */
     electron_1.ipcMain.handle('treasury:listUsers', async (_event, { token }) => {
         try {
@@ -842,7 +1001,7 @@ function registerTreasuryIPC() {
             const users = await db.user.findMany({
                 where: { deletedAt: null, isActive: true },
                 select: { id: true, firstName: true, lastName: true, role: true, matricule: true },
-                orderBy: [{ firstName: 'asc' }, { lastName: 'asc' }],
+                orderBy: { id: 'asc' },
             });
             return { success: true, data: users };
         }

@@ -41,6 +41,10 @@ model User {
   residence      String?
   // Préférence de thème graphique : DEFAULT | AFRIKIMMO | DARK_GOLD
   theme       String    @default("DEFAULT")
+  // Comptes de trésorerie par défaut, préremplis dans le champ « Compte » du
+  // formulaire de nouvelle opération selon le sens choisi (entrée / sortie).
+  defaultAccountEntreeId Int?
+  defaultAccountSortieId Int?
   lastLoginAt DateTime?
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
@@ -57,6 +61,9 @@ model User {
   commissionsCancelled Commission[]    @relation("CommissionCancelledBy")
   treasuryOperations   TreasuryOperation[] @relation("TreasuryCreatedBy")
   linkedBankAccounts   BankAccount[]       @relation("BankAccountLinkedUser")
+  bankAccountViews     BankAccountViewer[]
+  defaultAccountEntree BankAccount?        @relation("UserDefaultEntreeAccount", fields: [defaultAccountEntreeId], references: [id])
+  defaultAccountSortie BankAccount?        @relation("UserDefaultSortieAccount", fields: [defaultAccountSortieId], references: [id])
   uploadedDocuments    Document[]          @relation("DocumentUploadedBy")
   linkedDocuments      Document[]          @relation("DocumentLinkedUser")
   documentAuditLogs    DocumentAuditLog[]  @relation("DocumentAuditUser")
@@ -575,6 +582,12 @@ model Convention {
   startDate            DateTime
   endDate              DateTime?
   signedAt             DateTime?
+  // Date de la convention héritée (importée de la base antérieure) — renseignée
+  // pour les types AVENANT_DELAI_HERITE et AVENANT_RESILIATION_HERITE.
+  priorConventionDate  DateTime?
+  // Conditions particulières (texte multi-lignes) choisies dans le formulaire de
+  // convention (types hérités) parmi la liste configurée dans les Paramètres.
+  conditionsParticulieres String?       @db.Text
   rentAmount           Decimal?         @db.Decimal(15, 2)
   saleAmount           Decimal?         @db.Decimal(15, 2)
   apportInitial        Decimal?         @db.Decimal(15, 2)
@@ -660,6 +673,8 @@ enum ConventionType {
   SOUSCRIPTION
   AVENANT
   RESILIATION
+  AVENANT_DELAI_HERITE
+  AVENANT_RESILIATION_HERITE
 }
 
 enum ConventionAssetType {
@@ -1394,6 +1409,7 @@ model Document {
   commissionId   Int?
   attestationId  Int?
   quoteId        Int?
+  treasuryOperationId Int?    // Opération de trésorerie rattachée
   uploadedAt     DateTime     @default(now())
   updatedAt      DateTime     @updatedAt
   deletedAt      DateTime?
@@ -1413,6 +1429,7 @@ model Document {
   commission       Commission?          @relation(fields: [commissionId], references: [id])
   attestation      Attestation?         @relation(fields: [attestationId], references: [id])
   quote            Quote?               @relation(fields: [quoteId], references: [id])
+  treasuryOperation TreasuryOperation?  @relation(fields: [treasuryOperationId], references: [id])
   documentCategory DocumentCategory?    @relation(fields: [categoryId], references: [id])
   folder           DocumentFolder?      @relation(fields: [folderId], references: [id])
   uploadedBy       User?                @relation("DocumentUploadedBy", fields: [uploadedById], references: [id])
@@ -1764,6 +1781,25 @@ model BankAccount {
   linkedUser User?               @relation("BankAccountLinkedUser", fields: [linkedUserId], references: [id])
   operations TreasuryOperation[]
   payments   Payment[]
+  usersDefaultEntree User[]      @relation("UserDefaultEntreeAccount")
+  usersDefaultSortie User[]      @relation("UserDefaultSortieAccount")
+  // Utilisateurs (non-admin) pour lesquels ce compte s'affiche dans le bloc
+  // « Comptes de trésorerie » du tableau de bord. Liste d'affichage uniquement,
+  // distincte du compte privé (`linkedUserId`) qui régit l'accès en écriture.
+  viewers    BankAccountViewer[]
+}
+
+// Liste d'affichage d'un compte de trésorerie : association compte ↔ utilisateur
+// déterminant quels utilisateurs voient le compte dans le bloc « Comptes de
+// trésorerie ». Les SUPER_ADMIN / ADMIN voient tous les comptes quoi qu'il arrive.
+model BankAccountViewer {
+  bankAccountId Int
+  userId        Int
+
+  bankAccount BankAccount @relation(fields: [bankAccountId], references: [id], onDelete: Cascade)
+  user        User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([bankAccountId, userId])
 }
 
 enum TreasuryAccountType {
@@ -1811,6 +1847,9 @@ model TreasuryOperation {
   installmentId Int?              // Échéance de vente rattachée (source ECHEANCE)
   commissionId  Int?              // Commission rattachée (source COMMISSION)
   budgetLineId  Int?              // Ligne budgétaire d'imputation (sorties uniquement)
+  // Tiers de l'opération : bénéficiaire (« à destination de » pour une sortie)
+  // ou émetteur (« en provenance de » pour une entrée). Facultatif.
+  thirdPartyId  Int?
   // Imputation analytique : une opération peut être rattachée à au plus UNE
   // entité parmi projet / lotissement / programme immobilier. L'exclusivité est
   // appliquée en code (validation Zod côté IPC).
@@ -1830,6 +1869,24 @@ model TreasuryOperation {
   project     Project?             @relation(fields: [projectId], references: [id])
   lotissement Lotissement?         @relation(fields: [lotissementId], references: [id])
   programme   ProgrammeImmobilier? @relation(fields: [programmeId], references: [id])
+  thirdParty  TreasuryThirdParty?  @relation(fields: [thirdPartyId], references: [id])
+  documents   Document[]
+}
+
+// Tiers de trésorerie : bénéficiaire (« à destination de ») d'une sortie ou
+// émetteur (« en provenance de ») d'une entrée. Liste paramétrable, réutilisée
+// pour les deux sens d'opération.
+model TreasuryThirdParty {
+  id         Int       @id @default(autoincrement())
+  uuid       String    @unique @default(cuid())
+  fullName   String    // Nom complet du tiers
+  contacts   String?   // Contacts (téléphone, email…)
+  isActive   Boolean   @default(true)
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+  deletedAt  DateTime?
+
+  operations TreasuryOperation[]
 }
 
 enum TreasurySource {

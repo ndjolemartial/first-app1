@@ -14,6 +14,7 @@ import Textarea from '../../../shared/components/ui/Textarea';
 import Card from '../../../shared/components/ui/Card';
 import { useConvention, useConventions, useCreateConvention, useUpdateConvention } from '../hooks/useConventions';
 import { useClients, useClientAssignableUsers, useClientReferrers } from '../../clients/hooks/useClients';
+import { useConditionsParticulieres } from '../../settings/hooks/useSettings';
 import { useAuthStore } from '../../../shared/stores/auth.store';
 import { useProperties } from '../../properties/hooks/useProperties';
 import { useTerrains } from '../../terrains/hooks/useTerrains';
@@ -56,11 +57,13 @@ const schema = z.object({
     (v) => (v === '' || v === undefined || v === null ? undefined : v),
     z.enum(['STANDARD', 'AVEC_ACD', 'FINANCEMENT_PROJET']).optional(),
   ),
-  type: z.enum(['RENTAL_UNFURNISHED', 'RENTAL_FURNISHED', 'SALE', 'MANAGEMENT', 'COMMERCIAL_LEASE', 'SOUSCRIPTION', 'AVENANT', 'RESILIATION']),
+  type: z.enum(['RENTAL_UNFURNISHED', 'RENTAL_FURNISHED', 'SALE', 'MANAGEMENT', 'COMMERCIAL_LEASE', 'SOUSCRIPTION', 'AVENANT', 'RESILIATION', 'AVENANT_DELAI_HERITE', 'AVENANT_RESILIATION_HERITE']),
   status: z.enum(['BROUILLON', 'ACTIVE', 'EXPIRE', 'TERMINER', 'ANNULE', 'ATTENTE_SIGNATURE']).default('BROUILLON'),
   startDate: z.string().min(1, 'Date de début requise'),
   endDate: z.string().min(1, 'Délai requis : choisissez une durée ou saisissez la date de fin'),
   signedAt: z.string().optional(),
+  priorConventionDate: z.string().optional(),
+  conditionsParticulieres: z.string().optional(),
   rentAmount: optionalNumber,
   saleAmount: optionalNumber,
   apportInitial: optionalNumber,
@@ -153,6 +156,8 @@ const TERRAIN_TYPE_OPTIONS = [
   { value: 'SALE', label: 'Vente' },
   { value: 'AVENANT', label: 'Avenant' },
   { value: 'RESILIATION', label: 'Résiliation' },
+  { value: 'AVENANT_DELAI_HERITE', label: 'Avenant Délai - convention héritée' },
+  { value: 'AVENANT_RESILIATION_HERITE', label: 'Résiliation - convention héritée' },
 ];
 
 /** Types de convention de terrain n'exigeant pas un pré-rattachement client (le terrain est encore DISPONIBLE — la convention acte la réservation). */
@@ -166,6 +171,23 @@ const PROPERTY_ENGAGED_STATUTS = ['RESERVE', 'VENDU', 'SOUS_OPTION', 'EN_LOCATIO
 
 /** Types de convention liés à une convention initiale/précédente. */
 const AMENDMENT_TYPES = ['AVENANT', 'RESILIATION'];
+
+/**
+ * Types de convention proposant l'option « Avec / Sans paiement » : un paiement
+ * additionnel facultatif (résiliations et avenants). Par défaut « Sans paiement »
+ * (aucune facture). « Avec paiement » fait apparaître le champ « Paiement
+ * additionnel » (défaut 0) et génère une facture à l'enregistrement si > 0 ;
+ * dans ce cas les frais d'ouverture de dossier ne s'appliquent pas.
+ */
+const PAYMENT_OPTION_TYPES = ['RESILIATION', 'AVENANT', 'AVENANT_DELAI_HERITE', 'AVENANT_RESILIATION_HERITE'];
+
+/** Types de convention héritée (base antérieure) : affichent le champ « Date convention antérieure ». */
+const INHERITED_CONVENTION_TYPES = ['AVENANT_DELAI_HERITE', 'AVENANT_RESILIATION_HERITE'];
+
+const PAYMENT_CHOICE_OPTIONS = [
+  { value: 'WITHOUT', label: 'Sans paiement' },
+  { value: 'WITH', label: 'Avec paiement' },
+];
 
 const AMENDMENT_NATURE_OPTIONS = [
   { value: '', label: '— Choisir la nature —' },
@@ -185,6 +207,8 @@ const TYPE_LABELS: Record<string, string> = {
   RENTAL_UNFURNISHED: 'Location non meublée', RENTAL_FURNISHED: 'Location meublée',
   SALE: 'Vente', MANAGEMENT: 'Gestion', COMMERCIAL_LEASE: 'Bail commercial',
   SOUSCRIPTION: 'Souscription', AVENANT: 'Avenant', RESILIATION: 'Résiliation',
+  AVENANT_DELAI_HERITE: 'Avenant Délai - convention héritée',
+  AVENANT_RESILIATION_HERITE: 'Résiliation - convention héritée',
 };
 
 const STATUS_OPTIONS = [
@@ -402,6 +426,7 @@ export default function ConventionFormPage() {
   const { data: conventionsRes } = useConventions({}, 1, 500);
   const { data: assignableUsersRes } = useClientAssignableUsers();
   const { data: referrersRes }       = useClientReferrers();
+  const { data: conditionsRes }      = useConditionsParticulieres();
   const userOptions = [
     { value: '', label: '— Aucun —' },
     ...((assignableUsersRes?.data ?? []) as any[]).map((u) => ({
@@ -419,6 +444,8 @@ export default function ConventionFormPage() {
     })),
   ];
   const [isSale, setIsSale] = useState(false);
+  // Option « Avec / Sans paiement » pour les résiliations et avenants (défaut : sans paiement).
+  const [withPayment, setWithPayment] = useState(false);
   const [isInstallment, setIsInstallment] = useState(false);
   const [durationMonths, setDurationMonths] = useState('');
   const [submitError, setSubmitError] = useState('');
@@ -473,6 +500,32 @@ export default function ConventionFormPage() {
   // DISPONIBLES) — on ne masque pas le sélecteur et on n'hérite pas de la
   // convention parente.
   const isTransfertSite = watchType === 'AVENANT' && watchAmendmentType === 'TRANSFERT_SITE';
+  // Conventions proposant l'option « Avec / Sans paiement » (paiement additionnel
+  // facultatif). L'avenant de transfert de site conserve son propre flux financier.
+  const showPaymentChoice = PAYMENT_OPTION_TYPES.includes(watchType ?? '') && !isTransfertSite;
+  // Conventions héritées : champs « Date convention antérieure » et « Conditions
+  // particulières » dans le bloc Délais.
+  const showPriorConventionDate = INHERITED_CONVENTION_TYPES.includes(watchType ?? '');
+  // Options du sélecteur « Informations particulières » (configurées dans Paramètres).
+  // Chaque option a un titre et un texte ; la valeur stockée est le texte complet.
+  // Le libellé combine titre + aperçu du texte afin que la recherche fonctionne
+  // à la fois sur le titre et sur le contenu. Si la valeur enregistrée ne fait
+  // plus partie de la liste (option modifiée / supprimée), on l'ajoute pour ne
+  // pas la perdre à l'affichage.
+  const conditionsList: Array<{ title: string; text: string }> =
+    (conditionsRes?.data as Array<{ title: string; text: string }> | undefined) ?? [];
+  const watchConditions = watch('conditionsParticulieres');
+  const oneLine = (s: string) => s.replace(/\s*\n+\s*/g, ' ⏎ ').trim();
+  const conditionsOptions: SearchSelectOption[] = [
+    { value: '', label: '— Aucune —' },
+    ...conditionsList.map((it) => ({
+      value: it.text,
+      label: it.title ? `${it.title} — ${oneLine(it.text)}` : oneLine(it.text),
+    })),
+  ];
+  if (watchConditions && !conditionsList.some((it) => it.text === watchConditions)) {
+    conditionsOptions.push({ value: watchConditions, label: `(enregistrée) ${oneLine(watchConditions)}` });
+  }
 
   const installmentCount = watchModalites === 'SUR_PLUS_60_MOIS'
     ? (Number(watchInstallmentCount) || 0)
@@ -773,6 +826,8 @@ export default function ConventionFormPage() {
         startDate: toDateInput(c.startDate),
         endDate: toDateInput(c.endDate),
         signedAt: toDateInput(c.signedAt),
+        priorConventionDate: toDateInput(c.priorConventionDate),
+        conditionsParticulieres: c.conditionsParticulieres ?? '',
         firstInstallmentDate: toDateInput(c.firstInstallmentDate),
         rentAmount: c.rentAmount ? Number(c.rentAmount) : undefined,
         saleAmount: c.saleAmount ? Number(c.saleAmount) : undefined,
@@ -791,6 +846,11 @@ export default function ConventionFormPage() {
       setDurationMonths(
         derived && DURATION_OPTIONS.some((o) => o.value === String(derived)) ? String(derived) : '',
       );
+      // Restaure le choix « Avec / Sans paiement » : « Avec paiement » si un
+      // paiement additionnel a été enregistré (hors avenant de transfert de site).
+      const isPayType = PAYMENT_OPTION_TYPES.includes(c.type)
+        && !(c.type === 'AVENANT' && c.amendmentType === 'TRANSFERT_SITE');
+      setWithPayment(isPayType && Number(c.additionalAmount) > 0);
       // Charge l'échéancier existant
       if (c.installments && c.installments.length > 0) {
         skipInstallmentGenRef.current = true;
@@ -853,6 +913,8 @@ export default function ConventionFormPage() {
   const propertyKey = (watchPropertyIds ?? []).join(',');
   useEffect(() => {
     if (isEdit && !priceInitRef.current) { priceInitRef.current = true; return; }
+    // Pas de prix de vente pour les conventions à paiement additionnel facultatif.
+    if (showPaymentChoice) return;
     const total = computeSaleTotal(watchModalites as string);
     if (total != null) setValue('saleAmount', total, { shouldValidate: true });
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -915,8 +977,18 @@ export default function ConventionFormPage() {
     if (payload.type !== 'AVENANT') delete payload.amendmentType;
     // La nature de la souscription ne concerne que les souscriptions
     if (payload.type !== 'SOUSCRIPTION') delete payload.souscriptionType;
-    // Le montant supplémentaire ne concerne que l'avenant de transfert de site
-    if (!(payload.type === 'AVENANT' && payload.amendmentType === 'TRANSFERT_SITE')) {
+    // Le montant supplémentaire concerne l'avenant de transfert de site (échéancier)
+    // ET les conventions à paiement additionnel facultatif (résiliations / avenants).
+    const isTransfertSitePayload = payload.type === 'AVENANT' && payload.amendmentType === 'TRANSFERT_SITE';
+    const isPaymentChoicePayload = PAYMENT_OPTION_TYPES.includes(payload.type) && !isTransfertSitePayload;
+    if (isPaymentChoicePayload) {
+      // « Avec paiement » → montant saisi (0 par défaut) ; « Sans paiement » → 0.
+      payload.additionalAmount = withPayment ? (Number(payload.additionalAmount) || 0) : 0;
+      // Ces conventions n'ont ni prix de vente ni frais d'ouverture de dossier.
+      payload.saleAmount = undefined;
+      payload.fraisOuvertureDossier = 0;
+      payload.paymentModalites = 'CASH';
+    } else if (!isTransfertSitePayload) {
       delete payload.additionalAmount;
     }
     // Échéancier : vente par échéances uniquement
@@ -938,6 +1010,19 @@ export default function ConventionFormPage() {
     else delete payload.endDate;
     if (payload.signedAt) payload.signedAt = new Date(payload.signedAt).toISOString();
     else delete payload.signedAt;
+    // Date de convention antérieure : seulement pour les conventions héritées.
+    if (INHERITED_CONVENTION_TYPES.includes(payload.type) && payload.priorConventionDate) {
+      payload.priorConventionDate = new Date(payload.priorConventionDate).toISOString();
+    } else {
+      delete payload.priorConventionDate;
+    }
+    // Conditions particulières : seulement pour les conventions héritées. On envoie
+    // toujours la valeur (même vide) afin de permettre l'effacement à l'édition.
+    if (INHERITED_CONVENTION_TYPES.includes(payload.type)) {
+      payload.conditionsParticulieres = payload.conditionsParticulieres || '';
+    } else {
+      delete payload.conditionsParticulieres;
+    }
     if (payload.firstInstallmentDate) payload.firstInstallmentDate = new Date(payload.firstInstallmentDate).toISOString();
     else delete payload.firstInstallmentDate;
 
@@ -964,95 +1049,6 @@ export default function ConventionFormPage() {
       breadcrumbs={[{ label: 'Conventions', to: '/conventions' }, { label: isEdit ? 'Modifier' : 'Nouvelle' }]}
     >
       <form onSubmit={handleSubmit(onSubmit, onInvalid)} className="space-y-6 max-w-3xl mx-auto">
-        {/* Rattachement */}
-        <Card>
-          <h3 className="text-base font-semibold text-slate-800 mb-4">Rattachement de la convention</h3>
-          <div className="space-y-4">
-            <Select label="La convention porte sur *" options={ASSET_TYPE_OPTIONS} {...register('assetType')} />
-            <FormSearchSelect
-              control={control}
-              name="clientId"
-              label="Client principal *"
-              options={clientOptions}
-              error={errors.clientId?.message}
-            />
-            {isAmendment && !isTransfertSite ? (
-              <div className="text-xs text-slate-600 bg-slate-50 border border-slate-200 rounded px-3 py-2">
-                Les {watchAssetType === 'TERRAIN' ? 'terrains' : 'biens'} rattachés à cette convention seront hérités automatiquement de la convention initiale / précédente sélectionnée ci-dessous.
-              </div>
-            ) : watchAssetType === 'TERRAIN' ? (
-              <>
-                <Controller
-                  control={control}
-                  name="terrainIds"
-                  render={({ field }) => (
-                    <MultiAssetSelect
-                      label="Terrains rattachés"
-                      options={terrainOptions}
-                      values={(field.value ?? []) as number[]}
-                      onChange={field.onChange}
-                      error={errors.terrainIds?.message as string | undefined}
-                    />
-                  )}
-                />
-                {terrainStrictByClient && clientIdNum === 0 && (
-                  <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-3 py-2">
-                    Sélectionnez d'abord le client principal pour afficher les terrains qui lui sont déjà attribués.
-                  </p>
-                )}
-                {terrainStrictByClient && clientIdNum > 0 && filteredTerrains.length === 0 && (
-                  <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-3 py-2">
-                    Aucun terrain n'est rattaché à ce client. Assignez d'abord un terrain (statut réservé / vendu / sous option) au client depuis la fiche terrain.
-                  </p>
-                )}
-                <p className="text-xs text-slate-500">
-                  Tous les terrains d'une convention doivent appartenir au même lotissement.
-                </p>
-                {hasMixedLotissements && (
-                  <p className="text-xs text-red-700 bg-red-50 border border-red-200 rounded px-3 py-2">
-                    Les terrains sélectionnés proviennent de lotissements différents. Retirez ceux qui n'appartiennent pas au même lotissement avant d'enregistrer.
-                  </p>
-                )}
-              </>
-            ) : (
-              <>
-                <Controller
-                  control={control}
-                  name="propertyIds"
-                  render={({ field }) => (
-                    <MultiAssetSelect
-                      label="Biens immobiliers rattachés"
-                      options={filteredPropertyOptions}
-                      values={(field.value ?? []) as number[]}
-                      onChange={field.onChange}
-                      error={errors.propertyIds?.message as string | undefined}
-                    />
-                  )}
-                />
-                {propertyStrictByClient && clientIdNum === 0 && (
-                  <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-3 py-2">
-                    Sélectionnez d'abord le client principal pour afficher les biens qui lui sont déjà attribués.
-                  </p>
-                )}
-                {propertyStrictByClient && clientIdNum > 0 && filteredProperties.length === 0 && (
-                  <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-3 py-2">
-                    Aucun bien n'est rattaché à ce client. Assignez d'abord un bien (statut réservé / vendu / sous option / en location / indisponible) au client depuis la fiche bien.
-                  </p>
-                )}
-              </>
-            )}
-            {watchAssetType === 'TERRAIN' && (
-              <FormSearchSelect
-                control={control}
-                name="secondaryClientId"
-                label="Souscripteur associé / successeur"
-                options={secondaryClientOptions}
-                error={errors.secondaryClientId?.message}
-              />
-            )}
-          </div>
-        </Card>
-
         {/* Type et statut */}
         <Card>
           <h3 className="text-base font-semibold text-slate-800 mb-4">Type de convention</h3>
@@ -1107,7 +1103,117 @@ export default function ConventionFormPage() {
               )}
             </div>
           )}
-          <div className="grid grid-cols-2 gap-4 mt-4">
+        </Card>
+
+        {/* Rattachement */}
+        <Card>
+          <h3 className="text-base font-semibold text-slate-800 mb-4">Rattachement de la convention</h3>
+          <div className="space-y-4">
+            {/* Client principal + Souscripteur associé — en tête du bloc */}
+            {watchAssetType === 'TERRAIN' ? (
+              <div className="grid grid-cols-2 gap-4">
+                <FormSearchSelect
+                  control={control}
+                  name="clientId"
+                  label="Client principal *"
+                  options={clientOptions}
+                  error={errors.clientId?.message}
+                />
+                <FormSearchSelect
+                  control={control}
+                  name="secondaryClientId"
+                  label="Souscripteur associé / successeur"
+                  options={secondaryClientOptions}
+                  error={errors.secondaryClientId?.message}
+                />
+              </div>
+            ) : (
+              <FormSearchSelect
+                control={control}
+                name="clientId"
+                label="Client principal *"
+                options={clientOptions}
+                error={errors.clientId?.message}
+              />
+            )}
+            {/* « La convention porte sur » + actifs rattachés — côte à côte */}
+            <div className="grid grid-cols-2 gap-4 items-start">
+              <Select label="La convention porte sur *" options={ASSET_TYPE_OPTIONS} {...register('assetType')} />
+              <div className="space-y-2">
+                {isAmendment && !isTransfertSite ? (
+                  <div className="text-xs text-slate-600 bg-slate-50 border border-slate-200 rounded px-3 py-2">
+                    Les {watchAssetType === 'TERRAIN' ? 'terrains' : 'biens'} rattachés à cette convention seront hérités automatiquement de la convention initiale / précédente sélectionnée ci-dessous.
+                  </div>
+                ) : watchAssetType === 'TERRAIN' ? (
+                  <>
+                    <Controller
+                      control={control}
+                      name="terrainIds"
+                      render={({ field }) => (
+                        <MultiAssetSelect
+                          label="Terrains rattachés"
+                          options={terrainOptions}
+                          values={(field.value ?? []) as number[]}
+                          onChange={field.onChange}
+                          error={errors.terrainIds?.message as string | undefined}
+                        />
+                      )}
+                    />
+                    {terrainStrictByClient && clientIdNum === 0 && (
+                      <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-3 py-2">
+                        Sélectionnez d'abord le client principal pour afficher les terrains qui lui sont déjà attribués.
+                      </p>
+                    )}
+                    {terrainStrictByClient && clientIdNum > 0 && filteredTerrains.length === 0 && (
+                      <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-3 py-2">
+                        Aucun terrain n'est rattaché à ce client. Assignez d'abord un terrain (statut réservé / vendu / sous option) au client depuis la fiche terrain.
+                      </p>
+                    )}
+                    <p className="text-xs text-slate-500">
+                      Tous les terrains d'une convention doivent appartenir au même lotissement.
+                    </p>
+                    {hasMixedLotissements && (
+                      <p className="text-xs text-red-700 bg-red-50 border border-red-200 rounded px-3 py-2">
+                        Les terrains sélectionnés proviennent de lotissements différents. Retirez ceux qui n'appartiennent pas au même lotissement avant d'enregistrer.
+                      </p>
+                    )}
+                  </>
+                ) : (
+                  <>
+                    <Controller
+                      control={control}
+                      name="propertyIds"
+                      render={({ field }) => (
+                        <MultiAssetSelect
+                          label="Biens immobiliers rattachés"
+                          options={filteredPropertyOptions}
+                          values={(field.value ?? []) as number[]}
+                          onChange={field.onChange}
+                          error={errors.propertyIds?.message as string | undefined}
+                        />
+                      )}
+                    />
+                    {propertyStrictByClient && clientIdNum === 0 && (
+                      <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-3 py-2">
+                        Sélectionnez d'abord le client principal pour afficher les biens qui lui sont déjà attribués.
+                      </p>
+                    )}
+                    {propertyStrictByClient && clientIdNum > 0 && filteredProperties.length === 0 && (
+                      <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-3 py-2">
+                        Aucun bien n'est rattaché à ce client. Assignez d'abord un bien (statut réservé / vendu / sous option / en location / indisponible) au client depuis la fiche bien.
+                      </p>
+                    )}
+                  </>
+                )}
+              </div>
+            </div>
+          </div>
+        </Card>
+
+        {/* Délais */}
+        <Card>
+          <h3 className="text-base font-semibold text-slate-800 mb-4">Délais</h3>
+          <div className="grid grid-cols-2 gap-4">
             <Input label="Date de début *" type="date" error={errors.startDate?.message} {...register('startDate')} />
             <Select
               label="Délai de la convention *"
@@ -1130,6 +1236,28 @@ export default function ConventionFormPage() {
             </div>
             <Input label="Date de signature" type="date" {...register('signedAt')} />
           </div>
+          {showPriorConventionDate && (
+            <div className="grid grid-cols-2 gap-4 mt-4 items-start">
+              <div>
+                <Input label="Date convention antérieure" type="date" {...register('priorConventionDate')} />
+                <p className="text-xs text-slate-500 mt-1">
+                  Date de la convention héritée (importée de la base antérieure).
+                </p>
+              </div>
+              <div>
+                <FormSearchSelect
+                  control={control}
+                  name="conditionsParticulieres"
+                  label="Informations particulières"
+                  options={conditionsOptions}
+                  error={errors.conditionsParticulieres?.message}
+                />
+                <p className="text-xs text-slate-500 mt-1">
+                  Liste configurable dans Paramètres → Informations particulières.
+                </p>
+              </div>
+            </div>
+          )}
         </Card>
 
         {/* Conditions financières */}
@@ -1152,7 +1280,38 @@ export default function ConventionFormPage() {
             </>
           ) : (
             <>
-              {isTransfertSite ? (
+              {showPaymentChoice ? (
+                <div className="space-y-4">
+                  <Select
+                    label="Paiement"
+                    options={PAYMENT_CHOICE_OPTIONS}
+                    value={withPayment ? 'WITH' : 'WITHOUT'}
+                    onChange={(e) => {
+                      const w = e.target.value === 'WITH';
+                      setWithPayment(w);
+                      // Valeur par défaut 0 (modifiable) en activant « Avec paiement ».
+                      if (w && (watchAdditionalAmount === undefined || (watchAdditionalAmount as any) === '')) {
+                        setValue('additionalAmount', 0);
+                      }
+                    }}
+                  />
+                  {withPayment && (
+                    <div>
+                      <Input
+                        label="Paiement additionnel (FCFA)"
+                        type="number"
+                        step="1000"
+                        placeholder="0"
+                        error={errors.additionalAmount?.message}
+                        {...register('additionalAmount')}
+                      />
+                      <p className="text-xs text-slate-500 mt-1">
+                        Une facture sera générée à l'enregistrement de la convention si le montant saisi est supérieur à 0.
+                      </p>
+                    </div>
+                  )}
+                </div>
+              ) : isTransfertSite ? (
                 <div className="space-y-4">
                   {/* Solde restant à payer sur la convention initiale —
                       lecture seule, calculé à partir des échéances du parent. */}
@@ -1199,6 +1358,8 @@ export default function ConventionFormPage() {
                   <Input label="Honoraires agence (FCFA)" type="number" step="1000" {...register('agencyFees')} />
                 </div>
               )}
+              {!showPaymentChoice && (
+                <>
               <div className="grid grid-cols-2 gap-4 mt-4">
                 <Select label="Modalités de paiement" options={PAYMENT_MODALITES_OPTIONS} {...register('paymentModalites')} />
                 <Select label="Mode de paiement" options={PAYMENT_METHOD_OPTIONS} {...register('paymentMethod')} />
@@ -1266,19 +1427,23 @@ export default function ConventionFormPage() {
                   <Input label="Caution (FCFA)" type="number" step="1000" {...register('deposit')} />
                 </div>
               )}
+                </>
+              )}
             </>
           )}
 
-          {/* Frais d'ouverture de dossier — applicable à toutes les conventions */}
-          <div className="mt-4 border-t border-slate-100 pt-4">
-            <Input
-              label="Frais d'ouverture de dossier (FCFA)"
-              type="number"
-              step="1000"
-              placeholder="100 000"
-              {...register('fraisOuvertureDossier')}
-            />
-          </div>
+          {/* Frais d'ouverture de dossier — masqué pour les conventions à paiement additionnel */}
+          {!showPaymentChoice && (
+            <div className="mt-4 border-t border-slate-100 pt-4">
+              <Input
+                label="Frais d'ouverture de dossier (FCFA)"
+                type="number"
+                step="1000"
+                placeholder="100 000"
+                {...register('fraisOuvertureDossier')}
+              />
+            </div>
+          )}
         </Card>
 
         {/* Affectation */}
