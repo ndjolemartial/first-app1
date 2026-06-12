@@ -1,11 +1,41 @@
 import { ipcMain } from 'electron';
 import { getDb } from '../services/db.service';
-import { getSession, checkRole } from '../services/auth.service';
+import { getSession, checkRole, isAgentRole } from '../services/auth.service';
 import logger from '../utils/logger';
 import { z } from 'zod';
 
 const WRITE_ROLES = ['SUPER_ADMIN', 'ADMIN', 'MANAGER'];
 const READ_ROLES = [...WRITE_ROLES, 'AGENT', 'ACCOUNTANT', 'READONLY'];
+
+/**
+ * Rôles autorisés à émettre / modifier une attestation de SOLDE portant sur une
+ * souscription héritée (échéances sans convention). Liste explicite, volontairement
+ * vérifiée SANS passer par `checkRole` : on veut inclure le comptable (ACCOUNTANT)
+ * mais EXCLURE l'assistante de direction, alors que `checkRole` rend ces deux rôles
+ * équivalents à un MANAGER. Seuls administrateurs, managers et comptables.
+ */
+const LEGACY_SOLDE_ROLES = ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ACCOUNTANT'];
+
+function checkLegacySoldeRole(session: { role: string }): void {
+  if (!LEGACY_SOLDE_ROLES.includes(session.role)) {
+    throw new Error(
+      "Permission insuffisante : seuls les administrateurs, managers et comptables peuvent "
+      + "émettre une attestation de solde sur une échéance héritée",
+    );
+  }
+}
+
+/**
+ * Restriction de visibilité d'un AGENT : attestations des clients dont il est le
+ * référent (client.assignedToId). Les attestations n'ont pas de statut, donc pas
+ * de filtre BROUILLON ici. Renvoie `{}` pour les autres rôles.
+ */
+function agentScopeWhere(session: { role: string; userId: number }): Record<string, unknown> {
+  if (isAgentRole(session.role)) {
+    return { client: { assignedToId: session.userId } };
+  }
+  return {};
+}
 
 const ATTESTATION_TYPES = ['ATTRIBUTION', 'CESSION', 'SOLDE', 'TRANSFERT_PROPRIETE'] as const;
 
@@ -241,6 +271,51 @@ async function assertConventionEligibleForAttestation(
 }
 
 /**
+ * Vérifie qu'une souscription héritée (échéances sans convention) est soldée pour
+ * le couple (client, terrain). Le solde = somme des montants restant dus
+ * (`amount − paidAmount`) sur les échéances héritées NON annulées du client
+ * rattachées au terrain (via `terrainLinks` ou le champ direct `terrainId`). Il
+ * doit être nul pour émettre une attestation de solde.
+ *
+ * Lève une `Error` lisible si aucune échéance n'existe pour ce couple ou si le
+ * solde reste positif.
+ */
+async function assertLegacySubscriptionSettled(
+  db: ReturnType<typeof getDb>,
+  clientId: number,
+  terrainId: number,
+): Promise<void> {
+  const installments = await db.saleInstallment.findMany({
+    where: {
+      conventionId: null,
+      clientId,
+      status: { not: 'ANNULE' },
+      OR: [
+        { terrainId },
+        { terrainLinks: { some: { terrainId } } },
+      ],
+    },
+    select: { amount: true, paidAmount: true },
+  });
+  if (installments.length === 0) {
+    throw new Error(
+      'Aucune échéance héritée pour ce client et ce terrain : solde indéterminé',
+    );
+  }
+  const balance = installments.reduce(
+    (s, i) => s + Math.max(0, Number(i.amount) - Number(i.paidAmount ?? 0)),
+    0,
+  );
+  // Tolérance d'arrondi (centimes) avant de bloquer.
+  if (Math.round(balance * 100) / 100 > 0) {
+    throw new Error(
+      `Le solde de la souscription héritée doit être à 0 pour émettre cette attestation `
+      + `(solde restant : ${Math.round(balance)}).`,
+    );
+  }
+}
+
+/**
  * Met à jour les champs `numeroAttestationAttribution` / `numeroAttestationCession`
  * sur le terrain rattaché lorsqu'une attestation pertinente est émise.
  */
@@ -283,6 +358,8 @@ export function registerAttestationsIPC(): void {
           { notes: { contains: filters.search } },
         ];
       }
+      // AGENT : restreint aux attestations de ses clients référents.
+      Object.assign(where, agentScopeWhere(session));
       const [data, total] = await db.$transaction([
         db.attestation.findMany({
           where,
@@ -308,6 +385,10 @@ export function registerAttestationsIPC(): void {
       const db = getDb();
       const attestation = await db.attestation.findUnique({ where: { id }, include: INCLUDE });
       if (!attestation || attestation.deletedAt) return { success: false, error: 'Attestation introuvable' };
+      // AGENT : accès limité aux attestations de ses clients référents.
+      if (isAgentRole(session.role) && (attestation.client as any)?.assignedToId !== session.userId) {
+        return { success: false, error: 'Attestation inaccessible' };
+      }
       return { success: true, data: ser(attestation) };
     } catch (error: any) {
       return { success: false, error: error.message };
@@ -318,14 +399,27 @@ export function registerAttestationsIPC(): void {
     try {
       const session = getSession(token);
       if (!session) return { success: false, error: 'Session expirée' };
-      checkRole(session, WRITE_ROLES);
       const parsed = attestationSchema.safeParse(payload);
       if (!parsed.success) return { success: false, error: parsed.error.format() };
       const db = getDb();
       const d = parsed.data;
-      // Vérifie l'éligibilité de la convention liée (pas d'avenant /
-      // résiliation, et solde = 0 pour SOLDE / TRANSFERT_PROPRIETE).
-      await assertConventionEligibleForAttestation(db, d.conventionId, d.type);
+      // Attestation de SOLDE sur une souscription héritée : aucune convention
+      // liée, le solde est calculé sur le couple (client, terrain). Rôles
+      // restreints (admin / manager / comptable, sans assistante de direction)
+      // et solde obligatoirement à 0.
+      const isLegacySolde = d.type === 'SOLDE' && !d.conventionId;
+      if (isLegacySolde) {
+        checkLegacySoldeRole(session);
+        if (!d.terrainId) {
+          return { success: false, error: 'Une attestation de solde sur une échéance héritée nécessite un terrain' };
+        }
+        await assertLegacySubscriptionSettled(db, d.clientId, d.terrainId);
+      } else {
+        checkRole(session, WRITE_ROLES);
+        // Vérifie l'éligibilité de la convention liée (pas d'avenant /
+        // résiliation, et solde = 0 pour SOLDE / TRANSFERT_PROPRIETE).
+        await assertConventionEligibleForAttestation(db, d.conventionId, d.type);
+      }
       const reference = await nextReference(db);
       const data: any = {
         reference,
@@ -355,22 +449,34 @@ export function registerAttestationsIPC(): void {
     try {
       const session = getSession(token);
       if (!session) return { success: false, error: 'Session expirée' };
-      checkRole(session, WRITE_ROLES);
       const parsed = attestationUpdateSchema.safeParse(payload);
       if (!parsed.success) return { success: false, error: parsed.error.format() };
       const db = getDb();
       const d = parsed.data;
-      // Vérifie l'éligibilité de la convention liée à partir des valeurs
-      // effectives après mise à jour : on charge l'existant pour combler
-      // les champs non transmis dans le payload partiel.
+      // Calcule les valeurs effectives après mise à jour : on charge l'existant
+      // pour combler les champs non transmis dans le payload partiel.
       const existing = await db.attestation.findUnique({
         where: { id },
-        select: { type: true, conventionId: true },
+        select: { type: true, conventionId: true, clientId: true, terrainId: true },
       });
       if (!existing) return { success: false, error: 'Attestation introuvable' };
       const effectiveType = d.type ?? existing.type;
       const effectiveConventionId = 'conventionId' in d ? d.conventionId : existing.conventionId;
-      await assertConventionEligibleForAttestation(db, effectiveConventionId, effectiveType);
+      const effectiveClientId = d.clientId ?? existing.clientId;
+      const effectiveTerrainId = 'terrainId' in d ? d.terrainId : existing.terrainId;
+      // Attestation de solde héritée (cf. handler create) : rôles restreints +
+      // solde (client, terrain) à 0.
+      const isLegacySolde = effectiveType === 'SOLDE' && !effectiveConventionId;
+      if (isLegacySolde) {
+        checkLegacySoldeRole(session);
+        if (!effectiveTerrainId) {
+          return { success: false, error: 'Une attestation de solde sur une échéance héritée nécessite un terrain' };
+        }
+        await assertLegacySubscriptionSettled(db, effectiveClientId, effectiveTerrainId);
+      } else {
+        checkRole(session, WRITE_ROLES);
+        await assertConventionEligibleForAttestation(db, effectiveConventionId, effectiveType);
+      }
       const data: any = { ...d };
       if (d.emittedAt) data.emittedAt = new Date(d.emittedAt);
       const attestation = await db.attestation.update({
@@ -401,6 +507,8 @@ export function registerAttestationsIPC(): void {
           { notes: { contains: filters.search } },
         ];
       }
+      // AGENT : restreint aux attestations de ses clients référents.
+      Object.assign(where, agentScopeWhere(session));
       const rows = await db.attestation.groupBy({
         by: ['type'],
         where,
@@ -416,6 +524,48 @@ export function registerAttestationsIPC(): void {
         total += n;
       }
       return { success: true, data: { ...stats, total } };
+    } catch (error: any) {
+      return { success: false, error: error.message };
+    }
+  });
+
+  /**
+   * Solde d'une souscription héritée pour le couple (client, terrain). Utilisé par
+   * le formulaire d'attestation de solde héritée pour afficher le reste dû et
+   * n'autoriser l'émission que lorsqu'il est nul. Renvoie le total souscrit, le
+   * total encaissé, le solde restant, le nombre d'échéances et un libellé de
+   * souscription (détails hérités de la première échéance, si présent).
+   */
+  ipcMain.handle('attestations:getLegacyBalance', async (_event, { token, clientId, terrainId }: any) => {
+    try {
+      const session = getSession(token);
+      if (!session) return { success: false, error: 'Session expirée' };
+      checkRole(session, READ_ROLES);
+      const cId = Number(clientId);
+      const tId = Number(terrainId);
+      if (!cId || !tId) return { success: false, error: 'Client et terrain requis' };
+      const db = getDb();
+      const installments = await db.saleInstallment.findMany({
+        where: {
+          conventionId: null,
+          clientId: cId,
+          status: { not: 'ANNULE' },
+          OR: [
+            { terrainId: tId },
+            { terrainLinks: { some: { terrainId: tId } } },
+          ],
+        },
+        orderBy: { installmentNumber: 'asc' },
+        select: { amount: true, paidAmount: true, detailsSouscription: true },
+      });
+      const total = installments.reduce((s, i) => s + Number(i.amount), 0);
+      const paid = installments.reduce((s, i) => s + Number(i.paidAmount ?? 0), 0);
+      const balance = Math.max(0, Math.round((total - paid) * 100) / 100);
+      const detailsSouscription = installments.find((i) => i.detailsSouscription)?.detailsSouscription ?? null;
+      return ser({
+        success: true,
+        data: { total, paid, balance, count: installments.length, detailsSouscription },
+      });
     } catch (error: any) {
       return { success: false, error: error.message };
     }

@@ -4,5 +4,15 @@ node_modules
 
 /generated/prisma
 
+# Certificats de signature de code (clé privée — NE JAMAIS committer)
+certs/
+
+# Artefacts de build / packaging
+release/
+# (build/ est conservé : il contient les icônes source icon.ico / icon.png)
+
+# Sauvegardes / dumps SQL (données réelles — NE JAMAIS committer)
+backups/
+
 # Claude Code session metadata
 .claude/

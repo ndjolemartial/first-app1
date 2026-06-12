@@ -16,8 +16,9 @@ import StatusRecap, { type StatusRecapItem } from '../../../shared/components/ui
 import { useAuthStore } from '../../../shared/stores/auth.store';
 import { Plus, Eye, Edit, Building2, CheckCircle2, BookmarkCheck, Clock, BadgeCheck, KeyRound, Wrench, Ban } from 'lucide-react';
 
-/** Rôles habilités à créer/modifier un bien. */
-const WRITE_ROLES = new Set(['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ACCOUNTANT', 'ASSISTANTE_DIRECTION']);
+/** Rôles habilités à créer/modifier un bien.
+ *  AGENT, ASSISTANTE_DIRECTION et READONLY en sont exclus (lecture seule). */
+const WRITE_ROLES = new Set(['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ACCOUNTANT']);
 
 const TYPE_OPTIONS = [
   { value: '', label: 'Tous les types' },

@@ -2,7 +2,7 @@ import { ipcMain, dialog, shell } from 'electron';
 import fs from 'fs';
 import { z } from 'zod';
 import { getSession } from '../services/auth.service';
-import { htmlToPdfWithTemplates } from '../services/pdf.service';
+import { htmlToPdfWithTemplates, openPrintPreview } from '../services/pdf.service';
 import { htmlToDocxWithTemplates } from '../services/docx.service';
 import logger from '../utils/logger';
 
@@ -20,6 +20,13 @@ const payloadSchema = z.object({
   footerTemplate: z.string(),
   headerMm:       z.number().positive(),
   footerMm:       z.number().positive(),
+  // Marges explicites (mm) — override optionnel (ex. devis : 25 mm partout).
+  marginsMm:      z.object({
+    top: z.number().nonnegative(),
+    bottom: z.number().nonnegative(),
+    left: z.number().nonnegative(),
+    right: z.number().nonnegative(),
+  }).optional(),
 });
 
 export function registerDocumentExportIPC(): void {
@@ -44,6 +51,7 @@ export function registerDocumentExportIPC(): void {
         parsed.data.footerTemplate,
         parsed.data.headerMm,
         parsed.data.footerMm,
+        parsed.data.marginsMm,
       );
       fs.writeFileSync(filePath, pdf);
       shell.showItemInFolder(filePath);
@@ -51,6 +59,37 @@ export function registerDocumentExportIPC(): void {
       return { success: true, data: { filePath, canceled: false } };
     } catch (err: any) {
       logger.error('documents:exportDocumentPdf', err.message);
+      return { success: false, error: err.message };
+    }
+  });
+
+  /**
+   * Aperçu avant impression du document : génère le PDF en mémoire et l'ouvre
+   * dans la fenêtre d'aperçu (visualiseur intégré → impression avec choix
+   * d'imprimante), sans imposer de téléchargement.
+   */
+  ipcMain.handle('documents:printDocument', async (_event, payload: any) => {
+    try {
+      const parsed = payloadSchema.safeParse(payload);
+      if (!parsed.success) {
+        return { success: false, error: parsed.error.issues.map((i) => i.message).join(', ') };
+      }
+      const session = getSession(parsed.data.token);
+      if (!session) return { success: false, error: 'Session expirée' };
+
+      const pdf = await htmlToPdfWithTemplates(
+        parsed.data.bodyHtml,
+        parsed.data.headerTemplate,
+        parsed.data.footerTemplate,
+        parsed.data.headerMm,
+        parsed.data.footerMm,
+        parsed.data.marginsMm,
+      );
+      await openPrintPreview(pdf, parsed.data.fileName);
+      logger.info(`Aperçu impression document : ${parsed.data.fileName}`);
+      return { success: true, data: { previewing: true } };
+    } catch (err: any) {
+      logger.error('documents:printDocument', err.message);
       return { success: false, error: err.message };
     }
   });

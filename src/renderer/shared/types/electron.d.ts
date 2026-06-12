@@ -120,6 +120,34 @@ interface Window {
       update: (token: string, id: number, payload: object) => Promise<IpcResponse<any>>;
       delete: (token: string, id: number) => Promise<IpcResponse>;
       typeStats: (token: string, filters?: object) => Promise<IpcResponse<Record<string, number>>>;
+      getLegacyBalance: (token: string, clientId: number, terrainId: number) => Promise<IpcResponse<{ total: number; paid: number; balance: number; count: number; detailsSouscription: string | null }>>;
+    };
+    quotes: {
+      list: (token: string, filters?: object, page?: number, limit?: number) => Promise<IpcResponse<any[]>>;
+      getById: (token: string, id: number) => Promise<IpcResponse<any>>;
+      stats: (token: string) => Promise<IpcResponse<{ byStatus: Record<string, { count: number; total: number }>; count: number; conversionRate: number }>>;
+      create: (token: string, payload: object) => Promise<IpcResponse<any>>;
+      update: (token: string, id: number, payload: object) => Promise<IpcResponse<any>>;
+      send: (token: string, id: number) => Promise<IpcResponse<any>>;
+      accept: (token: string, id: number) => Promise<IpcResponse<any>>;
+      refuse: (token: string, id: number, reason?: string) => Promise<IpcResponse<any>>;
+      cancel: (token: string, id: number) => Promise<IpcResponse<any>>;
+      delete: (token: string, id: number) => Promise<IpcResponse>;
+      convert: (token: string, id: number, options: object) => Promise<IpcResponse<any>>;
+    };
+    quoteTemplates: {
+      list: (token: string, filters?: object, page?: number, limit?: number) => Promise<IpcResponse<any[]>>;
+      getById: (token: string, id: number) => Promise<IpcResponse<any>>;
+      create: (token: string, payload: object) => Promise<IpcResponse<any>>;
+      update: (token: string, id: number, payload: object) => Promise<IpcResponse<any>>;
+      delete: (token: string, id: number) => Promise<IpcResponse>;
+    };
+    catalog: {
+      list: (token: string, filters?: object) => Promise<IpcResponse<any[]>>;
+      getById: (token: string, id: number) => Promise<IpcResponse<any>>;
+      create: (token: string, payload: object) => Promise<IpcResponse<any>>;
+      update: (token: string, id: number, payload: object) => Promise<IpcResponse<any>>;
+      delete: (token: string, id: number) => Promise<IpcResponse>;
     };
     communication: {
       listTemplates: (token: string, channel?: string) => Promise<IpcResponse<any[]>>;
@@ -270,6 +298,17 @@ interface Window {
           totalRow?: string[];
         },
       ) => Promise<IpcResponse<{ path?: string; canceled?: boolean }>>;
+      print: (
+        token: string,
+        payload: {
+          fileName: string;
+          title: string;
+          subtitle?: string;
+          headers: string[];
+          rows: string[][];
+          totalRow?: string[];
+        },
+      ) => Promise<IpcResponse<{ previewing?: boolean }>>;
     };
     documentExport: {
       exportDocumentPdf: (
@@ -281,8 +320,21 @@ interface Window {
           footerTemplate: string;
           headerMm: number;
           footerMm: number;
+          marginsMm?: { top: number; bottom: number; left: number; right: number };
         },
       ) => Promise<IpcResponse<{ filePath?: string; canceled?: boolean }>>;
+      printDocument: (
+        token: string,
+        payload: {
+          fileName: string;
+          bodyHtml: string;
+          headerTemplate: string;
+          footerTemplate: string;
+          headerMm: number;
+          footerMm: number;
+          marginsMm?: { top: number; bottom: number; left: number; right: number };
+        },
+      ) => Promise<IpcResponse<{ previewing?: boolean }>>;
       exportDocumentDocx: (
         token: string,
         payload: {
@@ -327,6 +379,8 @@ interface Window {
       getUpcomingInstallments: (token: string, days?: number) => Promise<IpcResponse<any[]>>;
       getPaidInstallments: (token: string, year?: number, semester?: number) => Promise<IpcResponse<any[]>>;
       getCancelledInstallments: (token: string) => Promise<IpcResponse<any[]>>;
+      getLegacyInstallments: (token: string) => Promise<IpcResponse<any[]>>;
+      updateLegacyInstallment: (token: string, payload: object) => Promise<IpcResponse<any>>;
       listInstallments: (token: string) => Promise<IpcResponse<any[]>>;
       payInstallment: (token: string, installmentId: number, payload: object) => Promise<IpcResponse<any>>;
       cancelInstallment: (token: string, installmentId: number) => Promise<IpcResponse<any>>;
@@ -334,7 +388,7 @@ interface Window {
       printInvoice: (
         token: string,
         invoiceId: number,
-      ) => Promise<IpcResponse<{ path?: string; canceled?: boolean }>>;
+      ) => Promise<IpcResponse<{ previewing?: boolean }>>;
       getSaleConventions: (token: string) => Promise<IpcResponse<any[]>>;
     };
     bilan: {
@@ -404,6 +458,8 @@ interface Window {
       list: (token: string, filters?: object, page?: number, limit?: number) => Promise<IpcResponse<any[]>>;
       getById: (token: string, id: number) => Promise<IpcResponse<any>>;
       create: (token: string, payload: object) => Promise<IpcResponse<any>>;
+      prepareInstallmentCommission: (token: string, installmentId: number) => Promise<IpcResponse<any>>;
+      createForInstallment: (token: string, payload: object) => Promise<IpcResponse<any>>;
       update: (token: string, payload: object) => Promise<IpcResponse<any>>;
       pay: (token: string, payload: object) => Promise<IpcResponse<any>>;
       cancel: (token: string, payload: object) => Promise<IpcResponse<any>>;
@@ -468,6 +524,22 @@ interface Window {
           }>;
         }>
       >;
+    };
+    config: {
+      getDb: () => Promise<IpcResponse<{
+        host: string;
+        port: string;
+        database: string;
+        user: string;
+        password: string;
+        envFile: string;
+      }>>;
+      testDb: (config: {
+        host: string; port: string; database: string; user: string; password: string;
+      }) => Promise<IpcResponse>;
+      saveDb: (config: {
+        host: string; port: string; database: string; user: string; password: string;
+      }) => Promise<IpcResponse>;
     };
     settings: {
       // Entreprise

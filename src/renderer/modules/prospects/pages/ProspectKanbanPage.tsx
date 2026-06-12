@@ -14,7 +14,7 @@ const formatUserName = (u: any): string =>
 const COLUMNS = [
   { key: 'NOUVEAU',              label: 'Nouveau',        color: 'border-slate-300 bg-slate-50',   header: 'bg-slate-100'   },
   { key: 'CONTACTE',             label: 'Contacté',       color: 'border-blue-200  bg-blue-50',    header: 'bg-blue-100'    },
-  { key: 'QUALIFIE',             label: 'Qualifié',       color: 'border-purple-200 bg-purple-50', header: 'bg-purple-100'  },
+  { key: 'QUALIFIE',             label: 'Client potentiel', color: 'border-purple-200 bg-purple-50', header: 'bg-purple-100'  },
   { key: 'ENVOI_PROPOSITION',    label: 'Proposition',    color: 'border-amber-200 bg-amber-50',   header: 'bg-amber-100'   },
   { key: 'NEGOCIATION_EN_COURS', label: 'Négociation',    color: 'border-orange-200 bg-orange-50', header: 'bg-orange-100'  },
   { key: 'PERDU',                label: 'Perdu',          color: 'border-red-200   bg-red-50',     header: 'bg-red-100'     },
@@ -31,7 +31,7 @@ const NEXT_STATUS: Record<string, string[]> = {
 };
 
 const STATUS_LABEL: Record<string, string> = {
-  NOUVEAU: 'Nouveau', CONTACTE: 'Contacté', QUALIFIE: 'Qualifié',
+  NOUVEAU: 'Nouveau', CONTACTE: 'Contacté', QUALIFIE: 'Client potentiel',
   ENVOI_PROPOSITION: 'Proposition', NEGOCIATION_EN_COURS: 'Négociation', PERDU: 'Perdu',
 };
 

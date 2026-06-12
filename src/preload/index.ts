@@ -146,6 +146,42 @@ const attestations = {
   delete: (token: string, id: number) => api.invoke('attestations:delete', { token, id }),
   typeStats: (token: string, filters?: object) =>
     api.invoke('attestations:typeStats', { token, filters }),
+  getLegacyBalance: (token: string, clientId: number, terrainId: number) =>
+    api.invoke('attestations:getLegacyBalance', { token, clientId, terrainId }),
+};
+
+// Devis
+const quotes = {
+  list: (token: string, filters?: object, page?: number, limit?: number) =>
+    api.invoke('quotes:list', { token, filters, page, limit }),
+  getById: (token: string, id: number) => api.invoke('quotes:getById', { token, id }),
+  stats: (token: string) => api.invoke('quotes:stats', { token }),
+  create: (token: string, payload: object) => api.invoke('quotes:create', { token, payload }),
+  update: (token: string, id: number, payload: object) => api.invoke('quotes:update', { token, id, payload }),
+  send: (token: string, id: number) => api.invoke('quotes:send', { token, id }),
+  accept: (token: string, id: number) => api.invoke('quotes:accept', { token, id }),
+  refuse: (token: string, id: number, reason?: string) => api.invoke('quotes:refuse', { token, id, reason }),
+  cancel: (token: string, id: number) => api.invoke('quotes:cancel', { token, id }),
+  delete: (token: string, id: number) => api.invoke('quotes:delete', { token, id }),
+  convert: (token: string, id: number, options: object) => api.invoke('quotes:convert', { token, id, options }),
+};
+
+const quoteTemplates = {
+  list: (token: string, filters?: object, page?: number, limit?: number) =>
+    api.invoke('quoteTemplates:list', { token, filters, page, limit }),
+  getById: (token: string, id: number) => api.invoke('quoteTemplates:getById', { token, id }),
+  create: (token: string, payload: object) => api.invoke('quoteTemplates:create', { token, payload }),
+  update: (token: string, id: number, payload: object) => api.invoke('quoteTemplates:update', { token, id, payload }),
+  delete: (token: string, id: number) => api.invoke('quoteTemplates:delete', { token, id }),
+};
+
+// Catalogue prestations / produits
+const catalog = {
+  list: (token: string, filters?: object) => api.invoke('catalog:list', { token, filters }),
+  getById: (token: string, id: number) => api.invoke('catalog:getById', { token, id }),
+  create: (token: string, payload: object) => api.invoke('catalog:create', { token, payload }),
+  update: (token: string, id: number, payload: object) => api.invoke('catalog:update', { token, id, payload }),
+  delete: (token: string, id: number) => api.invoke('catalog:delete', { token, id }),
 };
 
 // Accounting
@@ -172,6 +208,10 @@ const accounting = {
     api.invoke('accounting:getPaidInstallments', { token, year, semester }),
   getCancelledInstallments: (token: string) =>
     api.invoke('accounting:getCancelledInstallments', { token }),
+  getLegacyInstallments: (token: string) =>
+    api.invoke('accounting:getLegacyInstallments', { token }),
+  updateLegacyInstallment: (token: string, payload: object) =>
+    api.invoke('accounting:updateLegacyInstallment', { token, payload }),
   listInstallments: (token: string) => api.invoke('accounting:listInstallments', { token }),
   payInstallment: (token: string, installmentId: number, payload: object) =>
     api.invoke('accounting:payInstallment', { token, installmentId, payload }),
@@ -374,6 +414,8 @@ const countries = {
 // Export de listes (PDF / Excel)
 const exporter = {
   generate: (token: string, payload: object) => api.invoke('export:generate', { token, ...payload }),
+  // Aperçu avant impression d'une liste (impression directe avec choix d'imprimante).
+  print: (token: string, payload: object) => api.invoke('export:print', { token, ...payload }),
 };
 
 // Export PDF de document (convention / attestation) avec en-tête + pied de page
@@ -388,8 +430,22 @@ const documentExport = {
       footerTemplate: string;
       headerMm: number;
       footerMm: number;
+      marginsMm?: { top: number; bottom: number; left: number; right: number };
     },
   ) => api.invoke('documents:exportDocumentPdf', { token, ...payload }),
+  // Aperçu avant impression du document (impression directe avec choix d'imprimante).
+  printDocument: (
+    token: string,
+    payload: {
+      fileName: string;
+      bodyHtml: string;
+      headerTemplate: string;
+      footerTemplate: string;
+      headerMm: number;
+      footerMm: number;
+      marginsMm?: { top: number; bottom: number; left: number; right: number };
+    },
+  ) => api.invoke('documents:printDocument', { token, ...payload }),
   exportDocumentDocx: (
     token: string,
     payload: {
@@ -426,6 +482,10 @@ const commissions = {
     api.invoke('commissions:list', { token, filters, page, limit }),
   getById: (token: string, id: number) => api.invoke('commissions:getById', { token, id }),
   create: (token: string, payload: object) => api.invoke('commissions:create', { token, payload }),
+  prepareInstallmentCommission: (token: string, installmentId: number) =>
+    api.invoke('commissions:prepareInstallmentCommission', { token, installmentId }),
+  createForInstallment: (token: string, payload: object) =>
+    api.invoke('commissions:createForInstallment', { token, payload }),
   update: (token: string, payload: object) => api.invoke('commissions:update', { token, payload }),
   pay: (token: string, payload: object) => api.invoke('commissions:pay', { token, payload }),
   cancel: (token: string, payload: object) => api.invoke('commissions:cancel', { token, payload }),
@@ -501,6 +561,13 @@ const treasury = {
 // Dashboard
 const dashboard = {
   getStats: (token: string) => api.invoke('dashboard:getStats', { token }),
+};
+
+// Configuration connexion BDD (accessible avant authentification)
+const config = {
+  getDb: () => api.invoke('config:getDb', {}),
+  testDb: (dbConfig: object) => api.invoke('config:testDb', { config: dbConfig }),
+  saveDb: (dbConfig: object) => api.invoke('config:saveDb', { config: dbConfig }),
 };
 
 // Paramètres applicatifs (réservés aux administrateurs)
@@ -622,4 +689,4 @@ const documents = {
   pathForFile: (file: File) => webUtils.getPathForFile(file),
 };
 
-contextBridge.exposeInMainWorld('electron', { auth, users, prospects, clients, owners, properties, conventions, conventionTemplates, attestationTemplates, attestations, accounting, bilan, communication, crm, archiving, documents, documentExport, lotissements, terrains, programmes, projects, geo, countries, commissions, exporter, invoiceTemplates, listExportTemplates, treasury, budget, dashboard, settings, reminders });
+contextBridge.exposeInMainWorld('electron', { auth, users, prospects, clients, owners, properties, conventions, conventionTemplates, attestationTemplates, attestations, quotes, quoteTemplates, catalog, accounting, bilan, communication, crm, archiving, documents, documentExport, lotissements, terrains, programmes, projects, geo, countries, commissions, exporter, invoiceTemplates, listExportTemplates, treasury, budget, dashboard, settings, reminders, config });

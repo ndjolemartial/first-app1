@@ -45,6 +45,13 @@ import AttestationFormPage from './modules/conventions/pages/AttestationFormPage
 import AttestationDetailPage from './modules/conventions/pages/AttestationDetailPage';
 import AttestationDocumentPage from './modules/conventions/pages/AttestationDocumentPage';
 
+// Devis
+import QuotesListPage from './modules/quotes/pages/QuotesListPage';
+import QuoteFormPage from './modules/quotes/pages/QuoteFormPage';
+import QuoteDetailPage from './modules/quotes/pages/QuoteDetailPage';
+import QuoteDocumentPage from './modules/quotes/pages/QuoteDocumentPage';
+import QuoteTemplateFormPage from './modules/quotes/pages/QuoteTemplateFormPage';
+
 // Communication
 import CommunicationPage from './modules/communication/pages/CommunicationPage';
 import SendMessagePage from './modules/communication/pages/SendMessagePage';
@@ -115,11 +122,18 @@ import DashboardPage from './modules/dashboard/DashboardPage';
 
 // Settings (paramétrage de l'application)
 import SettingsPage from './modules/settings/pages/SettingsPage';
+import DbConnectionPage from './modules/settings/pages/DbConnectionPage';
 
 export const router = createHashRouter([
   {
     path: '/login',
     element: <LoginPage />,
+  },
+  {
+    // Configuration de la connexion BDD — publique (utilisable même si la base
+    // est injoignable, donc avant authentification).
+    path: '/db-settings',
+    element: <DbConnectionPage />,
   },
   {
     path: '/',
@@ -134,9 +148,11 @@ export const router = createHashRouter([
           // Profil personnel (accessible à tout utilisateur connecté)
           { path: 'profile', element: <ProfilePage /> },
 
-          // Users — réservé aux ADMIN / SUPER_ADMIN
+          // Users — ADMIN / SUPER_ADMIN (gestion complète) et AGENT_TECHNIQUE
+          // (gestion limitée aux comptes AGENT / AGENT_TECHNIQUE / READONLY,
+          // appliquée côté backend).
           {
-            element: <RoleGuard allowedRoles={['SUPER_ADMIN', 'ADMIN']} />,
+            element: <RoleGuard allowedRoles={['SUPER_ADMIN', 'ADMIN', 'AGENT_TECHNIQUE']} />,
             children: [
               { path: 'users', element: <UsersListPage /> },
               { path: 'users/new', element: <UserFormPage /> },
@@ -145,9 +161,11 @@ export const router = createHashRouter([
             ],
           },
 
-          // Paramètres applicatifs — réservé aux ADMIN / SUPER_ADMIN
+          // Paramètres applicatifs — admins (tous les onglets). MANAGER et
+          // ACCOUNTANT y accèdent aussi mais ne voient que l'onglet « Catalogue
+          // prestations / produits » (filtrage par rôle dans SettingsPage).
           {
-            element: <RoleGuard allowedRoles={['SUPER_ADMIN', 'ADMIN']} />,
+            element: <RoleGuard allowedRoles={['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ACCOUNTANT']} />,
             children: [
               { path: 'settings', element: <SettingsPage /> },
             ],
@@ -183,25 +201,53 @@ export const router = createHashRouter([
           { path: 'properties/:id', element: <PropertyDetailPage /> },
           { path: 'properties/:id/edit', element: <PropertyFormPage /> },
 
-          // Conventions — réservé aux MANAGER+ (ACCOUNTANT inclus). AGENT/READONLY n'ont pas accès.
+          // Devis — consultation : tous les rôles authentifiés.
+          { path: 'quotes', element: <QuotesListPage /> },
+          { path: 'quotes/:id', element: <QuoteDetailPage /> },
+          { path: 'quotes/:id/document', element: <QuoteDocumentPage /> },
+          // Devis — écriture (création / édition) : AGENT et plus, ACCOUNTANT inclus.
+          {
+            element: <RoleGuard allowedRoles={['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ACCOUNTANT', 'AGENT', 'AGENT_TECHNIQUE']} />,
+            children: [
+              { path: 'quotes/new', element: <QuoteFormPage /> },
+              { path: 'quotes/:id/edit', element: <QuoteFormPage /> },
+            ],
+          },
+          // Modèles de devis — édition réservée aux MANAGER+.
+          {
+            element: <RoleGuard allowedRoles={['SUPER_ADMIN', 'ADMIN', 'MANAGER']} />,
+            children: [
+              { path: 'quotes/templates/new', element: <QuoteTemplateFormPage /> },
+              { path: 'quotes/templates/:id/edit', element: <QuoteTemplateFormPage /> },
+            ],
+          },
+
+          // Conventions / Attestations — CONSULTATION : MANAGER+ (ACCOUNTANT inclus)
+          // et AGENT (limité par le backend à ses clients référents en BROUILLON).
+          {
+            element: <RoleGuard allowedRoles={['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ACCOUNTANT', 'ASSISTANTE_DIRECTION', 'AGENT', 'AGENT_TECHNIQUE']} />,
+            children: [
+              { path: 'conventions', element: <ConventionsListPage /> },
+              { path: 'conventions/attestations', element: <AttestationsListPage /> },
+              { path: 'conventions/attestations/:id', element: <AttestationDetailPage /> },
+              { path: 'conventions/attestations/:id/document', element: <AttestationDocumentPage /> },
+              { path: 'conventions/:id', element: <ConventionDetailPage /> },
+              { path: 'conventions/:id/document', element: <ConventionDocumentPage /> },
+            ],
+          },
+          // Conventions / Attestations — ÉCRITURE (création, édition, modèles) :
+          // réservée aux MANAGER+ (ACCOUNTANT inclus). AGENT et READONLY exclus.
           {
             element: <RoleGuard allowedRoles={['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ACCOUNTANT', 'ASSISTANTE_DIRECTION']} />,
             children: [
-              { path: 'conventions', element: <ConventionsListPage /> },
               { path: 'conventions/new', element: <ConventionFormPage /> },
               { path: 'conventions/templates/new', element: <ConventionTemplateFormPage /> },
               { path: 'conventions/templates/:id/edit', element: <ConventionTemplateFormPage /> },
-              // Attestations (modèles puis attestations émises) — routes plus spécifiques en premier
               { path: 'conventions/attestation-templates/new', element: <AttestationTemplateFormPage /> },
               { path: 'conventions/attestation-templates/:id/edit', element: <AttestationTemplateFormPage /> },
-              { path: 'conventions/attestations', element: <AttestationsListPage /> },
               { path: 'conventions/attestations/new', element: <AttestationFormPage /> },
-              { path: 'conventions/attestations/:id', element: <AttestationDetailPage /> },
               { path: 'conventions/attestations/:id/edit', element: <AttestationFormPage /> },
-              { path: 'conventions/attestations/:id/document', element: <AttestationDocumentPage /> },
-              { path: 'conventions/:id', element: <ConventionDetailPage /> },
               { path: 'conventions/:id/edit', element: <ConventionFormPage /> },
-              { path: 'conventions/:id/document', element: <ConventionDocumentPage /> },
             ],
           },
 

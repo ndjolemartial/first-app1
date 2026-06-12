@@ -5,14 +5,13 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.registerAccountingIPC = registerAccountingIPC;
 const electron_1 = require("electron");
-const path_1 = __importDefault(require("path"));
-const fs_1 = __importDefault(require("fs"));
 const db_service_1 = require("../services/db.service");
 const auth_service_1 = require("../services/auth.service");
 const pdf_service_1 = require("../services/pdf.service");
 const invoice_templates_ipc_1 = require("./invoice-templates.ipc");
 const settings_service_1 = require("../services/settings.service");
 const treasury_service_1 = require("../services/treasury.service");
+const commission_service_1 = require("../services/commission.service");
 const logger_1 = __importDefault(require("../utils/logger"));
 const zod_1 = require("zod");
 // Module Comptabilité : réservé aux MANAGER+ (ACCOUNTANT inclus via checkRole).
@@ -97,6 +96,9 @@ const installmentPaymentSchema = zod_1.z.object({
     paymentRef: zod_1.z.string().optional(),
     notes: zod_1.z.string().optional(),
     paidAt: zod_1.z.string().datetime().optional(),
+    // Montant encaissé. Omis ⇒ solde restant (paiement intégral). Permet le
+    // paiement partiel (montant < reste dû) : l'échéance passe alors en PARTIEL.
+    amount: zod_1.z.number().positive().optional(),
     // Trésorerie : compte encaissé et objet d'opération (facultatifs).
     bankAccountId: zod_1.z.number().int().positive().optional(),
     categoryId: zod_1.z.number().int().positive().optional(),
@@ -296,7 +298,11 @@ function buildInvoiceHtml(inv, tpl, company = null) {
     <div><span>Date d'émission</span><br>${fmtDate(inv.issueDate)}</div>
     <div><span>Date d'échéance</span><br>${fmtDate(inv.dueDate)}</div>
     ${inv.paidAt ? `<div><span>Date de paiement</span><br>${fmtDate(inv.paidAt)}</div>` : ''}
-    ${inv.convention ? `<div><span>Convention</span><br>${esc(inv.convention.reference)}</div>` : ''}
+    ${inv.convention
+        ? `<div><span>Convention</span><br>${esc(inv.convention.reference)}${inv.convention.lotsSouscrits ? `<br>${esc(inv.convention.lotsSouscrits)}` : ''}</div>`
+        : inv.detailsSouscription
+            ? `<div><span>Souscription</span><br>${esc(inv.detailsSouscription)}</div>`
+            : ''}
   </div>
   <table class="items">
     <thead><tr><th>Description</th><th class="num">Qté</th><th class="num">Prix unitaire</th><th class="num">Total</th></tr></thead>
@@ -347,14 +353,14 @@ function registerAccountingIPC() {
             });
             const [paidInvoicesAgg, overdueAgg, unpaidInstallmentsAgg, upcomingInstallments, overdueInstallments, recentInvoices, unpaidFull, partialInvoices, partialPayments,] = await Promise.all([
                 db.invoice.aggregate({ where: { deletedAt: null, status: 'PAYEE' }, _count: true, _sum: { total: true } }),
-                db.saleInstallment.aggregate({ where: { status: 'EN_RETARD' }, _count: true, _sum: { amount: true } }),
+                db.saleInstallment.aggregate({ where: { status: 'EN_RETARD', conventionId: { not: null } }, _count: true, _sum: { amount: true } }),
                 db.saleInstallment.aggregate({
-                    where: { status: { in: ['EN_ATTENTE', 'A_REGLER', 'EN_RETARD'] } },
+                    where: { status: { in: ['EN_ATTENTE', 'A_REGLER', 'EN_RETARD'] }, conventionId: { not: null } },
                     _count: true,
                     _sum: { amount: true },
                 }),
                 db.saleInstallment.findMany({
-                    where: { status: { in: ['EN_ATTENTE', 'A_REGLER'] }, dueDate: { gte: now } },
+                    where: { status: { in: ['EN_ATTENTE', 'A_REGLER'] }, dueDate: { gte: now }, conventionId: { not: null } },
                     orderBy: { dueDate: 'asc' },
                     take: 8,
                     include: {
@@ -368,7 +374,7 @@ function registerAccountingIPC() {
                     },
                 }),
                 db.saleInstallment.findMany({
-                    where: { status: 'EN_RETARD' },
+                    where: { status: 'EN_RETARD', conventionId: { not: null } },
                     orderBy: { dueDate: 'asc' },
                     take: 10,
                     include: {
@@ -652,10 +658,18 @@ function registerAccountingIPC() {
                     items: true,
                     payments: { orderBy: { paidAt: 'desc' } },
                     documents: { where: { deletedAt: null }, orderBy: { uploadedAt: 'desc' } },
+                    // Détails de souscription hérités (échéances sans convention).
+                    installments: { select: { detailsSouscription: true }, take: 1 },
                 },
             });
             if (!invoice)
                 return { success: false, error: 'Facture introuvable' };
+            // Facture héritée : expose les détails de souscription pour l'affichage.
+            if (!invoice.conventionId) {
+                const details = invoice.installments?.[0]?.detailsSouscription;
+                if (details)
+                    invoice.detailsSouscription = details;
+            }
             return ser({ success: true, data: invoice });
         }
         catch (error) {
@@ -811,7 +825,15 @@ function registerAccountingIPC() {
                 where: { id: d.invoiceId },
                 include: {
                     payments: true,
-                    convention: { select: { reference: true, status: true } },
+                    convention: {
+                        select: {
+                            id: true, reference: true, status: true,
+                            // type / agent / référent : pour l'accrual de commission sur
+                            // l'encaissement d'une facture de vente comptant.
+                            type: true, agentId: true,
+                            client: { select: { assignedToId: true } },
+                        },
+                    },
                 },
             });
             if (!invoice)
@@ -898,6 +920,30 @@ function registerAccountingIPC() {
                 await syncInvoiceActivities(db, d.invoiceId, 'PAYEE');
             }
             logger_1.default.info(`Payment recorded: invoice=${d.invoiceId} amount=${d.amount}`);
+            // Accrual de commission sur encaissement d'une facture de VENTE comptant.
+            // L'assiette suit le cumul encaissé sur la facture (totalPaid). Les
+            // factures d'échéance (ECHEANCE_VENTE) sont traitées par payInstallment ;
+            // les autres types (frais, caution, avance…) ne génèrent pas de commission.
+            if (invoice.type === 'VENTE' && invoice.conventionId && invoice.convention) {
+                try {
+                    const rates = await (0, commission_service_1.getDefaultRates)(db);
+                    const tr = (0, commission_service_1.commissionTypeAndRate)(invoice.convention.type, rates);
+                    const beneficiaryUserId = invoice.convention.agentId ?? invoice.convention.client?.assignedToId ?? null;
+                    if (tr && beneficiaryUserId) {
+                        await (0, commission_service_1.accrueCollectionCommission)(db, {
+                            conventionId: invoice.conventionId,
+                            invoiceId: invoice.id,
+                            beneficiaryUserId,
+                            transactionType: tr.transactionType,
+                            rate: tr.rate,
+                            collectedTotal: totalPaid,
+                        });
+                    }
+                }
+                catch (e) {
+                    logger_1.default.error('accrueCollectionCommission (facture) error', e?.message ?? e);
+                }
+            }
             return ser({ success: true, data: payment });
         }
         catch (error) {
@@ -916,13 +962,23 @@ function registerAccountingIPC() {
                 where: { id: invoiceId },
                 include: {
                     client: true,
-                    convention: { select: { id: true, reference: true } },
+                    convention: { select: { id: true, reference: true, lotsSouscrits: true } },
                     items: true,
                     payments: { orderBy: { paidAt: 'asc' } },
+                    // Détails de souscription hérités (échéances sans convention) — affichés
+                    // sur la facture à la place de la référence de convention.
+                    installments: { select: { detailsSouscription: true }, take: 1 },
                 },
             });
             if (!invoice || invoice.deletedAt)
                 return { success: false, error: 'Facture introuvable' };
+            // Facture héritée (sans convention) : remonte les détails de souscription
+            // de l'échéance vers le rendu PDF.
+            if (!invoice.conventionId) {
+                const details = invoice.installments?.[0]?.detailsSouscription;
+                if (details)
+                    invoice.detailsSouscription = details;
+            }
             // Résout le code ISO du pays du client en nom complet (ex: CI → Côte d'Ivoire).
             if (invoice.client?.country) {
                 const country = await db.country.findUnique({ where: { isoCode: invoice.client.country } });
@@ -949,18 +1005,11 @@ function registerAccountingIPC() {
             const template = await (0, invoice_templates_ipc_1.resolveInvoiceTemplate)(db, invoice.type);
             const company = await loadCompanyEmitter();
             const pdf = await (0, pdf_service_1.htmlToPdf)(buildInvoiceHtml({ ...invoice, installmentRecap }, template, company), { landscape: false });
-            const parent = electron_1.BrowserWindow.getFocusedWindow() ?? electron_1.BrowserWindow.getAllWindows()[0] ?? undefined;
-            const result = await electron_1.dialog.showSaveDialog(parent, {
-                title: 'Enregistrer la facture',
-                defaultPath: path_1.default.join(electron_1.app.getPath('documents'), `Facture-${invoice.reference}.pdf`),
-                filters: [{ name: 'Document PDF', extensions: ['pdf'] }],
-            });
-            if (result.canceled || !result.filePath) {
-                return { success: true, data: { canceled: true } };
-            }
-            fs_1.default.writeFileSync(result.filePath, pdf);
-            logger_1.default.info(`Invoice PDF generated: ${invoice.reference} → ${result.filePath}`);
-            return { success: true, data: { path: result.filePath } };
+            // Aperçu avant impression : ouvre le visualiseur PDF intégré (impression
+            // directe avec choix d'imprimante), sans imposer de téléchargement.
+            await (0, pdf_service_1.openPrintPreview)(pdf, `Facture ${invoice.reference}`);
+            logger_1.default.info(`Aperçu impression facture: ${invoice.reference}`);
+            return { success: true, data: { previewing: true } };
         }
         catch (error) {
             logger_1.default.error('accounting:printInvoice error', error.message);
@@ -984,7 +1033,7 @@ function registerAccountingIPC() {
                 data: { status: 'EN_RETARD' },
             });
             const data = await db.saleInstallment.findMany({
-                where: { status: 'EN_RETARD' },
+                where: { status: 'EN_RETARD', conventionId: { not: null } },
                 orderBy: { dueDate: 'asc' },
                 include: {
                     convention: {
@@ -1028,7 +1077,7 @@ function registerAccountingIPC() {
                 data: { status: 'EN_RETARD' },
             });
             const data = await db.saleInstallment.findMany({
-                where: { status: { in: ['EN_ATTENTE', 'A_REGLER', 'EN_RETARD'] } },
+                where: { status: { in: ['EN_ATTENTE', 'A_REGLER', 'EN_RETARD'] }, conventionId: { not: null } },
                 orderBy: { dueDate: 'asc' },
                 include: {
                     convention: {
@@ -1065,6 +1114,7 @@ function registerAccountingIPC() {
             const where = {
                 status: { in: ['EN_ATTENTE', 'A_REGLER'] },
                 dueDate: { gte: new Date() },
+                conventionId: { not: null },
             };
             // days <= 0 → toutes les échéances à venir (aucune borne supérieure).
             if (days > 0) {
@@ -1106,6 +1156,7 @@ function registerAccountingIPC() {
             checkAccountingRole(session, READ_ROLES);
             const db = (0, db_service_1.getDb)();
             const data = await db.saleInstallment.findMany({
+                where: { conventionId: { not: null } },
                 orderBy: [{ conventionId: 'asc' }, { installmentNumber: 'asc' }],
                 select: {
                     id: true,
@@ -1135,7 +1186,7 @@ function registerAccountingIPC() {
                 return { success: false, error: 'Session expirée' };
             checkAccountingRole(session, READ_ROLES);
             const db = (0, db_service_1.getDb)();
-            const where = { status: 'PAYE' };
+            const where = { status: 'PAYE', conventionId: { not: null } };
             // year = 0 → toutes les périodes ; sinon filtre sur l'année, éventuellement
             // restreint au 1er semestre (janv.–juin) ou au 2e (juil.–déc.).
             if (year > 0) {
@@ -1197,26 +1248,56 @@ function registerAccountingIPC() {
             const d = parsed.data;
             const installment = await db.saleInstallment.findUnique({
                 where: { id: d.installmentId },
-                include: { convention: { select: { id: true, reference: true, clientId: true, status: true } } },
+                include: {
+                    convention: {
+                        select: {
+                            id: true, reference: true, clientId: true, status: true,
+                            // type / agent / référent client : nécessaires à l'accrual de
+                            // commission sur le montant encaissé.
+                            type: true, agentId: true,
+                            client: { select: { assignedToId: true } },
+                        },
+                    },
+                    // Échéances héritées (sans convention) : le client est rattaché directement.
+                    client: { select: { id: true, reference: true } },
+                    terrain: { select: { id: true, reference: true } },
+                },
             });
             if (!installment)
                 return { success: false, error: 'Échéance introuvable' };
             if (installment.status === 'PAYE')
                 return { success: false, error: 'Échéance déjà payée' };
+            if (installment.status === 'ANNULE')
+                return { success: false, error: 'Échéance annulée' };
             // Statuts de convention bloquant l'encaissement d'une échéance :
             // brouillon (non finalisée), attente de signature (non opposable) ou
-            // annulée (sans valeur).
+            // annulée (sans valeur). Ignoré pour les échéances héritées sans convention.
             const blockedInstallmentStatuses = {
                 BROUILLON: 'en brouillon : finalisez-la d\'abord',
                 ATTENTE_SIGNATURE: 'en attente de signature : aucun encaissement n\'est possible tant qu\'elle n\'est pas signée',
                 ANNULE: 'annulée : plus aucun encaissement ne peut être enregistré sur cette convention',
             };
-            if (blockedInstallmentStatuses[installment.convention.status ?? '']) {
+            if (installment.convention && blockedInstallmentStatuses[installment.convention.status ?? '']) {
                 return {
                     success: false,
                     error: `La convention ${installment.convention.reference} est ${blockedInstallmentStatuses[installment.convention.status ?? '']}`,
                 };
             }
+            // Client de l'échéance : via la convention, ou rattachement direct (hérité).
+            const installmentClientId = installment.convention?.clientId ?? installment.clientId;
+            if (!installmentClientId) {
+                return { success: false, error: 'Échéance sans client : impossible de générer la facture' };
+            }
+            // Libellé de rattachement pour la facture / le mouvement de trésorerie.
+            // Échéances héritées : on privilégie les détails de souscription importés,
+            // affichés sur la facture à la place de la référence de convention.
+            const installmentLabel = installment.convention
+                ? `convention ${installment.convention.reference}`
+                : installment.detailsSouscription
+                    ? installment.detailsSouscription
+                    : installment.terrain
+                        ? `terrain ${installment.terrain.reference}`
+                        : 'paiement échelonné';
             // Vérifie le compte de trésorerie si l'encaissement y est rattaché.
             if (d.bankAccountId) {
                 const account = await db.bankAccount.findUnique({ where: { id: d.bankAccountId } });
@@ -1224,49 +1305,68 @@ function registerAccountingIPC() {
                     return { success: false, error: 'Compte de trésorerie introuvable' };
             }
             const paidAt = d.paidAt ? new Date(d.paidAt) : new Date();
-            const amount = Number(installment.amount);
+            const totalAmount = Number(installment.amount);
+            const alreadyPaid = Number(installment.paidAmount);
+            const remaining = Math.round((totalAmount - alreadyPaid) * 100) / 100;
+            if (!(remaining > 0))
+                return { success: false, error: 'Échéance déjà soldée' };
+            // Montant encaissé : précisé (paiement partiel) ou solde restant par défaut.
+            const payAmount = d.amount != null ? Math.round(d.amount * 100) / 100 : remaining;
+            if (payAmount <= 0)
+                return { success: false, error: 'Montant à encaisser invalide' };
+            if (payAmount - remaining > 0.001) {
+                return { success: false, error: `Le montant dépasse le reste dû (${remaining}).` };
+            }
+            const newPaid = Math.round((alreadyPaid + payAmount) * 100) / 100;
+            const fullyPaid = newPaid + 0.001 >= totalAmount;
+            const newStatus = fullyPaid ? 'PAYE' : 'PARTIEL';
+            const invoiceStatus = fullyPaid ? 'PAYEE' : 'PARTIEL';
             // Référence de facture pré-calculée hors transaction (lecture seule).
             const invoiceRef = installment.invoiceId ? null : await nextInvoiceRef(db);
             const result = await db.$transaction(async (tx) => {
                 const updated = await tx.saleInstallment.update({
                     where: { id: d.installmentId },
                     data: {
-                        status: 'PAYE',
-                        paidAt,
+                        status: newStatus,
+                        paidAmount: newPaid,
+                        // paidAt n'est posée qu'au solde complet.
+                        paidAt: fullyPaid ? paidAt : null,
                         paymentMethod: d.method,
                         paymentRef: d.paymentRef,
                         notes: d.notes,
                     },
                 });
                 let invoiceId = installment.invoiceId;
-                // Crée automatiquement la facture d'échéance (type ECHEANCE_VENTE) si absente.
                 if (invoiceRef) {
+                    // Première encaisse : crée la facture d'échéance (montant total dû),
+                    // avec un premier règlement (partiel ou intégral).
                     const invoice = await tx.invoice.create({
                         data: {
                             reference: invoiceRef,
                             type: 'ECHEANCE_VENTE',
-                            status: 'PAYEE',
-                            clientId: installment.convention.clientId,
+                            status: invoiceStatus,
+                            clientId: installmentClientId,
                             conventionId: installment.conventionId,
-                            subtotal: amount,
+                            terrainId: installment.terrainId,
+                            subtotal: totalAmount,
                             taxRate: 0,
                             taxAmount: 0,
-                            total: amount,
+                            total: totalAmount,
                             issueDate: paidAt,
                             dueDate: installment.dueDate,
-                            paidAt,
+                            paidAt: fullyPaid ? paidAt : null,
                             notes: d.notes,
                             items: {
                                 create: [{
-                                        description: `Échéance n°${installment.installmentNumber} — convention ${installment.convention.reference}`,
+                                        description: `Échéance n°${installment.installmentNumber} — ${installmentLabel}`,
                                         quantity: 1,
-                                        unitPrice: amount,
-                                        total: amount,
+                                        unitPrice: totalAmount,
+                                        total: totalAmount,
                                     }],
                             },
                             payments: {
                                 create: [{
-                                        amount: amount,
+                                        amount: payAmount,
                                         method: d.method,
                                         paidAt,
                                         reference: d.paymentRef,
@@ -1282,13 +1382,32 @@ function registerAccountingIPC() {
                     });
                     invoiceId = invoice.id;
                 }
+                else if (invoiceId) {
+                    // Encaisses suivantes : ajoute un règlement à la facture existante et
+                    // met à jour son statut.
+                    await tx.payment.create({
+                        data: {
+                            invoiceId,
+                            amount: payAmount,
+                            method: d.method,
+                            paidAt,
+                            reference: d.paymentRef,
+                            notes: d.notes,
+                            bankAccountId: d.bankAccountId ?? null,
+                        },
+                    });
+                    await tx.invoice.update({
+                        where: { id: invoiceId },
+                        data: { status: invoiceStatus, paidAt: fullyPaid ? paidAt : null },
+                    });
+                }
                 // Règlement rattaché à un compte → mouvement de trésorerie (entrée).
                 if (d.bankAccountId) {
                     await (0, treasury_service_1.recordTreasuryOperation)(tx, {
                         bankAccountId: d.bankAccountId,
                         direction: 'ENTREE',
-                        amount,
-                        label: `Échéance n°${installment.installmentNumber} — convention ${installment.convention.reference}`,
+                        amount: payAmount,
+                        label: `Échéance n°${installment.installmentNumber} — ${installmentLabel}${fullyPaid ? '' : ' (partiel)'}`,
                         operationDate: paidAt,
                         categoryId: d.categoryId ?? null,
                         paymentMethod: d.method,
@@ -1300,7 +1419,30 @@ function registerAccountingIPC() {
                 }
                 return { updated, invoiceId };
             });
-            logger_1.default.info(`Installment paid: id=${d.installmentId} convention=${installment.convention.reference} invoice=${result.invoiceId ?? '—'}`);
+            logger_1.default.info(`Installment payment: id=${d.installmentId} +${payAmount} (${newStatus}) ${installmentLabel} invoice=${result.invoiceId ?? '—'}`);
+            // Accrual de commission sur le montant encaissé (échéances de convention).
+            // L'assiette suit le cumul réellement encaissé sur l'échéance (newPaid),
+            // pas le coût total du bien. Hors transaction et non bloquant.
+            if (installment.conventionId && installment.convention) {
+                try {
+                    const rates = await (0, commission_service_1.getDefaultRates)(db);
+                    const tr = (0, commission_service_1.commissionTypeAndRate)(installment.convention.type, rates);
+                    const beneficiaryUserId = installment.convention.agentId ?? installment.convention.client?.assignedToId ?? null;
+                    if (tr && beneficiaryUserId) {
+                        await (0, commission_service_1.accrueCollectionCommission)(db, {
+                            conventionId: installment.conventionId,
+                            installmentId: installment.id,
+                            beneficiaryUserId,
+                            transactionType: tr.transactionType,
+                            rate: tr.rate,
+                            collectedTotal: newPaid,
+                        });
+                    }
+                }
+                catch (e) {
+                    logger_1.default.error('accrueCollectionCommission (échéance) error', e?.message ?? e);
+                }
+            }
             return ser({ success: true, data: { ...result.updated, invoiceId: result.invoiceId } });
         }
         catch (error) {
@@ -1315,7 +1457,7 @@ function registerAccountingIPC() {
             checkAccountingRole(session, READ_ROLES);
             const db = (0, db_service_1.getDb)();
             const data = await db.saleInstallment.findMany({
-                where: { status: 'ANNULE' },
+                where: { status: 'ANNULE', conventionId: { not: null } },
                 orderBy: { dueDate: 'asc' },
                 include: {
                     convention: {
@@ -1337,6 +1479,140 @@ function registerAccountingIPC() {
                 },
             });
             return ser({ success: true, data, total: data.length });
+        }
+        catch (error) {
+            return { success: false, error: error.message };
+        }
+    });
+    // Échéances héritées (importées de l'ancienne application) : paiements
+    // échelonnés rattachés directement à un client (et éventuellement un terrain),
+    // sans convention. Isolées des écrans de convention. Tous statuts confondus —
+    // le renderer répartit par onglet/statut côté client.
+    electron_1.ipcMain.handle('accounting:getLegacyInstallments', async (_event, { token }) => {
+        try {
+            const session = (0, auth_service_1.getSession)(token);
+            if (!session)
+                return { success: false, error: 'Session expirée' };
+            checkAccountingRole(session, READ_ROLES);
+            const db = (0, db_service_1.getDb)();
+            // Promeut en EN_RETARD les échéances héritées échues encore en attente.
+            await db.saleInstallment.updateMany({
+                where: {
+                    conventionId: null,
+                    status: { in: ['EN_ATTENTE', 'A_REGLER'] },
+                    dueDate: { lt: new Date() },
+                },
+                data: { status: 'EN_RETARD' },
+            });
+            const data = await db.saleInstallment.findMany({
+                where: { conventionId: null },
+                orderBy: { dueDate: 'asc' },
+                include: {
+                    client: {
+                        select: {
+                            id: true, reference: true, firstName: true, lastName: true, entreprise: true, type: true,
+                            // Référent (utilisateur) du client — sert au filtre par utilisateur.
+                            assignedTo: { select: { id: true, firstName: true, lastName: true } },
+                        },
+                    },
+                    terrain: { select: { id: true, reference: true, numeroIlot: true, numeroParcelle: true } },
+                    // Terrains rattachés (un ou plusieurs) + frais de démarches ACD pour l'assiette.
+                    terrainLinks: {
+                        orderBy: { order: 'asc' },
+                        select: {
+                            terrain: {
+                                select: {
+                                    id: true, reference: true, numeroIlot: true, numeroParcelle: true,
+                                    acdDemarchesEnabled: true, acdDemarchesAmount: true,
+                                },
+                            },
+                        },
+                    },
+                },
+            });
+            return ser({ success: true, data, total: data.length });
+        }
+        catch (error) {
+            return { success: false, error: error.message };
+        }
+    });
+    // Édition d'une échéance héritée (sans convention) : détails de souscription,
+    // date, montant et rattachement d'un ou plusieurs terrains. Les terrains
+    // servent d'assiette aux frais de démarches ACD (somme de leurs frais ACD).
+    electron_1.ipcMain.handle('accounting:updateLegacyInstallment', async (_event, { token, payload }) => {
+        try {
+            const session = (0, auth_service_1.getSession)(token);
+            if (!session)
+                return { success: false, error: 'Session expirée' };
+            checkAccountingRole(session, WRITE_ROLES);
+            const schema = zod_1.z.object({
+                installmentId: zod_1.z.number().int().positive(),
+                detailsSouscription: zod_1.z.string().nullable().optional(),
+                dueDate: zod_1.z.string().min(1, 'Date requise'),
+                amount: zod_1.z.number().positive('Montant invalide'),
+                terrainIds: zod_1.z.array(zod_1.z.number().int().positive()).optional(),
+            });
+            const parsed = schema.safeParse(payload);
+            if (!parsed.success)
+                return { success: false, error: parsed.error.format() };
+            const d = parsed.data;
+            const db = (0, db_service_1.getDb)();
+            const inst = await db.saleInstallment.findUnique({
+                where: { id: d.installmentId },
+                select: { id: true, conventionId: true },
+            });
+            if (!inst)
+                return { success: false, error: 'Échéance introuvable' };
+            if (inst.conventionId) {
+                return { success: false, error: 'Seules les échéances héritées (sans convention) sont modifiables ici.' };
+            }
+            const terrainIds = [...new Set(d.terrainIds ?? [])];
+            if (terrainIds.length > 0) {
+                const found = await db.terrain.count({ where: { id: { in: terrainIds }, deletedAt: null } });
+                if (found !== terrainIds.length)
+                    return { success: false, error: 'Un terrain sélectionné est introuvable' };
+            }
+            await db.$transaction(async (tx) => {
+                await tx.saleInstallment.update({
+                    where: { id: d.installmentId },
+                    data: {
+                        detailsSouscription: d.detailsSouscription?.trim() || null,
+                        dueDate: new Date(d.dueDate),
+                        amount: String(d.amount),
+                    },
+                });
+                await tx.saleInstallmentTerrain.deleteMany({ where: { installmentId: d.installmentId } });
+                if (terrainIds.length > 0) {
+                    await tx.saleInstallmentTerrain.createMany({
+                        data: terrainIds.map((tid, i) => ({ installmentId: d.installmentId, terrainId: tid, order: i })),
+                    });
+                }
+            });
+            logger_1.default.info(`Échéance héritée modifiée: id=${d.installmentId} terrains=[${terrainIds.join(',')}]`);
+            const updated = await db.saleInstallment.findUnique({
+                where: { id: d.installmentId },
+                include: {
+                    client: {
+                        select: {
+                            id: true, reference: true, firstName: true, lastName: true, entreprise: true, type: true,
+                            assignedTo: { select: { id: true, firstName: true, lastName: true } },
+                        },
+                    },
+                    terrain: { select: { id: true, reference: true, numeroIlot: true, numeroParcelle: true } },
+                    terrainLinks: {
+                        orderBy: { order: 'asc' },
+                        select: {
+                            terrain: {
+                                select: {
+                                    id: true, reference: true, numeroIlot: true, numeroParcelle: true,
+                                    acdDemarchesEnabled: true, acdDemarchesAmount: true,
+                                },
+                            },
+                        },
+                    },
+                },
+            });
+            return ser({ success: true, data: updated });
         }
         catch (error) {
             return { success: false, error: error.message };

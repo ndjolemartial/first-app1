@@ -12,6 +12,7 @@ exports.setSetting = setSetting;
 exports.setSecret = setSecret;
 exports.setSettings = setSettings;
 const electron_1 = require("electron");
+const crypto_1 = __importDefault(require("crypto"));
 const db_service_1 = require("./db.service");
 const logger_1 = __importDefault(require("../utils/logger"));
 /**
@@ -19,44 +20,81 @@ const logger_1 = __importDefault(require("../utils/logger"));
  *
  * Toutes les valeurs sont persistées en base via le modèle `AppSetting`
  * (clé → valeur). Les secrets (mots de passe SMTP/SMS, jetons API) sont
- * chiffrés via `safeStorage` Electron avant d'être insérés et déchiffrés
- * uniquement côté main process. Les champs marqués comme secrets ne sont
- * jamais renvoyés en clair au renderer.
+ * chiffrés avant d'être insérés et déchiffrés uniquement côté main process.
+ * Les champs marqués comme secrets ne sont jamais renvoyés en clair au renderer.
+ *
+ * IMPORTANT — chiffrement PORTABLE.
+ * L'application partage une base de données unique entre plusieurs postes.
+ * `safeStorage` (Electron) repose sur une clé liée au compte Windows + à la
+ * machine (DPAPI) : un secret chiffré sur le poste de l'administrateur est
+ * INDÉCHIFFRABLE sur les autres postes → la configuration SMTP/SMS apparaissait
+ * vide pour tous les utilisateurs sauf celui qui l'avait saisie, faisant échouer
+ * leurs envois. Les secrets sont désormais chiffrés avec une clé symétrique
+ * dérivée d'un secret applicatif commun (`APP_SECRET_KEY`, repli sur une
+ * constante intégrée), donc déchiffrables sur n'importe quel poste relié à la
+ * même base. Les anciennes valeurs `enc:` (safeStorage) restent lisibles sur le
+ * poste d'origine et sont automatiquement re-chiffrées au format portable.
  */
-/** Convention : préfixe « enc: » devant la valeur indique un secret chiffré. */
+/** Ancien préfixe — secret chiffré via safeStorage (lié à la machine). Lecture seule. */
 const ENC_PREFIX = 'enc:';
+/** Préfixe courant — secret chiffré portable (AES-256-GCM, clé applicative commune). */
+const ENC_PORTABLE_PREFIX = 'encp:';
 /** Marqueur renvoyé au renderer pour indiquer qu'un secret est défini sans le révéler. */
 exports.SECRET_MASK = '••••••••';
-/** Vrai si l'environnement supporte le chiffrement safeStorage. */
-function canEncrypt() {
-    try {
-        return electron_1.safeStorage.isEncryptionAvailable();
-    }
-    catch {
-        return false;
-    }
+// ── Clé de chiffrement portable ──────────────────────────────────────────────
+// Dérivée d'un secret commun à toutes les installations. `APP_SECRET_KEY` (env)
+// est prioritaire ; à défaut, une constante intégrée garantit que tous les
+// postes du même build partagent la même clé (condition nécessaire à la
+// portabilité des secrets dans une base partagée). Calculée à la demande pour
+// laisser le temps à `loadEnv` de renseigner `process.env`.
+let cachedKey = null;
+function getPortableKey() {
+    if (cachedKey)
+        return cachedKey;
+    const material = (process.env.APP_SECRET_KEY ?? '').trim() || 'afrikimmo-app::portable-secret-key::v1';
+    cachedKey = crypto_1.default.scryptSync(material, 'afrikimmo.settings.secret.salt.v1', 32);
+    return cachedKey;
 }
-/** Chiffre une chaîne avant stockage (no-op si safeStorage indisponible). */
+/** Chiffre une chaîne (AES-256-GCM portable). Format : encp:base64(iv|tag|ciphertext). */
 function encrypt(plain) {
     if (!plain)
         return '';
-    if (!canEncrypt()) {
-        logger_1.default.warn('safeStorage indisponible — secret stocké en clair');
+    try {
+        const iv = crypto_1.default.randomBytes(12);
+        const cipher = crypto_1.default.createCipheriv('aes-256-gcm', getPortableKey(), iv);
+        const enc = Buffer.concat([cipher.update(plain, 'utf8'), cipher.final()]);
+        const tag = cipher.getAuthTag();
+        return ENC_PORTABLE_PREFIX + Buffer.concat([iv, tag, enc]).toString('base64');
+    }
+    catch (err) {
+        logger_1.default.error('encrypt (portable) error', err.message);
+        // Repli : ne jamais perdre la valeur silencieusement.
         return plain;
     }
-    return ENC_PREFIX + electron_1.safeStorage.encryptString(plain).toString('base64');
 }
-/** Déchiffre une valeur (retourne la chaîne brute si non chiffrée). */
-function decrypt(stored) {
-    if (!stored)
-        return '';
-    if (!stored.startsWith(ENC_PREFIX))
-        return stored;
-    if (!canEncrypt()) {
-        logger_1.default.warn('safeStorage indisponible — impossible de déchiffrer un secret');
+/** Déchiffre une valeur chiffrée portable (encp:). */
+function decryptPortable(stored) {
+    try {
+        const data = Buffer.from(stored.slice(ENC_PORTABLE_PREFIX.length), 'base64');
+        const iv = data.subarray(0, 12);
+        const tag = data.subarray(12, 28);
+        const enc = data.subarray(28);
+        const decipher = crypto_1.default.createDecipheriv('aes-256-gcm', getPortableKey(), iv);
+        decipher.setAuthTag(tag);
+        return Buffer.concat([decipher.update(enc), decipher.final()]).toString('utf8');
+    }
+    catch (err) {
+        logger_1.default.error('decrypt (portable) error', err.message);
         return '';
     }
+}
+/** Déchiffre un ancien secret safeStorage (enc:) — ne fonctionne que sur le poste d'origine. */
+function decryptLegacy(stored) {
     try {
+        if (!electron_1.safeStorage.isEncryptionAvailable()) {
+            logger_1.default.warn('safeStorage indisponible — ancien secret enc: indéchiffrable sur ce poste');
+            return '';
+        }
         const buf = Buffer.from(stored.slice(ENC_PREFIX.length), 'base64');
         return electron_1.safeStorage.decryptString(buf);
     }
@@ -64,6 +102,16 @@ function decrypt(stored) {
         logger_1.default.error('safeStorage decryptString error', err.message);
         return '';
     }
+}
+/** Déchiffre une valeur (retourne la chaîne brute si non chiffrée). */
+function decrypt(stored) {
+    if (!stored)
+        return '';
+    if (stored.startsWith(ENC_PORTABLE_PREFIX))
+        return decryptPortable(stored);
+    if (stored.startsWith(ENC_PREFIX))
+        return decryptLegacy(stored);
+    return stored;
 }
 // ── API publique ─────────────────────────────────────────────────────────────
 /** Lit une valeur brute de l'AppSetting (chaîne). */
@@ -75,7 +123,22 @@ async function getSetting(key) {
 /** Lit un secret (déchiffré). */
 async function getSecret(key) {
     const raw = await getSetting(key);
-    return raw ? decrypt(raw) : '';
+    if (!raw)
+        return '';
+    const value = decrypt(raw);
+    // Auto-migration : un ancien secret safeStorage (enc:) déchiffré avec succès
+    // — donc sur le poste qui l'avait saisi — est re-chiffré au format portable
+    // pour devenir lisible depuis tous les postes reliés à la même base.
+    if (value && raw.startsWith(ENC_PREFIX)) {
+        try {
+            await setSetting(key, encrypt(value));
+            logger_1.default.info(`Secret « ${key} » migré vers le chiffrement portable`);
+        }
+        catch (err) {
+            logger_1.default.error(`Échec migration secret « ${key} »`, err.message);
+        }
+    }
+    return value;
 }
 /** Indique si un secret est défini (sans le révéler). */
 async function hasSecret(key) {

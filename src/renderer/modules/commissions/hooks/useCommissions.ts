@@ -44,6 +44,30 @@ export function useCreateCommission() {
   });
 }
 
+/** Contexte de pré-remplissage d'une commission sur une échéance héritée. */
+export function usePrepareInstallmentCommission(installmentId: number) {
+  const token = useAuthStore((s) => s.token)!;
+  return useQuery({
+    queryKey: ['commissions', 'prepare-installment', installmentId],
+    queryFn: () => ipc.prepareInstallmentCommission(token, installmentId),
+    enabled: installmentId > 0,
+  });
+}
+
+/** Crée une commission rattachée à une échéance héritée (sans convention). */
+export function useCreateInstallmentCommission() {
+  const token = useAuthStore((s) => s.token)!;
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: object) => ipc.createForInstallment(token, payload),
+    onSuccess: () => {
+      invalidateAll(qc);
+      // Rafraîchit aussi les échéances (compteur de commissions affiché).
+      qc.invalidateQueries({ queryKey: ['installments'] });
+    },
+  });
+}
+
 export function useUpdateCommission() {
   const token = useAuthStore((s) => s.token)!;
   const qc = useQueryClient();

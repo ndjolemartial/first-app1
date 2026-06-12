@@ -8,8 +8,30 @@ const electron_1 = require("electron");
 const db_service_1 = require("../services/db.service");
 const auth_service_1 = require("../services/auth.service");
 const logger_1 = __importDefault(require("../utils/logger"));
-const READ_ROLES = ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'AGENT', 'ACCOUNTANT', 'ASSISTANTE_DIRECTION', 'READONLY'];
+const READ_ROLES = ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'AGENT', 'AGENT_TECHNIQUE', 'ACCOUNTANT', 'ASSISTANTE_DIRECTION', 'READONLY'];
 const PRIVILEGED_ROLES = ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ACCOUNTANT', 'ASSISTANTE_DIRECTION'];
+// Visibilité restreinte (AGENT / AGENT_TECHNIQUE / READONLY) : les compteurs du
+// tableau de bord doivent refléter ce que l'utilisateur voit réellement dans ses
+// listes. Ces filtres reproduisent ceux des modules Prospects et Clients.
+/** Miroir de la visibilité prospects (cf. `prospects.ipc.ts` buildVisibilityWhere). */
+function prospectVisibilityWhere(session) {
+    return {
+        OR: [
+            { assignedToId: session.userId },
+            { createdById: session.userId },
+            { assignedToId: null },
+        ],
+    };
+}
+/** Miroir de la visibilité clients (cf. `clients.ipc.ts` buildVisibilityWhere). */
+function clientVisibilityWhere(session) {
+    return {
+        OR: [
+            { assignedToId: session.userId },
+            { prospect: { is: { assignedToId: session.userId } } },
+        ],
+    };
+}
 const SLIDESHOW_SETTING_KEY = 'dashboard.slideshow';
 const SLIDESHOW_ROLES_SETTING_KEY = 'dashboard.slideshow.allowedRoles';
 const DEFAULT_SLIDESHOW = [
@@ -41,7 +63,10 @@ function registerDashboardIPC() {
             (0, auth_service_1.checkRole)(session, READ_ROLES);
             const db = (0, db_service_1.getDb)();
             const isPrivileged = PRIVILEGED_ROLES.includes(session.role);
-            const prospectsCountPromise = db.prospect.count({ where: { deletedAt: null } });
+            // Prospects : tous (privilégiés) ou seulement ceux accessibles (restreints).
+            const prospectsCountPromise = db.prospect.count({
+                where: { deletedAt: null, ...(isPrivileged ? {} : prospectVisibilityWhere(session)) },
+            });
             const privilegedPromises = isPrivileged
                 ? Promise.all([
                     db.client.count({ where: { deletedAt: null } }),
@@ -52,6 +77,15 @@ function registerDashboardIPC() {
                     db.programmeImmobilier.count({ where: { deletedAt: null } }),
                 ])
                 : Promise.resolve([null, null, null, null, null, null]);
+            // Rôles restreints (AGENT / AGENT_TECHNIQUE / READONLY) : clients accessibles,
+            // terrains et biens disponibles (que ces rôles peuvent consulter).
+            const restrictedPromises = isPrivileged
+                ? Promise.resolve([null, null, null])
+                : Promise.all([
+                    db.client.count({ where: { deletedAt: null, ...clientVisibilityWhere(session) } }),
+                    db.terrain.count({ where: { deletedAt: null, statut: 'DISPONIBLE' } }),
+                    db.property.count({ where: { deletedAt: null, status: 'DISPONIBLE' } }),
+                ]);
             const slideshowRolesPromise = db.appSetting
                 .findUnique({ where: { key: SLIDESHOW_ROLES_SETTING_KEY } })
                 .then((s) => {
@@ -82,9 +116,10 @@ function registerDashboardIPC() {
                 }
             })
                 .catch(() => DEFAULT_SLIDESHOW);
-            const [prospectsCount, privileged, slideshowItems, slideshowRoles] = await Promise.all([
+            const [prospectsCount, privileged, restricted, slideshowItems, slideshowRoles] = await Promise.all([
                 prospectsCountPromise,
                 privilegedPromises,
+                restrictedPromises,
                 slideshowItemsPromise,
                 slideshowRolesPromise,
             ]);
@@ -92,16 +127,18 @@ function registerDashboardIPC() {
             // la liste d'autorisation (vide par défaut = personne).
             const slideshow = slideshowRoles.includes(session.role) ? slideshowItems : [];
             const [clientsCount, ownersCount, availableTerrainsCount, availablePropertiesCount, lotissementsCount, programmesCount] = privileged;
+            const [restrictedClientsCount, restrictedTerrainsCount, restrictedPropertiesCount] = restricted;
             return {
                 success: true,
                 data: {
                     isPrivileged,
                     counts: {
                         prospects: prospectsCount,
-                        clients: clientsCount,
+                        // Pour les rôles restreints : compteurs filtrés sur le périmètre accessible.
+                        clients: isPrivileged ? clientsCount : restrictedClientsCount,
                         owners: ownersCount,
-                        availableTerrains: availableTerrainsCount,
-                        availableProperties: availablePropertiesCount,
+                        availableTerrains: isPrivileged ? availableTerrainsCount : restrictedTerrainsCount,
+                        availableProperties: isPrivileged ? availablePropertiesCount : restrictedPropertiesCount,
                         lotissements: lotissementsCount,
                         programmes: programmesCount,
                     },

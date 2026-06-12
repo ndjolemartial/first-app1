@@ -18,6 +18,18 @@ const FULL_VIEW_ROLES = ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ACCOUNTANT', 'ASSIS
 function hasFullView(role) {
     return FULL_VIEW_ROLES.includes(role);
 }
+/**
+ * Contrôle de rôle pour les écritures sur les biens (création, modification,
+ * suppression, changement de statut). AGENT et READONLY sont déjà hors des
+ * WRITE_ROLES ; ASSISTANTE_DIRECTION est explicitement exclue malgré
+ * l'équivalence MANAGER appliquée par checkRole. ACCOUNTANT conserve l'accès.
+ */
+function checkWriteRole(session, allowedRoles) {
+    if (session.role === 'ASSISTANTE_DIRECTION') {
+        throw new Error('Permission insuffisante');
+    }
+    (0, auth_service_1.checkRole)(session, allowedRoles);
+}
 /** Sérialise pour l'IPC : les Decimal Prisma ne sont pas clonables par Electron. */
 const ser = (v) => JSON.parse(JSON.stringify(v));
 const propertyBaseSchema = zod_1.z.object({
@@ -194,7 +206,7 @@ function registerPropertiesIPC() {
             const session = (0, auth_service_1.getSession)(token);
             if (!session)
                 return { success: false, error: 'Session expirée' };
-            (0, auth_service_1.checkRole)(session, WRITE_ROLES);
+            checkWriteRole(session, WRITE_ROLES);
             const parsed = propertyCreateSchema.safeParse(payload);
             if (!parsed.success)
                 return { success: false, error: parsed.error.format() };
@@ -251,7 +263,7 @@ function registerPropertiesIPC() {
             const session = (0, auth_service_1.getSession)(token);
             if (!session)
                 return { success: false, error: 'Session expirée' };
-            (0, auth_service_1.checkRole)(session, WRITE_ROLES);
+            checkWriteRole(session, WRITE_ROLES);
             const parsed = propertyUpdateSchema.safeParse(payload);
             if (!parsed.success)
                 return { success: false, error: parsed.error.format() };
@@ -285,7 +297,7 @@ function registerPropertiesIPC() {
             const session = (0, auth_service_1.getSession)(token);
             if (!session)
                 return { success: false, error: 'Session expirée' };
-            (0, auth_service_1.checkRole)(session, ['SUPER_ADMIN', 'ADMIN', 'MANAGER']);
+            checkWriteRole(session, ['SUPER_ADMIN', 'ADMIN', 'MANAGER']);
             const db = (0, db_service_1.getDb)();
             await db.property.update({ where: { id }, data: { deletedAt: new Date() } });
             return { success: true };
@@ -351,7 +363,7 @@ function registerPropertiesIPC() {
             const session = (0, auth_service_1.getSession)(token);
             if (!session)
                 return { success: false, error: 'Session expirée' };
-            (0, auth_service_1.checkRole)(session, WRITE_ROLES);
+            checkWriteRole(session, WRITE_ROLES);
             const db = (0, db_service_1.getDb)();
             // Refuse les statuts qui exigent un client si aucun n'est rattaché.
             if (statusNeedsClient(status)) {

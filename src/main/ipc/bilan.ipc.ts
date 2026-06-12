@@ -306,6 +306,11 @@ async function resolveScopeLabel(db: ReturnType<typeof getDb>, scope: Scope, sco
 interface PeriodTotals {
   recettesByCategory: Record<string, number>;
   depensesByCategory: Record<string, number>;
+  // Numéro de compte comptable (TreasuryCategory.accountingCode) associé à chaque
+  // libellé de catégorie, lorsqu'il provient d'une opération de trésorerie. Les
+  // recettes issues de factures (par type) n'ont pas de code.
+  recettesCodes: Record<string, string>;
+  depensesCodes: Record<string, string>;
   totalRecettes: number;
   totalDepenses: number;
   resultat: number;
@@ -344,6 +349,7 @@ async function computePeriodTotals(
   });
 
   const recettes: Record<string, number> = {};
+  const recettesCodes: Record<string, string> = {};
   for (const p of payments) {
     const label = INVOICE_TYPE_LABEL[p.invoice?.type ?? 'OTHER'] ?? 'Autres recettes';
     recettes[label] = (recettes[label] ?? 0) + Number(p.amount);
@@ -365,11 +371,12 @@ async function computePeriodTotals(
       commissionId:  null,
       ...trWhere,
     },
-    select: { amount: true, category: { select: { label: true } }, label: true },
+    select: { amount: true, category: { select: { label: true, accountingCode: true } }, label: true },
   });
   for (const op of trEntrees) {
     const cat = op.category?.label ?? op.label ?? 'Autres recettes (trésorerie)';
     recettes[cat] = (recettes[cat] ?? 0) + Number(op.amount);
+    if (op.category?.accountingCode && !recettesCodes[cat]) recettesCodes[cat] = op.category.accountingCode;
   }
 
   // Dépenses : toutes les sorties de trésorerie sur la période.
@@ -380,12 +387,14 @@ async function computePeriodTotals(
       deletedAt: null,
       ...trWhere,
     },
-    select: { amount: true, category: { select: { label: true } }, label: true },
+    select: { amount: true, category: { select: { label: true, accountingCode: true } }, label: true },
   });
   const depenses: Record<string, number> = {};
+  const depensesCodes: Record<string, string> = {};
   for (const op of trSorties) {
     const cat = op.category?.label ?? op.label ?? 'Dépenses diverses';
     depenses[cat] = (depenses[cat] ?? 0) + Number(op.amount);
+    if (op.category?.accountingCode && !depensesCodes[cat]) depensesCodes[cat] = op.category.accountingCode;
   }
 
   const totalRecettes = Object.values(recettes).reduce((s, v) => s + v, 0);
@@ -393,6 +402,8 @@ async function computePeriodTotals(
   return {
     recettesByCategory: recettes,
     depensesByCategory: depenses,
+    recettesCodes,
+    depensesCodes,
     totalRecettes,
     totalDepenses,
     resultat: totalRecettes - totalDepenses,
@@ -770,8 +781,8 @@ function escapeHtml(value: unknown): string {
 interface ResultatData {
   periode: { label: string; start: string; end: string };
   scope:   { type: string; label: string };
-  recettes: Array<{ categorie: string; montant: number }>;
-  depenses: Array<{ categorie: string; montant: number }>;
+  recettes: Array<{ categorie: string; montant: number; code?: string | null }>;
+  depenses: Array<{ categorie: string; montant: number; code?: string | null }>;
   totalRecettes: number;
   totalDepenses: number;
   resultat: number;
@@ -789,7 +800,7 @@ function buildResultatHtml(data: ResultatData, meta: { title: string; subtitle?:
     `<tr><td>${escapeHtml(r.categorie)}</td><td class="num">${formatXOF(r.montant)}</td><td class="num">${data.totalRecettes ? ((r.montant / data.totalRecettes) * 100).toFixed(1) : '0.0'} %</td></tr>`
   ).join('');
   const depensesRows = data.depenses.map((d) =>
-    `<tr><td>${escapeHtml(d.categorie)}</td><td class="num">${formatXOF(d.montant)}</td><td class="num">${data.totalDepenses ? ((d.montant / data.totalDepenses) * 100).toFixed(1) : '0.0'} %</td></tr>`
+    `<tr><td class="code">${escapeHtml(d.code ?? '—')}</td><td>${escapeHtml(d.categorie)}</td><td class="num">${formatXOF(d.montant)}</td><td class="num">${data.totalDepenses ? ((d.montant / data.totalDepenses) * 100).toFixed(1) : '0.0'} %</td></tr>`
   ).join('');
   const evolutionRows = data.evolution.map((e) =>
     `<tr><td>${escapeHtml(e.label)}</td><td class="num">${formatXOF(e.recettes)}</td><td class="num">${formatXOF(e.depenses)}</td><td class="num ${e.resultat < 0 ? 'neg' : 'pos'}">${formatXOF(e.resultat)}</td></tr>`
@@ -817,6 +828,7 @@ function buildResultatHtml(data: ResultatData, meta: { title: string; subtitle?:
     td { padding: 4px 8px; border-bottom: 1px solid ${border}; font-size: 9px; }
     tr:nth-child(even) td { background: ${surface}; }
     .num { text-align: right; font-variant-numeric: tabular-nums; }
+    .code { font-variant-numeric: tabular-nums; color: ${muted}; white-space: nowrap; width: 70px; }
     .total-row td { background: ${border}; font-weight: bold; color: ${primary}; }
     .pos { color: #15803d; font-weight: bold; }
     .neg { color: #b91c1c; font-weight: bold; }
@@ -842,9 +854,9 @@ function buildResultatHtml(data: ResultatData, meta: { title: string; subtitle?:
       <tr class="total-row"><td>TOTAL RECETTES</td><td class="num">${formatXOF(data.totalRecettes)}</td><td class="num">100.0 %</td></tr>
       </tbody></table>
     <h2>Dépenses par catégorie</h2>
-    <table><thead><tr><th>Catégorie</th><th class="num">Montant</th><th class="num">Part</th></tr></thead>
-      <tbody>${depensesRows || '<tr><td colspan="3" style="text-align:center;color:#94a3b8">Aucune dépense sur la période</td></tr>'}
-      <tr class="total-row"><td>TOTAL DÉPENSES</td><td class="num">${formatXOF(data.totalDepenses)}</td><td class="num">100.0 %</td></tr>
+    <table><thead><tr><th>N° compte</th><th>Catégorie</th><th class="num">Montant</th><th class="num">Part</th></tr></thead>
+      <tbody>${depensesRows || '<tr><td colspan="4" style="text-align:center;color:#94a3b8">Aucune dépense sur la période</td></tr>'}
+      <tr class="total-row"><td colspan="2">TOTAL DÉPENSES</td><td class="num">${formatXOF(data.totalDepenses)}</td><td class="num">100.0 %</td></tr>
       </tbody></table>
     <h2>Évolution</h2>
     <table><thead><tr><th>Sous-période</th><th class="num">Recettes</th><th class="num">Dépenses</th><th class="num">Résultat</th></tr></thead>
@@ -973,7 +985,7 @@ async function buildXlsxResultat(data: ResultatData, meta: { title: string; subt
   ws.getColumn(2).width = 18;
   ws.getColumn(3).width = 18;
 
-  const addSection = (sheetName: string, headers: string[], rows: Array<Array<string | number>>, totalRow?: Array<string | number>) => {
+  const addSection = (sheetName: string, headers: string[], rows: Array<Array<string | number>>, totalRow?: Array<string | number>, widths?: number[]) => {
     const sh = wb.addWorksheet(sheetName);
     headers.forEach((h, i) => {
       const c = sh.getCell(1, i + 1);
@@ -997,16 +1009,17 @@ async function buildXlsxResultat(data: ResultatData, meta: { title: string; subt
         cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE2E8F0' } };
       });
     }
-    headers.forEach((_, i) => { sh.getColumn(i + 1).width = i === 0 ? 36 : 18; });
+    headers.forEach((_, i) => { sh.getColumn(i + 1).width = widths?.[i] ?? (i === 0 ? 36 : 18); });
   };
 
   addSection('Recettes', ['Catégorie', 'Montant (XOF)', 'Part %'],
     data.recettes.map((r) => [r.categorie, r.montant, data.totalRecettes ? Number(((r.montant / data.totalRecettes) * 100).toFixed(1)) : 0]),
     ['TOTAL', data.totalRecettes, 100],
   );
-  addSection('Dépenses', ['Catégorie', 'Montant (XOF)', 'Part %'],
-    data.depenses.map((d) => [d.categorie, d.montant, data.totalDepenses ? Number(((d.montant / data.totalDepenses) * 100).toFixed(1)) : 0]),
-    ['TOTAL', data.totalDepenses, 100],
+  addSection('Dépenses', ['N° compte', 'Catégorie', 'Montant (XOF)', 'Part %'],
+    data.depenses.map((d) => [d.code ?? '—', d.categorie, d.montant, data.totalDepenses ? Number(((d.montant / data.totalDepenses) * 100).toFixed(1)) : 0]),
+    ['', 'TOTAL', data.totalDepenses, 100],
+    [14, 36, 18, 12],
   );
   addSection('Évolution', ['Sous-période', 'Recettes', 'Dépenses', 'Résultat'],
     data.evolution.map((e) => [e.label, e.recettes, e.depenses, e.resultat]),
@@ -1137,8 +1150,12 @@ export function registerBilanIPC(): void {
 
       const totals = await computePeriodTotals(db, period.start, period.end, scope, scopeId);
 
-      // Série temporelle.
-      const buckets = buildEvolutionBuckets(period);
+      // Série temporelle. La direction (SUPER_ADMIN / ADMIN) voit l'historique
+      // complet ; MANAGER / ACCOUNTANT sont limités aux 6 dernières sous-périodes
+      // (6 derniers mois sur une vue mensuelle), à l'écran comme à l'export.
+      const isDirector = ACTIF_PASSIF_ROLES.includes(session.role);
+      const allBuckets = buildEvolutionBuckets(period);
+      const buckets = isDirector ? allBuckets : allBuckets.slice(-6);
       const evolution: Array<{ label: string; recettes: number; depenses: number; resultat: number }> = [];
       for (const b of buckets) {
         const t = await computePeriodTotals(db, b.start, b.end, scope, scopeId);
@@ -1146,10 +1163,10 @@ export function registerBilanIPC(): void {
       }
 
       const recettes = Object.entries(totals.recettesByCategory)
-        .map(([categorie, montant]) => ({ categorie, montant }))
+        .map(([categorie, montant]) => ({ categorie, montant, code: totals.recettesCodes[categorie] ?? null }))
         .sort((a, b) => b.montant - a.montant);
       const depenses = Object.entries(totals.depensesByCategory)
-        .map(([categorie, montant]) => ({ categorie, montant }))
+        .map(([categorie, montant]) => ({ categorie, montant, code: totals.depensesCodes[categorie] ?? null }))
         .sort((a, b) => b.montant - a.montant);
 
       return {

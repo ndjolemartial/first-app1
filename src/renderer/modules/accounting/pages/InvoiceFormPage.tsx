@@ -14,6 +14,7 @@ import { useInvoice, useCreateInvoice } from '../hooks/useAccounting';
 import { useClients } from '../../clients/hooks/useClients';
 import { useConventions } from '../../conventions/hooks/useConventions';
 import { formatPersonName } from '../../../shared/utils/format';
+import CatalogPicker from '../../../shared/components/CatalogPicker';
 import { Save, Plus, Trash2 } from 'lucide-react';
 
 const itemSchema = z.object({
@@ -164,17 +165,25 @@ export default function InvoiceFormPage() {
 
         {/* Lignes */}
         <Card>
-          <div className="flex items-center justify-between mb-4">
+          <div className="flex flex-wrap items-end justify-between gap-3 mb-4">
             <h3 className="text-base font-semibold text-slate-800">Lignes de facturation</h3>
-            <Button
-              type="button"
-              variant="secondary"
-              size="sm"
-              icon={<Plus className="h-4 w-4" />}
-              onClick={() => append({ description: '', quantity: 1, unitPrice: 0 })}
-            >
-              Ajouter une ligne
-            </Button>
+            <div className="flex items-end gap-2">
+              <div className="w-72">
+                <CatalogPicker
+                  placeholder="Ajouter depuis le catalogue…"
+                  onPick={(it) => append({ description: it.designation, quantity: 1, unitPrice: it.unitPrice })}
+                />
+              </div>
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                icon={<Plus className="h-4 w-4" />}
+                onClick={() => append({ description: '', quantity: 1, unitPrice: 0 })}
+              >
+                Ligne vide
+              </Button>
+            </div>
           </div>
           {errors.items?.root && (
             <p className="text-xs text-red-500 mb-2">{errors.items.root.message}</p>

@@ -31,6 +31,7 @@ const ROLE_OPTIONS: Array<{ value: string; label: string }> = [
   { value: 'MANAGER',              label: 'Manager' },
   { value: 'ACCOUNTANT',           label: 'Comptable' },
   { value: 'ASSISTANTE_DIRECTION', label: 'Assistante de direction' },
+  { value: 'AGENT_TECHNIQUE',      label: 'Agent Technique' },
   { value: 'AGENT',                label: 'Agent' },
   { value: 'READONLY',             label: 'Lecture seule' },
 ];

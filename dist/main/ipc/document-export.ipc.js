@@ -24,6 +24,13 @@ const payloadSchema = zod_1.z.object({
     footerTemplate: zod_1.z.string(),
     headerMm: zod_1.z.number().positive(),
     footerMm: zod_1.z.number().positive(),
+    // Marges explicites (mm) — override optionnel (ex. devis : 25 mm partout).
+    marginsMm: zod_1.z.object({
+        top: zod_1.z.number().nonnegative(),
+        bottom: zod_1.z.number().nonnegative(),
+        left: zod_1.z.number().nonnegative(),
+        right: zod_1.z.number().nonnegative(),
+    }).optional(),
 });
 function registerDocumentExportIPC() {
     electron_1.ipcMain.handle('documents:exportDocumentPdf', async (_event, payload) => {
@@ -41,7 +48,7 @@ function registerDocumentExportIPC() {
             });
             if (canceled || !filePath)
                 return { success: true, data: { canceled: true } };
-            const pdf = await (0, pdf_service_1.htmlToPdfWithTemplates)(parsed.data.bodyHtml, parsed.data.headerTemplate, parsed.data.footerTemplate, parsed.data.headerMm, parsed.data.footerMm);
+            const pdf = await (0, pdf_service_1.htmlToPdfWithTemplates)(parsed.data.bodyHtml, parsed.data.headerTemplate, parsed.data.footerTemplate, parsed.data.headerMm, parsed.data.footerMm, parsed.data.marginsMm);
             fs_1.default.writeFileSync(filePath, pdf);
             electron_1.shell.showItemInFolder(filePath);
             logger_1.default.info(`Document PDF exporté : ${filePath}`);
@@ -49,6 +56,30 @@ function registerDocumentExportIPC() {
         }
         catch (err) {
             logger_1.default.error('documents:exportDocumentPdf', err.message);
+            return { success: false, error: err.message };
+        }
+    });
+    /**
+     * Aperçu avant impression du document : génère le PDF en mémoire et l'ouvre
+     * dans la fenêtre d'aperçu (visualiseur intégré → impression avec choix
+     * d'imprimante), sans imposer de téléchargement.
+     */
+    electron_1.ipcMain.handle('documents:printDocument', async (_event, payload) => {
+        try {
+            const parsed = payloadSchema.safeParse(payload);
+            if (!parsed.success) {
+                return { success: false, error: parsed.error.issues.map((i) => i.message).join(', ') };
+            }
+            const session = (0, auth_service_1.getSession)(parsed.data.token);
+            if (!session)
+                return { success: false, error: 'Session expirée' };
+            const pdf = await (0, pdf_service_1.htmlToPdfWithTemplates)(parsed.data.bodyHtml, parsed.data.headerTemplate, parsed.data.footerTemplate, parsed.data.headerMm, parsed.data.footerMm, parsed.data.marginsMm);
+            await (0, pdf_service_1.openPrintPreview)(pdf, parsed.data.fileName);
+            logger_1.default.info(`Aperçu impression document : ${parsed.data.fileName}`);
+            return { success: true, data: { previewing: true } };
+        }
+        catch (err) {
+            logger_1.default.error('documents:printDocument', err.message);
             return { success: false, error: err.message };
         }
     });

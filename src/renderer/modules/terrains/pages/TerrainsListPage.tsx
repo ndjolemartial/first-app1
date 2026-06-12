@@ -6,6 +6,7 @@ import Badge from '../../../shared/components/ui/Badge';
 import Card from '../../../shared/components/ui/Card';
 import Input from '../../../shared/components/ui/Input';
 import Select from '../../../shared/components/ui/Select';
+import SearchSelect from '../../../shared/components/ui/SearchSelect';
 import Pagination from '../../../shared/components/ui/Pagination';
 import { SkeletonTable } from '../../../shared/components/ui/Skeleton';
 import EmptyState from '../../../shared/components/ui/EmptyState';
@@ -17,8 +18,9 @@ import StatusRecap, { type StatusRecapItem } from '../../../shared/components/ui
 import { useAuthStore } from '../../../shared/stores/auth.store';
 import { PlusCircle, Eye, Edit, Landmark, CheckCircle2, BookmarkCheck, BadgeCheck, Clock } from 'lucide-react';
 
-/** Rôles habilités à créer/modifier un terrain. */
-const WRITE_ROLES = new Set(['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ACCOUNTANT', 'ASSISTANTE_DIRECTION']);
+/** Rôles habilités à créer/modifier un terrain.
+ *  AGENT, ASSISTANTE_DIRECTION et READONLY en sont exclus (lecture seule). */
+const WRITE_ROLES = new Set(['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ACCOUNTANT']);
 
 const STATUT_OPTIONS = [
   { value: '', label: 'Tous les statuts' },
@@ -122,8 +124,8 @@ export default function TerrainsListPage() {
             onChange={(e) => { setSearch(e.target.value); setPage(1); }} />
         </div>
         <div className="w-56">
-          <Select label="Lotissement" options={lotOptions} value={lotissementId}
-            onChange={(e) => { setLotissementId(e.target.value); setPage(1); }} />
+          <SearchSelect label="Lotissement" options={lotOptions} value={lotissementId}
+            onChange={(v) => { setLotissementId(v); setPage(1); }} />
         </div>
         <div className="w-44">
           <Select label="Statut" options={STATUT_OPTIONS} value={statut}

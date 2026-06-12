@@ -7,6 +7,7 @@ import Card from '../../../shared/components/ui/Card';
 import { SkeletonTable } from '../../../shared/components/ui/Skeleton';
 import ConfirmDialog from '../../../shared/components/ui/ConfirmDialog';
 import { useConvention, useDeleteConvention, useGenerateInstallments, useUpdateConvention } from '../hooks/useConventions';
+import { useAuthStore } from '../../../shared/stores/auth.store';
 import { toast } from '../../../shared/components/ui/Toast';
 import { usePrintInvoice } from '../../accounting/hooks/useAccounting';
 import { formatDate, formatCurrency } from '../../../shared/utils/format';
@@ -53,6 +54,10 @@ const INSTALLMENT_STATUS_LABEL: Record<string, string> = {
 export default function ConventionDetailPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  // Écriture (édition, suppression, changement de statut) réservée à MANAGER+.
+  // L'AGENT est en consultation seule.
+  const role = useAuthStore((s) => s.user?.role) ?? '';
+  const canWrite = ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ACCOUNTANT', 'ASSISTANTE_DIRECTION'].includes(role);
   const { data: res, isLoading, refetch } = useConvention(Number(id));
   const deleteConvention = useDeleteConvention();
   const updateConvention = useUpdateConvention();
@@ -112,6 +117,7 @@ export default function ConventionDetailPage() {
       breadcrumbs={[{ label: 'Conventions', to: '/conventions' }, { label: c.reference }]}
       actions={
         <div className="flex gap-2">
+          {canWrite && (
           <div className="relative">
             <Button variant="secondary" icon={<FilePlus className="h-4 w-4" />}
               onClick={() => setShowAttestationMenu((v) => !v)}>
@@ -142,15 +148,20 @@ export default function ConventionDetailPage() {
               </div>
             )}
           </div>
+          )}
           <Button variant="secondary" icon={<Printer className="h-4 w-4" />} onClick={() => navigate(`/conventions/${id}/document`)}>
             Générer le document
           </Button>
-          <Button variant="secondary" icon={<Edit className="h-4 w-4" />} onClick={() => navigate(`/conventions/${id}/edit`)}>
-            Modifier
-          </Button>
-          <Button variant="danger" icon={<Trash2 className="h-4 w-4" />} onClick={() => setShowDelete(true)}>
-            Supprimer
-          </Button>
+          {canWrite && (
+            <>
+              <Button variant="secondary" icon={<Edit className="h-4 w-4" />} onClick={() => navigate(`/conventions/${id}/edit`)}>
+                Modifier
+              </Button>
+              <Button variant="danger" icon={<Trash2 className="h-4 w-4" />} onClick={() => setShowDelete(true)}>
+                Supprimer
+              </Button>
+            </>
+          )}
         </div>
       }
     >
@@ -176,7 +187,13 @@ export default function ConventionDetailPage() {
                 </div>
               </div>
               {/* Statut cliquable : ouvre un menu pour changer rapidement
-                  le statut sans repasser par le formulaire d'édition. */}
+                  le statut sans repasser par le formulaire d'édition.
+                  AGENT : badge en lecture seule (pas de changement de statut). */}
+              {!canWrite ? (
+                <Badge variant={STATUS_VARIANT[c.status] ?? 'default'}>
+                  {STATUS_LABEL[c.status] ?? c.status}
+                </Badge>
+              ) : (
               <div className="relative">
                 <button
                   type="button"
@@ -209,6 +226,7 @@ export default function ConventionDetailPage() {
                   </div>
                 )}
               </div>
+              )}
             </div>
 
             <div className="grid grid-cols-3 gap-4 pt-4 border-t border-slate-100">
@@ -300,6 +318,7 @@ export default function ConventionDetailPage() {
                     </p>
                   )}
                 </div>
+                {canWrite && (
                 <div className="flex gap-2">
                   {c.paymentModalites !== 'CASH' && c.installments?.length > 0 && (
                     <Button
@@ -321,6 +340,7 @@ export default function ConventionDetailPage() {
                     {c.installments?.length > 0 ? 'Regénérer' : 'Générer les échéances'}
                   </Button>
                 </div>
+                )}
               </div>
 
               {c.paymentModalites === 'CASH' ? (

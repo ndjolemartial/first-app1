@@ -7,6 +7,7 @@ import Badge from '../../../shared/components/ui/Badge';
 import { SkeletonTable } from '../../../shared/components/ui/Skeleton';
 import ConfirmDialog from '../../../shared/components/ui/ConfirmDialog';
 import { useAttestation, useDeleteAttestation } from '../hooks/useAttestations';
+import { useAuthStore } from '../../../shared/stores/auth.store';
 import { ATTESTATION_TYPE_LABELS } from '../utils/attestationTemplate';
 import { formatDate, formatCurrency } from '../../../shared/utils/format';
 import { Edit, Trash2, FileText, User, MapPin, Link2 } from 'lucide-react';
@@ -29,6 +30,9 @@ function clientName(c: any): string {
 export default function AttestationDetailPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const role = useAuthStore((s) => s.user?.role) ?? '';
+  // Écriture réservée à MANAGER+. AGENT en consultation seule.
+  const canWrite = ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ACCOUNTANT', 'ASSISTANTE_DIRECTION'].includes(role);
   const { data: res, isLoading } = useAttestation(Number(id));
   const deleteAttestation = useDeleteAttestation();
   const [showDelete, setShowDelete] = useState(false);
@@ -58,14 +62,18 @@ export default function AttestationDetailPage() {
             onClick={() => navigate(`/conventions/attestations/${id}/document`)}>
             Générer le document
           </Button>
-          <Button variant="secondary" icon={<Edit className="h-4 w-4" />}
-            onClick={() => navigate(`/conventions/attestations/${id}/edit`)}>
-            Modifier
-          </Button>
-          <Button variant="danger" icon={<Trash2 className="h-4 w-4" />}
-            onClick={() => setShowDelete(true)}>
-            Supprimer
-          </Button>
+          {canWrite && (
+            <>
+              <Button variant="secondary" icon={<Edit className="h-4 w-4" />}
+                onClick={() => navigate(`/conventions/attestations/${id}/edit`)}>
+                Modifier
+              </Button>
+              <Button variant="danger" icon={<Trash2 className="h-4 w-4" />}
+                onClick={() => setShowDelete(true)}>
+                Supprimer
+              </Button>
+            </>
+          )}
         </div>
       }
     >

@@ -64,6 +64,7 @@ const ROLE_LABELS: Record<string, string> = {
   ACCOUNTANT: 'Comptable',
   ASSISTANTE_DIRECTION: 'Assistante de Direction',
   AGENT: 'Agent',
+  AGENT_TECHNIQUE: 'Agent Technique',
   READONLY: 'Lecture seule',
 };
 

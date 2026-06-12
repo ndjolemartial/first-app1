@@ -10,6 +10,7 @@ import { SkeletonTable } from '../../../shared/components/ui/Skeleton';
 import EmptyState from '../../../shared/components/ui/EmptyState';
 import ConfirmDialog from '../../../shared/components/ui/ConfirmDialog';
 import { useAttestations, useDeleteAttestation, useAttestationsTypeStats } from '../hooks/useAttestations';
+import { useAuthStore } from '../../../shared/stores/auth.store';
 import { ATTESTATION_TYPE_LABELS } from '../utils/attestationTemplate';
 import { formatDate, formatCurrency } from '../../../shared/utils/format';
 import StatusRecap, { type StatusRecapItem } from '../../../shared/components/ui/StatusRecap';
@@ -41,8 +42,13 @@ function clientName(c: any): string {
     : (c.entreprise ?? '—');
 }
 
+// Écriture (émission / suppression) réservée à MANAGER+. AGENT en lecture seule.
+const WRITE_ROLES = new Set(['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ACCOUNTANT', 'ASSISTANTE_DIRECTION']);
+
 export default function AttestationsListPage() {
   const navigate = useNavigate();
+  const role = useAuthStore((s) => s.user?.role) ?? '';
+  const canWrite = WRITE_ROLES.has(role);
   const [type, setType] = useState('');
   const [search, setSearch] = useState('');
   const { data, isLoading } = useAttestations({
@@ -67,9 +73,11 @@ export default function AttestationsListPage() {
       title="Attestations"
       breadcrumbs={[{ label: 'Conventions', to: '/conventions' }, { label: 'Attestations' }]}
       actions={
-        <Button icon={<Plus className="h-4 w-4" />} onClick={() => navigate('/conventions/attestations/new')}>
-          Nouvelle attestation
-        </Button>
+        canWrite ? (
+          <Button icon={<Plus className="h-4 w-4" />} onClick={() => navigate('/conventions/attestations/new')}>
+            Nouvelle attestation
+          </Button>
+        ) : undefined
       }
     >
       <Card className="mb-4 flex flex-wrap gap-3 items-end">
@@ -100,7 +108,7 @@ export default function AttestationsListPage() {
           <EmptyState
             title="Aucune attestation"
             description="Émettez votre première attestation depuis cette page ou directement depuis une convention."
-            action={{ label: 'Nouvelle attestation', onClick: () => navigate('/conventions/attestations/new') }}
+            action={canWrite ? { label: 'Nouvelle attestation', onClick: () => navigate('/conventions/attestations/new') } : undefined}
           />
         ) : (
           <table className="w-full text-sm">
@@ -143,8 +151,10 @@ export default function AttestationsListPage() {
                     <div className="flex justify-end gap-1">
                       <Button variant="ghost" size="sm" icon={<Eye className="h-4 w-4" />}
                         onClick={() => navigate(`/conventions/attestations/${a.id}`)} />
-                      <Button variant="ghost" size="sm" icon={<Trash2 className="h-4 w-4" />}
-                        onClick={() => setToDelete(a)} />
+                      {canWrite && (
+                        <Button variant="ghost" size="sm" icon={<Trash2 className="h-4 w-4" />}
+                          onClick={() => setToDelete(a)} />
+                      )}
                     </div>
                   </td>
                 </tr>

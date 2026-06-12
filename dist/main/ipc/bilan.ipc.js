@@ -308,6 +308,7 @@ async function computePeriodTotals(db, start, end, scope, scopeId) {
         select: { total: true, type: true },
     });
     const recettes = {};
+    const recettesCodes = {};
     for (const p of payments) {
         const label = INVOICE_TYPE_LABEL[p.invoice?.type ?? 'OTHER'] ?? 'Autres recettes';
         recettes[label] = (recettes[label] ?? 0) + Number(p.amount);
@@ -328,11 +329,13 @@ async function computePeriodTotals(db, start, end, scope, scopeId) {
             commissionId: null,
             ...trWhere,
         },
-        select: { amount: true, category: { select: { label: true } }, label: true },
+        select: { amount: true, category: { select: { label: true, accountingCode: true } }, label: true },
     });
     for (const op of trEntrees) {
         const cat = op.category?.label ?? op.label ?? 'Autres recettes (trésorerie)';
         recettes[cat] = (recettes[cat] ?? 0) + Number(op.amount);
+        if (op.category?.accountingCode && !recettesCodes[cat])
+            recettesCodes[cat] = op.category.accountingCode;
     }
     // Dépenses : toutes les sorties de trésorerie sur la période.
     const trSorties = await db.treasuryOperation.findMany({
@@ -342,18 +345,23 @@ async function computePeriodTotals(db, start, end, scope, scopeId) {
             deletedAt: null,
             ...trWhere,
         },
-        select: { amount: true, category: { select: { label: true } }, label: true },
+        select: { amount: true, category: { select: { label: true, accountingCode: true } }, label: true },
     });
     const depenses = {};
+    const depensesCodes = {};
     for (const op of trSorties) {
         const cat = op.category?.label ?? op.label ?? 'Dépenses diverses';
         depenses[cat] = (depenses[cat] ?? 0) + Number(op.amount);
+        if (op.category?.accountingCode && !depensesCodes[cat])
+            depensesCodes[cat] = op.category.accountingCode;
     }
     const totalRecettes = Object.values(recettes).reduce((s, v) => s + v, 0);
     const totalDepenses = Object.values(depenses).reduce((s, v) => s + v, 0);
     return {
         recettesByCategory: recettes,
         depensesByCategory: depenses,
+        recettesCodes,
+        depensesCodes,
         totalRecettes,
         totalDepenses,
         resultat: totalRecettes - totalDepenses,
@@ -695,7 +703,7 @@ function buildResultatHtml(data, meta, company, theme) {
     const surface = theme.surface;
     const border = theme.border;
     const recettesRows = data.recettes.map((r) => `<tr><td>${escapeHtml(r.categorie)}</td><td class="num">${formatXOF(r.montant)}</td><td class="num">${data.totalRecettes ? ((r.montant / data.totalRecettes) * 100).toFixed(1) : '0.0'} %</td></tr>`).join('');
-    const depensesRows = data.depenses.map((d) => `<tr><td>${escapeHtml(d.categorie)}</td><td class="num">${formatXOF(d.montant)}</td><td class="num">${data.totalDepenses ? ((d.montant / data.totalDepenses) * 100).toFixed(1) : '0.0'} %</td></tr>`).join('');
+    const depensesRows = data.depenses.map((d) => `<tr><td class="code">${escapeHtml(d.code ?? '—')}</td><td>${escapeHtml(d.categorie)}</td><td class="num">${formatXOF(d.montant)}</td><td class="num">${data.totalDepenses ? ((d.montant / data.totalDepenses) * 100).toFixed(1) : '0.0'} %</td></tr>`).join('');
     const evolutionRows = data.evolution.map((e) => `<tr><td>${escapeHtml(e.label)}</td><td class="num">${formatXOF(e.recettes)}</td><td class="num">${formatXOF(e.depenses)}</td><td class="num ${e.resultat < 0 ? 'neg' : 'pos'}">${formatXOF(e.resultat)}</td></tr>`).join('');
     const logoHtml = company.logoBase64
         ? `<img src="data:${company.logoMime};base64,${company.logoBase64}" style="max-height:60px;max-width:140px"/>`
@@ -718,6 +726,7 @@ function buildResultatHtml(data, meta, company, theme) {
     td { padding: 4px 8px; border-bottom: 1px solid ${border}; font-size: 9px; }
     tr:nth-child(even) td { background: ${surface}; }
     .num { text-align: right; font-variant-numeric: tabular-nums; }
+    .code { font-variant-numeric: tabular-nums; color: ${muted}; white-space: nowrap; width: 70px; }
     .total-row td { background: ${border}; font-weight: bold; color: ${primary}; }
     .pos { color: #15803d; font-weight: bold; }
     .neg { color: #b91c1c; font-weight: bold; }
@@ -743,9 +752,9 @@ function buildResultatHtml(data, meta, company, theme) {
       <tr class="total-row"><td>TOTAL RECETTES</td><td class="num">${formatXOF(data.totalRecettes)}</td><td class="num">100.0 %</td></tr>
       </tbody></table>
     <h2>Dépenses par catégorie</h2>
-    <table><thead><tr><th>Catégorie</th><th class="num">Montant</th><th class="num">Part</th></tr></thead>
-      <tbody>${depensesRows || '<tr><td colspan="3" style="text-align:center;color:#94a3b8">Aucune dépense sur la période</td></tr>'}
-      <tr class="total-row"><td>TOTAL DÉPENSES</td><td class="num">${formatXOF(data.totalDepenses)}</td><td class="num">100.0 %</td></tr>
+    <table><thead><tr><th>N° compte</th><th>Catégorie</th><th class="num">Montant</th><th class="num">Part</th></tr></thead>
+      <tbody>${depensesRows || '<tr><td colspan="4" style="text-align:center;color:#94a3b8">Aucune dépense sur la période</td></tr>'}
+      <tr class="total-row"><td colspan="2">TOTAL DÉPENSES</td><td class="num">${formatXOF(data.totalDepenses)}</td><td class="num">100.0 %</td></tr>
       </tbody></table>
     <h2>Évolution</h2>
     <table><thead><tr><th>Sous-période</th><th class="num">Recettes</th><th class="num">Dépenses</th><th class="num">Résultat</th></tr></thead>
@@ -865,7 +874,7 @@ async function buildXlsxResultat(data, meta, theme) {
     ws.getColumn(1).width = 28;
     ws.getColumn(2).width = 18;
     ws.getColumn(3).width = 18;
-    const addSection = (sheetName, headers, rows, totalRow) => {
+    const addSection = (sheetName, headers, rows, totalRow, widths) => {
         const sh = wb.addWorksheet(sheetName);
         headers.forEach((h, i) => {
             const c = sh.getCell(1, i + 1);
@@ -890,10 +899,10 @@ async function buildXlsxResultat(data, meta, theme) {
                 cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE2E8F0' } };
             });
         }
-        headers.forEach((_, i) => { sh.getColumn(i + 1).width = i === 0 ? 36 : 18; });
+        headers.forEach((_, i) => { sh.getColumn(i + 1).width = widths?.[i] ?? (i === 0 ? 36 : 18); });
     };
     addSection('Recettes', ['Catégorie', 'Montant (XOF)', 'Part %'], data.recettes.map((r) => [r.categorie, r.montant, data.totalRecettes ? Number(((r.montant / data.totalRecettes) * 100).toFixed(1)) : 0]), ['TOTAL', data.totalRecettes, 100]);
-    addSection('Dépenses', ['Catégorie', 'Montant (XOF)', 'Part %'], data.depenses.map((d) => [d.categorie, d.montant, data.totalDepenses ? Number(((d.montant / data.totalDepenses) * 100).toFixed(1)) : 0]), ['TOTAL', data.totalDepenses, 100]);
+    addSection('Dépenses', ['N° compte', 'Catégorie', 'Montant (XOF)', 'Part %'], data.depenses.map((d) => [d.code ?? '—', d.categorie, d.montant, data.totalDepenses ? Number(((d.montant / data.totalDepenses) * 100).toFixed(1)) : 0]), ['', 'TOTAL', data.totalDepenses, 100], [14, 36, 18, 12]);
     addSection('Évolution', ['Sous-période', 'Recettes', 'Dépenses', 'Résultat'], data.evolution.map((e) => [e.label, e.recettes, e.depenses, e.resultat]));
     const buffer = await wb.xlsx.writeBuffer();
     return Buffer.from(buffer);
@@ -1006,18 +1015,22 @@ function registerBilanIPC() {
             const period = computePeriod(parsed.data.periodType, parsed.data.periodStart, parsed.data.periodEnd);
             const { scope, scopeId } = parsed.data;
             const totals = await computePeriodTotals(db, period.start, period.end, scope, scopeId);
-            // Série temporelle.
-            const buckets = buildEvolutionBuckets(period);
+            // Série temporelle. La direction (SUPER_ADMIN / ADMIN) voit l'historique
+            // complet ; MANAGER / ACCOUNTANT sont limités aux 6 dernières sous-périodes
+            // (6 derniers mois sur une vue mensuelle), à l'écran comme à l'export.
+            const isDirector = ACTIF_PASSIF_ROLES.includes(session.role);
+            const allBuckets = buildEvolutionBuckets(period);
+            const buckets = isDirector ? allBuckets : allBuckets.slice(-6);
             const evolution = [];
             for (const b of buckets) {
                 const t = await computePeriodTotals(db, b.start, b.end, scope, scopeId);
                 evolution.push({ label: b.label, recettes: t.totalRecettes, depenses: t.totalDepenses, resultat: t.resultat });
             }
             const recettes = Object.entries(totals.recettesByCategory)
-                .map(([categorie, montant]) => ({ categorie, montant }))
+                .map(([categorie, montant]) => ({ categorie, montant, code: totals.recettesCodes[categorie] ?? null }))
                 .sort((a, b) => b.montant - a.montant);
             const depenses = Object.entries(totals.depensesByCategory)
-                .map(([categorie, montant]) => ({ categorie, montant }))
+                .map(([categorie, montant]) => ({ categorie, montant, code: totals.depensesCodes[categorie] ?? null }))
                 .sort((a, b) => b.montant - a.montant);
             return {
                 success: true,

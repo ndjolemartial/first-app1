@@ -1,5 +1,10 @@
 generator client {
   provider = "prisma-client-js"
+  // Moteurs de requête embarqués pour le packaging multi-plateformes.
+  // « native » = OS de build courant ; les autres couvrent les cibles de
+  // distribution. Adapter la cible Linux à la distro visée si besoin
+  // (debian-openssl-1.1.x pour distros anciennes, linux-musl-* pour Alpine).
+  binaryTargets = ["native", "windows", "debian-openssl-3.0.x", "rhel-openssl-3.0.x", "darwin", "darwin-arm64"]
 }
 
 datasource db {
@@ -25,6 +30,9 @@ model User {
   phone       String?
   mobile      String?
   fonction       String?
+  // Nom commercial / d'usage affiché sur les documents (devis…) en tant
+  // qu'émetteur. À défaut, on retombe sur « nom + prénom ».
+  nomCommercial  String?
   idNumber       String?
   civilite       CiviliteType?
   statutConjugal StatutConjugalType?
@@ -59,6 +67,8 @@ model User {
   assignedClients      Client[]            @relation("ClientAssignedTo")
   attestationsEmitted  Attestation[]       @relation("AttestationEmittedBy")
   communicationsSent   Communication[]     @relation("CommunicationSentBy")
+  quotesAsAgent        Quote[]             @relation("QuoteAgent")
+  quotesCreated        Quote[]             @relation("QuoteCreatedBy")
 }
 
 enum UserRole {
@@ -68,6 +78,7 @@ enum UserRole {
   ACCOUNTANT
   ASSISTANTE_DIRECTION
   AGENT
+  AGENT_TECHNIQUE
   READONLY
 }
 
@@ -100,6 +111,7 @@ model Prospect {
   activities CrmActivity[]
   tags       ProspectTag[]
   documents  Document[]
+  quotes     Quote[]
 }
 
 enum ProspectSource {
@@ -188,12 +200,14 @@ model Client {
   documents            Document[]
   activities         CrmActivity[]
   invoices           Invoice[]
+  installments       SaleInstallment[]
   terrains           Terrain[]
   properties         Property[]    @relation("ClientProperties")
   attestations          Attestation[] @relation("AttestationClient")
   attestationsSecondary Attestation[] @relation("AttestationSecondaryClient")
   projects             Project[]
   communications     Communication[]
+  quotes             Quote[]
 }
 
 enum ClientType {
@@ -309,6 +323,7 @@ model Lotissement {
   activities          CrmActivity[]
   projects            Project[]
   treasuryOperations  TreasuryOperation[]
+  quotes              Quote[]
   titleType           LotissementTitleType? @relation(fields: [titleTypeId], references: [id])
 }
 
@@ -354,6 +369,7 @@ model ProgrammeImmobilier {
   activities          CrmActivity[]
   projects            Project[]
   treasuryOperations  TreasuryOperation[]
+  quotes              Quote[]
 }
 
 enum ProgrammeType {
@@ -417,7 +433,10 @@ model Terrain {
   conventionLinks ConventionTerrain[]
   attestations Attestation[]
   invoices    Invoice[]
+  installments SaleInstallment[]
+  installmentLinks SaleInstallmentTerrain[]
   projects    Project[]
+  quotes      Quote[]
 }
 
 enum TerrainStatus {
@@ -494,6 +513,7 @@ model Property {
   photos      PropertyPhoto[]
   activities  CrmActivity[]
   attestations Attestation[]
+  quotes      Quote[]
 }
 
 enum PropertyType {
@@ -576,6 +596,10 @@ model Convention {
   lastInstallmentDate  DateTime?
   indexType            String?
   lastRevisionAt       DateTime?
+  // Énumération des lots souscrits, figée à l'édition de la convention (même
+  // valeur que la variable de template {{convention.lotsSouscrits}}). Stockée
+  // pour être affichée sur les factures en face de la référence de convention.
+  lotsSouscrits        String?          @db.Text
   notes                String?          @db.Text
   createdAt            DateTime         @default(now())
   updatedAt            DateTime         @updatedAt
@@ -801,6 +825,167 @@ enum PaymentModalites {
   SUR_PLUS_60_MOIS
 }
 
+// ── DEVIS ─────────────────────────────────────────────────────
+
+/// Devis : offre commerciale chiffrée adressée à un prospect ou un client,
+/// avant contractualisation. Couvre la vente immobilière (terrain / bien) et
+/// les prestations / frais. Référence auto DEV-YYYY-NNNN. Soft delete.
+model Quote {
+  id                    Int              @id @default(autoincrement())
+  uuid                  String           @unique @default(cuid())
+  reference             String           @unique  // Ex: DEV-2026-0001
+  type                  QuoteType        @default(VENTE_TERRAIN)
+  status                QuoteStatus      @default(BROUILLON)
+  // Destinataire — prospect ou client (au moins l'un des deux, invariant applicatif)
+  prospectId            Int?
+  clientId              Int?
+  // Objet optionnel — bien/terrain/programme/lotissement concerné
+  terrainId             Int?
+  propertyId            Int?
+  programmeId           Int?
+  lotissementId         Int?
+  agentId               Int?
+  // Dates de cycle de vie
+  issueDate             DateTime         @default(now())
+  validUntil            DateTime?        // Date limite de validité (expiration auto)
+  sentAt                DateTime?
+  acceptedAt            DateTime?
+  refusedAt             DateTime?
+  refusalReason         String?          @db.Text
+  // Montants
+  subtotal              Decimal          @default(0) @db.Decimal(15, 2)
+  discountAmount        Decimal          @default(0) @db.Decimal(15, 2)
+  // Remise saisie en pourcentage : si actif, discountAmount = % du sous-total
+  // (recalculé côté serveur). Sinon discountAmount est un montant fixe.
+  discountIsPercent     Boolean          @default(false)
+  discountPercent       Decimal?         @db.Decimal(5, 2)
+  taxRate               Decimal          @default(0) @db.Decimal(5, 2)
+  taxAmount             Decimal          @default(0) @db.Decimal(15, 2)
+  total                 Decimal          @default(0) @db.Decimal(15, 2)
+  depositExpected       Decimal?         @db.Decimal(15, 2)  // Acompte attendu
+  // Acompte saisi en pourcentage : si actif, depositExpected = % du total TTC.
+  depositIsPercent      Boolean          @default(false)
+  depositPercent        Decimal?         @db.Decimal(5, 2)
+  // Modalités de paiement (ventes) — réutilise l'enum des conventions
+  paymentModalites      PaymentModalites @default(CASH)
+  installmentCount      Int?
+  // Contenu
+  notes                 String?          @db.Text
+  conditions            String?          @db.Text
+  templateId            Int?
+  // Traçabilité de la conversion (scalaires — pas de FK Prisma vers
+  // Convention/Invoice pour limiter le couplage ; résolues à la lecture)
+  convertedConventionId Int?
+  convertedInvoiceId    Int?
+  convertedAt           DateTime?
+  createdById           Int?
+  createdAt             DateTime         @default(now())
+  updatedAt             DateTime         @updatedAt
+  deletedAt             DateTime?
+
+  prospect    Prospect?            @relation(fields: [prospectId], references: [id])
+  client      Client?              @relation(fields: [clientId], references: [id])
+  terrain     Terrain?             @relation(fields: [terrainId], references: [id])
+  property    Property?            @relation(fields: [propertyId], references: [id])
+  programme   ProgrammeImmobilier? @relation(fields: [programmeId], references: [id])
+  lotissement Lotissement?         @relation(fields: [lotissementId], references: [id])
+  agent       User?                @relation("QuoteAgent", fields: [agentId], references: [id])
+  createdBy   User?                @relation("QuoteCreatedBy", fields: [createdById], references: [id])
+  template    QuoteTemplate?       @relation(fields: [templateId], references: [id])
+  items       QuoteItem[]
+  activities  CrmActivity[]
+  documents   Document[]
+
+  @@index([clientId])
+  @@index([prospectId])
+  @@index([terrainId])
+  @@index([status])
+}
+
+model QuoteItem {
+  id          Int     @id @default(autoincrement())
+  quoteId     Int
+  designation String
+  category    String? // Famille/bloc pour le regroupement et le sous-total
+  quantity    Decimal @default(1) @db.Decimal(10, 2)
+  unitPrice   Decimal @default(0) @db.Decimal(15, 2)
+  total       Decimal @default(0) @db.Decimal(15, 2)
+  order       Int     @default(0)
+
+  quote       Quote   @relation(fields: [quoteId], references: [id], onDelete: Cascade)
+
+  @@index([quoteId])
+}
+
+/// Modèle de devis paramétrable (header/body/footer HTML + variables), calqué
+/// sur AttestationTemplate. Un seul modèle par défaut.
+model QuoteTemplate {
+  id                   Int       @id @default(autoincrement())
+  uuid                 String    @unique @default(cuid())
+  name                 String
+  header               String?   @db.LongText
+  headerWidth          Int       @default(100)
+  headerHeight         Int       @default(140)
+  body                 String    @db.LongText
+  footer               String?   @db.LongText
+  footerWidth          Int       @default(100)
+  footerHeight         Int       @default(140)
+  footerBgColor        String?   @db.VarChar(20)
+  endOfDocument        String?   @db.LongText
+  endOfDocumentWidth   Int       @default(100)
+  endOfDocumentHeight  Int       @default(140)
+  endOfDocumentBgColor String?   @db.VarChar(20)
+  isActive             Boolean   @default(true)
+  isDefault            Boolean   @default(false)
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+  deletedAt            DateTime?
+
+  quotes               Quote[]
+}
+
+enum QuoteType {
+  VENTE_TERRAIN
+  VENTE_BIEN
+  PRESTATION
+  FRAIS
+}
+
+enum QuoteStatus {
+  BROUILLON
+  ENVOYE
+  ACCEPTE
+  REFUSE
+  EXPIRE
+  ANNULE
+}
+
+// ── CATALOGUE PRESTATIONS / PRODUITS ──────────────────────────
+
+/// Article prédéfini (prestation ou produit) avec prix unitaire, réutilisable
+/// pour pré-remplir les lignes de devis et de factures. Référentiel autonome.
+model CatalogItem {
+  id          Int             @id @default(autoincrement())
+  uuid        String          @unique @default(cuid())
+  type        CatalogItemType @default(PRESTATION)
+  designation String
+  description String?         @db.Text
+  category    String?         // Famille libre (ex: « Bornage », « Mobilier »…)
+  unit        String?         // Unité (m², forfait, unité, heure…)
+  unitPrice   Decimal         @default(0) @db.Decimal(15, 2)
+  isActive    Boolean         @default(true)
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+  deletedAt   DateTime?
+
+  @@index([type])
+}
+
+enum CatalogItemType {
+  PRESTATION
+  PRODUIT
+}
+
 // ── COMPTABILITÉ ──────────────────────────────────────────────
 
 model Invoice {
@@ -834,6 +1019,7 @@ model Invoice {
   installments SaleInstallment[]
   activities   CrmActivity[]
   documents    Document[]
+  commissions  Commission[]      @relation("InvoiceCommissions")
 }
 
 enum InvoiceType {
@@ -887,10 +1073,27 @@ model Payment {
 
 model SaleInstallment {
   id                Int               @id @default(autoincrement())
-  conventionId      Int
+  // Rattachement à la convention de vente. Nullable pour supporter les
+  // échéances héritées de l'ancienne application (paiements échelonnés sur
+  // terrain sans convention signée). Invariant applicatif : au moins l'un de
+  // conventionId / clientId est renseigné.
+  conventionId      Int?
+  // Lien direct au client — utilisé pour les échéances sans convention
+  // (données héritées). Pour les échéances issues d'une convention, le client
+  // reste accessible via convention.clientId.
+  clientId          Int?
+  // Terrain concerné par l'échéance héritée (ce qui est payé).
+  terrainId         Int?
+  // Détails de souscription hérités de l'ancienne application. Affichés sur la
+  // facture à la place de la référence de convention (échéances héritées
+  // uniquement). Null pour les échéances issues d'une convention.
+  detailsSouscription String?         @db.Text
   installmentNumber Int
   dueDate           DateTime
   amount            Decimal           @db.Decimal(15, 2)
+  // Montant déjà encaissé (paiements partiels). status = PARTIEL tant que
+  // 0 < paidAmount < amount, PAYE une fois soldé.
+  paidAmount        Decimal           @default(0) @db.Decimal(15, 2)
   status            InstallmentStatus @default(EN_ATTENTE)
   paidAt            DateTime?
   paymentMethod     PaymentMethod?
@@ -900,14 +1103,40 @@ model SaleInstallment {
   createdAt         DateTime          @default(now())
   updatedAt         DateTime          @updatedAt
 
-  convention Convention    @relation(fields: [conventionId], references: [id])
-  invoice    Invoice?      @relation(fields: [invoiceId], references: [id])
-  activities CrmActivity[]
+  convention   Convention?   @relation(fields: [conventionId], references: [id])
+  client       Client?       @relation(fields: [clientId], references: [id])
+  terrain      Terrain?      @relation(fields: [terrainId], references: [id])
+  invoice      Invoice?      @relation(fields: [invoiceId], references: [id])
+  activities   CrmActivity[]
+  commissions  Commission[]
+  // Terrains rattachés (échéances héritées) — une échéance peut concerner
+  // plusieurs terrains. Sert d'assiette aux frais de démarches ACD.
+  terrainLinks SaleInstallmentTerrain[]
+
+  @@index([clientId])
+  @@index([terrainId])
+}
+
+// Liaison Échéance héritée ↔ Terrain (une échéance héritée sans convention peut
+// concerner un ou plusieurs terrains). L'assiette des frais de démarches ACD est
+// la somme des frais ACD des terrains rattachés.
+model SaleInstallmentTerrain {
+  installmentId Int
+  terrainId     Int
+  order         Int      @default(0)
+  createdAt     DateTime @default(now())
+
+  installment SaleInstallment @relation(fields: [installmentId], references: [id], onDelete: Cascade)
+  terrain     Terrain         @relation(fields: [terrainId], references: [id])
+
+  @@id([installmentId, terrainId])
+  @@index([terrainId])
 }
 
 enum InstallmentStatus {
   EN_ATTENTE
   A_REGLER
+  PARTIEL
   PAYE
   EN_RETARD
   ANNULE
@@ -982,6 +1211,7 @@ model CrmActivity {
   invoiceId      Int?
   installmentId  Int?
   projectId      Int?
+  quoteId        Int?
   createdById    Int?
   createdAt      DateTime       @default(now())
   updatedAt      DateTime       @updatedAt
@@ -999,6 +1229,7 @@ model CrmActivity {
   invoice     Invoice?             @relation(fields: [invoiceId], references: [id])
   installment SaleInstallment?     @relation(fields: [installmentId], references: [id])
   project     Project?             @relation(fields: [projectId], references: [id])
+  quote       Quote?               @relation(fields: [quoteId], references: [id])
 }
 
 enum ActivityType {
@@ -1162,6 +1393,7 @@ model Document {
   invoiceId      Int?
   commissionId   Int?
   attestationId  Int?
+  quoteId        Int?
   uploadedAt     DateTime     @default(now())
   updatedAt      DateTime     @updatedAt
   deletedAt      DateTime?
@@ -1180,6 +1412,7 @@ model Document {
   invoice          Invoice?             @relation(fields: [invoiceId], references: [id])
   commission       Commission?          @relation(fields: [commissionId], references: [id])
   attestation      Attestation?         @relation(fields: [attestationId], references: [id])
+  quote            Quote?               @relation(fields: [quoteId], references: [id])
   documentCategory DocumentCategory?    @relation(fields: [categoryId], references: [id])
   folder           DocumentFolder?      @relation(fields: [folderId], references: [id])
   uploadedBy       User?                @relation("DocumentUploadedBy", fields: [uploadedById], references: [id])
@@ -1435,7 +1668,14 @@ model Commission {
   id              Int                       @id @default(autoincrement())
   uuid            String                    @unique @default(cuid())
   reference       String                    @unique  // Ex: COM-2026-0001
-  conventionId    Int
+  // Rattachement à une convention (cas standard) OU à une échéance héritée
+  // (paiement échelonné sans convention). Invariant applicatif : au moins l'un
+  // de conventionId / installmentId est renseigné.
+  conventionId    Int?
+  installmentId   Int?
+  // Facture encaissée servant d'assiette (ventes comptant). L'assiette de la
+  // commission suit le montant réellement encaissé sur cette facture.
+  invoiceId       Int?
   // Bénéficiaire : soit un utilisateur, soit un apporteur d'affaire
   beneficiaryType CommissionBeneficiaryType
   userId          Int?
@@ -1461,12 +1701,17 @@ model Commission {
   updatedAt       DateTime                  @updatedAt
   deletedAt       DateTime?
 
-  convention  Convention        @relation(fields: [conventionId], references: [id])
+  convention  Convention?       @relation(fields: [conventionId], references: [id])
+  installment SaleInstallment?  @relation(fields: [installmentId], references: [id])
+  invoice     Invoice?          @relation("InvoiceCommissions", fields: [invoiceId], references: [id])
   user        User?             @relation("UserCommissions", fields: [userId], references: [id])
   referrer    BusinessReferrer? @relation(fields: [referrerId], references: [id])
   paidBy      User?             @relation("CommissionPaidBy", fields: [paidById], references: [id])
   cancelledBy User?             @relation("CommissionCancelledBy", fields: [cancelledById], references: [id])
   documents   Document[]
+
+  @@index([installmentId])
+  @@index([invoiceId])
 }
 
 enum CommissionBeneficiaryType {

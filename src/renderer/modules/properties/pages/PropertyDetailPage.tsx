@@ -13,6 +13,10 @@ import { formatDate, formatCurrency } from '../../../shared/utils/format';
 import { Edit, Trash2, Building2, FileText, User } from 'lucide-react';
 import { useState } from 'react';
 import EntityDocumentsCard from '../../archiving/components/EntityDocumentsCard';
+import { useAuthStore } from '../../../shared/stores/auth.store';
+
+// AGENT, ASSISTANTE_DIRECTION et READONLY ne peuvent pas modifier un bien.
+const WRITE_ROLES = new Set(['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ACCOUNTANT']);
 
 const STATUS_VARIANT: Record<string, 'success' | 'info' | 'warning' | 'danger' | 'default' | 'purple'> = {
   DISPONIBLE: 'success', RESERVE: 'warning', SOUS_OPTION: 'warning', VENDU: 'default',
@@ -45,6 +49,8 @@ export default function PropertyDetailPage() {
   const deleteProperty = useDeleteProperty();
   const [showDelete, setShowDelete] = useState(false);
   const [shareOpen, setShareOpen] = useState(false);
+  const role = useAuthStore((s) => s.user?.role ?? '');
+  const canWrite = WRITE_ROLES.has(role);
 
   if (isLoading) return <div className="p-8"><SkeletonTable rows={6} /></div>;
 
@@ -64,14 +70,16 @@ export default function PropertyDetailPage() {
       title={p.reference}
       breadcrumbs={[{ label: 'Biens', to: '/properties' }, { label: p.reference }]}
       actions={
-        <div className="flex gap-2">
-          <Button variant="secondary" icon={<Edit className="h-4 w-4" />} onClick={() => navigate(`/properties/${id}/edit`)}>
-            Modifier
-          </Button>
-          <Button variant="danger" icon={<Trash2 className="h-4 w-4" />} onClick={() => setShowDelete(true)}>
-            Supprimer
-          </Button>
-        </div>
+        canWrite ? (
+          <div className="flex gap-2">
+            <Button variant="secondary" icon={<Edit className="h-4 w-4" />} onClick={() => navigate(`/properties/${id}/edit`)}>
+              Modifier
+            </Button>
+            <Button variant="danger" icon={<Trash2 className="h-4 w-4" />} onClick={() => setShowDelete(true)}>
+              Supprimer
+            </Button>
+          </div>
+        ) : undefined
       }
     >
       <div className="grid grid-cols-3 gap-6">
@@ -290,6 +298,7 @@ export default function PropertyDetailPage() {
           )}
 
           {/* Statut rapide */}
+          {canWrite && (
           <Card>
             <h3 className="font-semibold text-slate-800 mb-3">Changer le statut</h3>
             <div className="flex flex-col gap-2">
@@ -312,6 +321,7 @@ export default function PropertyDetailPage() {
               ))}
             </div>
           </Card>
+          )}
 
           {/* Métadonnées */}
           <Card>

@@ -5,9 +5,10 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 Object.defineProperty(exports, "__esModule", { value: true });
 const electron_1 = require("electron");
 const path_1 = __importDefault(require("path"));
-require("dotenv/config");
+const loadEnv_1 = require("./utils/loadEnv");
 const logger_1 = __importDefault(require("./utils/logger"));
 const db_service_1 = require("./services/db.service");
+const config_ipc_1 = require("./ipc/config.ipc");
 const users_ipc_1 = require("./ipc/users.ipc");
 const prospects_ipc_1 = require("./ipc/prospects.ipc");
 const clients_ipc_1 = require("./ipc/clients.ipc");
@@ -18,6 +19,9 @@ const conventions_ipc_1 = require("./ipc/conventions.ipc");
 const convention_templates_ipc_1 = require("./ipc/convention-templates.ipc");
 const attestation_templates_ipc_1 = require("./ipc/attestation-templates.ipc");
 const attestations_ipc_1 = require("./ipc/attestations.ipc");
+const quotes_ipc_1 = require("./ipc/quotes.ipc");
+const quote_templates_ipc_1 = require("./ipc/quote-templates.ipc");
+const catalog_ipc_1 = require("./ipc/catalog.ipc");
 const accounting_ipc_1 = require("./ipc/accounting.ipc");
 const bilan_ipc_1 = require("./ipc/bilan.ipc");
 const communication_ipc_1 = require("./ipc/communication.ipc");
@@ -42,7 +46,11 @@ const document_export_ipc_1 = require("./ipc/document-export.ipc");
 const archiving_service_1 = require("./services/archiving.service");
 const reminders_ipc_1 = require("./ipc/reminders.ipc");
 const reminders_service_1 = require("./services/reminders.service");
-const isDev = process.env.NODE_ENV === 'development';
+const attestation_templates_service_1 = require("./services/attestation-templates.service");
+const quote_templates_service_1 = require("./services/quote-templates.service");
+// Distinction dev/prod basée sur l'empaquetage Electron (plus fiable que
+// NODE_ENV, absent dans l'application installée).
+const isDev = !electron_1.app.isPackaged;
 let mainWindow = null;
 function createWindow() {
     mainWindow = new electron_1.BrowserWindow({
@@ -61,6 +69,9 @@ function createWindow() {
             sandbox: false,
             // Active le lecteur PDF intégré de Chromium (sinon aperçu PDF blanc).
             plugins: true,
+            // Autorise la lecture automatique avec son (slideshow vidéo du tableau de
+            // bord) — sinon Chromium bloque play() sur une vidéo non mutée.
+            autoplayPolicy: 'no-user-gesture-required',
         },
         titleBarStyle: 'default',
         show: false,
@@ -95,6 +106,9 @@ function registerIPC() {
     (0, convention_templates_ipc_1.registerConventionTemplatesIPC)();
     (0, attestation_templates_ipc_1.registerAttestationTemplatesIPC)();
     (0, attestations_ipc_1.registerAttestationsIPC)();
+    (0, quotes_ipc_1.registerQuotesIPC)();
+    (0, quote_templates_ipc_1.registerQuoteTemplatesIPC)();
+    (0, catalog_ipc_1.registerCatalogIPC)();
     (0, accounting_ipc_1.registerAccountingIPC)();
     (0, bilan_ipc_1.registerBilanIPC)();
     (0, communication_ipc_1.registerCommunicationIPC)();
@@ -117,6 +131,8 @@ function registerIPC() {
     (0, settings_ipc_1.registerSettingsIPC)();
     (0, document_export_ipc_1.registerDocumentExportIPC)();
     (0, reminders_ipc_1.registerRemindersIPC)();
+    // Configuration de la connexion BDD — utilisable avant authentification.
+    (0, config_ipc_1.registerConfigIPC)();
     logger_1.default.info('All IPC handlers registered');
 }
 /**
@@ -143,6 +159,9 @@ function setupAppMenu() {
     electron_1.Menu.setApplicationMenu(electron_1.Menu.buildFromTemplate(template));
 }
 electron_1.app.whenReady().then(async () => {
+    // Charge DATABASE_URL (.env en dev, <userData>/config.env en prod) AVANT
+    // toute connexion à la base.
+    (0, loadEnv_1.loadAppEnv)();
     (0, db_service_1.getDb)();
     registerIPC();
     // Propage le chemin de stockage paramétré (AppSetting) au storage.service.
@@ -157,6 +176,12 @@ electron_1.app.whenReady().then(async () => {
     (0, reminders_service_1.seedDefaultRemindersConfig)()
         .then(() => (0, reminders_service_1.scheduleReminders)())
         .catch((e) => logger_1.default.error(`Reminders bootstrap failed: ${e.message}`));
+    // Modèle d'attestation de SOLDE par défaut (créé une seule fois si absent).
+    (0, attestation_templates_service_1.seedDefaultAttestationTemplate)()
+        .catch((e) => logger_1.default.error(`Attestation template bootstrap failed: ${e.message}`));
+    // Modèle de devis par défaut (créé une seule fois si absent).
+    (0, quote_templates_service_1.seedDefaultQuoteTemplate)()
+        .catch((e) => logger_1.default.error(`Quote template bootstrap failed: ${e.message}`));
     setupAppMenu();
     createWindow();
     logger_1.default.info('Application started');

@@ -134,7 +134,12 @@ export default function DashboardPage() {
           iconBg: 'bg-indigo-50',
           privileged: true,
         },
-      ].filter((t) => !t.privileged || data.isPrivileged)
+      ]
+        // Privilégiés : toutes les tuiles. Rôles restreints (AGENT /
+        // AGENT_TECHNIQUE / READONLY) : uniquement celles dont le compteur est
+        // renseigné côté backend (prospects, clients accessibles, terrains
+        // disponibles).
+        .filter((t) => data.isPrivileged || t.value !== null)
     : [];
 
   return (

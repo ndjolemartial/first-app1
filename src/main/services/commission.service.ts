@@ -119,6 +119,131 @@ export function computeCommissionAmount(baseAmount: number, rate: number): numbe
 }
 
 /**
+ * Type de commission et taux par défaut applicables à un type de convention.
+ * Renvoie null si le type n'est pas éligible à une commission.
+ */
+export function commissionTypeAndRate(
+  conventionType: string,
+  rates: DefaultRates,
+): { transactionType: 'VENTE' | 'LOCATION' | 'SOUSCRIPTION'; rate: number } | null {
+  if (conventionType === 'SALE') return { transactionType: 'VENTE', rate: rates.saleRate };
+  if (conventionType === 'SOUSCRIPTION') return { transactionType: 'SOUSCRIPTION', rate: rates.saleRate };
+  if (RENTAL_CONVENTION_TYPES.includes(conventionType)) return { transactionType: 'LOCATION', rate: rates.rentalRate };
+  return null;
+}
+
+/**
+ * Accrual de commission sur encaissement.
+ *
+ * Modèle : l'assiette d'une commission est le montant RÉELLEMENT ENCAISSÉ sur
+ * l'échéance ou la facture — et non le coût total du bien. À chaque encaissement
+ * (paiement total ou partiel), on aligne (ou on crée) la commission « à payer »
+ * de l'unité concernée sur le cumul encaissé.
+ *
+ * Règle : une seule commission « ouverte » (A_PAYER) par unité (échéance OU
+ * facture) et par bénéficiaire. Son assiette = cumul encaissé − assiette déjà
+ * verrouillée par d'éventuelles commissions DÉJÀ PAYÉES sur la même unité (ce
+ * qui couvre le cas d'un encaissement complémentaire survenu après un premier
+ * versement de commission : une nouvelle commission ouverte est alors créée
+ * pour le delta).
+ *
+ * Idempotent (basé sur le cumul encaissé) et conçu pour être appelé HORS de la
+ * transaction d'encaissement, en try/catch : un échec d'accrual ne doit jamais
+ * annuler l'encaissement lui-même.
+ */
+export async function accrueCollectionCommission(db: Db, params: {
+  conventionId?: number | null;
+  installmentId?: number | null;
+  invoiceId?: number | null;
+  beneficiaryUserId: number;
+  transactionType: 'VENTE' | 'LOCATION' | 'SOUSCRIPTION';
+  rate: number;
+  /** Cumul réellement encaissé sur l'unité (échéance/facture). */
+  collectedTotal: number;
+}): Promise<void> {
+  const { conventionId, installmentId, invoiceId, beneficiaryUserId, transactionType, rate } = params;
+  const collectedTotal = Math.round(params.collectedTotal * 100) / 100;
+  if (!(collectedTotal > 0) || !beneficiaryUserId) return;
+
+  // Clé d'unité : échéance prioritaire, sinon facture.
+  const unitWhere = installmentId
+    ? { installmentId }
+    : invoiceId
+      ? { invoiceId }
+      : null;
+  if (!unitWhere) return;
+
+  // Anti-doublon avec une commission MANUELLE pré-existante de même nature sur la
+  // convention (ex. données héritées, ou commission saisie avant ce modèle) :
+  // dans ce cas la commission manuelle fait foi, on n'accumule pas en plus.
+  if (conventionId) {
+    const manual = await db.commission.findFirst({
+      where: {
+        conventionId,
+        transactionType,
+        beneficiaryType: 'USER',
+        userId: beneficiaryUserId,
+        source: 'MANUEL',
+        deletedAt: null,
+        status: { not: 'ANNULEE' },
+      },
+      select: { id: true },
+    });
+    if (manual) return;
+  }
+
+  const existing = await db.commission.findMany({
+    where: {
+      ...unitWhere,
+      beneficiaryType: 'USER',
+      userId: beneficiaryUserId,
+      transactionType,
+      source: 'AUTOMATIQUE',
+      deletedAt: null,
+      status: { not: 'ANNULEE' },
+    },
+    select: { id: true, status: true, baseAmount: true },
+  });
+  const lockedBase = existing
+    .filter((c) => c.status === 'PAYEE')
+    .reduce((s, c) => s + Number(c.baseAmount), 0);
+  const open = existing.find((c) => c.status === 'A_PAYER') ?? null;
+
+  const desiredOpenBase = Math.round((collectedTotal - lockedBase) * 100) / 100;
+  // Tout l'encaissé est déjà couvert par des commissions payées : rien à faire.
+  if (desiredOpenBase <= 0) return;
+  const amount = computeCommissionAmount(desiredOpenBase, rate);
+
+  if (open) {
+    await db.commission.update({
+      where: { id: open.id },
+      data: { baseAmount: desiredOpenBase as never, rate: rate as never, amount: amount as never },
+    });
+    logger.info(`Commission accrual mis à jour: #${open.id} assiette=${desiredOpenBase} (${unitWhere ? Object.keys(unitWhere)[0] : ''})`);
+  } else {
+    const reference = await nextCommissionRef(db);
+    const created = await db.commission.create({
+      data: {
+        reference,
+        conventionId: conventionId ?? null,
+        installmentId: installmentId ?? null,
+        invoiceId: invoiceId ?? null,
+        beneficiaryType: 'USER',
+        userId: beneficiaryUserId,
+        transactionType,
+        baseAmount: desiredOpenBase as never,
+        rate: rate as never,
+        amount: amount as never,
+        status: 'A_PAYER',
+        source: 'AUTOMATIQUE',
+      },
+      select: { id: true, reference: true },
+    });
+    logger.info(`Commission accrual créée: ${created.reference} assiette=${desiredOpenBase}`);
+  }
+}
+
+/**
  * Génère automatiquement la commission de l'agent à l'activation d'une convention.
  *
  * La commission n'est créée que si la convention possède un agent, qu'elle est

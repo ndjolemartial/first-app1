@@ -3,8 +3,33 @@ import { getDb } from '../services/db.service';
 import { getSession, checkRole } from '../services/auth.service';
 import logger from '../utils/logger';
 
-const READ_ROLES = ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'AGENT', 'ACCOUNTANT', 'ASSISTANTE_DIRECTION', 'READONLY'];
+const READ_ROLES = ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'AGENT', 'AGENT_TECHNIQUE', 'ACCOUNTANT', 'ASSISTANTE_DIRECTION', 'READONLY'];
 const PRIVILEGED_ROLES = ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ACCOUNTANT', 'ASSISTANTE_DIRECTION'];
+
+// Visibilité restreinte (AGENT / AGENT_TECHNIQUE / READONLY) : les compteurs du
+// tableau de bord doivent refléter ce que l'utilisateur voit réellement dans ses
+// listes. Ces filtres reproduisent ceux des modules Prospects et Clients.
+
+/** Miroir de la visibilité prospects (cf. `prospects.ipc.ts` buildVisibilityWhere). */
+function prospectVisibilityWhere(session: { userId: number }): any {
+  return {
+    OR: [
+      { assignedToId: session.userId },
+      { createdById: session.userId },
+      { assignedToId: null },
+    ],
+  };
+}
+
+/** Miroir de la visibilité clients (cf. `clients.ipc.ts` buildVisibilityWhere). */
+function clientVisibilityWhere(session: { userId: number }): any {
+  return {
+    OR: [
+      { assignedToId: session.userId },
+      { prospect: { is: { assignedToId: session.userId } } },
+    ],
+  };
+}
 
 const SLIDESHOW_SETTING_KEY = 'dashboard.slideshow';
 const SLIDESHOW_ROLES_SETTING_KEY = 'dashboard.slideshow.allowedRoles';
@@ -47,7 +72,10 @@ export function registerDashboardIPC(): void {
       const db = getDb();
       const isPrivileged = PRIVILEGED_ROLES.includes(session.role);
 
-      const prospectsCountPromise = db.prospect.count({ where: { deletedAt: null } });
+      // Prospects : tous (privilégiés) ou seulement ceux accessibles (restreints).
+      const prospectsCountPromise = db.prospect.count({
+        where: { deletedAt: null, ...(isPrivileged ? {} : prospectVisibilityWhere(session)) },
+      });
 
       const privilegedPromises = isPrivileged
         ? Promise.all([
@@ -59,6 +87,16 @@ export function registerDashboardIPC(): void {
             db.programmeImmobilier.count({ where: { deletedAt: null } }),
           ])
         : Promise.resolve([null, null, null, null, null, null] as const);
+
+      // Rôles restreints (AGENT / AGENT_TECHNIQUE / READONLY) : clients accessibles,
+      // terrains et biens disponibles (que ces rôles peuvent consulter).
+      const restrictedPromises = isPrivileged
+        ? Promise.resolve([null, null, null] as const)
+        : Promise.all([
+            db.client.count({ where: { deletedAt: null, ...clientVisibilityWhere(session) } }),
+            db.terrain.count({ where: { deletedAt: null, statut: 'DISPONIBLE' } }),
+            db.property.count({ where: { deletedAt: null, status: 'DISPONIBLE' } }),
+          ]);
 
       const slideshowRolesPromise = db.appSetting
         .findUnique({ where: { key: SLIDESHOW_ROLES_SETTING_KEY } })
@@ -88,9 +126,10 @@ export function registerDashboardIPC(): void {
         })
         .catch(() => DEFAULT_SLIDESHOW);
 
-      const [prospectsCount, privileged, slideshowItems, slideshowRoles] = await Promise.all([
+      const [prospectsCount, privileged, restricted, slideshowItems, slideshowRoles] = await Promise.all([
         prospectsCountPromise,
         privilegedPromises,
+        restrictedPromises,
         slideshowItemsPromise,
         slideshowRolesPromise,
       ]);
@@ -100,6 +139,7 @@ export function registerDashboardIPC(): void {
       const slideshow = slideshowRoles.includes(session.role) ? slideshowItems : [];
 
       const [clientsCount, ownersCount, availableTerrainsCount, availablePropertiesCount, lotissementsCount, programmesCount] = privileged;
+      const [restrictedClientsCount, restrictedTerrainsCount, restrictedPropertiesCount] = restricted;
 
       return {
         success: true,
@@ -107,10 +147,11 @@ export function registerDashboardIPC(): void {
           isPrivileged,
           counts: {
             prospects: prospectsCount,
-            clients: clientsCount,
+            // Pour les rôles restreints : compteurs filtrés sur le périmètre accessible.
+            clients: isPrivileged ? clientsCount : restrictedClientsCount,
             owners: ownersCount,
-            availableTerrains: availableTerrainsCount,
-            availableProperties: availablePropertiesCount,
+            availableTerrains: isPrivileged ? availableTerrainsCount : restrictedTerrainsCount,
+            availableProperties: isPrivileged ? availablePropertiesCount : restrictedPropertiesCount,
             lotissements: lotissementsCount,
             programmes: programmesCount,
           },

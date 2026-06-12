@@ -70,7 +70,9 @@ export default function CommissionFormPage() {
       beneficiaryType: 'USER',
       userId: '',
       referrerId: '',
-      transactionType: 'VENTE',
+      // Vente / location / souscription sont générées automatiquement à
+      // l'encaissement : la saisie manuelle ne porte que sur les frais.
+      transactionType: 'FRAIS_DOSSIER',
       baseAmount: '',
       rate: '',
       notes: '',
@@ -97,7 +99,6 @@ export default function CommissionFormPage() {
   const hasBeneficiary = Boolean(beneficiaryFilter);
 
   const selectedConvention = conventions.find((c) => c.id === Number(conventionId));
-  const naturalKind = selectedConvention ? conventionKind(selectedConvention.type) : null;
   const computedAmount = Math.round(baseAmount * (rate / 100) * 100) / 100;
 
   // Frais de démarches ACD : éligible uniquement si la convention sélectionnée
@@ -141,9 +142,10 @@ export default function CommissionFormPage() {
     if (conventionId && conventions.length > 0) {
       const c = conventions.find((x) => x.id === Number(conventionId));
       if (c) {
-        const kind = conventionKind(c.type);
-        setValue('transactionType', kind);
-        applyDefaults(Number(conventionId), kind);
+        // Type par défaut : frais d'ouverture de dossier (les commissions de
+        // vente/location/souscription sont automatiques à l'encaissement).
+        setValue('transactionType', 'FRAIS_DOSSIER');
+        applyDefaults(Number(conventionId), 'FRAIS_DOSSIER');
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -170,9 +172,8 @@ export default function CommissionFormPage() {
   // type naturel de la convention pour éviter un état invalide.
   useEffect(() => {
     if (transactionType === 'FRAIS_DEMARCHES_ACD' && !acdAvailable) {
-      const fallback = naturalKind ?? 'VENTE';
-      setValue('transactionType', fallback);
-      if (selectedConvention) applyDefaults(selectedConvention.id, fallback);
+      setValue('transactionType', 'FRAIS_DOSSIER');
+      if (selectedConvention) applyDefaults(selectedConvention.id, 'FRAIS_DOSSIER');
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [acdAvailable]);
@@ -200,12 +201,10 @@ export default function CommissionFormPage() {
     label: `${c.reference} — ${clientName(c.client)} (${TRANSACTION_TYPE_LABEL[conventionKind(c.type)]})`,
   }));
 
-  // Le type proposé est celui de la convention (vente/location/souscription)
-  // + les types périphériques (frais d'ouverture de dossier, frais ACD).
+  // Saisie manuelle réservée aux frais périphériques. Les commissions de
+  // vente / location / souscription sont générées automatiquement à chaque
+  // encaissement (assiette = montant encaissé sur l'échéance ou la facture).
   const typeOptions = [
-    ...((!naturalKind || naturalKind === 'VENTE') ? [{ value: 'VENTE', label: 'Vente' }] : []),
-    ...((!naturalKind || naturalKind === 'LOCATION') ? [{ value: 'LOCATION', label: 'Location' }] : []),
-    ...((!naturalKind || naturalKind === 'SOUSCRIPTION') ? [{ value: 'SOUSCRIPTION', label: 'Souscription' }] : []),
     { value: 'FRAIS_DOSSIER', label: 'Frais d\'ouverture de dossier' },
     ...(acdAvailable ? [{ value: 'FRAIS_DEMARCHES_ACD', label: 'Frais de démarches ACD' }] : []),
   ];
@@ -229,6 +228,13 @@ export default function CommissionFormPage() {
         <Card>
           <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
 
+            <div className="rounded-lg bg-amber-50 border border-amber-200 px-4 py-3 text-sm text-amber-800">
+              Les commissions de <strong>vente, location et souscription</strong> sont désormais générées
+              automatiquement à chaque encaissement — leur assiette est le <strong>montant réellement encaissé</strong> sur
+              l'échéance ou la facture (paiement total ou partiel). Ce formulaire ne sert qu'aux <strong>frais
+              d'ouverture de dossier</strong> et aux <strong>frais de démarches ACD</strong>.
+            </div>
+
             {/* Bénéficiaire */}
             <div className="space-y-4">
               <h3 className="text-sm font-semibold text-slate-700">Bénéficiaire de la commission</h3>
@@ -242,15 +248,17 @@ export default function CommissionFormPage() {
                 {...register('beneficiaryType')}
               />
               {beneficiaryType === 'USER' ? (
-                <Select
+                <FormSearchSelect
+                  control={control}
+                  name="userId"
                   label="Utilisateur"
                   required
-                  placeholder="Sélectionnez un utilisateur"
+                  placeholder="Rechercher un utilisateur…"
                   options={users.map((u) => ({
                     value: String(u.id),
-                    label: `${formatPersonName(u)} — ${u.role}`,
+                    label: formatPersonName(u),
                   }))}
-                  {...register('userId')}
+                  error={errors.userId?.message}
                 />
               ) : (
                 <div>
@@ -299,9 +307,8 @@ export default function CommissionFormPage() {
                 onValueChange={(v) => {
                   const c = conventions.find((x) => x.id === Number(v));
                   if (!c) return;
-                  const kind = conventionKind(c.type);
-                  setValue('transactionType', kind);
-                  applyDefaults(c.id, kind);
+                  setValue('transactionType', 'FRAIS_DOSSIER');
+                  applyDefaults(c.id, 'FRAIS_DOSSIER');
                 }}
               />
               {!hasBeneficiary ? (

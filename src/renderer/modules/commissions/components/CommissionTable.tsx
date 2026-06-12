@@ -70,6 +70,10 @@ export default function CommissionTable({
                 >
                   {c.convention.reference}
                 </button>
+              ) : c.installment ? (
+                <span className="text-slate-600" title="Échéance héritée (sans convention)">
+                  {c.installment.detailsSouscription || c.installment.terrain?.reference || `Échéance n°${c.installment.installmentNumber}`}
+                </span>
               ) : '—'}
             </td>
             {showBeneficiary && (

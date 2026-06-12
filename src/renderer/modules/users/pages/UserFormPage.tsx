@@ -10,6 +10,7 @@ import { upperField } from '../../../shared/utils/uppercase';
 import Select from '../../../shared/components/ui/Select';
 import Card from '../../../shared/components/ui/Card';
 import { useUser, useCreateUser, useUpdateUser } from '../hooks/useUsers';
+import { useAuthStore } from '../../../shared/stores/auth.store';
 import { Save } from 'lucide-react';
 
 const schema = z.object({
@@ -19,8 +20,9 @@ const schema = z.object({
   email: z.string().email('Email invalide'),
   login: z.string().optional(),
   password: z.string().min(6, 'Min. 6 caractères').optional().or(z.literal('')),
-  role: z.enum(['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ACCOUNTANT', 'ASSISTANTE_DIRECTION', 'AGENT', 'READONLY']),
+  role: z.enum(['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ACCOUNTANT', 'ASSISTANTE_DIRECTION', 'AGENT', 'AGENT_TECHNIQUE', 'READONLY']),
   fonction: z.string().optional(),
+  nomCommercial: z.string().optional(),
   phone: z.string().optional(),
   mobile: z.string().optional(),
   idNumber: z.string().optional(),
@@ -39,9 +41,13 @@ const ROLE_OPTIONS = [
   { value: 'MANAGER', label: 'Manager' },
   { value: 'ACCOUNTANT', label: 'Comptable' },
   { value: 'ASSISTANTE_DIRECTION', label: 'Assistante de Direction' },
+  { value: 'AGENT_TECHNIQUE', label: 'Agent Technique' },
   { value: 'AGENT', label: 'Agent' },
   { value: 'READONLY', label: 'Lecture seule' },
 ];
+
+// Rôles qu'un AGENT_TECHNIQUE peut attribuer (création / modification).
+const AGENT_TECHNIQUE_MANAGED_ROLES = ['AGENT', 'AGENT_TECHNIQUE', 'READONLY'];
 
 const CIVILITE_OPTIONS = [
   { value: '', label: '— Civilité —' },
@@ -67,6 +73,12 @@ export default function UserFormPage() {
   const createUser = useCreateUser();
   const updateUser = useUpdateUser();
 
+  // Un AGENT_TECHNIQUE ne peut attribuer que les rôles AGENT / AGENT_TECHNIQUE / READONLY.
+  const currentRole = useAuthStore((s) => s.user?.role) ?? '';
+  const roleOptions = currentRole === 'AGENT_TECHNIQUE'
+    ? ROLE_OPTIONS.filter((o) => AGENT_TECHNIQUE_MANAGED_ROLES.includes(o.value))
+    : ROLE_OPTIONS;
+
   const { register, handleSubmit, reset, formState: { errors, isSubmitting } } = useForm<FormData>({
     resolver: zodResolver(schema),
     defaultValues: { role: 'AGENT' },
@@ -80,6 +92,7 @@ export default function UserFormPage() {
         password: '',
         login: u.login ?? '',
         fonction: u.fonction ?? '',
+        nomCommercial: u.nomCommercial ?? '',
         phone: u.phone ?? '',
         mobile: u.mobile ?? '',
         idNumber: u.idNumber ?? '',
@@ -125,13 +138,19 @@ export default function UserFormPage() {
             <Select label="Civilité" options={CIVILITE_OPTIONS} {...register('civilite')} />
             <Input label="Fonction" placeholder="Ex: Agent commercial" error={errors.fonction?.message} {...register('fonction')} />
           </div>
+          <Input
+            label="Nom commercial"
+            placeholder="Nom affiché sur les devis — à défaut, Nom + Prénom"
+            error={errors.nomCommercial?.message}
+            {...register('nomCommercial')}
+          />
           <div className="grid grid-cols-2 gap-4">
             <Input label="Nom" required error={errors.lastName?.message} {...upperField(register('lastName'))} />
             <Input label="Prénom" required error={errors.firstName?.message} {...upperField(register('firstName'))} />
           </div>
           <div className="grid grid-cols-2 gap-4">
             <Input label="Matricule" required error={errors.matricule?.message} {...register('matricule')} />
-            <Select label="Rôle" required options={ROLE_OPTIONS} {...register('role')} />
+            <Select label="Rôle" required options={roleOptions} {...register('role')} />
           </div>
           <div className="grid grid-cols-2 gap-4">
             <Input label="Email" type="email" required error={errors.email?.message} {...register('email')} />

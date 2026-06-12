@@ -25,7 +25,7 @@ const STATUS_OPTIONS = [
   { value: '',                    label: 'Tous les statuts' },
   { value: 'NOUVEAU',             label: 'Nouveau' },
   { value: 'CONTACTE',            label: 'Contacté' },
-  { value: 'QUALIFIE',            label: 'Qualifié' },
+  { value: 'QUALIFIE',            label: 'Client potentiel' },
   { value: 'ENVOI_PROPOSITION',   label: 'Proposition envoyée' },
   { value: 'NEGOCIATION_EN_COURS',label: 'Négociation' },
   { value: 'CONVERTI',            label: 'Converti' },
@@ -57,7 +57,7 @@ const STATUS_VARIANT: Record<string, any> = {
 const STATUS_LABEL: Record<string, string> = {
   NOUVEAU:              'Nouveau',
   CONTACTE:             'Contacté',
-  QUALIFIE:             'Qualifié',
+  QUALIFIE:             'Client potentiel',
   ENVOI_PROPOSITION:    'Proposition',
   NEGOCIATION_EN_COURS: 'Négociation',
   CONVERTI:             'Converti',

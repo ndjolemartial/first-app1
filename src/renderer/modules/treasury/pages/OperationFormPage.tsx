@@ -6,6 +6,7 @@ import Card from '../../../shared/components/ui/Card';
 import Button from '../../../shared/components/ui/Button';
 import Input from '../../../shared/components/ui/Input';
 import Select from '../../../shared/components/ui/Select';
+import { FormSearchSelect } from '../../../shared/components/ui/SearchSelect';
 import Textarea from '../../../shared/components/ui/Textarea';
 import { useTreasuryAccounts, useTreasuryCategories, useCreateTreasuryOperation } from '../hooks/useTreasury';
 import { useAccessibleBudgetLines } from '../../budget/hooks/useBudget';
@@ -88,7 +89,7 @@ export default function OperationFormPage() {
     (p) => `${p.reference} · ${p.nom}`,
   );
 
-  const { register, handleSubmit, watch, setValue, formState: { errors, isSubmitting } } = useForm<FormData>({
+  const { register, control, handleSubmit, watch, setValue, formState: { errors, isSubmitting } } = useForm<FormData>({
     defaultValues: {
       bankAccountId: presetAccount,
       direction: presetDirection || 'SORTIE',
@@ -205,13 +206,14 @@ export default function OperationFormPage() {
                   <Input label="Date de l'opération" type="date" {...register('operationDate')} />
                 </div>
                 <div>
-                  <Select
+                  <FormSearchSelect
+                    control={control}
+                    name="categoryId"
                     label="Objet d'opération (compte comptable)"
                     required
                     options={categoryOptions}
-                    placeholder="Choisir un objet"
-                    error={errors.categoryId && 'Objet requis'}
-                    {...register('categoryId', { required: true })}
+                    placeholder="Rechercher un objet…"
+                    rules={{ required: 'Objet requis' }}
                   />
                   <p className="text-xs text-slate-500 mt-1">
                     Nature de l'opération rattachée à un numéro de compte comptable.

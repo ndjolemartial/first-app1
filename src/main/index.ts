@@ -1,8 +1,9 @@
 import { app, BrowserWindow, shell, Menu } from 'electron';
 import path from 'path';
-import 'dotenv/config';
+import { loadAppEnv } from './utils/loadEnv';
 import logger from './utils/logger';
 import { disconnectDb, getDb } from './services/db.service';
+import { registerConfigIPC } from './ipc/config.ipc';
 import { registerUsersIPC } from './ipc/users.ipc';
 import { registerProspectsIPC } from './ipc/prospects.ipc';
 import { registerClientsIPC } from './ipc/clients.ipc';
@@ -13,6 +14,9 @@ import { registerConventionsIPC } from './ipc/conventions.ipc';
 import { registerConventionTemplatesIPC } from './ipc/convention-templates.ipc';
 import { registerAttestationTemplatesIPC } from './ipc/attestation-templates.ipc';
 import { registerAttestationsIPC } from './ipc/attestations.ipc';
+import { registerQuotesIPC } from './ipc/quotes.ipc';
+import { registerQuoteTemplatesIPC } from './ipc/quote-templates.ipc';
+import { registerCatalogIPC } from './ipc/catalog.ipc';
 import { registerAccountingIPC } from './ipc/accounting.ipc';
 import { registerBilanIPC } from './ipc/bilan.ipc';
 import { registerCommunicationIPC } from './ipc/communication.ipc';
@@ -37,8 +41,12 @@ import { registerDocumentExportIPC } from './ipc/document-export.ipc';
 import { seedDefaultArchivePolicies, scheduleAutoArchiving } from './services/archiving.service';
 import { registerRemindersIPC } from './ipc/reminders.ipc';
 import { seedDefaultRemindersConfig, scheduleReminders } from './services/reminders.service';
+import { seedDefaultAttestationTemplate } from './services/attestation-templates.service';
+import { seedDefaultQuoteTemplate } from './services/quote-templates.service';
 
-const isDev = process.env.NODE_ENV === 'development';
+// Distinction dev/prod basée sur l'empaquetage Electron (plus fiable que
+// NODE_ENV, absent dans l'application installée).
+const isDev = !app.isPackaged;
 let mainWindow: BrowserWindow | null = null;
 
 function createWindow(): void {
@@ -58,6 +66,9 @@ function createWindow(): void {
       sandbox: false,
       // Active le lecteur PDF intégré de Chromium (sinon aperçu PDF blanc).
       plugins: true,
+      // Autorise la lecture automatique avec son (slideshow vidéo du tableau de
+      // bord) — sinon Chromium bloque play() sur une vidéo non mutée.
+      autoplayPolicy: 'no-user-gesture-required',
     },
     titleBarStyle: 'default',
     show: false,
@@ -96,6 +107,9 @@ function registerIPC(): void {
   registerConventionTemplatesIPC();
   registerAttestationTemplatesIPC();
   registerAttestationsIPC();
+  registerQuotesIPC();
+  registerQuoteTemplatesIPC();
+  registerCatalogIPC();
   registerAccountingIPC();
   registerBilanIPC();
   registerCommunicationIPC();
@@ -118,6 +132,8 @@ function registerIPC(): void {
   registerSettingsIPC();
   registerDocumentExportIPC();
   registerRemindersIPC();
+  // Configuration de la connexion BDD — utilisable avant authentification.
+  registerConfigIPC();
   logger.info('All IPC handlers registered');
 }
 
@@ -146,6 +162,9 @@ function setupAppMenu(): void {
 }
 
 app.whenReady().then(async () => {
+  // Charge DATABASE_URL (.env en dev, <userData>/config.env en prod) AVANT
+  // toute connexion à la base.
+  loadAppEnv();
   getDb();
   registerIPC();
   // Propage le chemin de stockage paramétré (AppSetting) au storage.service.
@@ -160,6 +179,12 @@ app.whenReady().then(async () => {
   seedDefaultRemindersConfig()
     .then(() => scheduleReminders())
     .catch((e) => logger.error(`Reminders bootstrap failed: ${e.message}`));
+  // Modèle d'attestation de SOLDE par défaut (créé une seule fois si absent).
+  seedDefaultAttestationTemplate()
+    .catch((e) => logger.error(`Attestation template bootstrap failed: ${e.message}`));
+  // Modèle de devis par défaut (créé une seule fois si absent).
+  seedDefaultQuoteTemplate()
+    .catch((e) => logger.error(`Quote template bootstrap failed: ${e.message}`));
   setupAppMenu();
   createWindow();
   logger.info('Application started');

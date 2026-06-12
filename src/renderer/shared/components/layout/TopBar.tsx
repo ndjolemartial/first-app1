@@ -1,5 +1,7 @@
-import { LogOut, User as UserIcon, ArrowLeft, ArrowRight } from 'lucide-react';
+import { LogOut, User as UserIcon, ArrowLeft, ArrowRight, RefreshCw } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
+import { useQueryClient, useIsFetching } from '@tanstack/react-query';
+import { clsx } from 'clsx';
 import { useAuthStore } from '../../stores/auth.store';
 import { useNavHistory } from '../../hooks/useNavHistory';
 import { toast } from '../ui/Toast';
@@ -14,6 +16,16 @@ export default function TopBar({ title, children }: TopBarProps) {
   const { user, token, clearAuth } = useAuthStore();
   const navigate = useNavigate();
   const { canGoBack, canGoForward, goBack, goForward } = useNavHistory();
+  const queryClient = useQueryClient();
+  // Nombre de requêtes en cours de chargement — anime l'icône de rafraîchissement.
+  const fetchingCount = useIsFetching();
+
+  // Rafraîchit les données de la page courante : réinvalide les requêtes React
+  // Query actives, ce qui déclenche un refetch depuis l'IPC/la base. Pas de
+  // rechargement de la fenêtre — l'état de navigation et le zoom sont préservés.
+  const handleRefresh = () => {
+    queryClient.invalidateQueries();
+  };
 
   const handleLogout = async () => {
     if (token) {
@@ -56,6 +68,15 @@ export default function TopBar({ title, children }: TopBarProps) {
         {children}
       </div>
       <div className="flex items-center gap-2">
+        <button
+          type="button"
+          onClick={handleRefresh}
+          title="Rafraîchir les données de la page"
+          aria-label="Rafraîchir les données de la page"
+          className="rounded-lg p-1.5 text-slate-600 hover:bg-slate-100 hover:text-slate-900 transition-colors"
+        >
+          <RefreshCw className={clsx('h-5 w-5', fetchingCount > 0 && 'animate-spin')} />
+        </button>
         <button
           type="button"
           onClick={() => navigate('/profile')}

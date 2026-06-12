@@ -23,9 +23,10 @@ import { useOwners } from '../../owners/hooks/useOwners';
 import { useAuthStore } from '../../../shared/stores/auth.store';
 
 /**
- * Rôles ayant accès aux vues « direction » du bilan : onglet Actif/Passif,
- * graphique d'évolution. Les autres rôles MANAGER/ACCOUNTANT ne voient que la
- * synthèse périodique du Compte de résultat.
+ * Rôles ayant accès aux vues « direction » du bilan : onglet Actif/Passif et
+ * historique d'évolution complet (jusqu'à 12 mois). Les rôles MANAGER /
+ * ACCOUNTANT voient désormais le graphique d'évolution et l'incluent dans
+ * l'export, mais limité aux 6 derniers mois (borné côté backend).
  */
 const DIRECTION_ROLES = new Set(['SUPER_ADMIN', 'ADMIN']);
 
@@ -40,8 +41,8 @@ const PERIOD_OPTIONS = [
   { value: 'custom',     label: 'Période personnalisée' },
 ];
 
-/** Périodes accessibles hors direction : court terme uniquement. */
-const RESTRICTED_PERIODS = new Set<BilanPeriodType>(['month', 'last-month', 'quarter']);
+/** Périodes accessibles hors direction : court / moyen terme. */
+const RESTRICTED_PERIODS = new Set<BilanPeriodType>(['month', 'last-month', 'quarter', 'semester']);
 
 const SCOPE_OPTIONS = [
   { value: 'global',      label: 'Global (toute l\'entreprise)' },
@@ -217,11 +218,11 @@ export default function BilanPage() {
     if (tab === 'resultat') {
       const d = resultatQuery.data?.data;
       if (!d) return;
-      // Hors direction, la série temporelle n'est pas affichée à l'écran —
-      // on la retire aussi de l'export PDF/Excel pour rester cohérent.
-      const exportData = isDirector ? d : { ...d, evolution: [] };
+      // L'évolution est désormais affichée pour tous les rôles ayant accès au
+      // bilan et incluse telle quelle dans l'export. Le backend la borne déjà
+      // aux 6 derniers mois pour MANAGER / ACCOUNTANT.
       exporter.mutate({
-        type: 'resultat', format, data: exportData,
+        type: 'resultat', format, data: d,
         meta: {
           title:    `Compte de résultat — ${d.periode.label}`,
           subtitle: `Édité le ${new Date().toLocaleDateString('fr-FR')}`,
@@ -253,6 +254,17 @@ export default function BilanPage() {
       Dépenses: e.depenses,
       Résultat: e.resultat,
     })), [resultat]);
+
+  // Titre du graphique : la direction voit l'historique complet ; pour les
+  // autres rôles, la série est bornée aux 6 dernières sous-périodes — on précise
+  // donc l'unité réelle (mois / trimestres / semestres) selon la période choisie.
+  const evolutionTitle = isDirector
+    ? 'Évolution'
+    : periodType === 'quarter'
+      ? 'Évolution (6 derniers trimestres)'
+      : periodType === 'semester'
+        ? 'Évolution (6 derniers semestres)'
+        : 'Évolution (6 derniers mois)';
 
   const recettesPie = useMemo(() =>
     (resultat?.recettes ?? []).slice(0, 8).map((r) => ({ name: r.categorie, value: r.montant })),
@@ -381,24 +393,22 @@ export default function BilanPage() {
             <KpiCard label="Résultat net"  value={resultat.resultat}      variant="resultat" icon={Wallet}       />
           </div>
 
-          <div className={`grid grid-cols-1 ${isDirector ? 'lg:grid-cols-3' : ''} gap-4 mb-6`}>
-            {isDirector && (
-              <Card className="lg:col-span-2">
-                <h3 className="text-sm font-semibold text-slate-700 mb-3">Évolution</h3>
-                <ResponsiveContainer width="100%" height={260}>
-                  <ComposedChart data={evolutionChart}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-                    <XAxis dataKey="name" tick={{ fontSize: 11 }} />
-                    <YAxis tick={{ fontSize: 11 }} tickFormatter={(v) => new Intl.NumberFormat('fr-FR', { notation: 'compact' }).format(v as number)} />
-                    <Tooltip formatter={(v) => formatCurrency(Number(v ?? 0))} />
-                    <Legend wrapperStyle={{ fontSize: 11 }} />
-                    <Bar dataKey="Recettes" fill="#10b981" />
-                    <Bar dataKey="Dépenses" fill="#f43f5e" />
-                    <Line type="monotone" dataKey="Résultat" stroke="#2563EB" strokeWidth={2} dot={{ r: 3 }} />
-                  </ComposedChart>
-                </ResponsiveContainer>
-              </Card>
-            )}
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-6">
+            <Card className="lg:col-span-2">
+              <h3 className="text-sm font-semibold text-slate-700 mb-3">{evolutionTitle}</h3>
+              <ResponsiveContainer width="100%" height={260}>
+                <ComposedChart data={evolutionChart}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                  <XAxis dataKey="name" tick={{ fontSize: 11 }} />
+                  <YAxis tick={{ fontSize: 11 }} tickFormatter={(v) => new Intl.NumberFormat('fr-FR', { notation: 'compact' }).format(v as number)} />
+                  <Tooltip formatter={(v) => formatCurrency(Number(v ?? 0))} />
+                  <Legend wrapperStyle={{ fontSize: 11 }} />
+                  <Bar dataKey="Recettes" fill="#10b981" />
+                  <Bar dataKey="Dépenses" fill="#f43f5e" />
+                  <Line type="monotone" dataKey="Résultat" stroke="#2563EB" strokeWidth={2} dot={{ r: 3 }} />
+                </ComposedChart>
+              </ResponsiveContainer>
+            </Card>
             <Card>
               <h3 className="text-sm font-semibold text-slate-700 mb-3">Répartition des recettes</h3>
               {recettesPie.length === 0 ? (

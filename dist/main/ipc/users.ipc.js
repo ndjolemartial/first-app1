@@ -17,10 +17,11 @@ const createUserSchema = zod_1.z.object({
     email: zod_1.z.string().email(),
     login: zod_1.z.string().optional(),
     password: zod_1.z.string().min(6),
-    role: zod_1.z.enum(['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ACCOUNTANT', 'ASSISTANTE_DIRECTION', 'AGENT', 'READONLY']),
+    role: zod_1.z.enum(['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ACCOUNTANT', 'ASSISTANTE_DIRECTION', 'AGENT', 'AGENT_TECHNIQUE', 'READONLY']),
     phone: zod_1.z.string().optional(),
     mobile: zod_1.z.string().optional(),
     fonction: zod_1.z.string().optional(),
+    nomCommercial: zod_1.z.string().optional(),
     idNumber: zod_1.z.string().optional(),
     civilite: zod_1.z.enum(['MONSIEUR', 'MADAME', 'MADEMOISELLE']).optional(),
     statutConjugal: zod_1.z.enum(['CELIBATAIRE', 'MARIEE', 'CONCUBINAGE', 'DIVORCE', 'VEUF']).optional(),
@@ -68,6 +69,22 @@ async function nextReference(db) {
     const seq = last ? parseInt(last.reference.split('-')[2], 10) + 1 : 1;
     return `USR-${year}-${String(seq).padStart(4, '0')}`;
 }
+// Rôles qu'un AGENT_TECHNIQUE est autorisé à créer / modifier.
+const AGENT_TECHNIQUE_MANAGED_ROLES = ['AGENT', 'AGENT_TECHNIQUE', 'READONLY'];
+/**
+ * Contrôle d'accès à la gestion des utilisateurs.
+ *  - SUPER_ADMIN / ADMIN : accès complet (renvoie 'full') ;
+ *  - AGENT_TECHNIQUE : accès limité aux comptes AGENT / AGENT_TECHNIQUE /
+ *    READONLY (renvoie 'limited') ;
+ *  - autres rôles : refus.
+ */
+function userMgmtScope(session) {
+    if (session.role === 'SUPER_ADMIN' || session.role === 'ADMIN')
+        return 'full';
+    if (session.role === 'AGENT_TECHNIQUE')
+        return 'limited';
+    throw new Error('Permission insuffisante');
+}
 /**
  * Enregistre les handlers IPC pour la gestion des utilisateurs.
  */
@@ -77,13 +94,19 @@ function registerUsersIPC() {
             const session = (0, auth_service_1.getSession)(token);
             if (!session)
                 return { success: false, error: 'Session expirée' };
-            (0, auth_service_1.checkRole)(session, ['SUPER_ADMIN', 'ADMIN']);
+            const scope = userMgmtScope(session);
             const db = (0, db_service_1.getDb)();
             const where = { deletedAt: null };
             if (filters.role)
                 where.role = filters.role;
             if (filters.isActive !== undefined)
                 where.isActive = filters.isActive;
+            // AGENT_TECHNIQUE : ne voit que les comptes qu'il peut gérer.
+            if (scope === 'limited') {
+                where.role = (filters.role && AGENT_TECHNIQUE_MANAGED_ROLES.includes(filters.role))
+                    ? filters.role
+                    : { in: AGENT_TECHNIQUE_MANAGED_ROLES };
+            }
             if (filters.search) {
                 where.OR = [
                     { reference: { contains: filters.search } },
@@ -119,14 +142,14 @@ function registerUsersIPC() {
             const session = (0, auth_service_1.getSession)(token);
             if (!session)
                 return { success: false, error: 'Session expirée' };
-            (0, auth_service_1.checkRole)(session, ['SUPER_ADMIN', 'ADMIN']);
+            const scope = userMgmtScope(session);
             const db = (0, db_service_1.getDb)();
             const user = await db.user.findUnique({
                 where: { id, deletedAt: null },
                 select: {
                     id: true, uuid: true, reference: true, matricule: true, firstName: true, lastName: true,
                     email: true, login: true, role: true, isActive: true, avatar: true, phone: true,
-                    mobile: true, fonction: true, idNumber: true, civilite: true,
+                    mobile: true, fonction: true, nomCommercial: true, idNumber: true, civilite: true,
                     statutConjugal: true, hireDate: true, cnpsNumber: true, residence: true,
                     lastLoginAt: true, createdAt: true, updatedAt: true,
                     linkedDocuments: { where: { deletedAt: null }, orderBy: { uploadedAt: 'desc' } },
@@ -134,6 +157,9 @@ function registerUsersIPC() {
             });
             if (!user)
                 return { success: false, error: 'Utilisateur introuvable' };
+            if (scope === 'limited' && !AGENT_TECHNIQUE_MANAGED_ROLES.includes(user.role)) {
+                return { success: false, error: 'Utilisateur inaccessible' };
+            }
             return { success: true, data: user };
         }
         catch (error) {
@@ -145,10 +171,14 @@ function registerUsersIPC() {
             const session = (0, auth_service_1.getSession)(token);
             if (!session)
                 return { success: false, error: 'Session expirée' };
-            (0, auth_service_1.checkRole)(session, ['SUPER_ADMIN', 'ADMIN']);
+            const scope = userMgmtScope(session);
             const parsed = createUserSchema.safeParse(payload);
             if (!parsed.success)
                 return { success: false, error: parsed.error.format() };
+            // AGENT_TECHNIQUE : ne peut créer que des comptes AGENT / AGENT_TECHNIQUE / READONLY.
+            if (scope === 'limited' && !AGENT_TECHNIQUE_MANAGED_ROLES.includes(parsed.data.role)) {
+                return { success: false, error: 'Vous ne pouvez créer que des utilisateurs Agent, Agent Technique ou Read Only.' };
+            }
             const db = (0, db_service_1.getDb)();
             const { password, hireDate, ...rest } = parsed.data;
             const data = { ...rest };
@@ -175,11 +205,24 @@ function registerUsersIPC() {
             const session = (0, auth_service_1.getSession)(token);
             if (!session)
                 return { success: false, error: 'Session expirée' };
-            (0, auth_service_1.checkRole)(session, ['SUPER_ADMIN', 'ADMIN']);
+            const scope = userMgmtScope(session);
             const parsed = updateUserSchema.safeParse(payload);
             if (!parsed.success)
                 return { success: false, error: parsed.error.format() };
             const db = (0, db_service_1.getDb)();
+            // AGENT_TECHNIQUE : le compte cible (rôle actuel) ET le nouveau rôle
+            // éventuel doivent appartenir aux rôles gérés.
+            if (scope === 'limited') {
+                const target = await db.user.findUnique({ where: { id, deletedAt: null }, select: { role: true } });
+                if (!target)
+                    return { success: false, error: 'Utilisateur introuvable' };
+                if (!AGENT_TECHNIQUE_MANAGED_ROLES.includes(target.role)) {
+                    return { success: false, error: 'Utilisateur inaccessible' };
+                }
+                if (parsed.data.role && !AGENT_TECHNIQUE_MANAGED_ROLES.includes(parsed.data.role)) {
+                    return { success: false, error: 'Vous ne pouvez attribuer que les rôles Agent, Agent Technique ou Read Only.' };
+                }
+            }
             const { hireDate, ...rest } = parsed.data;
             const data = { ...rest };
             normalizeUniqueFields(data);
@@ -205,10 +248,16 @@ function registerUsersIPC() {
             const session = (0, auth_service_1.getSession)(token);
             if (!session)
                 return { success: false, error: 'Session expirée' };
-            (0, auth_service_1.checkRole)(session, ['SUPER_ADMIN', 'ADMIN']);
+            const scope = userMgmtScope(session);
             if (!newPassword || newPassword.length < 6)
                 return { success: false, error: 'Le mot de passe doit contenir au moins 6 caractères' };
             const db = (0, db_service_1.getDb)();
+            if (scope === 'limited') {
+                const target = await db.user.findUnique({ where: { id }, select: { role: true } });
+                if (!target || !AGENT_TECHNIQUE_MANAGED_ROLES.includes(target.role)) {
+                    return { success: false, error: 'Utilisateur inaccessible' };
+                }
+            }
             const hashed = await (0, crypto_1.hashPassword)(newPassword);
             await db.user.update({ where: { id }, data: { password: hashed } });
             return { success: true };
@@ -222,11 +271,14 @@ function registerUsersIPC() {
             const session = (0, auth_service_1.getSession)(token);
             if (!session)
                 return { success: false, error: 'Session expirée' };
-            (0, auth_service_1.checkRole)(session, ['SUPER_ADMIN', 'ADMIN']);
+            const scope = userMgmtScope(session);
             const db = (0, db_service_1.getDb)();
-            const user = await db.user.findUnique({ where: { id }, select: { isActive: true } });
+            const user = await db.user.findUnique({ where: { id }, select: { isActive: true, role: true } });
             if (!user)
                 return { success: false, error: 'Utilisateur introuvable' };
+            if (scope === 'limited' && !AGENT_TECHNIQUE_MANAGED_ROLES.includes(user.role)) {
+                return { success: false, error: 'Utilisateur inaccessible' };
+            }
             const updated = await db.user.update({
                 where: { id },
                 data: { isActive: !user.isActive },

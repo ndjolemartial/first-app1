@@ -196,8 +196,10 @@ enum UserRole {
   SUPER_ADMIN
   ADMIN
   MANAGER
-  AGENT
   ACCOUNTANT
+  ASSISTANTE_DIRECTION
+  AGENT
+  AGENT_TECHNIQUE
   READONLY
 }
 
@@ -924,10 +926,12 @@ model ArchivePolicy {
 |-------------------------|:-----------:|:-----:|:-------:|:-----:|:----------:|:--------:|
 | Gérer utilisateurs      | ✅          | ✅    | ❌      | ❌    | ❌         | ❌       |
 | CRUD Prospects          | ✅          | ✅    | ✅      | ✅    | ✅         | 👁️       |
-| CRUD Clients            | ✅          | ✅    | ✅      | ✅    | ✅         | 👁️       |
+| CRUD Clients            | ✅          | ✅    | ✅      | 👁️    | ✅         | 👁️       |
 | CRUD Propriétaires      | ✅          | ✅    | ✅      | ✅    | ✅         | 👁️       |
-| CRUD Biens              | ✅          | ✅    | ✅      | ✅    | ✅         | 👁️       |
-| CRUD Conventions        | ✅          | ✅    | ✅      | ❌    | ✅         | 👁️       |
+| CRUD Biens              | ✅          | ✅    | ✅      | 👁️    | ✅         | 👁️       |
+| CRUD Terrains           | ✅          | ✅    | ✅      | 👁️    | ✅         | 👁️       |
+| CRUD Conventions        | ✅          | ✅    | ✅      | 👁️*   | ✅         | 👁️       |
+| CRUD Attestations       | ✅          | ✅    | ✅      | 👁️*   | ✅         | 👁️       |
 | Comptabilité (lecture)  | ✅          | ✅    | ✅      | ❌    | ✅         | 👁️       |
 | Comptabilité (écriture) | ✅          | ✅    | ✅     | ❌    | ✅         | ❌       |
 | Envoyer emails/SMS      | ✅          | ✅    | ✅      | ✅    | ✅         | ❌       |
@@ -939,7 +943,11 @@ model ArchivePolicy {
 | Tableau de bord         | ✅          | ✅    | ✅      | ✅    | ✅         | ✅       |
 | Paramètres app          | ✅          | ✅    | ❌      | ❌    | ❌         | ❌       |
 
-> **Équivalence de rôles** — les utilisateurs **ACCOUNTANT (Comptable)** disposent des **mêmes droits d'accès que les MANAGER** : la colonne ACCOUNTANT ci-dessus est identique à la colonne MANAGER. Cette équivalence est appliquée de manière centralisée dans `checkRole` (`src/main/services/auth.service.ts`) — ACCOUNTANT n'obtient toutefois aucun droit réservé aux rôles ADMIN / SUPER_ADMIN.
+> **AGENT_TECHNIQUE (Agent Technique)** — **hérite de tous les droits d'un AGENT** (via l'équivalence `AGENT_TECHNIQUE → AGENT` dans `checkRole`), **plus** la gestion **limitée des utilisateurs** : il peut **créer et modifier** (y compris activer/désactiver et réinitialiser le mot de passe) uniquement les comptes de rôle **AGENT, AGENT_TECHNIQUE ou READONLY**. Il ne peut ni gérer les autres rôles, ni supprimer un compte (réservé au SUPER_ADMIN). Restriction appliquée par `userMgmtScope` dans `users.ipc.ts` et reflétée dans le formulaire (liste de rôles filtrée).
+>
+> **\* AGENT — Conventions / Attestations (lecture restreinte)** — un AGENT ne voit que les **conventions au statut BROUILLON** et les **attestations** des **clients dont il est le référent** (`client.assignedToId`). Il **ne peut ni créer**, ni modifier, ni **changer le statut** d'une convention. Filtrage appliqué côté IPC (`agentScopeWhere` dans `conventions.ipc.ts` / `attestations.ipc.ts`) et boutons d'écriture masqués côté UI ; les routes de création/édition lui sont fermées par `RoleGuard`.
+>
+> **Équivalence de rôles** — les utilisateurs **ACCOUNTANT (Comptable)** disposent des **mêmes droits d'accès que les MANAGER** : la colonne ACCOUNTANT ci-dessus est identique à la colonne MANAGER. Cette équivalence est appliquée de manière centralisée dans `checkRole` (`src/main/services/auth.service.ts`) — ACCOUNTANT n'obtient toutefois aucun droit réservé aux rôles ADMIN / SUPER_ADMIN. **ASSISTANTE_DIRECTION** hérite également des droits MANAGER via `checkRole`, **sauf** pour la modification des **Clients, Biens et Terrains** : sur ces trois modules, les rôles **AGENT, ASSISTANTE_DIRECTION et READONLY sont en lecture seule** (écriture refusée par `checkClientWriteRole` / `checkWriteRole` dans les handlers IPC correspondants, et boutons masqués côté UI).
 
 ---
 

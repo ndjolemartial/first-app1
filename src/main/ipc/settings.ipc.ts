@@ -82,6 +82,7 @@ const USER_ROLES = [
   'ACCOUNTANT',
   'ASSISTANTE_DIRECTION',
   'AGENT',
+  'AGENT_TECHNIQUE',
   'READONLY',
 ] as const;
 
@@ -166,7 +167,12 @@ export function registerSettingsIPC(): void {
     try {
       const session = getSession(token);
       if (!session) return { success: false, error: 'Session expirée' };
-      checkRole(session, ADMIN_ROLES);
+      // Lecture ouverte à tout utilisateur authentifié : les coordonnées de
+      // l'entreprise (raison sociale, adresse, téléphones, RCCM…) sont des
+      // informations publiques imprimées sur les documents clients (devis,
+      // factures, attestations). La restriction admin ne s'applique qu'à
+      // l'écriture (`settings:updateCompany`, logo). Sans cela, l'en-tête
+      // entreprise ne s'affichait que pour les comptes SUPER_ADMIN / ADMIN.
       const map = await getSettings([
         SettingsKeys.companyName,
         SettingsKeys.companySlogan,

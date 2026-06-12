@@ -137,6 +137,33 @@ export function useCancelledInstallments() {
   });
 }
 
+/**
+ * Échéances héritées de l'ancienne application : paiements échelonnés rattachés
+ * directement au client (et éventuellement au terrain), sans convention. Isolées
+ * des échéances de convention.
+ */
+export function useLegacyInstallments() {
+  const token = useAuthStore((s) => s.token)!;
+  return useQuery({
+    queryKey: ['installments', 'legacy'],
+    queryFn: () => ipc.getLegacyInstallments(token),
+  });
+}
+
+/** Modifie une échéance héritée (détails, date, montant, terrains rattachés). */
+export function useUpdateLegacyInstallment() {
+  const token = useAuthStore((s) => s.token)!;
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: object) => ipc.updateLegacyInstallment(token, payload),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['installments'] });
+      // Le rattachement terrain change l'assiette ACD des commissions.
+      qc.invalidateQueries({ queryKey: ['commissions'] });
+    },
+  });
+}
+
 /** Liste de toutes les échéances de vente (pour sélecteurs / rattachements). */
 export function useAllInstallments() {
   const token = useAuthStore((s) => s.token)!;
@@ -183,7 +210,10 @@ export function useReinstateInstallment() {
   });
 }
 
-/** Génère et enregistre le PDF d'une facture, avec retour utilisateur (toast). */
+/**
+ * Ouvre l'aperçu avant impression d'une facture (visualiseur PDF intégré :
+ * impression directe avec choix d'imprimante, sans téléchargement imposé).
+ */
 export function usePrintInvoice() {
   const token = useAuthStore((s) => s.token)!;
   return async (invoiceId: number) => {
@@ -191,9 +221,8 @@ export function usePrintInvoice() {
       const r = await ipc.printInvoice(token, invoiceId);
       if (!r.success) {
         toast.error(typeof r.error === 'string' ? r.error : "Erreur lors de l'impression");
-      } else if (!r.data?.canceled) {
-        toast.success('Facture enregistrée en PDF');
       }
+      // Succès : la fenêtre d'aperçu s'ouvre — pas de toast nécessaire.
     } catch {
       toast.error("Erreur lors de l'impression de la facture");
     }

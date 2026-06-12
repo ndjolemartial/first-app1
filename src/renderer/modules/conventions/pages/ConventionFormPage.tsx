@@ -17,6 +17,7 @@ import { useClients, useClientAssignableUsers, useClientReferrers } from '../../
 import { useAuthStore } from '../../../shared/stores/auth.store';
 import { useProperties } from '../../properties/hooks/useProperties';
 import { useTerrains } from '../../terrains/hooks/useTerrains';
+import { lotsEnumeration } from '../utils/lotsEnumeration';
 import { formatPersonName, formatCurrency } from '../../../shared/utils/format';
 import { Save } from 'lucide-react';
 
@@ -872,6 +873,25 @@ export default function ConventionFormPage() {
     }
     try {
     const payload: any = { ...data };
+    // Fige l'énumération des lots souscrits (identique à la variable de template
+    // {{convention.lotsSouscrits}}) pour l'afficher ensuite sur les factures.
+    // On résout les terrains dans l'ordre des terrainIds afin de respecter
+    // l'ordre de rattachement utilisé par le rendu des conventions.
+    if (data.assetType === 'TERRAIN') {
+      const allT = (terrainsRes?.data ?? []) as any[];
+      const orderedTerrains = (data.terrainIds ?? [])
+        .map((tid) => allT.find((t) => Number(t.id) === Number(tid)))
+        .filter(Boolean);
+      const enumeration = lotsEnumeration(orderedTerrains);
+      // Nom du lotissement — commun à tous les terrains de la convention —
+      // ajouté entre parenthèses en face de l'énumération des lots souscrits.
+      const lotName = (orderedTerrains[0] as any)?.lotissement?.nom ?? '';
+      payload.lotsSouscrits = enumeration && lotName
+        ? `${enumeration} (${lotName})`
+        : enumeration;
+    } else {
+      payload.lotsSouscrits = '';
+    }
     // Convertit les sélecteurs d'affectation (chaînes) en number|null. Si
     // l'utilisateur n'a pas le droit d'affecter, on retire ces champs du
     // payload (le backend ne touchera pas à l'affectation existante).

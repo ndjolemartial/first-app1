@@ -43,6 +43,8 @@ export default function ClientDetailPage() {
   const setReferrer    = useSetClientReferrer();
   const role = useAuthStore((s) => s.user?.role) ?? '';
   const canAssign = ASSIGN_ROLES.has(role);
+  // AGENT, ASSISTANTE_DIRECTION et READONLY ne peuvent pas modifier un client.
+  const canWrite = ASSIGN_ROLES.has(role);
   const { data: assignableUsersRes } = useClientAssignableUsers();
   const { data: referrersRes }       = useClientReferrers();
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -85,21 +87,23 @@ export default function ClientDetailPage() {
       title={displayName}
       breadcrumbs={[{ label: 'Clients', to: '/clients' }, { label: displayName }]}
       actions={
-        <div className="flex gap-2 items-end">
-          <div className="w-36">
-            <Select
-              label=""
-              options={STATUS_OPTIONS}
-              value={c.status ?? 'ACTIF'}
-              disabled={updateStatus.isPending}
-              onChange={(e) => updateStatus.mutate({ id: c.id, status: e.target.value })}
-            />
+        canWrite ? (
+          <div className="flex gap-2 items-end">
+            <div className="w-36">
+              <Select
+                label=""
+                options={STATUS_OPTIONS}
+                value={c.status ?? 'ACTIF'}
+                disabled={updateStatus.isPending}
+                onChange={(e) => updateStatus.mutate({ id: c.id, status: e.target.value })}
+              />
+            </div>
+            <Button variant="secondary" icon={<Edit className="h-4 w-4" />}
+              onClick={() => navigate(`/clients/${id}/edit`)}>Modifier</Button>
+            <Button variant="danger" icon={<Trash2 className="h-4 w-4" />}
+              onClick={() => setConfirmDelete(true)}>Supprimer</Button>
           </div>
-          <Button variant="secondary" icon={<Edit className="h-4 w-4" />}
-            onClick={() => navigate(`/clients/${id}/edit`)}>Modifier</Button>
-          <Button variant="danger" icon={<Trash2 className="h-4 w-4" />}
-            onClick={() => setConfirmDelete(true)}>Supprimer</Button>
-        </div>
+        ) : undefined
       }
     >
       <div className="max-w-4xl mx-auto space-y-4">

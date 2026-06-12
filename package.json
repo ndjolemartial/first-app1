@@ -17,6 +17,10 @@
     "build:electron": "tsc -p tsconfig.main.json",
     "package": "npm run build && electron-builder",
     "package:win": "npm run build && electron-builder --win",
+    "package:mac": "npm run build && electron-builder --mac",
+    "package:linux": "npm run build && electron-builder --linux",
+    "zip:portable": "node scripts/zip-portable.mjs",
+    "make:icon": "node scripts/make-icon.mjs",
     "db:migrate": "prisma migrate dev",
     "db:generate": "prisma generate",
     "db:studio": "prisma studio",
@@ -32,13 +36,25 @@
     "directories": {
       "output": "release"
     },
+    "asar": false,
     "files": [
       "dist/**/*",
-      "node_modules/**/*",
-      "package.json"
+      "package.json",
+      "node_modules/**/*"
+    ],
+    "extraResources": [
+      {
+        "from": "node_modules/.prisma",
+        "to": "app/node_modules/.prisma"
+      }
     ],
     "win": {
-      "target": "nsis"
+      "target": "nsis",
+      "icon": "build/icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
     },
     "linux": {
       "target": "AppImage"
@@ -55,7 +71,6 @@
   "author": "Afrikimmo",
   "license": "ISC",
   "devDependencies": {
-    "@prisma/client": "^5.22.0",
     "@tailwindcss/vite": "^4.3.0",
     "@types/node": "^25.7.0",
     "@types/react": "^19.2.14",
@@ -64,10 +79,8 @@
     "autoprefixer": "^10.5.0",
     "concurrently": "^9.2.1",
     "cross-env": "^10.1.0",
-    "dotenv": "^17.4.2",
     "electron": "^42.0.1",
     "electron-builder": "^26.8.1",
-    "electron-log": "^5.4.3",
     "postcss": "^8.5.14",
     "prisma": "^5.22.0",
     "tailwindcss": "^4.3.0",
@@ -77,6 +90,7 @@
   },
   "dependencies": {
     "@hookform/resolvers": "^5.2.2",
+    "@prisma/client": "^5.22.0",
     "@tanstack/react-query": "^5.100.10",
     "@tanstack/react-table": "^8.21.3",
     "@tiptap/extension-color": "^3.23.6",
@@ -95,6 +109,8 @@
     "bcryptjs": "^3.0.3",
     "clsx": "^2.1.1",
     "date-fns": "^4.1.0",
+    "dotenv": "^17.4.2",
+    "electron-log": "^5.4.3",
     "exceljs": "^4.4.0",
     "html-to-docx": "^1.8.0",
     "lucide-react": "^1.14.0",

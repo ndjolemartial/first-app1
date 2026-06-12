@@ -1,13 +1,28 @@
 import { ipcMain } from 'electron';
 import { getDb } from '../services/db.service';
-import { getSession, checkRole } from '../services/auth.service';
+import { getSession, checkRole, isAgentRole } from '../services/auth.service';
 import logger from '../utils/logger';
 import { z } from 'zod';
 
-// Module Conventions : réservé aux MANAGER+ (ACCOUNTANT inclus via checkRole).
-// AGENT et READONLY n'ont aucun accès au module.
+// Module Conventions : écriture réservée aux MANAGER+ (ACCOUNTANT inclus via checkRole).
+// READONLY n'a aucun accès. L'AGENT dispose d'un accès en LECTURE limité :
+// uniquement les conventions des clients dont il est le référent
+// (client.assignedToId) et au seul statut BROUILLON — sans création, mise à jour
+// ni changement de statut.
 const WRITE_ROLES = ['SUPER_ADMIN', 'ADMIN', 'MANAGER'];
 const READ_ROLES  = ['SUPER_ADMIN', 'ADMIN', 'MANAGER'];
+const READ_ROLES_AGENT = [...READ_ROLES, 'AGENT'];
+
+/**
+ * Restriction de visibilité d'un AGENT : conventions des clients dont il est le
+ * référent, au statut BROUILLON uniquement. Renvoie `{}` pour les autres rôles.
+ */
+function agentScopeWhere(session: { role: string; userId: number }): Record<string, unknown> {
+  if (isAgentRole(session.role)) {
+    return { status: 'BROUILLON', client: { assignedToId: session.userId } };
+  }
+  return {};
+}
 
 const conventionBaseSchema = z.object({
   assetType: z.enum(['PROPERTY', 'TERRAIN']).default('PROPERTY'),
@@ -49,6 +64,9 @@ const conventionBaseSchema = z.object({
     amount: z.number(),
   })).optional(),
   indexType: z.string().optional(),
+  // Énumération des lots souscrits, calculée côté formulaire et figée en base
+  // pour affichage sur les factures (en face de la référence de convention).
+  lotsSouscrits: z.string().optional(),
   notes: z.string().optional(),
 });
 
@@ -245,7 +263,7 @@ export function registerConventionsIPC(): void {
     try {
       const session = getSession(token);
       if (!session) return { success: false, error: 'Session expirée' };
-      checkRole(session, READ_ROLES);
+      checkRole(session, READ_ROLES_AGENT);
       const db = getDb();
       const where: any = { deletedAt: null };
       if (filters.type) where.type = filters.type;
@@ -265,6 +283,8 @@ export function registerConventionsIPC(): void {
           { terrains: { some: { terrain: { reference: { contains: filters.search } } } } },
         ];
       }
+      // AGENT : restreint au statut BROUILLON et à ses clients référents.
+      Object.assign(where, agentScopeWhere(session));
       const [data, total] = await db.$transaction([
         db.convention.findMany({
           where,
@@ -291,7 +311,7 @@ export function registerConventionsIPC(): void {
     try {
       const session = getSession(token);
       if (!session) return { success: false, error: 'Session expirée' };
-      checkRole(session, READ_ROLES);
+      checkRole(session, READ_ROLES_AGENT);
       const db = getDb();
       const convention = await db.convention.findUnique({
         where: { id, deletedAt: null },
@@ -355,6 +375,11 @@ export function registerConventionsIPC(): void {
         },
       });
       if (!convention) return { success: false, error: 'Convention introuvable' };
+      // AGENT : accès limité à ses clients référents et au statut BROUILLON.
+      if (isAgentRole(session.role)
+        && (convention.status !== 'BROUILLON' || convention.client?.assignedToId !== session.userId)) {
+        return { success: false, error: 'Convention inaccessible' };
+      }
       return ser({ success: true, data: convention });
     } catch (error: any) {
       return { success: false, error: error.message };
@@ -418,6 +443,8 @@ export function registerConventionsIPC(): void {
           installmentAmount: toDecimal(d.installmentAmount),
           firstInstallmentDate: d.firstInstallmentDate ? new Date(d.firstInstallmentDate) : undefined,
           indexType: d.indexType,
+          // Lots souscrits : seulement pertinent pour les conventions de terrain.
+          lotsSouscrits: isTerrain ? (d.lotsSouscrits || null) : null,
           notes: d.notes,
           properties: propertyIds.length > 0
             ? { create: propertyIds.map((propertyId, i) => ({ propertyId, order: i })) }
@@ -466,8 +493,12 @@ export function registerConventionsIPC(): void {
           })),
         });
       }
-      // Génère automatiquement des factures VALIDEE pour les frais d'ouverture
-      // de dossier et l'apport initial saisis à l'ouverture de la convention.
+      // Génère automatiquement des factures pour les frais d'ouverture de
+      // dossier, l'apport initial (et la vente comptant) saisis à l'ouverture.
+      // Le statut des factures est calé sur celui de la convention :
+      //   - ACTIVE                       → VALIDEE
+      //   - BROUILLON / ATTENTE_SIGNATURE → BROUILLON (en attente de validation)
+      //   - EXPIRE / ANNULE / TERMINER    → aucune facture générée
       const autoInvoices: Array<{ type: 'FRAIS_OUVERTURE_DOSSIER' | 'APPORT_INITIAL' | 'VENTE'; amount: number; label: string }> = [];
       const fraisOuverture = Number(d.fraisOuvertureDossier ?? 0);
       const apport = Number(d.apportInitial ?? 0);
@@ -479,7 +510,11 @@ export function registerConventionsIPC(): void {
       if (d.paymentModalites === 'CASH' && soldeComptant > 0) {
         autoInvoices.push({ type: 'VENTE', amount: soldeComptant, label: 'Vente — paiement comptant' });
       }
-      if (autoInvoices.length > 0) {
+      const autoInvoiceStatus: 'VALIDEE' | 'BROUILLON' | null =
+        convention.status === 'ACTIVE' ? 'VALIDEE'
+        : (convention.status === 'BROUILLON' || convention.status === 'ATTENTE_SIGNATURE') ? 'BROUILLON'
+        : null;
+      if (autoInvoices.length > 0 && autoInvoiceStatus) {
         const year = new Date().getFullYear();
         const lastInv = await db.invoice.findFirst({
           where: { reference: { startsWith: `FAC-${year}-` } },
@@ -494,7 +529,7 @@ export function registerConventionsIPC(): void {
             data: {
               reference: `FAC-${year}-${String(seq).padStart(4, '0')}`,
               type: inv.type,
-              status: 'VALIDEE',
+              status: autoInvoiceStatus,
               clientId: d.clientId,
               conventionId: convention.id,
               subtotal: inv.amount as any,
@@ -514,7 +549,9 @@ export function registerConventionsIPC(): void {
             },
           });
         }
-        logger.info(`Convention ${convention.reference}: ${autoInvoices.length} facture(s) VALIDEE générée(s) automatiquement`);
+        logger.info(`Convention ${convention.reference}: ${autoInvoices.length} facture(s) ${autoInvoiceStatus} générée(s) automatiquement`);
+      } else if (autoInvoices.length > 0 && !autoInvoiceStatus) {
+        logger.info(`Convention ${convention.reference}: statut ${convention.status} — aucune facture auto-générée`);
       }
 
       logger.info(`Convention created: ${convention.reference}`);
@@ -564,7 +601,11 @@ export function registerConventionsIPC(): void {
         data.agencyFees = null;
       } else if (d.assetType === 'PROPERTY') {
         data.secondaryClientId = null;
+        // Les lots souscrits ne concernent que les conventions de terrain.
+        data.lotsSouscrits = null;
       }
+      // Normalise une énumération vide en NULL.
+      if ('lotsSouscrits' in data) data.lotsSouscrits = data.lotsSouscrits || null;
       // Le lien vers la convention initiale/précédente est réservé aux avenants et résiliations
       if (d.type && !AMENDMENT_TYPES.includes(d.type)) data.parentConventionId = null;
       // La nature de l'avenant ne s'applique qu'aux avenants
@@ -675,7 +716,7 @@ export function registerConventionsIPC(): void {
     try {
       const session = getSession(token);
       if (!session) return { success: false, error: 'Session expirée' };
-      checkRole(session, READ_ROLES);
+      checkRole(session, READ_ROLES_AGENT);
       const db = getDb();
       const where: any = { deletedAt: null };
       if (filters.type) where.type = filters.type;
@@ -694,6 +735,8 @@ export function registerConventionsIPC(): void {
           { terrains: { some: { terrain: { reference: { contains: filters.search } } } } },
         ];
       }
+      // AGENT : restreint au statut BROUILLON et à ses clients référents.
+      Object.assign(where, agentScopeWhere(session));
       const rows = await db.convention.groupBy({
         by: ['status'],
         where,
@@ -855,8 +898,18 @@ export function registerConventionsIPC(): void {
     try {
       const session = getSession(token);
       if (!session) return { success: false, error: 'Session expirée' };
-      checkRole(session, READ_ROLES);
+      checkRole(session, READ_ROLES_AGENT);
       const db = getDb();
+      // AGENT : n'accède qu'aux échéances d'une convention BROUILLON de ses clients référents.
+      if (isAgentRole(session.role)) {
+        const conv = await db.convention.findUnique({
+          where: { id: conventionId },
+          select: { status: true, client: { select: { assignedToId: true } } },
+        });
+        if (!conv || conv.status !== 'BROUILLON' || conv.client?.assignedToId !== session.userId) {
+          return { success: false, error: 'Convention inaccessible' };
+        }
+      }
       const installments = await db.saleInstallment.findMany({
         where: { conventionId },
         orderBy: { installmentNumber: 'asc' },

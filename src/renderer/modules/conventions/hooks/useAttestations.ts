@@ -47,6 +47,20 @@ export function useUpdateAttestation() {
   });
 }
 
+/**
+ * Solde d'une souscription héritée (échéances sans convention) pour le couple
+ * (client, terrain). Sert au formulaire d'attestation de solde héritée : le
+ * reste dû doit être nul pour autoriser l'émission. Inactif tant que client et
+ * terrain ne sont pas tous deux renseignés.
+ */
+export function useLegacyBalance(clientId: number, terrainId: number) {
+  return useQuery({
+    queryKey: ['attestation-legacy-balance', clientId, terrainId],
+    queryFn: () => ipc().getLegacyBalance(token(), clientId, terrainId),
+    enabled: clientId > 0 && terrainId > 0,
+  });
+}
+
 export function useAttestationsTypeStats(filters: object = {}) {
   // Clé préfixée par 'attestations' afin que les invalidations existantes
   // (create/update/delete) rafraîchissent aussi les stats.

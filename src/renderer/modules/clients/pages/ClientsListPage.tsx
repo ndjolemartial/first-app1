@@ -189,8 +189,10 @@ export default function ClientsListPage() {
                       <div className="flex justify-end gap-1">
                         <Button variant="ghost" size="sm" icon={<Eye className="h-4 w-4" />}
                           onClick={() => navigate(`/clients/${c.id}`)} />
-                        <Button variant="ghost" size="sm" icon={<Edit className="h-4 w-4" />}
-                          onClick={() => navigate(`/clients/${c.id}/edit`)} />
+                        {canCreate && (
+                          <Button variant="ghost" size="sm" icon={<Edit className="h-4 w-4" />}
+                            onClick={() => navigate(`/clients/${c.id}/edit`)} />
+                        )}
                       </div>
                     </td>
                   </tr>

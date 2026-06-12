@@ -69,6 +69,9 @@ export default function TerrainDetailPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const token = useAuthStore((s) => s.token)!;
+  // AGENT, ASSISTANTE_DIRECTION et READONLY ne peuvent pas modifier un terrain.
+  const role = useAuthStore((s) => s.user?.role) ?? '';
+  const canWrite = ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ACCOUNTANT'].includes(role);
   const { data: res, isLoading } = useTerrain(Number(id));
   const deleteTerrain = useDeleteTerrain();
   const updateStatut = useUpdateTerrainStatut();
@@ -113,12 +116,14 @@ export default function TerrainDetailPage() {
       title={`Terrain ${t.reference}`}
       breadcrumbs={[{ label: 'Terrains', to: '/terrains' }, { label: t.reference }]}
       actions={
-        <div className="flex gap-2">
-          <Button variant="secondary" icon={<Edit className="h-4 w-4" />}
-            onClick={() => navigate(`/terrains/${id}/edit`)}>Modifier</Button>
-          <Button variant="danger" icon={<Trash2 className="h-4 w-4" />}
-            onClick={() => setConfirmDelete(true)}>Supprimer</Button>
-        </div>
+        canWrite ? (
+          <div className="flex gap-2">
+            <Button variant="secondary" icon={<Edit className="h-4 w-4" />}
+              onClick={() => navigate(`/terrains/${id}/edit`)}>Modifier</Button>
+            <Button variant="danger" icon={<Trash2 className="h-4 w-4" />}
+              onClick={() => setConfirmDelete(true)}>Supprimer</Button>
+          </div>
+        ) : undefined
       }
     >
       <div className="max-w-4xl mx-auto space-y-4">
@@ -170,6 +175,7 @@ export default function TerrainDetailPage() {
         </Card>
 
         {/* Changement de statut rapide */}
+        {canWrite && (
         <Card>
           <div className="flex items-center gap-4">
             <label className="text-sm font-medium text-slate-700 shrink-0">Changer le statut :</label>
@@ -182,6 +188,7 @@ export default function TerrainDetailPage() {
             </div>
           </div>
         </Card>
+        )}
 
         <div className="grid grid-cols-2 gap-4">
           {/* Caractéristiques */}
@@ -369,6 +376,7 @@ export default function TerrainDetailPage() {
               )}
 
               {/* Actions */}
+              {canWrite && (
               <div className="flex gap-3 pt-2 border-t border-slate-100">
                 {!hasActiveInvoices && (
                   <Button
@@ -406,6 +414,7 @@ export default function TerrainDetailPage() {
                     : 'Ajustez les dates et montants via « Modifier les échéances ». Annulez pour changer le nombre d\'échéances.'}
                 </p>
               </div>
+              )}
             </Card>
           );
         })()}

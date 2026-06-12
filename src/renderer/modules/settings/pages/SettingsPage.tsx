@@ -1,11 +1,13 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { Building2, HardDrive, Mail, MessageSquare, Images, FileText, FileSignature, Award, Briefcase, Tags, Landmark, IdCard, Layers, Bell, BookOpen, ChevronDown, ChevronRight, Inbox, Printer, MapPin } from 'lucide-react';
+import { useAuthStore } from '../../../shared/stores/auth.store';
+import { Building2, HardDrive, Database, Mail, MessageSquare, Images, FileText, FileSignature, Award, Briefcase, Tags, Landmark, IdCard, Layers, Bell, BookOpen, ChevronDown, ChevronRight, Inbox, Printer, MapPin, ShoppingBag } from 'lucide-react';
 import PageLayout from '../../../shared/components/layout/PageLayout';
 import Card from '../../../shared/components/ui/Card';
 import { clsx } from 'clsx';
 import CompanySettingsTab              from '../components/CompanySettingsTab';
 import StorageSettingsTab              from '../components/StorageSettingsTab';
+import DatabaseSettingsTab             from '../components/DatabaseSettingsTab';
 import EmailSettingsTab                from '../components/EmailSettingsTab';
 import SmsSettingsTab                  from '../components/SmsSettingsTab';
 import SlideshowSettingsTab            from '../components/SlideshowSettingsTab';
@@ -21,10 +23,13 @@ import TreasuryAccountsSettingsTab     from '../components/TreasuryAccountsSetti
 import RemindersSettingsTab            from '../components/RemindersSettingsTab';
 import CommTemplatesSettingsTab        from '../components/CommTemplatesSettingsTab';
 import ShareLocationSettingsTab        from '../components/ShareLocationSettingsTab';
+import CatalogSettingsTab              from '../components/CatalogSettingsTab';
+import QuoteTemplatesSettingsTab       from '../components/QuoteTemplatesSettingsTab';
 
 type TabKey =
   | 'company'
   | 'storage'
+  | 'database'
   | 'email'
   | 'sms'
   | 'slideshow'
@@ -32,9 +37,11 @@ type TabKey =
   | 'listExportTemplates'
   | 'conventionTemplates'
   | 'attestationTemplates'
+  | 'quoteTemplates'
   | 'projectTypes'
   | 'idDocumentTypes'
   | 'lotissementTitleTypes'
+  | 'catalog'
   | 'treasuryAccounts'
   | 'treasuryCategories'
   | 'reminders'
@@ -48,7 +55,12 @@ interface TabDef {
   label: string;
   icon: React.ReactNode;
   group?: GroupKey;
+  // Onglets accessibles à des rôles non-admin. Par défaut (absent), l'onglet
+  // est réservé aux SUPER_ADMIN / ADMIN. Les admins voient tous les onglets.
+  roles?: string[];
 }
+
+const ADMIN_ROLES = ['SUPER_ADMIN', 'ADMIN'];
 
 interface GroupDef {
   key: GroupKey;
@@ -65,6 +77,7 @@ const GROUPS: GroupDef[] = [
 const TABS: TabDef[] = [
   { key: 'company',              label: 'Entreprise',              icon: <Building2 className="h-4 w-4" /> },
   { key: 'storage',              label: 'Stockage',                icon: <HardDrive className="h-4 w-4" /> },
+  { key: 'database',             label: 'Connexion BDD',           icon: <Database className="h-4 w-4" /> },
   // ── Groupe « Gestion Mails / SMS / WhatsApp » ───────────────
   { key: 'email',                label: 'Email (SMTP)',            icon: <Mail className="h-4 w-4" />,           group: 'communication' },
   { key: 'sms',                  label: 'SMS',                     icon: <MessageSquare className="h-4 w-4" />,  group: 'communication' },
@@ -78,21 +91,32 @@ const TABS: TabDef[] = [
   { key: 'listExportTemplates',  label: 'Modèles export de listes', icon: <Printer className="h-4 w-4" />,      group: 'printedTemplates' },
   { key: 'conventionTemplates',  label: 'Modèles de conventions',  icon: <FileSignature className="h-4 w-4" />, group: 'printedTemplates' },
   { key: 'attestationTemplates', label: "Modèles d'attestations",  icon: <Award className="h-4 w-4" />,         group: 'printedTemplates' },
+  { key: 'quoteTemplates',       label: 'Modèles de devis',        icon: <FileText className="h-4 w-4" />,      group: 'printedTemplates' },
   { key: 'projectTypes',         label: 'Types de projets',        icon: <Briefcase className="h-4 w-4" /> },
   { key: 'idDocumentTypes',      label: "Types de pièces d'identité", icon: <IdCard className="h-4 w-4" /> },
   { key: 'lotissementTitleTypes', label: 'Natures de titres de lotissement', icon: <Layers className="h-4 w-4" /> },
+  { key: 'catalog',              label: 'Catalogue prestations / produits', icon: <ShoppingBag className="h-4 w-4" />, roles: ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ACCOUNTANT'] },
   // ── Groupe « Opérations bancaires » ─────────────────────────
   { key: 'treasuryAccounts',     label: "Comptes d'opérations",    icon: <Landmark className="h-4 w-4" />, group: 'treasury' },
   { key: 'treasuryCategories',   label: "Objets d'opération",      icon: <Tags className="h-4 w-4" />,     group: 'treasury' },
 ];
 
-const TAB_KEYS = TABS.map((t) => t.key) as TabKey[];
-
 export default function SettingsPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const initialTab = searchParams.get('tab');
+  const role = useAuthStore((s) => s.user?.role) ?? '';
+  const isAdmin = ADMIN_ROLES.includes(role);
+  // Onglets visibles selon le rôle : les admins voient tout ; les autres rôles
+  // ne voient que les onglets explicitement autorisés (ex. Catalogue pour
+  // MANAGER / ACCOUNTANT).
+  const visibleTabs = useMemo(
+    () => TABS.filter((t) => isAdmin || (t.roles ?? []).includes(role)),
+    [isAdmin, role],
+  );
+  const visibleKeys = useMemo(() => visibleTabs.map((t) => t.key) as TabKey[], [visibleTabs]);
+  const defaultTab: TabKey = visibleKeys.includes('company') ? 'company' : (visibleKeys[0] ?? 'company');
   const [active, setActive] = useState<TabKey>(
-    initialTab && (TAB_KEYS as string[]).includes(initialTab) ? (initialTab as TabKey) : 'company'
+    initialTab && visibleKeys.includes(initialTab as TabKey) ? (initialTab as TabKey) : defaultTab
   );
 
   // Groupes ouverts ; on initialise ouverts ceux qui contiennent l'onglet actif.
@@ -105,7 +129,7 @@ export default function SettingsPage() {
 
   useEffect(() => {
     const t = searchParams.get('tab');
-    if (t && (TAB_KEYS as string[]).includes(t) && t !== active) {
+    if (t && visibleKeys.includes(t as TabKey) && t !== active) {
       setActive(t as TabKey);
       const tabDef = TABS.find((x) => x.key === t);
       if (tabDef?.group) {
@@ -146,12 +170,12 @@ export default function SettingsPage() {
       | { kind: 'group'; group: GroupDef; children: TabDef[] }
     > = [];
     const groupInserted = new Set<GroupKey>();
-    for (const tab of TABS) {
+    for (const tab of visibleTabs) {
       if (tab.group) {
         if (groupInserted.has(tab.group)) continue;
         const groupDef = GROUPS.find((g) => g.key === tab.group);
         if (!groupDef) continue;
-        const children = TABS.filter((t) => t.group === tab.group);
+        const children = visibleTabs.filter((t) => t.group === tab.group);
         items.push({ kind: 'group', group: groupDef, children });
         groupInserted.add(tab.group);
       } else {
@@ -159,7 +183,7 @@ export default function SettingsPage() {
       }
     }
     return items;
-  }, []);
+  }, [visibleTabs]);
 
   const renderTabButton = (tab: TabDef, indented: boolean): React.ReactNode => (
     <button
@@ -225,6 +249,7 @@ export default function SettingsPage() {
         <div className="flex-1 min-w-0">
           {active === 'company'              && <CompanySettingsTab />}
           {active === 'storage'              && <StorageSettingsTab />}
+          {active === 'database'             && <DatabaseSettingsTab />}
           {active === 'email'                && <EmailSettingsTab />}
           {active === 'sms'                  && <SmsSettingsTab />}
           {active === 'slideshow'            && <SlideshowSettingsTab />}
@@ -232,9 +257,11 @@ export default function SettingsPage() {
           {active === 'listExportTemplates'  && <ListExportTemplatesSettingsTab />}
           {active === 'conventionTemplates'  && <ConventionTemplatesSettingsTab />}
           {active === 'attestationTemplates' && <AttestationTemplatesSettingsTab />}
+          {active === 'quoteTemplates'       && <QuoteTemplatesSettingsTab />}
           {active === 'projectTypes'         && <ProjectTypesSettingsTab />}
           {active === 'idDocumentTypes'      && <IdDocumentTypesSettingsTab />}
           {active === 'lotissementTitleTypes' && <LotissementTitleTypesSettingsTab />}
+          {active === 'catalog'              && <CatalogSettingsTab />}
           {active === 'treasuryAccounts'     && <TreasuryAccountsSettingsTab />}
           {active === 'treasuryCategories'   && <TreasuryCategoriesSettingsTab />}
           {active === 'reminders'            && <RemindersSettingsTab />}

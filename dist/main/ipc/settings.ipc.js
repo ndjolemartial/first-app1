@@ -74,6 +74,7 @@ const USER_ROLES = [
     'ACCOUNTANT',
     'ASSISTANTE_DIRECTION',
     'AGENT',
+    'AGENT_TECHNIQUE',
     'READONLY',
 ];
 const slideshowVisibilitySchema = zod_1.z.object({
@@ -153,7 +154,12 @@ function registerSettingsIPC() {
             const session = (0, auth_service_1.getSession)(token);
             if (!session)
                 return { success: false, error: 'Session expirée' };
-            (0, auth_service_1.checkRole)(session, ADMIN_ROLES);
+            // Lecture ouverte à tout utilisateur authentifié : les coordonnées de
+            // l'entreprise (raison sociale, adresse, téléphones, RCCM…) sont des
+            // informations publiques imprimées sur les documents clients (devis,
+            // factures, attestations). La restriction admin ne s'applique qu'à
+            // l'écriture (`settings:updateCompany`, logo). Sans cela, l'en-tête
+            // entreprise ne s'affichait que pour les comptes SUPER_ADMIN / ADMIN.
             const map = await (0, settings_service_1.getSettings)([
                 settings_service_1.SettingsKeys.companyName,
                 settings_service_1.SettingsKeys.companySlogan,

@@ -28,7 +28,7 @@ const formatUserName = (u: any): string =>
 const STATUS_OPTIONS = [
   { value: 'NOUVEAU',              label: 'Nouveau' },
   { value: 'CONTACTE',             label: 'Contacté' },
-  { value: 'QUALIFIE',             label: 'Qualifié' },
+  { value: 'QUALIFIE',             label: 'Client potentiel' },
   { value: 'ENVOI_PROPOSITION',    label: 'Proposition envoyée' },
   { value: 'NEGOCIATION_EN_COURS', label: 'Négociation en cours' },
   { value: 'PERDU',                label: 'Perdu' },
@@ -47,7 +47,7 @@ const STATUS_VARIANT: Record<string, any> = {
 const STATUS_LABEL: Record<string, string> = {
   NOUVEAU:              'Nouveau',
   CONTACTE:             'Contacté',
-  QUALIFIE:             'Qualifié',
+  QUALIFIE:             'Client potentiel',
   ENVOI_PROPOSITION:    'Proposition envoyée',
   NEGOCIATION_EN_COURS: 'Négociation',
   CONVERTI:             'Converti',

@@ -6,7 +6,7 @@ import { z } from 'zod';
 import { useAuthStore } from '../../shared/stores/auth.store';
 import Button from '../../shared/components/ui/Button';
 import Input from '../../shared/components/ui/Input';
-import { LogIn } from 'lucide-react';
+import { LogIn, Database } from 'lucide-react';
 
 const schema = z.object({
   identifier: z.string().min(1, 'Email ou login requis'),
@@ -90,6 +90,16 @@ export default function LoginPage() {
             Se connecter
           </Button>
         </form>
+
+        <div className="mt-6 border-t border-slate-100 pt-4 text-center">
+          <button
+            type="button"
+            onClick={() => navigate('/db-settings')}
+            className="inline-flex items-center gap-1.5 text-xs text-slate-400 hover:text-slate-600"
+          >
+            <Database className="h-3.5 w-3.5" /> Paramètres de connexion à la base
+          </button>
+        </div>
       </div>
     </div>
   );

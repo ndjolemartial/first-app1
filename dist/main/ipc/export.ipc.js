@@ -261,6 +261,24 @@ const FALLBACK_TEMPLATE = {
     showGeneratedAt: true,
     showRowCount: true,
 };
+/** Résout le thème de l'utilisateur et le modèle d'export de listes courant. */
+async function resolveThemeAndTemplate(userId) {
+    const theme = await (0, theme_service_1.getThemeForUser)(userId);
+    const resolved = await (0, list_export_templates_ipc_1.resolveListExportTemplate)((0, db_service_1.getDb)());
+    const tpl = resolved
+        ? {
+            orientation: resolved.orientation,
+            accentColor: resolved.accentColor,
+            headerHtml: resolved.headerHtml,
+            footerHtml: resolved.footerHtml,
+            endOfDocument: resolved.endOfDocument,
+            showLogo: resolved.showLogo,
+            showGeneratedAt: resolved.showGeneratedAt,
+            showRowCount: resolved.showRowCount,
+        }
+        : FALLBACK_TEMPLATE;
+    return { theme, tpl };
+}
 /**
  * Enregistre le handler IPC d'export de listes (PDF / Excel).
  */
@@ -288,20 +306,7 @@ function registerExportIPC() {
             if (result.canceled || !result.filePath) {
                 return { success: true, data: { canceled: true } };
             }
-            const theme = await (0, theme_service_1.getThemeForUser)(session.userId);
-            const resolved = await (0, list_export_templates_ipc_1.resolveListExportTemplate)((0, db_service_1.getDb)());
-            const tpl = resolved
-                ? {
-                    orientation: resolved.orientation,
-                    accentColor: resolved.accentColor,
-                    headerHtml: resolved.headerHtml,
-                    footerHtml: resolved.footerHtml,
-                    endOfDocument: resolved.endOfDocument,
-                    showLogo: resolved.showLogo,
-                    showGeneratedAt: resolved.showGeneratedAt,
-                    showRowCount: resolved.showRowCount,
-                }
-                : FALLBACK_TEMPLATE;
+            const { theme, tpl } = await resolveThemeAndTemplate(session.userId);
             const logoDataUri = payload.format === 'pdf' && tpl.showLogo ? await loadCompanyLogo() : null;
             const fileBuffer = payload.format === 'xlsx'
                 ? await buildXlsx(payload, theme, tpl)
@@ -312,6 +317,31 @@ function registerExportIPC() {
         }
         catch (error) {
             logger_1.default.error('export:generate error', error.message);
+            return { success: false, error: error.message };
+        }
+    });
+    /**
+     * Aperçu avant impression d'une liste : génère le PDF en mémoire et l'ouvre
+     * dans la fenêtre d'aperçu (impression directe avec choix d'imprimante),
+     * sans imposer d'enregistrement de fichier.
+     */
+    electron_1.ipcMain.handle('export:print', async (_event, payload) => {
+        try {
+            const session = (0, auth_service_1.getSession)(payload?.token);
+            if (!session)
+                return { success: false, error: 'Session expirée' };
+            if (!Array.isArray(payload.headers) || !Array.isArray(payload.rows)) {
+                return { success: false, error: 'Données d\'export invalides' };
+            }
+            const { theme, tpl } = await resolveThemeAndTemplate(session.userId);
+            const logoDataUri = tpl.showLogo ? await loadCompanyLogo() : null;
+            const pdf = await buildPdf(payload, theme, tpl, logoDataUri);
+            await (0, pdf_service_1.openPrintPreview)(pdf, payload.title || payload.fileName);
+            logger_1.default.info(`Aperçu impression liste: ${payload.fileName} (${payload.rows.length} lignes)`);
+            return { success: true, data: { previewing: true } };
+        }
+        catch (error) {
+            logger_1.default.error('export:print error', error.message);
             return { success: false, error: error.message };
         }
     });

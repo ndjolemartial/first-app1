@@ -66,6 +66,17 @@ const createCommissionSchema = z.object({
   { message: 'Bénéficiaire requis' },
 );
 
+// Commission sur une échéance héritée (sans convention). Le bénéficiaire est
+// l'utilisateur référent du client par défaut (override possible via userId).
+const createInstallmentCommissionSchema = z.object({
+  installmentId: z.number().int().positive(),
+  transactionType: z.enum(['VENTE', 'LOCATION', 'SOUSCRIPTION', 'FRAIS_DOSSIER', 'FRAIS_DEMARCHES_ACD']),
+  rate: z.number().min(0).max(100),
+  baseAmount: z.number().positive().optional(),
+  userId: z.number().int().positive().optional(),
+  notes: z.string().optional(),
+});
+
 const payCommissionSchema = z.object({
   id: z.number().int().positive(),
   method: z.enum(PAYMENT_METHODS),
@@ -135,6 +146,18 @@ const commissionInclude = {
         select: { terrain: { select: { id: true, reference: true, numeroIlot: true, numeroParcelle: true } } },
       },
       client: { select: { id: true, firstName: true, lastName: true, entreprise: true, type: true } },
+    },
+  },
+  // Échéance héritée rattachée (commission sans convention) — contexte d'affichage.
+  installment: {
+    select: {
+      id: true,
+      installmentNumber: true,
+      dueDate: true,
+      amount: true,
+      detailsSouscription: true,
+      client: { select: { id: true, firstName: true, lastName: true, entreprise: true, type: true } },
+      terrain: { select: { id: true, reference: true } },
     },
   },
   user: { select: { id: true, firstName: true, lastName: true, role: true, fonction: true } },
@@ -273,6 +296,7 @@ export function registerCommissionsIPC(): void {
       if (filters.userId) where.userId = filters.userId;
       if (filters.referrerId) where.referrerId = filters.referrerId;
       if (filters.conventionId) where.conventionId = filters.conventionId;
+      if (filters.installmentId) where.installmentId = filters.installmentId;
       // Rôles non privilégiés : ne voient que les commissions dont ils sont
       // bénéficiaires (USER) — pas les commissions d'apporteur.
       if (!hasFullView(session.role)) {
@@ -358,6 +382,17 @@ export function registerCommissionsIPC(): void {
         return { success: false, error: 'Cette convention n\'est pas éligible à une commission (vente, location ou souscription uniquement)' };
       }
 
+      // Les commissions de vente / location / souscription sont désormais
+      // générées AUTOMATIQUEMENT à l'encaissement (assiette = montant encaissé
+      // sur l'échéance ou la facture). Seuls les frais périphériques restent à
+      // saisie manuelle.
+      if (['VENTE', 'LOCATION', 'SOUSCRIPTION'].includes(d.transactionType)) {
+        return {
+          success: false,
+          error: "Les commissions de vente, location et souscription sont générées automatiquement à chaque encaissement (l'assiette est le montant encaissé). La création manuelle n'est possible que pour les frais d'ouverture de dossier et les frais de démarches ACD.",
+        };
+      }
+
       // Une commission VENTE/LOCATION/SOUSCRIPTION doit correspondre au type de
       // la convention ; les types « périphériques » FRAIS_DOSSIER et
       // FRAIS_DEMARCHES_ACD sont admis quelle que soit la convention éligible.
@@ -426,6 +461,174 @@ export function registerCommissionsIPC(): void {
       return ser({ success: true, data: commission });
     } catch (error: any) {
       logger.error('commissions:create error', error.message);
+      return { success: false, error: error.message };
+    }
+  });
+
+  /* ─── Commissions sur échéances héritées (sans convention) ───────── */
+
+  // Contexte de pré-remplissage : échéance, client, utilisateur référent du
+  // client, taux par défaut, et types de commission déjà passés sur l'échéance
+  // (pour bloquer les doublons côté UI).
+  ipcMain.handle('commissions:prepareInstallmentCommission', async (_event, { token, installmentId }: any) => {
+    try {
+      const session = getSession(token);
+      if (!session) return { success: false, error: 'Session expirée' };
+      checkRole(session, READ_ROLES);
+      const db = getDb();
+
+      const installment = await db.saleInstallment.findUnique({
+        where: { id: installmentId },
+        select: {
+          id: true, installmentNumber: true, dueDate: true, amount: true,
+          paidAmount: true, status: true,
+          conventionId: true, detailsSouscription: true,
+          client: {
+            select: {
+              id: true, firstName: true, lastName: true, entreprise: true, type: true,
+              assignedTo: { select: { id: true, firstName: true, lastName: true, fonction: true, role: true } },
+            },
+          },
+          terrain: { select: { id: true, reference: true } },
+          terrainLinks: {
+            orderBy: { order: 'asc' },
+            select: {
+              terrain: { select: { id: true, reference: true, acdDemarchesEnabled: true, acdDemarchesAmount: true } },
+            },
+          },
+        },
+      });
+      if (!installment) return { success: false, error: 'Échéance introuvable' };
+      if (installment.conventionId) {
+        return { success: false, error: 'Cette échéance est rattachée à une convention : gérez sa commission via la convention.' };
+      }
+
+      // Types de commission déjà actifs (non annulés) sur cette échéance.
+      const existing = await db.commission.findMany({
+        where: { installmentId, deletedAt: null, status: { not: 'ANNULEE' } },
+        select: { transactionType: true },
+      });
+      const rates = await getDefaultRates(db);
+
+      // Assiette des frais de démarches ACD = somme des frais ACD des terrains rattachés.
+      const acdBase = installment.terrainLinks.reduce(
+        (s, l) => s + Number(l.terrain?.acdDemarchesAmount ?? 0), 0);
+
+      return ser({
+        success: true,
+        data: {
+          installment,
+          referentUser: installment.client?.assignedTo ?? null,
+          rates,
+          acdBase,
+          terrains: installment.terrainLinks.map((l) => l.terrain),
+          existingTypes: existing.map((e) => e.transactionType),
+        },
+      });
+    } catch (error: any) {
+      logger.error('commissions:prepareInstallmentCommission error', error.message);
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle('commissions:createForInstallment', async (_event, { token, payload }: any) => {
+    try {
+      const session = getSession(token);
+      if (!session) return { success: false, error: 'Session expirée' };
+      checkCommissionWriteRole(session, WRITE_ROLES);
+      const parsed = createInstallmentCommissionSchema.safeParse(payload);
+      if (!parsed.success) return { success: false, error: parsed.error.format() };
+      const d = parsed.data;
+      const db = getDb();
+
+      const installment = await db.saleInstallment.findUnique({
+        where: { id: d.installmentId },
+        select: {
+          id: true, amount: true, paidAmount: true, status: true, conventionId: true,
+          client: { select: { id: true, assignedToId: true } },
+          terrainLinks: { select: { terrain: { select: { acdDemarchesAmount: true } } } },
+        },
+      });
+      if (!installment) return { success: false, error: 'Échéance introuvable' };
+      if (installment.conventionId) {
+        return { success: false, error: 'Cette échéance est rattachée à une convention.' };
+      }
+
+      // Bénéficiaire : utilisateur référent du client (override possible).
+      const userId = d.userId ?? installment.client?.assignedToId ?? null;
+      if (!userId) {
+        return { success: false, error: "Le client de cette échéance n'a pas d'utilisateur référent. Affectez un référent au client ou choisissez un bénéficiaire." };
+      }
+      const user = await db.user.findUnique({ where: { id: userId }, select: { id: true } });
+      if (!user) return { success: false, error: 'Utilisateur référent introuvable' };
+
+      // Un même type de commission ne peut être passé qu'une seule fois sur
+      // l'échéance (les commissions annulées ne comptent pas).
+      const duplicate = await db.commission.findFirst({
+        where: {
+          installmentId: d.installmentId,
+          transactionType: d.transactionType,
+          deletedAt: null,
+          status: { not: 'ANNULEE' },
+        },
+        select: { reference: true },
+      });
+      if (duplicate) {
+        return {
+          success: false,
+          error: `Une commission ${d.transactionType} existe déjà sur cette échéance (${duplicate.reference}).`,
+        };
+      }
+
+      // Assiette selon le type :
+      //  - FRAIS_DEMARCHES_ACD → somme des frais ACD des terrains rattachés ;
+      //  - SOUSCRIPTION        → montant encaissé (payé ou partiellement payé) :
+      //    l'échéance doit donc être PAYE ou PARTIEL ;
+      //  - autres types        → assiette fournie ou montant de l'échéance.
+      let baseAmount: number;
+      if (d.transactionType === 'FRAIS_DEMARCHES_ACD') {
+        baseAmount = installment.terrainLinks.reduce(
+          (s, l) => s + Number(l.terrain?.acdDemarchesAmount ?? 0), 0);
+        if (!(baseAmount > 0)) {
+          return { success: false, error: 'Aucun frais de démarches ACD sur les terrains rattachés. Rattachez un terrain disposant de frais ACD à cette échéance.' };
+        }
+      } else if (d.transactionType === 'SOUSCRIPTION') {
+        if (installment.status !== 'PAYE' && installment.status !== 'PARTIEL') {
+          return { success: false, error: "Une commission de souscription requiert une échéance payée ou partiellement payée (l'assiette est le montant encaissé)." };
+        }
+        baseAmount = Number(installment.paidAmount);
+        if (!(baseAmount > 0)) {
+          return { success: false, error: "Aucun montant encaissé sur cette échéance : impossible de baser la commission de souscription." };
+        }
+      } else {
+        baseAmount = d.baseAmount ?? Number(installment.amount);
+      }
+      if (!(baseAmount > 0)) return { success: false, error: 'Assiette de commission invalide' };
+      const amount = computeCommissionAmount(baseAmount, d.rate);
+      const reference = await nextCommissionRef(db);
+
+      const commission = await db.commission.create({
+        data: {
+          reference,
+          conventionId: null,
+          installmentId: d.installmentId,
+          beneficiaryType: 'USER',
+          userId,
+          referrerId: null,
+          transactionType: d.transactionType,
+          baseAmount: baseAmount as never,
+          rate: d.rate as never,
+          amount: amount as never,
+          status: 'A_PAYER',
+          source: 'MANUEL',
+          notes: d.notes,
+        },
+        include: commissionInclude,
+      });
+      logger.info(`Commission héritée créée: ${commission.reference} (échéance #${d.installmentId})`);
+      return ser({ success: true, data: commission });
+    } catch (error: any) {
+      logger.error('commissions:createForInstallment error', error.message);
       return { success: false, error: error.message };
     }
   });
@@ -863,6 +1066,7 @@ export function registerCommissionsIPC(): void {
         });
         const treated = new Map<number, Set<string>>();
         for (const e of existing) {
+          if (e.conventionId == null) continue; // filtré sur conventionId in [...], jamais null ici
           if (!treated.has(e.conventionId)) treated.set(e.conventionId, new Set());
           treated.get(e.conventionId)!.add(e.transactionType);
         }

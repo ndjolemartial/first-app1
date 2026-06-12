@@ -227,6 +227,19 @@ export default function ConventionDocumentPage() {
     });
   };
 
+  const handlePrint = async () => {
+    const token = useAuthStore.getState().token;
+    if (!token) return;
+    await window.electron.documentExport.printDocument(token, {
+      fileName: exportFileName,
+      bodyHtml: documentBodyHtml,
+      headerTemplate,
+      footerTemplate,
+      headerMm,
+      footerMm,
+    });
+  };
+
   const handleExportDocx = async () => {
     const token = useAuthStore.getState().token;
     if (!token) return;
@@ -256,8 +269,11 @@ export default function ConventionDocumentPage() {
             <Button variant="secondary" icon={<FileType2 className="h-4 w-4" />} onClick={handleExportDocx}>
               Exporter Word
             </Button>
-            <Button icon={<Printer className="h-4 w-4" />} onClick={handleExportPdf}>
+            <Button variant="secondary" icon={<FileText className="h-4 w-4" />} onClick={handleExportPdf}>
               Exporter PDF
+            </Button>
+            <Button icon={<Printer className="h-4 w-4" />} onClick={handlePrint}>
+              Imprimer
             </Button>
           </div>
         )

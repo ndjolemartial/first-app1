@@ -14,6 +14,19 @@ function hasFullView(role: string): boolean {
   return FULL_VIEW_ROLES.includes(role);
 }
 
+/**
+ * Contrôle de rôle pour les écritures sur les biens (création, modification,
+ * suppression, changement de statut). AGENT et READONLY sont déjà hors des
+ * WRITE_ROLES ; ASSISTANTE_DIRECTION est explicitement exclue malgré
+ * l'équivalence MANAGER appliquée par checkRole. ACCOUNTANT conserve l'accès.
+ */
+function checkWriteRole(session: { role: string }, allowedRoles: string[]): void {
+  if (session.role === 'ASSISTANTE_DIRECTION') {
+    throw new Error('Permission insuffisante');
+  }
+  checkRole(session as any, allowedRoles);
+}
+
 /** Sérialise pour l'IPC : les Decimal Prisma ne sont pas clonables par Electron. */
 const ser = <T>(v: T): T => JSON.parse(JSON.stringify(v));
 
@@ -188,7 +201,7 @@ export function registerPropertiesIPC(): void {
     try {
       const session = getSession(token);
       if (!session) return { success: false, error: 'Session expirée' };
-      checkRole(session, WRITE_ROLES);
+      checkWriteRole(session, WRITE_ROLES);
       const parsed = propertyCreateSchema.safeParse(payload);
       if (!parsed.success) return { success: false, error: parsed.error.format() };
       const db = getDb();
@@ -243,7 +256,7 @@ export function registerPropertiesIPC(): void {
     try {
       const session = getSession(token);
       if (!session) return { success: false, error: 'Session expirée' };
-      checkRole(session, WRITE_ROLES);
+      checkWriteRole(session, WRITE_ROLES);
       const parsed = propertyUpdateSchema.safeParse(payload);
       if (!parsed.success) return { success: false, error: parsed.error.format() };
       const db = getDb();
@@ -273,7 +286,7 @@ export function registerPropertiesIPC(): void {
     try {
       const session = getSession(token);
       if (!session) return { success: false, error: 'Session expirée' };
-      checkRole(session, ['SUPER_ADMIN', 'ADMIN', 'MANAGER']);
+      checkWriteRole(session, ['SUPER_ADMIN', 'ADMIN', 'MANAGER']);
       const db = getDb();
       await db.property.update({ where: { id }, data: { deletedAt: new Date() } });
       return { success: true };
@@ -332,7 +345,7 @@ export function registerPropertiesIPC(): void {
     try {
       const session = getSession(token);
       if (!session) return { success: false, error: 'Session expirée' };
-      checkRole(session, WRITE_ROLES);
+      checkWriteRole(session, WRITE_ROLES);
       const db = getDb();
       // Refuse les statuts qui exigent un client si aucun n'est rattaché.
       if (statusNeedsClient(status)) {

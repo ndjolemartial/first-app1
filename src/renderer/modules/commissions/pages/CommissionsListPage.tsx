@@ -16,7 +16,8 @@ import {
 } from '../utils/commissions.utils';
 import { formatCurrency } from '../../../shared/utils/format';
 import ExportMenu, { ExportColumn } from '../../../shared/components/ExportMenu';
-import { Plus, Search } from 'lucide-react';
+import { toast } from '../../../shared/components/ui/Toast';
+import { Plus, Search, Printer } from 'lucide-react';
 
 const STATUS_OPTIONS = [
   { value: '', label: 'Tous les statuts' },
@@ -93,6 +94,36 @@ export default function CommissionsListPage() {
   const total = res?.total ?? 0;
   const totalPages = Math.ceil(total / limit);
 
+  const [printing, setPrinting] = useState(false);
+  // Impression de la liste filtrée : récupère toutes les lignes, construit la
+  // matrice depuis les colonnes d'export et ouvre l'aperçu avant impression.
+  const handlePrint = async () => {
+    setPrinting(true);
+    try {
+      const r = await window.electron.commissions.list(token, filters, 1, 100000);
+      const rows = r.success ? r.data ?? [] : [];
+      if (rows.length === 0) { toast.error('Aucune commission à imprimer'); return; }
+      const matrix = rows.map((row: any) =>
+        EXPORT_COLUMNS.map((c) => {
+          const v = c.cell(row);
+          return v === null || v === undefined ? '' : String(v);
+        }),
+      );
+      const pr = await window.electron.exporter.print(token, {
+        fileName: 'commissions',
+        title: 'Liste des commissions',
+        subtitle: filterSummary,
+        headers: EXPORT_COLUMNS.map((c) => c.header),
+        rows: matrix,
+      });
+      if (!pr.success) toast.error(typeof pr.error === 'string' ? pr.error : "Erreur lors de l'impression");
+    } catch (e: any) {
+      toast.error(e?.message ?? "Erreur lors de l'impression");
+    } finally {
+      setPrinting(false);
+    }
+  };
+
   return (
     <PageLayout
       title="Toutes les commissions"
@@ -109,6 +140,9 @@ export default function CommissionsListPage() {
               return r.success ? r.data ?? [] : [];
             }}
           />
+          <Button variant="secondary" icon={<Printer className="h-4 w-4" />} loading={printing} onClick={handlePrint}>
+            Imprimer
+          </Button>
           {canManage && (
             <Button icon={<Plus className="h-4 w-4" />} onClick={() => navigate('/commissions/new')}>
               Nouvelle commission

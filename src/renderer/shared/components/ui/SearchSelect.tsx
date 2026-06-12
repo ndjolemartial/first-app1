@@ -13,6 +13,7 @@ import {
   type Control,
   type FieldValues,
   type Path,
+  type RegisterOptions,
 } from 'react-hook-form';
 
 export interface SearchSelectOption {
@@ -288,6 +289,8 @@ interface FormSearchSelectProps<T extends FieldValues> {
   error?: string;
   disabled?: boolean;
   required?: boolean;
+  /** Règles de validation react-hook-form (ex. `{ required: 'Champ requis' }`). */
+  rules?: Omit<RegisterOptions<T, Path<T>>, 'valueAsNumber' | 'valueAsDate' | 'setValueAs' | 'disabled'>;
   /** Notifié après mise à jour de la valeur — pour les effets de bord (pré-remplissage…). */
   onValueChange?: (value: string) => void;
 }
@@ -300,6 +303,7 @@ export function FormSearchSelect<T extends FieldValues>({
   control,
   name,
   error,
+  rules,
   onValueChange,
   ...rest
 }: FormSearchSelectProps<T>) {
@@ -307,6 +311,7 @@ export function FormSearchSelect<T extends FieldValues>({
     <Controller
       control={control}
       name={name}
+      rules={rules}
       render={({ field, fieldState }) => (
         <SearchSelect
           {...rest}

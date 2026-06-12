@@ -10,6 +10,7 @@ import Pagination from '../../../shared/components/ui/Pagination';
 import { SkeletonTable } from '../../../shared/components/ui/Skeleton';
 import EmptyState from '../../../shared/components/ui/EmptyState';
 import { useConventions, useConventionsStatusStats } from '../hooks/useConventions';
+import { useAuthStore } from '../../../shared/stores/auth.store';
 import { formatDate, formatCurrency } from '../../../shared/utils/format';
 import StatusRecap, { type StatusRecapItem } from '../../../shared/components/ui/StatusRecap';
 import { Plus, Eye, Edit, FileText, Award, FilePen, Clock, CheckCircle2, CalendarX, XCircle } from 'lucide-react';
@@ -82,8 +83,14 @@ const STATUS_RECAP_ITEMS: StatusRecapItem[] = [
   { key: 'ANNULE',            label: 'Annulées',      icon: XCircle,       iconBg: 'bg-rose-100',    iconColor: 'text-rose-600',    activeColor: 'text-rose-700' },
 ];
 
+// Écriture (création / édition) réservée à MANAGER+ (ACCOUNTANT/AD inclus).
+// L'AGENT est en consultation seule (ses clients référents, BROUILLON).
+const WRITE_ROLES = new Set(['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ACCOUNTANT', 'ASSISTANTE_DIRECTION']);
+
 export default function ConventionsListPage() {
   const navigate = useNavigate();
+  const role = useAuthStore((s) => s.user?.role) ?? '';
+  const canWrite = WRITE_ROLES.has(role);
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState('');
   const [type, setType] = useState('');
@@ -114,9 +121,11 @@ export default function ConventionsListPage() {
             onClick={() => navigate('/conventions/attestations')}>
             Attestations
           </Button>
-          <Button icon={<Plus className="h-4 w-4" />} onClick={() => navigate('/conventions/new')}>
-            Nouvelle convention
-          </Button>
+          {canWrite && (
+            <Button icon={<Plus className="h-4 w-4" />} onClick={() => navigate('/conventions/new')}>
+              Nouvelle convention
+            </Button>
+          )}
         </div>
       }
     >
@@ -152,7 +161,7 @@ export default function ConventionsListPage() {
           <EmptyState
             title="Aucune convention trouvée"
             description="Commencez par créer une convention de location ou de vente."
-            action={{ label: 'Nouvelle convention', onClick: () => navigate('/conventions/new') }}
+            action={canWrite ? { label: 'Nouvelle convention', onClick: () => navigate('/conventions/new') } : undefined}
           />
         ) : (
           <>
@@ -229,8 +238,10 @@ export default function ConventionsListPage() {
                         <div className="flex justify-end gap-1">
                           <Button variant="ghost" size="sm" icon={<Eye className="h-4 w-4" />}
                             onClick={() => navigate(`/conventions/${c.id}`)} />
-                          <Button variant="ghost" size="sm" icon={<Edit className="h-4 w-4" />}
-                            onClick={() => navigate(`/conventions/${c.id}/edit`)} />
+                          {canWrite && (
+                            <Button variant="ghost" size="sm" icon={<Edit className="h-4 w-4" />}
+                              onClick={() => navigate(`/conventions/${c.id}/edit`)} />
+                          )}
                         </div>
                       </td>
                     </tr>

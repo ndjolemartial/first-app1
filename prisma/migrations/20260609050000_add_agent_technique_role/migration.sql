@@ -1,0 +1,3 @@
+-- AlterEnum: ajout du rôle AGENT_TECHNIQUE (hérite des droits AGENT + gestion
+-- limitée des utilisateurs AGENT / AGENT_TECHNIQUE / READONLY).
+ALTER TABLE `User` MODIFY `role` ENUM('SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ACCOUNTANT', 'ASSISTANTE_DIRECTION', 'AGENT', 'AGENT_TECHNIQUE', 'READONLY') NOT NULL DEFAULT 'AGENT';

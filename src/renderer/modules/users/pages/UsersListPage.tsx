@@ -22,6 +22,7 @@ const ROLE_OPTIONS = [
   { value: 'MANAGER', label: 'Manager' },
   { value: 'ACCOUNTANT', label: 'Comptable' },
   { value: 'ASSISTANTE_DIRECTION', label: 'Assistante de Direction' },
+  { value: 'AGENT_TECHNIQUE', label: 'Agent Technique' },
   { value: 'AGENT', label: 'Agent' },
   { value: 'READONLY', label: 'Lecture seule' },
 ];
@@ -33,6 +34,7 @@ const ROLE_VARIANT: Record<string, any> = {
   ACCOUNTANT: 'warning',
   ASSISTANTE_DIRECTION: 'warning',
   AGENT: 'success',
+  AGENT_TECHNIQUE: 'success',
   READONLY: 'default',
 };
 

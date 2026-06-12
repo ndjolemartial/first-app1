@@ -105,6 +105,36 @@ const attestations = {
     update: (token, id, payload) => api.invoke('attestations:update', { token, id, payload }),
     delete: (token, id) => api.invoke('attestations:delete', { token, id }),
     typeStats: (token, filters) => api.invoke('attestations:typeStats', { token, filters }),
+    getLegacyBalance: (token, clientId, terrainId) => api.invoke('attestations:getLegacyBalance', { token, clientId, terrainId }),
+};
+// Devis
+const quotes = {
+    list: (token, filters, page, limit) => api.invoke('quotes:list', { token, filters, page, limit }),
+    getById: (token, id) => api.invoke('quotes:getById', { token, id }),
+    stats: (token) => api.invoke('quotes:stats', { token }),
+    create: (token, payload) => api.invoke('quotes:create', { token, payload }),
+    update: (token, id, payload) => api.invoke('quotes:update', { token, id, payload }),
+    send: (token, id) => api.invoke('quotes:send', { token, id }),
+    accept: (token, id) => api.invoke('quotes:accept', { token, id }),
+    refuse: (token, id, reason) => api.invoke('quotes:refuse', { token, id, reason }),
+    cancel: (token, id) => api.invoke('quotes:cancel', { token, id }),
+    delete: (token, id) => api.invoke('quotes:delete', { token, id }),
+    convert: (token, id, options) => api.invoke('quotes:convert', { token, id, options }),
+};
+const quoteTemplates = {
+    list: (token, filters, page, limit) => api.invoke('quoteTemplates:list', { token, filters, page, limit }),
+    getById: (token, id) => api.invoke('quoteTemplates:getById', { token, id }),
+    create: (token, payload) => api.invoke('quoteTemplates:create', { token, payload }),
+    update: (token, id, payload) => api.invoke('quoteTemplates:update', { token, id, payload }),
+    delete: (token, id) => api.invoke('quoteTemplates:delete', { token, id }),
+};
+// Catalogue prestations / produits
+const catalog = {
+    list: (token, filters) => api.invoke('catalog:list', { token, filters }),
+    getById: (token, id) => api.invoke('catalog:getById', { token, id }),
+    create: (token, payload) => api.invoke('catalog:create', { token, payload }),
+    update: (token, id, payload) => api.invoke('catalog:update', { token, id, payload }),
+    delete: (token, id) => api.invoke('catalog:delete', { token, id }),
 };
 // Accounting
 const accounting = {
@@ -122,6 +152,8 @@ const accounting = {
     getUpcomingInstallments: (token, days) => api.invoke('accounting:getUpcomingInstallments', { token, days }),
     getPaidInstallments: (token, year, semester) => api.invoke('accounting:getPaidInstallments', { token, year, semester }),
     getCancelledInstallments: (token) => api.invoke('accounting:getCancelledInstallments', { token }),
+    getLegacyInstallments: (token) => api.invoke('accounting:getLegacyInstallments', { token }),
+    updateLegacyInstallment: (token, payload) => api.invoke('accounting:updateLegacyInstallment', { token, payload }),
     listInstallments: (token) => api.invoke('accounting:listInstallments', { token }),
     payInstallment: (token, installmentId, payload) => api.invoke('accounting:payInstallment', { token, installmentId, payload }),
     printInvoice: (token, invoiceId) => api.invoke('accounting:printInvoice', { token, invoiceId }),
@@ -240,11 +272,15 @@ const countries = {
 // Export de listes (PDF / Excel)
 const exporter = {
     generate: (token, payload) => api.invoke('export:generate', { token, ...payload }),
+    // Aperçu avant impression d'une liste (impression directe avec choix d'imprimante).
+    print: (token, payload) => api.invoke('export:print', { token, ...payload }),
 };
 // Export PDF de document (convention / attestation) avec en-tête + pied de page
 // rendus sur chaque page via le moteur natif Chromium.
 const documentExport = {
     exportDocumentPdf: (token, payload) => api.invoke('documents:exportDocumentPdf', { token, ...payload }),
+    // Aperçu avant impression du document (impression directe avec choix d'imprimante).
+    printDocument: (token, payload) => api.invoke('documents:printDocument', { token, ...payload }),
     exportDocumentDocx: (token, payload) => api.invoke('documents:exportDocumentDocx', { token, ...payload }),
 };
 // Modèles de facture
@@ -264,6 +300,8 @@ const commissions = {
     list: (token, filters, page, limit) => api.invoke('commissions:list', { token, filters, page, limit }),
     getById: (token, id) => api.invoke('commissions:getById', { token, id }),
     create: (token, payload) => api.invoke('commissions:create', { token, payload }),
+    prepareInstallmentCommission: (token, installmentId) => api.invoke('commissions:prepareInstallmentCommission', { token, installmentId }),
+    createForInstallment: (token, payload) => api.invoke('commissions:createForInstallment', { token, payload }),
     update: (token, payload) => api.invoke('commissions:update', { token, payload }),
     pay: (token, payload) => api.invoke('commissions:pay', { token, payload }),
     cancel: (token, payload) => api.invoke('commissions:cancel', { token, payload }),
@@ -319,6 +357,12 @@ const treasury = {
 // Dashboard
 const dashboard = {
     getStats: (token) => api.invoke('dashboard:getStats', { token }),
+};
+// Configuration connexion BDD (accessible avant authentification)
+const config = {
+    getDb: () => api.invoke('config:getDb', {}),
+    testDb: (dbConfig) => api.invoke('config:testDb', { config: dbConfig }),
+    saveDb: (dbConfig) => api.invoke('config:saveDb', { config: dbConfig }),
 };
 // Paramètres applicatifs (réservés aux administrateurs)
 const settings = {
@@ -393,4 +437,4 @@ const documents = {
     /** Résout le chemin disque d'un fichier sélectionné/déposé (Electron webUtils). */
     pathForFile: (file) => electron_1.webUtils.getPathForFile(file),
 };
-electron_1.contextBridge.exposeInMainWorld('electron', { auth, users, prospects, clients, owners, properties, conventions, conventionTemplates, attestationTemplates, attestations, accounting, bilan, communication, crm, archiving, documents, documentExport, lotissements, terrains, programmes, projects, geo, countries, commissions, exporter, invoiceTemplates, listExportTemplates, treasury, budget, dashboard, settings, reminders });
+electron_1.contextBridge.exposeInMainWorld('electron', { auth, users, prospects, clients, owners, properties, conventions, conventionTemplates, attestationTemplates, attestations, quotes, quoteTemplates, catalog, accounting, bilan, communication, crm, archiving, documents, documentExport, lotissements, terrains, programmes, projects, geo, countries, commissions, exporter, invoiceTemplates, listExportTemplates, treasury, budget, dashboard, settings, reminders, config });

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
-import { ChevronLeft, ChevronRight, Pause, Play } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Pause, Play, Volume2, VolumeX } from 'lucide-react';
 import { clsx } from 'clsx';
+import { useAuthStore } from '../../../shared/stores/auth.store';
 
 export interface SlideshowItem {
   type: 'image' | 'video';
@@ -16,11 +17,57 @@ interface Props {
 
 const DEFAULT_DURATION = 6000;
 
+/** Une URL directement chargeable par le renderer (pas un chemin de stockage local). */
+function isDirectSrc(src: string): boolean {
+  return src.startsWith('http://') || src.startsWith('https://') || src.startsWith('data:');
+}
+
 export default function DashboardSlideshow({ items, className }: Props) {
+  const token = useAuthStore((s) => s.token);
   const [index, setIndex] = useState(0);
   const [paused, setPaused] = useState(false);
-  const videoRef = useRef<HTMLVideoElement | null>(null);
+  // Vidéos mutées par défaut (lecture auto non intrusive) ; bouton pour activer
+  // le son. Une fois l'utilisateur ayant activé le son, l'état persiste d'une
+  // vidéo à l'autre du slideshow.
+  const [muted, setMuted] = useState(true);
+  // Références vers toutes les vidéos rendues (par index) : permet de lire la
+  // vidéo courante (avec son) et de mettre les autres en pause.
+  const videosRef = useRef<Map<number, HTMLVideoElement>>(new Map());
   const timerRef = useRef<number | null>(null);
+  // Les médias téléversés sont stockés sous un chemin relatif `slideshow/…` que le
+  // renderer ne peut pas charger directement. On les résout en `data:` URL via IPC
+  // (même mécanisme que l'aperçu des réglages). Cache par chemin source.
+  const [resolved, setResolved] = useState<Record<string, string>>({});
+
+  useEffect(() => {
+    if (!token) return;
+    let cancelled = false;
+    const toLoad = items.filter((it) => it.src && !isDirectSrc(it.src) && !resolved[it.src]);
+    if (toLoad.length === 0) return;
+    Promise.all(
+      toLoad.map(async (it) => {
+        try {
+          const r = await window.electron.settings.getSlideshowMediaData(token, it.src);
+          if (r.success && r.data) {
+            return [it.src, `data:${r.data.mimeType};base64,${r.data.base64}`] as const;
+          }
+        } catch {
+          /* média introuvable — ignoré, slide vide */
+        }
+        return null;
+      }),
+    ).then((pairs) => {
+      if (cancelled) return;
+      const next: Record<string, string> = {};
+      for (const p of pairs) if (p) next[p[0]] = p[1];
+      if (Object.keys(next).length > 0) setResolved((prev) => ({ ...prev, ...next }));
+    });
+    return () => { cancelled = true; };
+  }, [items, token, resolved]);
+
+  /** URL effective d'un média : directe, ou résolue depuis le stockage local. */
+  const srcOf = (item: SlideshowItem): string =>
+    isDirectSrc(item.src) ? item.src : (resolved[item.src] ?? '');
 
   const safeItems = items.length > 0 ? items : [{ type: 'image' as const, src: '', caption: 'Aucun contenu' }];
   const current = safeItems[index];
@@ -40,11 +87,18 @@ export default function DashboardSlideshow({ items, className }: Props) {
   }, [index, paused, current, safeItems.length]);
 
   useEffect(() => {
-    if (current.type === 'video' && videoRef.current) {
-      videoRef.current.currentTime = 0;
-      if (!paused) videoRef.current.play().catch(() => undefined);
-    }
-  }, [current, paused]);
+    // Lit la vidéo courante (avec son) et met les autres en pause pour éviter
+    // qu'une vidéo quittée continue de jouer son audio en arrière-plan.
+    // `resolved` : relance la lecture une fois la vidéo locale chargée (data URL).
+    videosRef.current.forEach((video, i) => {
+      if (i === index) {
+        video.currentTime = 0;
+        if (!paused) video.play().catch(() => undefined);
+      } else {
+        video.pause();
+      }
+    });
+  }, [index, paused, resolved]);
 
   if (safeItems.length === 0) return null;
 
@@ -64,23 +118,33 @@ export default function DashboardSlideshow({ items, className }: Props) {
             i === index ? 'opacity-100' : 'pointer-events-none opacity-0',
           )}
         >
-          {item.type === 'image' ? (
-            <img
-              src={item.src}
-              alt={item.caption ?? ''}
-              className="h-full w-full object-cover"
-              draggable={false}
-            />
-          ) : (
-            <video
-              ref={i === index ? videoRef : undefined}
-              src={item.src}
-              className="h-full w-full object-cover"
-              muted
-              playsInline
-              onEnded={next}
-            />
-          )}
+          {(() => {
+            const effectiveSrc = srcOf(item);
+            if (!effectiveSrc) {
+              // Média local en cours de résolution (ou introuvable).
+              return <div className="h-full w-full animate-pulse bg-slate-800" />;
+            }
+            return item.type === 'image' ? (
+              <img
+                src={effectiveSrc}
+                alt={item.caption ?? ''}
+                className="h-full w-full object-cover"
+                draggable={false}
+              />
+            ) : (
+              <video
+                ref={(el) => {
+                  if (el) videosRef.current.set(i, el);
+                  else videosRef.current.delete(i);
+                }}
+                src={effectiveSrc}
+                className="h-full w-full object-cover"
+                muted={muted}
+                playsInline
+                onEnded={next}
+              />
+            );
+          })()}
           {item.caption && (
             <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/70 via-black/30 to-transparent p-6">
               <p className="text-white text-lg font-medium leading-snug drop-shadow">
@@ -90,6 +154,19 @@ export default function DashboardSlideshow({ items, className }: Props) {
           )}
         </div>
       ))}
+
+      {/* Bouton son — visible dès qu'un média vidéo est présent (même slide unique). */}
+      {safeItems.some((it) => it.type === 'video') && (
+        <button
+          type="button"
+          onClick={() => setMuted((m) => !m)}
+          aria-label={muted ? 'Activer le son' : 'Couper le son'}
+          title={muted ? 'Activer le son' : 'Couper le son'}
+          className="absolute left-3 top-3 rounded-full bg-black/40 p-2 text-white backdrop-blur transition hover:bg-black/60"
+        >
+          {muted ? <VolumeX className="h-4 w-4" /> : <Volume2 className="h-4 w-4" />}
+        </button>
+      )}
 
       {safeItems.length > 1 && (
         <>

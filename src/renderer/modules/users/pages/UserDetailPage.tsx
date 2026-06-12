@@ -15,7 +15,7 @@ import EntityDocumentsCard from '../../archiving/components/EntityDocumentsCard'
 const ROLE_VARIANT: Record<string, any> = {
   SUPER_ADMIN: 'danger', ADMIN: 'info', MANAGER: 'purple',
   ACCOUNTANT: 'warning', ASSISTANTE_DIRECTION: 'warning',
-  AGENT: 'success', READONLY: 'default',
+  AGENT: 'success', AGENT_TECHNIQUE: 'success', READONLY: 'default',
 };
 
 export default function UserDetailPage() {

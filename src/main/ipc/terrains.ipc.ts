@@ -45,6 +45,19 @@ function hasFullView(role: string): boolean {
   return FULL_VIEW_ROLES.includes(role);
 }
 
+/**
+ * Contrôle de rôle pour les écritures sur les terrains (création, modification,
+ * suppression, changement de statut, frais ACD). AGENT et READONLY sont déjà
+ * hors des WRITE_ROLES ; ASSISTANTE_DIRECTION est explicitement exclue malgré
+ * l'équivalence MANAGER appliquée par checkRole. ACCOUNTANT conserve l'accès.
+ */
+function checkWriteRole(session: { role: string }, allowedRoles: string[]): void {
+  if (session.role === 'ASSISTANTE_DIRECTION') {
+    throw new Error('Permission insuffisante');
+  }
+  checkRole(session as any, allowedRoles);
+}
+
 const ser = <T>(v: T): T => JSON.parse(JSON.stringify(v));
 
 /**
@@ -160,7 +173,7 @@ export function registerTerrainsIPC(): void {
     try {
       const session = getSession(token);
       if (!session) return { success: false, error: 'Session expirée' };
-      checkRole(session, WRITE_ROLES);
+      checkWriteRole(session, WRITE_ROLES);
       const parsed = terrainSchema.safeParse(payload);
       if (!parsed.success) return { success: false, error: parsed.error.format() };
       const db = getDb();
@@ -182,7 +195,7 @@ export function registerTerrainsIPC(): void {
     try {
       const session = getSession(token);
       if (!session) return { success: false, error: 'Session expirée' };
-      checkRole(session, WRITE_ROLES);
+      checkWriteRole(session, WRITE_ROLES);
       const parsed = terrainSchema.partial().safeParse(payload);
       if (!parsed.success) return { success: false, error: parsed.error.format() };
       const db = getDb();
@@ -220,7 +233,7 @@ export function registerTerrainsIPC(): void {
     try {
       const session = getSession(token);
       if (!session) return { success: false, error: 'Session expirée' };
-      checkRole(session, WRITE_ROLES);
+      checkWriteRole(session, WRITE_ROLES);
       const db = getDb();
       // Règle métier : un terrain ne peut être marqué RESERVE / VENDU / SOUS_OPTION
       // qu'à condition qu'un attributaire (clientId) lui soit déjà rattaché.
@@ -294,7 +307,7 @@ export function registerTerrainsIPC(): void {
     try {
       const session = getSession(token);
       if (!session) return { success: false, error: 'Session expirée' };
-      checkRole(session, ['SUPER_ADMIN', 'ADMIN', 'MANAGER']);
+      checkWriteRole(session, ['SUPER_ADMIN', 'ADMIN', 'MANAGER']);
       const db = getDb();
       await db.terrain.update({ where: { id }, data: { deletedAt: new Date() } });
       return { success: true };
@@ -312,7 +325,7 @@ export function registerTerrainsIPC(): void {
     try {
       const session = getSession(token);
       if (!session) return { success: false, error: 'Session expirée' };
-      checkRole(session, WRITE_ROLES);
+      checkWriteRole(session, WRITE_ROLES);
       const db = getDb();
       const terrain = await db.terrain.findUnique({
         where: { id, deletedAt: null },
@@ -433,7 +446,7 @@ export function registerTerrainsIPC(): void {
     try {
       const session = getSession(token);
       if (!session) return { success: false, error: 'Session expirée' };
-      checkRole(session, WRITE_ROLES);
+      checkWriteRole(session, WRITE_ROLES);
       const db = getDb();
       // Récupère les ids des factures qui vont être annulées pour synchroniser
       // les rappels CRM associés en une seule passe.
@@ -474,7 +487,7 @@ export function registerTerrainsIPC(): void {
     try {
       const session = getSession(token);
       if (!session) return { success: false, error: 'Session expirée' };
-      checkRole(session, WRITE_ROLES);
+      checkWriteRole(session, WRITE_ROLES);
       const updateSchema = z.object({
         terrainId: z.number().int().positive(),
         invoices: z.array(z.object({

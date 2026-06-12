@@ -8,6 +8,7 @@ exports.logout = logout;
 exports.getSession = getSession;
 exports.requireSession = requireSession;
 exports.checkRole = checkRole;
+exports.isAgentRole = isAgentRole;
 const db_service_1 = require("./db.service");
 const crypto_1 = require("../utils/crypto");
 const logger_1 = __importDefault(require("../utils/logger"));
@@ -85,5 +86,17 @@ function checkRole(session, allowedRoles) {
     if ((session.role === 'ACCOUNTANT' || session.role === 'ASSISTANTE_DIRECTION') &&
         allowedRoles.includes('MANAGER'))
         return;
+    // AGENT_TECHNIQUE hérite des permissions d'un AGENT (plus la gestion limitée
+    // des utilisateurs, gérée séparément dans users.ipc).
+    if (session.role === 'AGENT_TECHNIQUE' && allowedRoles.includes('AGENT'))
+        return;
     throw new Error('Permission insuffisante');
+}
+/**
+ * Vrai pour les rôles « de type agent » (AGENT et AGENT_TECHNIQUE), qui
+ * partagent la même visibilité restreinte (clients référents, conventions
+ * BROUILLON, etc.). Utilisé pour les contrôles de visibilité explicites.
+ */
+function isAgentRole(role) {
+    return role === 'AGENT' || role === 'AGENT_TECHNIQUE';
 }

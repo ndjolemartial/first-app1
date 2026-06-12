@@ -345,11 +345,24 @@ export default function InvoiceDetailPage() {
                 <CreditCard className="h-4 w-4 text-slate-500" /> Convention
               </h3>
               <p className="font-medium text-slate-900">{inv.convention?.reference}</p>
+              {inv.convention?.lotsSouscrits && (
+                <p className="text-sm text-slate-600 mt-1 whitespace-pre-line">{inv.convention.lotsSouscrits}</p>
+              )}
               <p className="text-sm text-slate-500">{inv.convention?.property?.address}</p>
               <Button variant="ghost" size="sm" className="mt-2 -ml-2"
                 onClick={() => navigate(`/conventions/${inv.convention?.id}`)}>
                 Voir la convention →
               </Button>
+            </Card>
+          )}
+
+          {/* Échéance héritée (sans convention) : détails de souscription importés. */}
+          {!inv.convention && inv.detailsSouscription && (
+            <Card>
+              <h3 className="font-semibold text-slate-800 mb-3 flex items-center gap-2">
+                <CreditCard className="h-4 w-4 text-slate-500" /> Souscription
+              </h3>
+              <p className="text-sm text-slate-700 whitespace-pre-line">{inv.detailsSouscription}</p>
             </Card>
           )}
 
