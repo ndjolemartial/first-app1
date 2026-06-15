@@ -98,6 +98,7 @@ export default function QuoteFormPage() {
   const [clientId, setClientId] = useState(searchParams.get('clientId') ?? '');
   const [prospectId, setProspectId] = useState(searchParams.get('prospectId') ?? '');
   const [type, setType] = useState('PRESTATION');
+  const [objet, setObjet] = useState('');
   const [assetType, setAssetType] = useState<'NONE' | 'TERRAIN' | 'PROPERTY'>('NONE');
   const [terrainId, setTerrainId] = useState(searchParams.get('terrainId') ?? '');
   const [propertyId, setPropertyId] = useState('');
@@ -129,6 +130,7 @@ export default function QuoteFormPage() {
       setClientId(q.clientId ? String(q.clientId) : '');
       setProspectId(q.prospectId ? String(q.prospectId) : '');
       setType(q.type ?? 'VENTE_TERRAIN');
+      setObjet(q.objet ?? '');
       if (q.terrainId) { setAssetType('TERRAIN'); setTerrainId(String(q.terrainId)); }
       else if (q.propertyId) { setAssetType('PROPERTY'); setPropertyId(String(q.propertyId)); }
       setValidUntil(toDateInput(q.validUntil));
@@ -204,6 +206,7 @@ export default function QuoteFormPage() {
     setSaving(true);
     const payload: any = {
       type,
+      objet: objet.trim() || null,
       clientId: recipientType === 'CLIENT' && clientId ? Number(clientId) : null,
       prospectId: recipientType === 'PROSPECT' && prospectId ? Number(prospectId) : null,
       terrainId: assetType === 'TERRAIN' && terrainId ? Number(terrainId) : null,
@@ -249,6 +252,8 @@ export default function QuoteFormPage() {
             <Select label="Bien concerné" value={assetType}
               options={[{ value: 'NONE', label: 'Aucun' }, { value: 'TERRAIN', label: 'Un terrain' }, { value: 'PROPERTY', label: 'Un bien' }]}
               onChange={(e) => setAssetType(e.target.value as any)} />
+            <Input label="Objet du devis" value={objet} onChange={(e) => setObjet(e.target.value)}
+              placeholder="Ex. : Aménagement de villa, Étude de viabilisation…" maxLength={255} />
             {assetType === 'TERRAIN' && <SearchSelect label="Terrain" options={terrainOptions} value={terrainId} onChange={setTerrainId} placeholder="Rechercher un terrain…" />}
             {assetType === 'PROPERTY' && <SearchSelect label="Bien" options={propertyOptions} value={propertyId} onChange={setPropertyId} placeholder="Rechercher un bien…" />}
           </div>

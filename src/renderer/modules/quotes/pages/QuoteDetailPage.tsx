@@ -105,7 +105,7 @@ export default function QuoteDetailPage() {
           {canWrite && q.status === 'BROUILLON' && (
             <>
               <Button variant="secondary" icon={<Pencil className="h-4 w-4" />} onClick={() => navigate(`/quotes/${id}/edit`)}>Modifier</Button>
-              <Button icon={<Send className="h-4 w-4" />} onClick={() => send.mutate({ id: q.id })}>Envoyer</Button>
+              <Button icon={<Send className="h-4 w-4" />} onClick={() => send.mutate({ id: q.id })}>Valider</Button>
             </>
           )}
           {canWrite && q.status === 'ENVOYE' && (

@@ -13,6 +13,8 @@ import PageLayout from '../../shared/components/layout/PageLayout';
 import Card from '../../shared/components/ui/Card';
 import { useAuthStore } from '../../shared/stores/auth.store';
 import DashboardSlideshow, { type SlideshowItem } from './components/DashboardSlideshow';
+import AdDashboardSections from './components/AdDashboardSections';
+import CrmRecapSection from './components/CrmRecapSection';
 
 interface DashboardData {
   isPrivileged: boolean;
@@ -46,6 +48,10 @@ export default function DashboardPage() {
   const [error, setError] = useState<string | null>(null);
 
   const isAD = user?.role === 'ASSISTANTE_DIRECTION';
+  const isAgent = user?.role === 'AGENT' || user?.role === 'AGENT_TECHNIQUE';
+  // Rôles full-view : la synthèse CRM couvre l'ensemble des activités (vue globale).
+  const isCrmFullView = !!user
+    && ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ACCOUNTANT'].includes(user.role);
 
   useEffect(() => {
     if (!token) return;
@@ -192,6 +198,20 @@ export default function DashboardPage() {
                   </Card>
                 </Link>
               ))}
+        </div>
+      )}
+
+      {isAD && <AdDashboardSections />}
+
+      {isAgent && (
+        <div className="mt-8">
+          <CrmRecapSection />
+        </div>
+      )}
+
+      {isCrmFullView && (
+        <div className="mt-8">
+          <CrmRecapSection title="Activité CRM" />
         </div>
       )}
 

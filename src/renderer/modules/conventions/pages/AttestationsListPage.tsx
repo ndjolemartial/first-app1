@@ -49,6 +49,8 @@ export default function AttestationsListPage() {
   const navigate = useNavigate();
   const role = useAuthStore((s) => s.user?.role) ?? '';
   const canWrite = WRITE_ROLES.has(role);
+  // L'Assistante de Direction peut consulter/éditer mais pas créer d'attestation.
+  const canCreate = canWrite && role !== 'ASSISTANTE_DIRECTION';
   const [type, setType] = useState('');
   const [search, setSearch] = useState('');
   const { data, isLoading } = useAttestations({
@@ -73,7 +75,7 @@ export default function AttestationsListPage() {
       title="Attestations"
       breadcrumbs={[{ label: 'Conventions', to: '/conventions' }, { label: 'Attestations' }]}
       actions={
-        canWrite ? (
+        canCreate ? (
           <Button icon={<Plus className="h-4 w-4" />} onClick={() => navigate('/conventions/attestations/new')}>
             Nouvelle attestation
           </Button>
@@ -108,7 +110,7 @@ export default function AttestationsListPage() {
           <EmptyState
             title="Aucune attestation"
             description="Émettez votre première attestation depuis cette page ou directement depuis une convention."
-            action={canWrite ? { label: 'Nouvelle attestation', onClick: () => navigate('/conventions/attestations/new') } : undefined}
+            action={canCreate ? { label: 'Nouvelle attestation', onClick: () => navigate('/conventions/attestations/new') } : undefined}
           />
         ) : (
           <table className="w-full text-sm">

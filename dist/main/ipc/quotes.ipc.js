@@ -49,6 +49,7 @@ const itemSchema = zod_1.z.object({
 });
 const quoteBaseSchema = zod_1.z.object({
     type: zod_1.z.enum(QUOTE_TYPES).default('VENTE_TERRAIN'),
+    objet: zod_1.z.string().max(255).optional(),
     prospectId: zod_1.z.number().int().positive().nullable().optional(),
     clientId: zod_1.z.number().int().positive().nullable().optional(),
     terrainId: zod_1.z.number().int().positive().nullable().optional(),
@@ -272,6 +273,7 @@ function registerQuotesIPC() {
                     reference,
                     type: d.type,
                     status: 'BROUILLON',
+                    objet: d.objet?.trim() || null,
                     prospectId: d.prospectId ?? null,
                     clientId: d.clientId ?? null,
                     terrainId: d.terrainId ?? null,
@@ -362,6 +364,7 @@ function registerQuotesIPC() {
             });
             const data = {
                 ...(d.type !== undefined ? { type: d.type } : {}),
+                ...(d.objet !== undefined ? { objet: d.objet?.trim() || null } : {}),
                 ...(d.prospectId !== undefined ? { prospectId: d.prospectId } : {}),
                 ...(d.clientId !== undefined ? { clientId: d.clientId } : {}),
                 ...(d.terrainId !== undefined ? { terrainId: d.terrainId } : {}),

@@ -303,9 +303,10 @@ export const router = createHashRouter([
             ],
           },
 
-          // Projets — réservé aux MANAGER+ (ACCOUNTANT inclus). AGENT/READONLY n'ont pas accès.
+          // Projets — MANAGER+ (ACCOUNTANT, ASSISTANTE_DIRECTION) et AGENT_TECHNIQUE.
+          // AGENT et READONLY n'ont pas accès.
           {
-            element: <RoleGuard allowedRoles={['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ACCOUNTANT', 'ASSISTANTE_DIRECTION']} />,
+            element: <RoleGuard allowedRoles={['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ACCOUNTANT', 'ASSISTANTE_DIRECTION', 'AGENT_TECHNIQUE']} />,
             children: [
               { path: 'projects', element: <ProjectsListPage /> },
               { path: 'projects/new', element: <ProjectFormPage /> },

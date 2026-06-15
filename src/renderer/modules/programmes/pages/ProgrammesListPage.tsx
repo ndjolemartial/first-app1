@@ -79,6 +79,8 @@ const EXPORT_COLUMNS: ExportColumn[] = [
 export default function ProgrammesListPage() {
   const navigate = useNavigate();
   const token = useAuthStore((s) => s.token)!;
+  // L'Assistante de Direction ne peut pas créer de programme (bouton masqué).
+  const canCreate = useAuthStore((s) => s.user?.role) !== 'ASSISTANTE_DIRECTION';
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState('');
   const [type, setType] = useState('');
@@ -117,9 +119,11 @@ export default function ProgrammesListPage() {
               return r.success ? r.data ?? [] : [];
             }}
           />
-          <Button icon={<PlusCircle className="h-4 w-4" />} onClick={() => navigate('/programmes/new')}>
-            Nouveau programme
-          </Button>
+          {canCreate && (
+            <Button icon={<PlusCircle className="h-4 w-4" />} onClick={() => navigate('/programmes/new')}>
+              Nouveau programme
+            </Button>
+          )}
         </div>
       }
     >
@@ -154,7 +158,7 @@ export default function ProgrammesListPage() {
         ) : programmes.length === 0 ? (
           <EmptyState
             title="Aucun programme immobilier trouvé"
-            action={{ label: 'Nouveau programme', onClick: () => navigate('/programmes/new') }}
+            action={canCreate ? { label: 'Nouveau programme', onClick: () => navigate('/programmes/new') } : undefined}
           />
         ) : (
           <>

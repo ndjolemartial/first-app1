@@ -60,6 +60,8 @@ export default function ConventionDetailPage() {
   // L'AGENT est en consultation seule.
   const role = useAuthStore((s) => s.user?.role) ?? '';
   const canWrite = ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ACCOUNTANT', 'ASSISTANTE_DIRECTION'].includes(role);
+  // L'Assistante de Direction peut consulter/éditer mais pas émettre d'attestation.
+  const canCreate = canWrite && role !== 'ASSISTANTE_DIRECTION';
   const { data: res, isLoading, refetch } = useConvention(Number(id));
   const deleteConvention = useDeleteConvention();
   const updateConvention = useUpdateConvention();
@@ -119,7 +121,7 @@ export default function ConventionDetailPage() {
       breadcrumbs={[{ label: 'Conventions', to: '/conventions' }, { label: c.reference }]}
       actions={
         <div className="flex gap-2">
-          {canWrite && (
+          {canCreate && (
           <div className="relative">
             <Button variant="secondary" icon={<FilePlus className="h-4 w-4" />}
               onClick={() => setShowAttestationMenu((v) => !v)}>

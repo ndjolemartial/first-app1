@@ -851,6 +851,8 @@ model Quote {
   reference             String           @unique  // Ex: DEV-2026-0001
   type                  QuoteType        @default(VENTE_TERRAIN)
   status                QuoteStatus      @default(BROUILLON)
+  // Objet libre du devis (intitulé affiché en évidence sur le document)
+  objet                 String?          @db.VarChar(255)
   // Destinataire — prospect ou client (au moins l'un des deux, invariant applicatif)
   prospectId            Int?
   clientId              Int?

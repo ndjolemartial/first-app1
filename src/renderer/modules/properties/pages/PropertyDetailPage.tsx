@@ -186,7 +186,9 @@ export default function PropertyDetailPage() {
                   <h3 className="font-semibold text-slate-800 flex items-center gap-2">
                     <FileText className="h-4 w-4 text-slate-500" /> Conventions ({linkedConventions.length})
                   </h3>
-                  <Button size="sm" onClick={() => navigate('/conventions/new')}>Nouvelle convention</Button>
+                  {role !== 'ASSISTANTE_DIRECTION' && (
+                    <Button size="sm" onClick={() => navigate('/conventions/new')}>Nouvelle convention</Button>
+                  )}
                 </div>
                 {linkedConventions.length === 0 ? (
                   <p className="text-slate-400 text-sm">Aucune convention pour ce bien.</p>

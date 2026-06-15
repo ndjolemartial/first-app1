@@ -52,6 +52,8 @@ const EXPORT_COLUMNS: ExportColumn[] = [
 export default function ProjectsListPage() {
   const navigate = useNavigate();
   const token = useAuthStore((s) => s.token)!;
+  // L'Assistante de Direction ne peut pas créer de projet (bouton masqué).
+  const canCreate = useAuthStore((s) => s.user?.role) !== 'ASSISTANTE_DIRECTION';
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState('');
   const [typeId, setTypeId] = useState('');
@@ -103,9 +105,11 @@ export default function ProjectsListPage() {
               return r.success ? (r.data as any[]) ?? [] : [];
             }}
           />
-          <Button icon={<PlusCircle className="h-4 w-4" />} onClick={() => navigate('/projects/new')}>
-            Nouveau projet
-          </Button>
+          {canCreate && (
+            <Button icon={<PlusCircle className="h-4 w-4" />} onClick={() => navigate('/projects/new')}>
+              Nouveau projet
+            </Button>
+          )}
         </div>
       }
     >
@@ -152,7 +156,7 @@ export default function ProjectsListPage() {
         ) : projects.length === 0 ? (
           <EmptyState
             title="Aucun projet trouvé"
-            action={{ label: 'Nouveau projet', onClick: () => navigate('/projects/new') }}
+            action={canCreate ? { label: 'Nouveau projet', onClick: () => navigate('/projects/new') } : undefined}
           />
         ) : (
           <>

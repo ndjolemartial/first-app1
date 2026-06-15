@@ -52,6 +52,7 @@ const itemSchema = z.object({
 
 const quoteBaseSchema = z.object({
   type: z.enum(QUOTE_TYPES).default('VENTE_TERRAIN'),
+  objet: z.string().max(255).optional(),
   prospectId: z.number().int().positive().nullable().optional(),
   clientId: z.number().int().positive().nullable().optional(),
   terrainId: z.number().int().positive().nullable().optional(),
@@ -285,6 +286,7 @@ export function registerQuotesIPC(): void {
           reference,
           type: d.type,
           status: 'BROUILLON',
+          objet: d.objet?.trim() || null,
           prospectId: d.prospectId ?? null,
           clientId: d.clientId ?? null,
           terrainId: d.terrainId ?? null,
@@ -372,6 +374,7 @@ export function registerQuotesIPC(): void {
 
       const data: any = {
         ...(d.type !== undefined ? { type: d.type } : {}),
+        ...(d.objet !== undefined ? { objet: d.objet?.trim() || null } : {}),
         ...(d.prospectId !== undefined ? { prospectId: d.prospectId } : {}),
         ...(d.clientId !== undefined ? { clientId: d.clientId } : {}),
         ...(d.terrainId !== undefined ? { terrainId: d.terrainId } : {}),

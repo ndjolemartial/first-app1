@@ -62,6 +62,21 @@ function buildFooterTemplate(footer: string, _widthPct: number, mm: number): str
     + '</div>';
 }
 
+/**
+ * Bloc « Objet du devis » mis en évidence (intitulé libre saisi sur le devis).
+ * Affiché en gros caractères, encadré, juste sous l'en-tête entreprise.
+ * Renvoie '' si aucun objet n'est renseigné.
+ */
+function buildObjetBlock(objet?: string | null): string {
+  const value = String(objet ?? '').trim();
+  if (!value) return '';
+  return ''
+    + '<div style="margin:6px 0 16px;padding:10px 14px;border:1.5px solid #1E3A5F;border-radius:6px;'
+    + 'background:#f1f5f9;text-align:center;">'
+    + `<span style="font-size:14pt;font-weight:bold;color:#1E3A5F;">${escHtml(value)}</span>`
+    + '</div>';
+}
+
 // Marges du document devis : 2,5 cm sur les quatre côtés (override explicite).
 const QUOTE_MARGINS_MM = { top: 25, bottom: 25, left: 25, right: 25 };
 
@@ -96,8 +111,9 @@ export default function QuoteDocumentPage() {
   const company = companyRes?.success ? companyRes.data : null;
   const logo = logoRes?.success ? (logoRes.data as { mimeType: string; base64: string } | null) : null;
   const companyHeader = buildCompanyHeader(company, logo);
+  const objetBlock = buildObjetBlock(quote.objet);
 
-  const documentBodyHtml = `<div class="doc-body">${companyHeader}${mergedBody}</div>`;
+  const documentBodyHtml = `<div class="doc-body">${companyHeader}${objetBlock}${mergedBody}</div>`;
   const fileName = `${quote.reference}`;
 
   const handleExportPdf = async () => {
@@ -168,6 +184,7 @@ export default function QuoteDocumentPage() {
               style={{ width: '210mm', maxWidth: '100%' }}>
               {mergedHeader && <div className="pb-3 mb-5" dangerouslySetInnerHTML={{ __html: mergedHeader }} />}
               {companyHeader && <div dangerouslySetInnerHTML={{ __html: companyHeader }} />}
+              {objetBlock && <div dangerouslySetInnerHTML={{ __html: objetBlock }} />}
               {mergedBody
                 ? <div dangerouslySetInnerHTML={{ __html: mergedBody }} />
                 : <p className="text-slate-400 flex items-center gap-2"><FileText className="h-4 w-4" /> Modèle vide.</p>}

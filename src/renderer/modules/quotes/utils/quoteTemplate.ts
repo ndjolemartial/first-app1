@@ -135,6 +135,7 @@ export function resolveQuoteVariables(q: any): Record<string, string> {
   const date = (v: any) => (v ? formatDate(v) : '');
   return {
     'devis.reference': q.reference ?? '',
+    'devis.objet': q.objet ?? '',
     'devis.type': QUOTE_TYPE_LABELS[q.type] ?? q.type ?? '',
     'devis.dateEmission': date(q.issueDate),
     'devis.validite': date(q.validUntil),

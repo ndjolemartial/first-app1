@@ -95,6 +95,8 @@ export default function ConventionsListPage() {
   const navigate = useNavigate();
   const role = useAuthStore((s) => s.user?.role) ?? '';
   const canWrite = WRITE_ROLES.has(role);
+  // L'Assistante de Direction peut consulter/éditer mais pas créer de convention.
+  const canCreate = canWrite && role !== 'ASSISTANTE_DIRECTION';
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState('');
   const [type, setType] = useState('');
@@ -125,7 +127,7 @@ export default function ConventionsListPage() {
             onClick={() => navigate('/conventions/attestations')}>
             Attestations
           </Button>
-          {canWrite && (
+          {canCreate && (
             <Button icon={<Plus className="h-4 w-4" />} onClick={() => navigate('/conventions/new')}>
               Nouvelle convention
             </Button>
@@ -165,7 +167,7 @@ export default function ConventionsListPage() {
           <EmptyState
             title="Aucune convention trouvée"
             description="Commencez par créer une convention de location ou de vente."
-            action={canWrite ? { label: 'Nouvelle convention', onClick: () => navigate('/conventions/new') } : undefined}
+            action={canCreate ? { label: 'Nouvelle convention', onClick: () => navigate('/conventions/new') } : undefined}
           />
         ) : (
           <>

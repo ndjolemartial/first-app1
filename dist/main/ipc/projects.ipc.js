@@ -43,11 +43,12 @@ const projectTypeSchema = zod_1.z.object({
     color: zod_1.z.string().optional().nullable(),
     isActive: zod_1.z.boolean().optional(),
 });
-// Module Projets : mêmes règles que Programmes (MANAGER+, ACCOUNTANT inclus
-// via checkRole). Les types de projets sont gérés par ADMIN/SUPER_ADMIN
-// depuis l'écran Paramètres.
-const WRITE_ROLES = ['SUPER_ADMIN', 'ADMIN', 'MANAGER'];
-const READ_ROLES = ['SUPER_ADMIN', 'ADMIN', 'MANAGER'];
+// Module Projets : MANAGER+ (ACCOUNTANT et ASSISTANTE_DIRECTION inclus via
+// checkRole). AGENT_TECHNIQUE dispose en plus d'un accès complet à ce module
+// (consultation, création, édition, suppression de projets). Les types de
+// projets restent gérés par ADMIN/SUPER_ADMIN depuis l'écran Paramètres.
+const WRITE_ROLES = ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'AGENT_TECHNIQUE'];
+const READ_ROLES = ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'AGENT_TECHNIQUE'];
 const TYPES_WRITE_ROLES = ['SUPER_ADMIN', 'ADMIN'];
 /** Sérialise pour l'IPC : les Decimal/Date Prisma ne sont pas clonables par Electron. */
 const ser = (v) => JSON.parse(JSON.stringify(v));

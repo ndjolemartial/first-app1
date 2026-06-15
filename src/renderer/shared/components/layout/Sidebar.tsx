@@ -33,7 +33,7 @@ const navItems: NavItem[] = [
   { label: 'Communication', to: '/communication', icon: <MessageSquare className="h-5 w-5" /> },
   { label: 'CRM', to: '/crm', icon: <CalendarClock className="h-5 w-5" /> },
   { label: 'Archivage', to: '/archiving', icon: <Archive className="h-5 w-5" />, roles: ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ACCOUNTANT', 'ASSISTANTE_DIRECTION'] },
-  { label: 'Projets', to: '/projects', icon: <Briefcase className="h-5 w-5" />, roles: ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ACCOUNTANT', 'ASSISTANTE_DIRECTION'] },
+  { label: 'Projets', to: '/projects', icon: <Briefcase className="h-5 w-5" />, roles: ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ACCOUNTANT', 'ASSISTANTE_DIRECTION', 'AGENT_TECHNIQUE'] },
   { label: 'Paramètres', to: '/settings', icon: <Settings className="h-5 w-5" />, roles: ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ACCOUNTANT'] },
 ];
 

@@ -32,6 +32,8 @@ export default function QuotesListPage() {
   const navigate = useNavigate();
   const role = useAuthStore((s) => s.user?.role);
   const canWrite = !!role && WRITE_ROLES.includes(role);
+  // AGENT et AGENT_TECHNIQUE ne peuvent pas créer de devis (bouton masqué).
+  const canCreate = canWrite && role !== 'AGENT' && role !== 'AGENT_TECHNIQUE';
   const [status, setStatus] = useState('');
   const [type, setType] = useState('');
   const [search, setSearch] = useState('');
@@ -46,7 +48,7 @@ export default function QuotesListPage() {
     <PageLayout
       title="Devis"
       breadcrumbs={[{ label: 'Devis' }]}
-      actions={canWrite && (
+      actions={canCreate && (
         <Button icon={<Plus className="h-4 w-4" />} onClick={() => navigate('/quotes/new')}>
           Nouveau devis
         </Button>
