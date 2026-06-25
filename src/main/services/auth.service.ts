@@ -27,6 +27,7 @@ export async function login(identifier: string, password: string) {
     select: {
       id: true, uuid: true, matricule: true, firstName: true, lastName: true,
       email: true, password: true, role: true, isActive: true, avatar: true,
+      nomCommercial: true, messageSignature: true,
       theme: true, defaultAccountEntreeId: true, defaultAccountSortieId: true,
     },
   });

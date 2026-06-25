@@ -6,7 +6,7 @@ type Db = ReturnType<typeof getDb>;
 type DbOrTx = Db | Prisma.TransactionClient;
 
 export type TreasuryDirection = 'ENTREE' | 'SORTIE';
-export type TreasurySource = 'MANUEL' | 'FACTURE' | 'ECHEANCE' | 'COMMISSION';
+export type TreasurySource = 'MANUEL' | 'FACTURE' | 'ECHEANCE' | 'COMMISSION' | 'PAIE' | 'CHARGE';
 
 /**
  * Génère la prochaine référence d'opération de trésorerie : OPT-YYYY-NNNN
@@ -35,6 +35,8 @@ export interface RecordOperationParams {
   paymentId?: number | null;
   installmentId?: number | null;
   commissionId?: number | null;
+  payslipId?: number | null;
+  forecastExpenseId?: number | null;
   budgetLineId?: number | null;
   // Tiers de l'opération (bénéficiaire d'une sortie / émetteur d'une entrée).
   thirdPartyId?: number | null;
@@ -70,6 +72,8 @@ export async function recordTreasuryOperation(db: DbOrTx, params: RecordOperatio
       paymentId: params.paymentId ?? null,
       installmentId: params.installmentId ?? null,
       commissionId: params.commissionId ?? null,
+      payslipId: params.payslipId ?? null,
+      forecastExpenseId: params.forecastExpenseId ?? null,
       budgetLineId: params.budgetLineId ?? null,
       thirdPartyId: params.thirdPartyId ?? null,
       projectId: params.projectId ?? null,

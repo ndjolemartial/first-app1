@@ -20,6 +20,7 @@ import IdDocumentTypesSettingsTab      from '../components/IdDocumentTypesSettin
 import LotissementTitleTypesSettingsTab from '../components/LotissementTitleTypesSettingsTab';
 import TreasuryCategoriesSettingsTab   from '../components/TreasuryCategoriesSettingsTab';
 import TreasuryAccountsSettingsTab     from '../components/TreasuryAccountsSettingsTab';
+import PayrollAccountSettingsTab       from '../components/PayrollAccountSettingsTab';
 import RemindersSettingsTab            from '../components/RemindersSettingsTab';
 import CommTemplatesSettingsTab        from '../components/CommTemplatesSettingsTab';
 import ShareLocationSettingsTab        from '../components/ShareLocationSettingsTab';
@@ -45,6 +46,7 @@ type TabKey =
   | 'catalog'
   | 'treasuryAccounts'
   | 'treasuryCategories'
+  | 'payrollAccount'
   | 'reminders'
   | 'commTemplates'
   | 'shareLocation'
@@ -102,6 +104,7 @@ const TABS: TabDef[] = [
   // ── Groupe « Opérations bancaires » ─────────────────────────
   { key: 'treasuryAccounts',     label: "Comptes d'opérations",    icon: <Landmark className="h-4 w-4" />, group: 'treasury' },
   { key: 'treasuryCategories',   label: "Objets d'opération",      icon: <Tags className="h-4 w-4" />,     group: 'treasury' },
+  { key: 'payrollAccount',       label: 'Compte de paie (salaires)', icon: <Landmark className="h-4 w-4" />, group: 'treasury' },
 ];
 
 export default function SettingsPage() {
@@ -267,6 +270,7 @@ export default function SettingsPage() {
           {active === 'catalog'              && <CatalogSettingsTab />}
           {active === 'treasuryAccounts'     && <TreasuryAccountsSettingsTab />}
           {active === 'treasuryCategories'   && <TreasuryCategoriesSettingsTab />}
+          {active === 'payrollAccount'       && <PayrollAccountSettingsTab />}
           {active === 'reminders'            && <RemindersSettingsTab />}
           {active === 'commTemplates'        && <CommTemplatesSettingsTab />}
           {active === 'shareLocation'        && <ShareLocationSettingsTab />}

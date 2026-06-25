@@ -12,7 +12,7 @@ const createUserSchema = z.object({
   email: z.string().email(),
   login: z.string().optional(),
   password: z.string().min(6),
-  role: z.enum(['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ACCOUNTANT', 'ASSISTANTE_DIRECTION', 'AGENT', 'AGENT_TECHNIQUE', 'READONLY']),
+  role: z.enum(['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ACCOUNTANT', 'ASSISTANTE_DIRECTION', 'AGENT', 'AGENT_TECHNIQUE', 'RH', 'READONLY']),
   phone: z.string().optional(),
   mobile: z.string().optional(),
   fonction: z.string().optional(),
@@ -86,6 +86,30 @@ function userMgmtScope(session: { role: string }): 'full' | 'limited' {
 }
 
 /**
+ * Rôles d'utilisateurs proposables dans les sélecteurs « Utilisateur » (ex.
+ * formulaire Nouvelle activité), selon le rôle du demandeur. `null` = tous les
+ * rôles (aucun filtre). Contrairement à `userMgmtScope`, cet accès est ouvert à
+ * tous les rôles connectés (lecture seule pour un simple rattachement).
+ */
+function selectableUserRoles(role: string): string[] | null {
+  switch (role) {
+    case 'SUPER_ADMIN':
+    case 'ADMIN':
+      return null; // tous les utilisateurs actifs
+    case 'MANAGER':
+      return ['MANAGER', 'ACCOUNTANT', 'ASSISTANTE_DIRECTION', 'AGENT', 'AGENT_TECHNIQUE', 'READONLY'];
+    case 'ACCOUNTANT':
+    case 'ASSISTANTE_DIRECTION':
+      return ['ACCOUNTANT', 'ASSISTANTE_DIRECTION', 'AGENT', 'AGENT_TECHNIQUE', 'READONLY'];
+    case 'AGENT':
+    case 'AGENT_TECHNIQUE':
+      return ['AGENT', 'AGENT_TECHNIQUE', 'READONLY'];
+    default:
+      return ['READONLY'];
+  }
+}
+
+/**
  * Enregistre les handlers IPC pour la gestion des utilisateurs.
  */
 export function registerUsersIPC(): void {
@@ -132,6 +156,37 @@ export function registerUsersIPC(): void {
       return { success: true, data, total };
     } catch (error: any) {
       logger.error('users:list error', error.message);
+      return { success: false, error: error.message };
+    }
+  });
+
+  /**
+   * Liste des utilisateurs actifs proposables dans un sélecteur, filtrés par rôle
+   * selon le rôle du demandeur (voir selectableUserRoles). Accessible à tous les
+   * rôles connectés — usage : rattachement (ex. champ « Utilisateur » de Nouvelle
+   * activité). Renvoie un jeu de champs minimal.
+   */
+  ipcMain.handle('users:listSelectable', async (_event, { token, options = {} }: any) => {
+    try {
+      const session = getSession(token);
+      if (!session) return { success: false, error: 'Session expirée' };
+      const db = getDb();
+      const where: any = { deletedAt: null, isActive: true };
+      let roles = selectableUserRoles(session.role);
+      // Contexte « Archivage de documents » : l'Assistante de Direction a accès à
+      // l'ensemble des utilisateurs actifs (vue complète, sans filtre de rôle).
+      if (options.assistanteFullAccess && session.role === 'ASSISTANTE_DIRECTION') {
+        roles = null;
+      }
+      if (roles) where.role = { in: roles };
+      const data = await db.user.findMany({
+        where,
+        select: { id: true, firstName: true, lastName: true, matricule: true, role: true },
+        orderBy: { id: 'asc' },
+      });
+      return { success: true, data };
+    } catch (error: any) {
+      logger.error('users:listSelectable error', error.message);
       return { success: false, error: error.message };
     }
   });

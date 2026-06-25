@@ -143,21 +143,30 @@ function PayModal({ installment, onClose, onSuccess }: { installment: any; onClo
   const onSubmit = async (data: any) => {
     const amt = Number(data.amount);
     if (!(amt > 0)) { toast.error('Montant à encaisser invalide'); return; }
-    if (amt - remaining > 0.001) { toast.error(`Le montant dépasse le reste dû (${formatCurrency(remaining)}).`); return; }
+    // Le surplus au-delà du reste dû de cette échéance est reporté sur les
+    // échéances suivantes (cascade) ; la validation du plafond global (total des
+    // échéances restantes) est faite côté serveur.
     const r = await payInstallment.mutateAsync({
       installmentId: installment.id,
       payload: {
         method: data.method,
         paymentRef: data.paymentRef,
         notes: data.notes,
-        // Montant encaissé — permet le paiement partiel sur toute échéance.
+        // Montant encaissé — paiement partiel, intégral ou avec report sur les
+        // échéances suivantes selon le montant saisi.
         amount: amt,
         bankAccountId: data.bankAccountId ? Number(data.bankAccountId) : undefined,
         categoryId: data.categoryId ? Number(data.categoryId) : undefined,
       },
     });
-    if (r.success) onSuccess();
-    else toast.error(typeof r.error === 'string' ? r.error : 'Échec de l\'encaissement de l\'échéance');
+    if (r.success) {
+      const covered = Number(r.data?.coveredCount ?? 1);
+      if (covered > 1) toast.success(`Encaissement réparti sur ${covered} échéances.`);
+      else toast.success('Encaissement enregistré.');
+      onSuccess();
+    } else {
+      toast.error(typeof r.error === 'string' ? r.error : 'Échec de l\'encaissement de l\'échéance');
+    }
   };
 
   const clientName = clientLabel(installment) || '—';
@@ -198,12 +207,17 @@ function PayModal({ installment, onClose, onSuccess }: { installment: any; onClo
           <div>
             <label className="block text-xs font-medium text-slate-700 mb-1">Montant à encaisser</label>
             <input
-              type="number" step="1" min="0" max={remaining}
+              type="number" step="1" min="0"
               {...register('amount')}
               className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
             />
             {enteredAmount > 0 && enteredAmount < remaining && (
               <p className="mt-1 text-xs text-amber-700">Paiement partiel — restera {formatCurrency(remaining - enteredAmount)} après encaissement.</p>
+            )}
+            {enteredAmount - remaining > 0.001 && (
+              <p className="mt-1 text-xs text-emerald-700">
+                Solde cette échéance ; le surplus de {formatCurrency(enteredAmount - remaining)} sera reporté sur les échéances suivantes.
+              </p>
             )}
           </div>
           <div>

@@ -7,10 +7,16 @@ import { toast } from '../../../shared/components/ui/Toast';
 const ipc = () => window.electron.documents;
 const token = () => useAuthStore.getState().token!;
 
-export function useGedDocuments(filters: object = {}, page = 1, limit = 24) {
+export function useGedDocuments(
+  filters: object = {},
+  page = 1,
+  limit = 24,
+  options: { enabled?: boolean } = {},
+) {
   return useQuery({
-    queryKey: ['ged-documents', filters, page],
+    queryKey: ['ged-documents', filters, page, limit],
     queryFn: () => ipc().list(token(), filters, page, limit),
+    enabled: options.enabled ?? true,
   });
 }
 

@@ -94,3 +94,13 @@ export function useResendCommunication() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ['comm-history'] }),
   });
 }
+
+/** Supprime un message en échec (les envois réussis ne sont pas supprimables). */
+export function useDeleteCommunication() {
+  const token = useAuthStore((s) => s.token)!;
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: number) => ipc.deleteMessage(token, id),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['comm-history'] }),
+  });
+}

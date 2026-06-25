@@ -68,8 +68,9 @@ const EXPORT_COLUMNS: ExportColumn[] = [
 export default function LotissementsListPage() {
   const navigate = useNavigate();
   const token = useAuthStore((s) => s.token)!;
-  // L'Assistante de Direction ne peut pas créer de lotissement (bouton masqué).
-  const canCreate = useAuthStore((s) => s.user?.role) !== 'ASSISTANTE_DIRECTION';
+  // L'Assistante de Direction ne peut ni créer ni modifier un lotissement
+  // (boutons Nouveau / Modifier masqués).
+  const canWrite = useAuthStore((s) => s.user?.role) !== 'ASSISTANTE_DIRECTION';
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState('');
   const [statut, setStatut] = useState('');
@@ -103,7 +104,7 @@ export default function LotissementsListPage() {
               return r.success ? r.data ?? [] : [];
             }}
           />
-          {canCreate && (
+          {canWrite && (
             <Button icon={<PlusCircle className="h-4 w-4" />} onClick={() => navigate('/lotissements/new')}>
               Nouveau lotissement
             </Button>
@@ -138,7 +139,7 @@ export default function LotissementsListPage() {
         ) : lots.length === 0 ? (
           <EmptyState
             title="Aucun lotissement trouvé"
-            action={canCreate ? { label: 'Nouveau lotissement', onClick: () => navigate('/lotissements/new') } : undefined}
+            action={canWrite ? { label: 'Nouveau lotissement', onClick: () => navigate('/lotissements/new') } : undefined}
           />
         ) : (
           <>
@@ -188,8 +189,10 @@ export default function LotissementsListPage() {
                       <div className="flex justify-end gap-1">
                         <Button variant="ghost" size="sm" icon={<Eye className="h-4 w-4" />}
                           onClick={() => navigate(`/lotissements/${lot.id}`)} />
-                        <Button variant="ghost" size="sm" icon={<Edit className="h-4 w-4" />}
-                          onClick={() => navigate(`/lotissements/${lot.id}/edit`)} />
+                        {canWrite && (
+                          <Button variant="ghost" size="sm" icon={<Edit className="h-4 w-4" />}
+                            onClick={() => navigate(`/lotissements/${lot.id}/edit`)} />
+                        )}
                       </div>
                     </td>
                   </tr>

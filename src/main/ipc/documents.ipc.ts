@@ -39,6 +39,141 @@ function typeGroupWhere(group: string): any {
   }
 }
 
+// ── Dossiers : espace personnel & dossiers partagés ──────────────────────────
+// Rôles à accès TOTAL sur la GED (y compris les espaces personnels des admins).
+const FOLDER_FULL_ROLES = ['SUPER_ADMIN', 'ADMIN'];
+function isFolderFull(role: string): boolean {
+  return FOLDER_FULL_ROLES.includes(role);
+}
+
+// Propriétaires « admin » : leurs espaces personnels ne sont accessibles qu'aux
+// rôles à accès TOTAL (ni MANAGER, ni COMPTABLE, ni ASSISTANTE_DIRECTION).
+const ADMIN_OWNER_ROLES = ['SUPER_ADMIN', 'ADMIN'];
+
+// Rôles habilités à gérer les dossiers partagés (création / liste d'accès).
+const FOLDER_PRIVILEGED_ROLES = ['SUPER_ADMIN', 'ADMIN', 'MANAGER'];
+function isFolderPrivileged(role: string): boolean {
+  return FOLDER_PRIVILEGED_ROLES.includes(role);
+}
+
+// Rôles voyant le pool GENERAL de la GED (arborescence commune + documents hors
+// dossier). Les autres rôles (AGENT, AGENT_TECHNIQUE, READONLY) n'accèdent qu'à
+// leur espace personnel et aux dossiers partagés qui leur sont ouverts.
+const GED_GENERAL_ROLES = ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ACCOUNTANT', 'ASSISTANTE_DIRECTION'];
+function canSeeGeneralGed(role: string): boolean {
+  return GED_GENERAL_ROLES.includes(role);
+}
+
+/** Nom du dossier personnel auto-créé pour chaque utilisateur. */
+const HOME_FOLDER_NAME = 'Mon espace personnel';
+
+type Sess = { userId: number; role: string };
+
+/** Trouve (ou crée) le dossier personnel (home) de l'utilisateur. */
+async function ensureHomeFolder(db: ReturnType<typeof getDb>, userId: number) {
+  const existing = await db.documentFolder.findFirst({
+    where: { kind: 'PERSONAL', ownerId: userId, deletedAt: null },
+  });
+  if (existing) return existing;
+  return db.documentFolder.create({
+    data: { name: HOME_FOLDER_NAME, kind: 'PERSONAL', ownerId: userId },
+  });
+}
+
+// Exclut les espaces personnels appartenant à un admin (filtre Prisma réutilisable).
+const NOT_ADMIN_PERSONAL_FOLDER = {
+  NOT: { kind: 'PERSONAL', owner: { is: { role: { in: ADMIN_OWNER_ROLES } } } },
+} as const;
+
+/** Filtre Prisma de visibilité des DOSSIERS pour la session ({} = tout voir). */
+function folderVisibilityWhere(session: Sess): any {
+  if (isFolderFull(session.role)) return {};
+  // MANAGER : tout, sauf les espaces personnels appartenant à un admin.
+  if (session.role === 'MANAGER') return NOT_ADMIN_PERSONAL_FOLDER;
+  const or: any[] = [
+    { kind: 'PERSONAL' as const, ownerId: session.userId },
+    { kind: 'SHARED' as const, accesses: { some: { userId: session.userId } } },
+    { ownerId: session.userId },
+  ];
+  if (canSeeGeneralGed(session.role)) or.unshift({ kind: 'GENERAL' as const });
+  return { OR: or };
+}
+
+/**
+ * Filtre Prisma de visibilité des DOCUMENTS selon leur dossier.
+ * `null` = accès total (rôle à accès complet).
+ */
+function documentFolderVisibilityWhere(session: Sess): any | null {
+  if (isFolderFull(session.role)) return null;
+  // MANAGER : tout, sauf les documents rangés dans l'espace personnel d'un admin.
+  if (session.role === 'MANAGER') {
+    return { NOT: { folder: { is: { kind: 'PERSONAL', owner: { is: { role: { in: ADMIN_OWNER_ROLES } } } } } } };
+  }
+  const or: any[] = [
+    { folder: { is: { kind: 'PERSONAL', ownerId: session.userId } } },
+    { folder: { is: { kind: 'SHARED', accesses: { some: { userId: session.userId } } } } },
+    { folder: { is: { ownerId: session.userId } } },
+  ];
+  // Pool général (documents hors dossier + dossiers GENERAL) : réservé aux rôles
+  // disposant de l'accès complet à la GED.
+  if (canSeeGeneralGed(session.role)) {
+    or.push({ folderId: null });
+    or.push({ folder: { is: { kind: 'GENERAL' } } });
+  }
+  return { OR: or };
+}
+
+/** Vérifie qu'un utilisateur peut DÉPOSER dans un dossier (lecture + dépôt). */
+async function canWriteFolder(db: ReturnType<typeof getDb>, session: Sess, folderId: number | null | undefined): Promise<boolean> {
+  if (folderId == null) return true; // hors dossier : règle de rôle standard
+  if (isFolderFull(session.role)) return true;
+  const folder = await db.documentFolder.findUnique({
+    where: { id: folderId },
+    include: {
+      owner: { select: { role: true } },
+      accesses: { where: { userId: session.userId }, select: { userId: true } },
+    },
+  });
+  if (!folder || folder.deletedAt) return false;
+  if (folder.ownerId === session.userId) return true;
+  if (folder.kind === 'PERSONAL') {
+    // MANAGER accède aux espaces personnels, sauf ceux des admins.
+    if (session.role === 'MANAGER') return !ADMIN_OWNER_ROLES.includes(folder.owner?.role ?? '');
+    return false;
+  }
+  if (folder.kind === 'SHARED') {
+    if (session.role === 'MANAGER') return true;
+    return folder.accesses.length > 0;
+  }
+  if (folder.kind === 'GENERAL') return canSeeGeneralGed(session.role);
+  return false;
+}
+
+/** Vérifie qu'un utilisateur peut CONSULTER un document selon son dossier. */
+async function canReadDocumentFolder(db: ReturnType<typeof getDb>, session: Sess, folderId: number | null | undefined): Promise<boolean> {
+  if (isFolderFull(session.role)) return true;
+  if (folderId == null) return canSeeGeneralGed(session.role); // hors dossier = pool général
+  const folder = await db.documentFolder.findUnique({
+    where: { id: folderId },
+    include: {
+      owner: { select: { role: true } },
+      accesses: { where: { userId: session.userId }, select: { userId: true } },
+    },
+  });
+  if (!folder) return true; // dossier supprimé : ne bloque pas l'accès au document
+  if (folder.ownerId === session.userId) return true;
+  if (folder.kind === 'PERSONAL') {
+    if (session.role === 'MANAGER') return !ADMIN_OWNER_ROLES.includes(folder.owner?.role ?? '');
+    return false;
+  }
+  if (folder.kind === 'SHARED') {
+    if (session.role === 'MANAGER') return true;
+    return folder.accesses.length > 0;
+  }
+  if (folder.kind === 'GENERAL') return canSeeGeneralGed(session.role);
+  return false;
+}
+
 /** Génère le prochain numéro d'archive ARC-AAAA-NNNN. */
 async function nextNumeroArchive(db: ReturnType<typeof getDb>): Promise<string> {
   const year = new Date().getFullYear();
@@ -423,6 +558,9 @@ export function registerDocumentsIPC(): void {
           ],
         });
       }
+      // Restriction d'accès par dossier (espace personnel / partagé).
+      const folderWhere = documentFolderVisibilityWhere(session);
+      if (folderWhere) and.push(folderWhere);
       if (and.length) where.AND = and;
       const [data, total] = await db.$transaction([
         db.document.findMany({
@@ -474,6 +612,9 @@ export function registerDocumentsIPC(): void {
         },
       });
       if (!document) return { success: false, error: 'Document introuvable' };
+      if (!(await canReadDocumentFolder(db, session, document.folderId))) {
+        return { success: false, error: 'Accès refusé à ce document' };
+      }
       return { success: true, data: document };
     } catch (error: any) {
       return { success: false, error: error.message };
@@ -484,11 +625,29 @@ export function registerDocumentsIPC(): void {
     try {
       const session = getSession(token);
       if (!session) return { success: false, error: 'Session expirée' };
-      checkRole(session, WRITE_ROLES);
       const parsed = importSchema.safeParse(payload);
       if (!parsed.success) return { success: false, error: parsed.error.format() };
       const d = parsed.data;
       const db = getDb();
+      const targetFolderId = d.folderId ?? null;
+      // Dépôt dans son espace personnel ou un dossier partagé autorisé : permis à
+      // TOUS les utilisateurs (même sans droit d'écriture général sur la GED).
+      let personalOrSharedUpload = false;
+      if (targetFolderId != null && !isFolderPrivileged(session.role)) {
+        const folder = await db.documentFolder.findUnique({
+          where: { id: targetFolderId },
+          include: { accesses: { where: { userId: session.userId }, select: { userId: true } } },
+        });
+        if (folder && !folder.deletedAt) {
+          if (folder.kind === 'PERSONAL' && folder.ownerId === session.userId) personalOrSharedUpload = true;
+          if (folder.kind === 'SHARED' && folder.accesses.length > 0) personalOrSharedUpload = true;
+        }
+      }
+      // Dépôt hors espace perso/partagé : droit d'écriture standard requis.
+      if (!personalOrSharedUpload) checkRole(session, WRITE_ROLES);
+      if (!(await canWriteFolder(db, session, targetFolderId))) {
+        return { success: false, error: "Vous n'avez pas le droit de déposer dans ce dossier" };
+      }
       const created: any[] = [];
       for (const f of d.files) {
         const numeroArchive = await nextNumeroArchive(db);
@@ -599,9 +758,12 @@ export function registerDocumentsIPC(): void {
       const db = getDb();
       const doc = await db.document.findUnique({
         where: { id: Number(id) },
-        select: { id: true, path: true, name: true },
+        select: { id: true, path: true, name: true, folderId: true },
       });
       if (!doc) return { success: false, error: 'Document introuvable' };
+      if (!(await canReadDocumentFolder(db, session, doc.folderId))) {
+        return { success: false, error: 'Accès refusé à ce document' };
+      }
       const abs = resolveStoragePath(doc.path);
       if (!fs.existsSync(abs)) return { success: false, error: 'Fichier introuvable sur le disque' };
       const errMsg = await shell.openPath(abs);
@@ -621,9 +783,12 @@ export function registerDocumentsIPC(): void {
       const db = getDb();
       const doc = await db.document.findUnique({
         where: { id: Number(id) },
-        select: { path: true, type: true, name: true, size: true },
+        select: { path: true, type: true, name: true, size: true, folderId: true },
       });
       if (!doc) return { success: false, error: 'Document introuvable' };
+      if (!(await canReadDocumentFolder(db, session, doc.folderId))) {
+        return { success: false, error: 'Accès refusé à ce document' };
+      }
       if (doc.size > PREVIEW_MAX_BYTES) {
         return { success: true, data: { tooLarge: true, mimeType: doc.type, name: doc.name } };
       }
@@ -715,12 +880,35 @@ export function registerDocumentsIPC(): void {
       if (!session) return { success: false, error: 'Session expirée' };
       checkRole(session, READ_ROLES);
       const db = getDb();
+      // Garantit l'existence de l'espace personnel de l'utilisateur courant.
+      await ensureHomeFolder(db, session.userId);
       const data = await db.documentFolder.findMany({
-        where: { deletedAt: null },
-        orderBy: { name: 'asc' },
-        include: { _count: { select: { documents: { where: { deletedAt: null } } } } },
+        where: { deletedAt: null, ...folderVisibilityWhere(session) },
+        orderBy: [{ kind: 'asc' }, { name: 'asc' }],
+        include: {
+          _count: { select: { documents: { where: { deletedAt: null } } } },
+          accesses: { select: { userId: true } },
+          owner: { select: { id: true, firstName: true, lastName: true } },
+        },
       });
-      return { success: true, data };
+      // Métadonnées d'affichage : accès (liste d'ids), home de l'utilisateur courant.
+      // Pour les rôles privilégiés qui voient tous les espaces personnels, le nom
+      // est suffixé du propriétaire afin de les distinguer.
+      const enriched = data.map((f) => {
+        const isOwnHome = f.kind === 'PERSONAL' && f.ownerId === session.userId;
+        let name = f.name;
+        if (f.kind === 'PERSONAL' && !isOwnHome && f.owner) {
+          const owner = `${f.owner.firstName ?? ''} ${f.owner.lastName ?? ''}`.trim();
+          name = owner ? `Espace personnel — ${owner}` : f.name;
+        }
+        return {
+          ...f,
+          name,
+          accessUserIds: f.accesses.map((a) => a.userId),
+          isOwnHome,
+        };
+      });
+      return { success: true, data: enriched };
     } catch (error: any) {
       return { success: false, error: error.message };
     }
@@ -734,11 +922,30 @@ export function registerDocumentsIPC(): void {
       const schema = z.object({
         name: z.string().min(1),
         parentId: z.number().int().positive().nullable().optional(),
+        // Type de dossier : GENERAL (par défaut) ou SHARED (partagé). Le dossier
+        // PERSONAL est créé automatiquement, jamais via cette API.
+        kind: z.enum(['GENERAL', 'SHARED']).optional(),
+        // Utilisateurs autorisés (dossier partagé).
+        userIds: z.array(z.number().int().positive()).optional(),
       });
       const parsed = schema.safeParse(payload);
       if (!parsed.success) return { success: false, error: parsed.error.format() };
+      const { name, parentId, kind = 'GENERAL', userIds = [] } = parsed.data;
+      if (kind === 'SHARED' && !isFolderPrivileged(session.role)) {
+        return { success: false, error: 'Seuls les administrateurs et managers peuvent créer un dossier partagé' };
+      }
       const db = getDb();
-      const folder = await db.documentFolder.create({ data: parsed.data });
+      const folder = await db.documentFolder.create({
+        data: {
+          name,
+          parentId: parentId ?? null,
+          kind,
+          ownerId: kind === 'SHARED' ? session.userId : null,
+          ...(kind === 'SHARED' && userIds.length
+            ? { accesses: { create: userIds.map((userId) => ({ userId })) } }
+            : {}),
+        },
+      });
       return { success: true, data: folder };
     } catch (error: any) {
       return { success: false, error: error.message };
@@ -753,11 +960,41 @@ export function registerDocumentsIPC(): void {
       const schema = z.object({
         name: z.string().min(1).optional(),
         parentId: z.number().int().positive().nullable().optional(),
+        // Mise à jour de la liste d'accès (dossier partagé) — null/omis = inchangé.
+        userIds: z.array(z.number().int().positive()).nullable().optional(),
       });
       const parsed = schema.safeParse(payload);
       if (!parsed.success) return { success: false, error: parsed.error.format() };
+      const { name, parentId, userIds } = parsed.data;
       const db = getDb();
-      const folder = await db.documentFolder.update({ where: { id: Number(id) }, data: parsed.data });
+      const current = await db.documentFolder.findUnique({ where: { id: Number(id) } });
+      if (!current || current.deletedAt) return { success: false, error: 'Dossier introuvable' };
+      // La liste d'accès n'est modifiable que sur un dossier partagé, par un rôle privilégié.
+      if (userIds !== undefined && userIds !== null) {
+        if (current.kind !== 'SHARED') {
+          return { success: false, error: "La liste d'accès ne concerne que les dossiers partagés" };
+        }
+        if (!isFolderPrivileged(session.role)) {
+          return { success: false, error: 'Seuls les administrateurs et managers peuvent modifier les accès' };
+        }
+      }
+      const folder = await db.$transaction(async (tx) => {
+        const data: any = {};
+        if (name !== undefined) data.name = name;
+        if (parentId !== undefined) data.parentId = parentId;
+        const f = Object.keys(data).length
+          ? await tx.documentFolder.update({ where: { id: Number(id) }, data })
+          : current;
+        if (current.kind === 'SHARED' && userIds !== undefined && userIds !== null) {
+          await tx.documentFolderAccess.deleteMany({ where: { folderId: Number(id) } });
+          if (userIds.length) {
+            await tx.documentFolderAccess.createMany({
+              data: userIds.map((userId) => ({ folderId: Number(id), userId })),
+            });
+          }
+        }
+        return f;
+      });
       return { success: true, data: folder };
     } catch (error: any) {
       return { success: false, error: error.message };
@@ -770,6 +1007,11 @@ export function registerDocumentsIPC(): void {
       if (!session) return { success: false, error: 'Session expirée' };
       checkRole(session, DELETE_ROLES);
       const db = getDb();
+      const folder = await db.documentFolder.findUnique({ where: { id: Number(id) } });
+      if (!folder) return { success: false, error: 'Dossier introuvable' };
+      if (folder.kind === 'PERSONAL') {
+        return { success: false, error: 'Un espace personnel ne peut pas être supprimé' };
+      }
       await db.documentFolder.update({ where: { id: Number(id) }, data: { deletedAt: new Date() } });
       return { success: true };
     } catch (error: any) {

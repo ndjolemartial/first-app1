@@ -90,6 +90,32 @@ export function useUpdateStorage() {
   });
 }
 
+// ── Paie : compte par défaut à débiter pour les salaires ─────────────────────
+
+export function usePayrollAccountSetting() {
+  const token = useAuthStore((s) => s.token)!;
+  return useQuery({
+    queryKey: ['settings', 'payrollAccount'],
+    queryFn:  () => ipc().getPayrollAccount(token),
+    enabled:  !!token,
+  });
+}
+
+export function useUpdatePayrollAccount() {
+  const token = useAuthStore((s) => s.token)!;
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: { accountId: number | null }) => ipc().updatePayrollAccount(token, payload),
+    onSuccess:  (res) => {
+      if (res.success) {
+        qc.invalidateQueries({ queryKey: ['settings', 'payrollAccount'] });
+        qc.invalidateQueries({ queryKey: ['payslip-pay-accounts'] });
+        toast.success('Compte de paie par défaut enregistré');
+      } else toast.error(String(res.error));
+    },
+  });
+}
+
 // ── Email ───────────────────────────────────────────────────────────────────
 
 export function useEmailSettings() {

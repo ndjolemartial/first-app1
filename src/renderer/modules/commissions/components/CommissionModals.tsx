@@ -2,7 +2,7 @@ import { useForm } from 'react-hook-form';
 import Modal from '../../../shared/components/ui/Modal';
 import Button from '../../../shared/components/ui/Button';
 import { usePayCommission, useCancelCommission, useUpdateCommission } from '../hooks/useCommissions';
-import { PAYMENT_METHOD_OPTIONS, TRANSACTION_TYPE_LABEL, beneficiaryName } from '../utils/commissions.utils';
+import { PAYMENT_METHOD_OPTIONS, transactionLabel, beneficiaryName } from '../utils/commissions.utils';
 import TreasuryAccountFields from '../../../shared/components/TreasuryAccountFields';
 import { formatCurrency } from '../../../shared/utils/format';
 import { CreditCard, Ban, Save } from 'lucide-react';
@@ -144,7 +144,7 @@ export function EditCommissionModal({ commission, onClose, onSuccess }: ModalPro
     >
       <p className="text-sm text-slate-500 mb-4">
         {commission.reference} — {beneficiaryName(commission)}
-        {' '}— {TRANSACTION_TYPE_LABEL[commission.transactionType] ?? commission.transactionType}
+        {' '}— {transactionLabel(commission)}
       </p>
       <form className="space-y-4">
         <div className="grid grid-cols-2 gap-4">

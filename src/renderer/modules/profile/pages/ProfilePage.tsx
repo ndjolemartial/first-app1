@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useForm } from 'react-hook-form';
+import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { Save, KeyRound, Lock, Palette, Check } from 'lucide-react';
@@ -8,6 +8,7 @@ import PageLayout from '../../../shared/components/layout/PageLayout';
 import Button from '../../../shared/components/ui/Button';
 import Input from '../../../shared/components/ui/Input';
 import Select from '../../../shared/components/ui/Select';
+import RichTextEditor from '../../../shared/components/ui/RichTextEditor';
 import Card from '../../../shared/components/ui/Card';
 import { useAuthStore } from '../../../shared/stores/auth.store';
 import { toast } from '../../../shared/components/ui/Toast';
@@ -24,6 +25,7 @@ const profileSchema = z.object({
   civilite: z.string().optional(),
   statutConjugal: z.string().optional(),
   residence: z.string().optional(),
+  messageSignature: z.string().optional(),
 });
 
 type ProfileFormData = z.infer<typeof profileSchema>;
@@ -65,6 +67,7 @@ const ROLE_LABELS: Record<string, string> = {
   ASSISTANTE_DIRECTION: 'Assistante de Direction',
   AGENT: 'Agent',
   AGENT_TECHNIQUE: 'Agent Technique',
+  RH: 'RH / Paie',
   READONLY: 'Lecture seule',
 };
 
@@ -100,6 +103,7 @@ export default function ProfilePage() {
     defaultValues: {
       firstName: '', lastName: '', email: '', login: '', phone: '', mobile: '',
       idNumber: '', civilite: '', statutConjugal: '', residence: '',
+      messageSignature: '',
     },
   });
 
@@ -121,6 +125,7 @@ export default function ProfilePage() {
       civilite: user.civilite ?? '',
       statutConjugal: user.statutConjugal ?? '',
       residence: user.residence ?? '',
+      messageSignature: user.messageSignature ?? '',
     });
   }, [user, profileForm]);
 
@@ -246,6 +251,24 @@ export default function ProfilePage() {
               placeholder="Quartier, commune, ville…"
               {...profileForm.register('residence')}
             />
+            <div>
+              <label className="text-sm font-medium text-slate-700">Signature des messages personnels</label>
+              <p className="text-xs text-slate-400 mt-0.5 mb-2">
+                Mise en forme HTML. Ajoutée automatiquement à vos envois en tant que Particulier (module Communication).
+              </p>
+              <Controller
+                control={profileForm.control}
+                name="messageSignature"
+                render={({ field }) => (
+                  <RichTextEditor
+                    value={field.value || ''}
+                    onChange={field.onChange}
+                    minHeight={160}
+                    placeholder="Ex : Cordialement, Prénom Nom — Afrikimmo, Tél : …"
+                  />
+                )}
+              />
+            </div>
             <div className="flex justify-end pt-2">
               <Button
                 type="submit"

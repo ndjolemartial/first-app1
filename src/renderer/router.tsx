@@ -85,6 +85,15 @@ import LotissementDetailPage from './modules/lotissements/pages/LotissementDetai
 import TerrainsListPage from './modules/terrains/pages/TerrainsListPage';
 import TerrainFormPage from './modules/terrains/pages/TerrainFormPage';
 import TerrainDetailPage from './modules/terrains/pages/TerrainDetailPage';
+import EmployeesListPage from './modules/hr/pages/EmployeesListPage';
+import EmployeeFormPage from './modules/hr/pages/EmployeeFormPage';
+import EmployeeDetailPage from './modules/hr/pages/EmployeeDetailPage';
+import PayslipsListPage from './modules/hr/pages/PayslipsListPage';
+import PayslipDetailPage from './modules/hr/pages/PayslipDetailPage';
+import PayrollSettingsPage from './modules/hr/pages/PayrollSettingsPage';
+import HrTemplatesPage from './modules/hr/pages/HrTemplatesPage';
+import LeaveRequestsPage from './modules/hr/pages/LeaveRequestsPage';
+import AttendancePage from './modules/hr/pages/AttendancePage';
 
 // Programmes immobiliers
 import ProgrammesListPage from './modules/programmes/pages/ProgrammesListPage';
@@ -103,6 +112,9 @@ import CommissionFormPage from './modules/commissions/pages/CommissionFormPage';
 import BeneficiaryCommissionsPage from './modules/commissions/pages/BeneficiaryCommissionsPage';
 import ReferrersListPage from './modules/commissions/pages/ReferrersListPage';
 import ReferrerFormPage from './modules/commissions/pages/ReferrerFormPage';
+import ExpensesListPage from './modules/expenses/pages/ExpensesListPage';
+import ExpenseFormPage from './modules/expenses/pages/ExpenseFormPage';
+import AnalyticsPage from './modules/analytics/pages/AnalyticsPage';
 
 // Budgets
 import BudgetDashboardPage from './modules/budget/pages/BudgetDashboardPage';
@@ -236,9 +248,10 @@ export const router = createHashRouter([
             ],
           },
           // Conventions / Attestations — ÉCRITURE (création, édition, modèles) :
-          // réservée aux MANAGER+ (ACCOUNTANT inclus). AGENT et READONLY exclus.
+          // réservée aux MANAGER+ (ACCOUNTANT inclus). AGENT, READONLY et
+          // ASSISTANTE_DIRECTION exclus (cette dernière est en lecture seule).
           {
-            element: <RoleGuard allowedRoles={['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ACCOUNTANT', 'ASSISTANTE_DIRECTION']} />,
+            element: <RoleGuard allowedRoles={['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ACCOUNTANT']} />,
             children: [
               { path: 'conventions/new', element: <ConventionFormPage /> },
               { path: 'conventions/templates/new', element: <ConventionTemplateFormPage /> },
@@ -260,28 +273,36 @@ export const router = createHashRouter([
           { path: 'crm/activities/new', element: <ActivityFormPage /> },
           { path: 'crm/activities/:id/edit', element: <ActivityFormPage /> },
 
-          // Archiving — réservé aux MANAGER+ (ACCOUNTANT inclus). AGENT/READONLY n'ont pas accès.
+          // GED — Documents : accessible à TOUS les utilisateurs (espace personnel
+          // + dossiers partagés). Le contrôle d'accès fin est appliqué côté serveur.
+          { path: 'archiving', element: <Navigate to="/archiving/ged" replace /> },
+          { path: 'archiving/ged', element: <GedDocumentsPage /> },
+          { path: 'archiving/ged/:id', element: <GedDocumentDetailPage /> },
+
+          // Reste du module Archivage — réservé aux MANAGER+ (ACCOUNTANT/AD inclus).
           {
             element: <RoleGuard allowedRoles={['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ACCOUNTANT', 'ASSISTANTE_DIRECTION']} />,
             children: [
-              // L'accès au module ouvre le tableau de bord GED
-              { path: 'archiving', element: <Navigate to="/archiving/ged/dashboard" replace /> },
               { path: 'archiving/entities', element: <ArchivingPage /> },
               { path: 'archiving/policies', element: <ArchivePoliciesPage /> },
-              { path: 'archiving/ged', element: <GedDocumentsPage /> },
               { path: 'archiving/ged/dashboard', element: <GedDashboardPage /> },
               { path: 'archiving/ged/settings', element: <GedSettingsPage /> },
-              { path: 'archiving/ged/:id', element: <GedDocumentDetailPage /> },
             ],
           },
 
           // Lotissements — réservé aux MANAGER+ (ACCOUNTANT inclus). AGENT/READONLY n'ont pas accès.
+          // Lecture (liste + détail) ouverte à ASSISTANTE_DIRECTION ; création / modification non.
           {
             element: <RoleGuard allowedRoles={['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ACCOUNTANT', 'ASSISTANTE_DIRECTION']} />,
             children: [
               { path: 'lotissements', element: <LotissementsListPage /> },
-              { path: 'lotissements/new', element: <LotissementFormPage /> },
               { path: 'lotissements/:id', element: <LotissementDetailPage /> },
+            ],
+          },
+          {
+            element: <RoleGuard allowedRoles={['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ACCOUNTANT']} />,
+            children: [
+              { path: 'lotissements/new', element: <LotissementFormPage /> },
               { path: 'lotissements/:id/edit', element: <LotissementFormPage /> },
             ],
           },
@@ -312,6 +333,23 @@ export const router = createHashRouter([
               { path: 'projects/new', element: <ProjectFormPage /> },
               { path: 'projects/:id', element: <ProjectDetailPage /> },
               { path: 'projects/:id/edit', element: <ProjectFormPage /> },
+            ],
+          },
+
+          // RH & Paie — réservé au rôle dédié RH et aux administrateurs.
+          {
+            element: <RoleGuard allowedRoles={['SUPER_ADMIN', 'ADMIN', 'RH']} />,
+            children: [
+              { path: 'hr/employees', element: <EmployeesListPage /> },
+              { path: 'hr/employees/new', element: <EmployeeFormPage /> },
+              { path: 'hr/employees/:id', element: <EmployeeDetailPage /> },
+              { path: 'hr/employees/:id/edit', element: <EmployeeFormPage /> },
+              { path: 'hr/payslips', element: <PayslipsListPage /> },
+              { path: 'hr/payslips/:id', element: <PayslipDetailPage /> },
+              { path: 'hr/payroll-settings', element: <PayrollSettingsPage /> },
+              { path: 'hr/templates', element: <HrTemplatesPage /> },
+              { path: 'hr/leave', element: <LeaveRequestsPage /> },
+              { path: 'hr/attendance', element: <AttendancePage /> },
             ],
           },
 
@@ -381,6 +419,26 @@ export const router = createHashRouter([
               { path: 'commissions/new', element: <CommissionFormPage /> },
               { path: 'commissions/referrers/new', element: <ReferrerFormPage /> },
               { path: 'commissions/referrers/:id/edit', element: <ReferrerFormPage /> },
+            ],
+          },
+
+          // Charges / dépenses prévisionnelles — ADMIN, MANAGER, COMPTABLE,
+          // ASSISTANTE_DIRECTION (MANAGER et ASSISTANTE_DIRECTION ne voient que
+          // leurs propres charges, filtrage appliqué côté IPC).
+          {
+            element: <RoleGuard allowedRoles={['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ACCOUNTANT', 'ASSISTANTE_DIRECTION']} />,
+            children: [
+              { path: 'expenses', element: <ExpensesListPage /> },
+              { path: 'expenses/new', element: <ExpenseFormPage /> },
+              { path: 'expenses/:id/edit', element: <ExpenseFormPage /> },
+            ],
+          },
+
+          // Analyses décisionnelles (BI) — administrateurs uniquement.
+          {
+            element: <RoleGuard allowedRoles={['SUPER_ADMIN', 'ADMIN']} />,
+            children: [
+              { path: 'analytics', element: <AnalyticsPage /> },
             ],
           },
         ],

@@ -42,15 +42,15 @@ function clientName(c: any): string {
     : (c.entreprise ?? '—');
 }
 
-// Écriture (émission / suppression) réservée à MANAGER+. AGENT en lecture seule.
-const WRITE_ROLES = new Set(['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ACCOUNTANT', 'ASSISTANTE_DIRECTION']);
+// Écriture (émission / suppression) réservée à MANAGER+ (ACCOUNTANT inclus).
+// AGENT et ASSISTANTE_DIRECTION en lecture seule.
+const WRITE_ROLES = new Set(['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ACCOUNTANT']);
 
 export default function AttestationsListPage() {
   const navigate = useNavigate();
   const role = useAuthStore((s) => s.user?.role) ?? '';
   const canWrite = WRITE_ROLES.has(role);
-  // L'Assistante de Direction peut consulter/éditer mais pas créer d'attestation.
-  const canCreate = canWrite && role !== 'ASSISTANTE_DIRECTION';
+  const canCreate = canWrite;
   const [type, setType] = useState('');
   const [search, setSearch] = useState('');
   const { data, isLoading } = useAttestations({

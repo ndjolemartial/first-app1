@@ -7,6 +7,7 @@ import Badge from '../../../shared/components/ui/Badge';
 import Card from '../../../shared/components/ui/Card';
 import ConfirmDialog from '../../../shared/components/ui/ConfirmDialog';
 import { useLotissement, useDeleteLotissement } from '../hooks/useLotissements';
+import { useAuthStore } from '../../../shared/stores/auth.store';
 import { formatDate, formatCurrency } from '../../../shared/utils/format';
 import { Edit, Trash2, MapPin, Layers } from 'lucide-react';
 import EntityCashflowSection from '../../treasury/components/EntityCashflowSection';
@@ -35,6 +36,9 @@ export default function LotissementDetailPage() {
   const deleteLot = useDeleteLotissement();
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [shareOpen, setShareOpen] = useState(false);
+  // L'Assistante de Direction est en lecture seule sur les lotissements
+  // (pas de modification ni de suppression).
+  const canWrite = useAuthStore((s) => s.user?.role) !== 'ASSISTANTE_DIRECTION';
 
   const lot = res?.data;
   if (isLoading || !lot) return null;
@@ -48,12 +52,14 @@ export default function LotissementDetailPage() {
       title={lot.nom}
       breadcrumbs={[{ label: 'Lotissements', to: '/lotissements' }, { label: lot.nom }]}
       actions={
-        <div className="flex gap-2">
-          <Button variant="secondary" icon={<Edit className="h-4 w-4" />}
-            onClick={() => navigate(`/lotissements/${id}/edit`)}>Modifier</Button>
-          <Button variant="danger" icon={<Trash2 className="h-4 w-4" />}
-            onClick={() => setConfirmDelete(true)}>Supprimer</Button>
-        </div>
+        canWrite ? (
+          <div className="flex gap-2">
+            <Button variant="secondary" icon={<Edit className="h-4 w-4" />}
+              onClick={() => navigate(`/lotissements/${id}/edit`)}>Modifier</Button>
+            <Button variant="danger" icon={<Trash2 className="h-4 w-4" />}
+              onClick={() => setConfirmDelete(true)}>Supprimer</Button>
+          </div>
+        ) : undefined
       }
     >
       <div className="max-w-4xl mx-auto space-y-4">

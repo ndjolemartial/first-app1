@@ -16,6 +16,10 @@ import FolderTree from '../components/FolderTree';
 import DocumentImportModal from '../components/DocumentImportModal';
 import { useGedDocuments, useGedFolders, useGedCategories, useDeleteGedDocument, openDocumentExternally } from '../hooks/useGed';
 import { hierOptions, formatBytes, mimeGroup } from '../utils/gedTree';
+import { useAuthStore } from '../../../shared/stores/auth.store';
+
+/** Rôles pour lesquels le champ Catégorie est entièrement masqué dans la GED. */
+const NO_CATEGORY_ROLES = ['AGENT', 'AGENT_TECHNIQUE'];
 import { UploadCloud, Eye, ExternalLink, Trash2, FileText } from 'lucide-react';
 
 const TYPE_OPTIONS = [
@@ -41,14 +45,21 @@ export default function GedDocumentsPage() {
   const [importOpen, setImportOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<any>(null);
 
+  const { data: folderRes } = useGedFolders();
+  // Contexte « espace personnel » : on n'y applique ni catégorie ni étiquette.
+  const selectedFolder = (folderRes?.data ?? []).find((f: any) => f.id === folderId);
+  const isPersonalContext = selectedFolder?.kind === 'PERSONAL';
+  // Catégorie masquée pour l'espace personnel OU pour les rôles AGENT / AGENT_TECHNIQUE.
+  const role = useAuthStore((s) => s.user?.role) ?? '';
+  const hideCategory = isPersonalContext || NO_CATEGORY_ROLES.includes(role);
+
   const filters = {
     search: search || undefined,
-    categoryId: categoryId || undefined,
+    categoryId: hideCategory ? undefined : (categoryId || undefined),
     typeGroup: typeGroup || undefined,
     folderId: folderId ?? undefined,
   };
   const { data, isLoading } = useGedDocuments(filters, page, 24);
-  const { data: folderRes } = useGedFolders();
   const { data: catRes } = useGedCategories();
   const deleteDoc = useDeleteGedDocument();
 
@@ -90,10 +101,12 @@ export default function GedDocumentsPage() {
                 onChange={(e) => { setSearch(e.target.value); setPage(1); }}
               />
             </div>
-            <div className="w-52">
-              <Select label="Catégorie" options={categoryOptions} value={categoryId}
-                onChange={(e) => { setCategoryId(e.target.value); setPage(1); }} />
-            </div>
+            {!hideCategory && (
+              <div className="w-52">
+                <Select label="Catégorie" options={categoryOptions} value={categoryId}
+                  onChange={(e) => { setCategoryId(e.target.value); setPage(1); }} />
+              </div>
+            )}
             <div className="w-40">
               <Select label="Type" options={TYPE_OPTIONS} value={typeGroup}
                 onChange={(e) => { setTypeGroup(e.target.value); setPage(1); }} />
@@ -116,7 +129,7 @@ export default function GedDocumentsPage() {
                     <tr>
                       <th className="px-4 py-3 text-left font-medium text-slate-600">Numéro</th>
                       <th className="px-4 py-3 text-left font-medium text-slate-600">Nom</th>
-                      <th className="px-4 py-3 text-left font-medium text-slate-600">Catégorie</th>
+                      {!hideCategory && <th className="px-4 py-3 text-left font-medium text-slate-600">Catégorie</th>}
                       <th className="px-4 py-3 text-left font-medium text-slate-600">Type</th>
                       <th className="px-4 py-3 text-left font-medium text-slate-600">Taille</th>
                       <th className="px-4 py-3 text-left font-medium text-slate-600">Archivé le</th>
@@ -138,7 +151,7 @@ export default function GedDocumentsPage() {
                             </div>
                             {d.folder && <p className="text-xs text-slate-400">{d.folder.name}</p>}
                           </td>
-                          <td className="px-4 py-3 text-slate-600">{d.documentCategory?.name ?? '—'}</td>
+                          {!hideCategory && <td className="px-4 py-3 text-slate-600">{d.documentCategory?.name ?? '—'}</td>}
                           <td className="px-4 py-3">
                             <Badge variant={GROUP_VARIANT[g.key] ?? 'default'}>{g.label}</Badge>
                           </td>

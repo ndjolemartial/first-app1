@@ -35,6 +35,10 @@ const storageSchema = zod_1.z.object({
     path: zod_1.z.string().optional(),
     maxFileSizeMb: zod_1.z.coerce.number().int().positive().optional(),
 });
+const payrollAccountSchema = zod_1.z.object({
+    // null / absent = aucun compte par défaut
+    accountId: zod_1.z.number().int().positive().nullable().optional(),
+});
 const emailSchema = zod_1.z.object({
     host: zod_1.z.string().optional(),
     port: zod_1.z.coerce.number().int().min(1).max(65535).optional(),
@@ -380,6 +384,60 @@ function registerSettingsIPC() {
         }
         catch (err) {
             logger_1.default.error('settings:updateStorage', err.message);
+            return { success: false, error: err.message };
+        }
+    });
+    // ── Paie : compte par défaut à débiter pour les salaires ─────────────────────
+    electron_1.ipcMain.handle('settings:getPayrollAccount', async (_event, { token }) => {
+        try {
+            const session = (0, auth_service_1.getSession)(token);
+            if (!session)
+                return { success: false, error: 'Session expirée' };
+            (0, auth_service_1.checkRole)(session, ADMIN_ROLES);
+            const raw = await (0, settings_service_1.getSetting)(settings_service_1.SettingsKeys.payrollDefaultAccountId);
+            const accountId = raw ? Number(raw) : null;
+            // Liste des comptes communs actifs (débitables pour un salaire) pour le sélecteur
+            const db = (0, db_service_1.getDb)();
+            const accounts = await db.bankAccount.findMany({
+                where: { deletedAt: null, isActive: true, linkedUserId: null },
+                orderBy: { name: 'asc' },
+                select: { id: true, name: true, type: true },
+            });
+            // Le compte enregistré n'est plus valide (supprimé / désactivé / privé) → null
+            const valid = accountId != null && accounts.some((a) => a.id === accountId) ? accountId : null;
+            return { success: true, data: { accountId: valid, accounts } };
+        }
+        catch (err) {
+            return { success: false, error: err.message };
+        }
+    });
+    electron_1.ipcMain.handle('settings:updatePayrollAccount', async (_event, { token, payload }) => {
+        try {
+            const session = (0, auth_service_1.getSession)(token);
+            if (!session)
+                return { success: false, error: 'Session expirée' };
+            (0, auth_service_1.checkRole)(session, ADMIN_ROLES);
+            const parsed = payrollAccountSchema.safeParse(payload);
+            if (!parsed.success)
+                return { success: false, error: parsed.error.issues.map((i) => i.message).join(', ') };
+            const id = parsed.data.accountId ?? null;
+            if (id != null) {
+                const db = (0, db_service_1.getDb)();
+                const account = await db.bankAccount.findFirst({ where: { id, deletedAt: null } });
+                if (!account)
+                    return { success: false, error: 'Compte introuvable' };
+                if (account.linkedUserId != null) {
+                    return { success: false, error: 'Le compte de paie doit être un compte commun (non rattaché à un utilisateur).' };
+                }
+                if (!account.isActive)
+                    return { success: false, error: 'Ce compte est inactif.' };
+            }
+            await (0, settings_service_1.setSettings)([{ key: settings_service_1.SettingsKeys.payrollDefaultAccountId, value: id != null ? String(id) : '' }]);
+            logger_1.default.info(`Compte de paie par défaut : ${id ?? '(aucun)'}`);
+            return { success: true };
+        }
+        catch (err) {
+            logger_1.default.error('settings:updatePayrollAccount', err.message);
             return { success: false, error: err.message };
         }
     });

@@ -3,7 +3,7 @@ import { getDb } from '../services/db.service';
 import { getSession, checkRole } from '../services/auth.service';
 import logger from '../utils/logger';
 
-const READ_ROLES = ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'AGENT', 'AGENT_TECHNIQUE', 'ACCOUNTANT', 'ASSISTANTE_DIRECTION', 'READONLY'];
+const READ_ROLES = ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'AGENT', 'AGENT_TECHNIQUE', 'ACCOUNTANT', 'ASSISTANTE_DIRECTION', 'RH', 'READONLY'];
 const PRIVILEGED_ROLES = ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ACCOUNTANT', 'ASSISTANTE_DIRECTION'];
 
 // Visibilité restreinte (AGENT / AGENT_TECHNIQUE / READONLY) : les compteurs du

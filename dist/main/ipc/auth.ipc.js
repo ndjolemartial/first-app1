@@ -58,11 +58,14 @@ const updateProfileSchema = zod_1.z.object({
     civilite: zod_1.z.enum(['MONSIEUR', 'MADAME', 'MADEMOISELLE']).optional(),
     statutConjugal: zod_1.z.enum(['CELIBATAIRE', 'MARIEE', 'CONCUBINAGE', 'DIVORCE', 'VEUF']).optional(),
     residence: zod_1.z.string().optional(),
+    // Signature personnelle d'envoi de messages (module Communication).
+    messageSignature: zod_1.z.string().optional(),
 });
 const PROFILE_SELECT = {
     id: true, uuid: true, matricule: true, firstName: true, lastName: true,
     email: true, login: true, role: true, isActive: true, avatar: true,
-    phone: true, mobile: true, fonction: true, idNumber: true, civilite: true,
+    phone: true, mobile: true, fonction: true, nomCommercial: true,
+    messageSignature: true, idNumber: true, civilite: true,
     statutConjugal: true, hireDate: true, cnpsNumber: true, residence: true,
     theme: true, defaultAccountEntreeId: true, defaultAccountSortieId: true,
     lastLoginAt: true, createdAt: true, updatedAt: true,

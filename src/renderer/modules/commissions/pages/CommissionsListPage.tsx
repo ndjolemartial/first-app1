@@ -10,7 +10,7 @@ import { PayCommissionModal, EditCommissionModal, CancelCommissionModal } from '
 import {
   COMMISSION_WRITE_ROLES,
   COMMISSION_STATUS_LABEL,
-  TRANSACTION_TYPE_LABEL,
+  transactionLabel,
   BENEFICIARY_TYPE_LABEL,
   beneficiaryName,
 } from '../utils/commissions.utils';
@@ -52,7 +52,7 @@ const EXPORT_COLUMNS: ExportColumn[] = [
         : label;
     },
   },
-  { header: 'Transaction',       cell: (c) => TRANSACTION_TYPE_LABEL[c.transactionType] ?? c.transactionType },
+  { header: 'Transaction',       cell: (c) => transactionLabel(c) },
   { header: 'Assiette',          cell: (c) => formatCurrency(Number(c.baseAmount)) },
   { header: 'Taux',              cell: (c) => `${Number(c.rate)} %` },
   { header: 'Montant',           cell: (c) => formatCurrency(Number(c.amount)) },

@@ -10,7 +10,7 @@ import CommissionTable from '../components/CommissionTable';
 import { PayCommissionModal, EditCommissionModal, CancelCommissionModal } from '../components/CommissionModals';
 import {
   BENEFICIARY_TYPE_LABEL, COMMISSION_WRITE_ROLES,
-  COMMISSION_STATUS_LABEL, TRANSACTION_TYPE_LABEL,
+  COMMISSION_STATUS_LABEL, transactionLabel,
 } from '../utils/commissions.utils';
 import { formatCurrency } from '../../../shared/utils/format';
 import ExportMenu, { ExportColumn } from '../../../shared/components/ExportMenu';
@@ -19,7 +19,7 @@ import { Wallet, CheckCircle, Ban } from 'lucide-react';
 const EXPORT_COLUMNS: ExportColumn[] = [
   { header: 'Référence',   cell: (c) => c.reference },
   { header: 'Convention',  cell: (c) => c.convention?.reference ?? '' },
-  { header: 'Transaction', cell: (c) => TRANSACTION_TYPE_LABEL[c.transactionType] ?? c.transactionType },
+  { header: 'Transaction', cell: (c) => transactionLabel(c) },
   { header: 'Assiette',    cell: (c) => formatCurrency(Number(c.baseAmount)) },
   { header: 'Taux',        cell: (c) => `${Number(c.rate)} %` },
   { header: 'Montant',     cell: (c) => formatCurrency(Number(c.amount)) },

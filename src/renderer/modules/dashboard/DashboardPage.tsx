@@ -108,7 +108,7 @@ export default function DashboardPage() {
           key: 'availableTerrains',
           label: 'Terrains disponibles',
           value: data.counts.availableTerrains,
-          to: '/terrains',
+          to: '/terrains?statut=DISPONIBLE',
           icon: <TreePine className="h-6 w-6 text-emerald-600" />,
           iconBg: 'bg-emerald-50',
           privileged: true,

@@ -8,6 +8,18 @@ const WRITE_ROLES = ['SUPER_ADMIN', 'ADMIN', 'MANAGER'];
 const READ_ROLES = [...WRITE_ROLES, 'AGENT', 'ACCOUNTANT', 'READONLY'];
 
 /**
+ * Contrôle de rôle pour les écritures sur les attestations (création, mise à jour,
+ * suppression). ASSISTANTE_DIRECTION, qui hérite normalement des permissions
+ * MANAGER, est explicitement exclue : elle ne peut pas modifier une attestation.
+ */
+function checkWriteRole(session: { role: string }, allowedRoles: string[]): void {
+  if (session.role === 'ASSISTANTE_DIRECTION') {
+    throw new Error('Permission insuffisante');
+  }
+  checkRole(session as any, allowedRoles);
+}
+
+/**
  * Rôles autorisés à émettre / modifier une attestation de SOLDE portant sur une
  * souscription héritée (échéances sans convention). Liste explicite, volontairement
  * vérifiée SANS passer par `checkRole` : on veut inclure le comptable (ACCOUNTANT)
@@ -415,7 +427,7 @@ export function registerAttestationsIPC(): void {
         }
         await assertLegacySubscriptionSettled(db, d.clientId, d.terrainId);
       } else {
-        checkRole(session, WRITE_ROLES);
+        checkWriteRole(session, WRITE_ROLES);
         // Vérifie l'éligibilité de la convention liée (pas d'avenant /
         // résiliation, et solde = 0 pour SOLDE / TRANSFERT_PROPRIETE).
         await assertConventionEligibleForAttestation(db, d.conventionId, d.type);
@@ -474,7 +486,7 @@ export function registerAttestationsIPC(): void {
         }
         await assertLegacySubscriptionSettled(db, effectiveClientId, effectiveTerrainId);
       } else {
-        checkRole(session, WRITE_ROLES);
+        checkWriteRole(session, WRITE_ROLES);
         await assertConventionEligibleForAttestation(db, effectiveConventionId, effectiveType);
       }
       const data: any = { ...d };
@@ -575,7 +587,7 @@ export function registerAttestationsIPC(): void {
     try {
       const session = getSession(token);
       if (!session) return { success: false, error: 'Session expirée' };
-      checkRole(session, WRITE_ROLES);
+      checkWriteRole(session, WRITE_ROLES);
       const db = getDb();
       await db.attestation.update({ where: { id }, data: { deletedAt: new Date() } });
       return { success: true };

@@ -53,13 +53,15 @@ interface Props {
   onChange: (field: keyof DocumentLinks, value: string) => void;
   /** Compact = grille à 3 colonnes (utile dans les modales). */
   compact?: boolean;
+  /** Restreint l'affichage à ces seuls champs (liste blanche). */
+  visibleFields?: Array<keyof DocumentLinks>;
 }
 
 /**
  * Grille de sélecteurs pour rattacher un document GED à une ou plusieurs
  * entités métier. Toutes les valeurs sont des `string` (vide = pas de lien).
  */
-export default function DocumentLinksFields({ values, onChange, compact = false }: Props) {
+export default function DocumentLinksFields({ values, onChange, compact = false, visibleFields }: Props) {
   const token = useAuthStore((s) => s.token)!;
 
   const clients = useEntityOptions(
@@ -79,7 +81,10 @@ export default function DocumentLinksFields({ values, onChange, compact = false 
     (r) => r.companyName || personLabel(r, `Apporteur #${r.id}`),
   );
   const users = useEntityOptions(
-    () => window.electron.users.list(token, { sort: 'idAsc' }, 1, 500),
+    // Utilisateurs actifs, filtrés par rôle côté serveur selon le rôle connecté.
+    // `assistanteFullAccess` : dans ce contexte d'archivage, l'Assistante de
+    // Direction accède à l'ensemble des utilisateurs actifs.
+    () => window.electron.users.listSelectable(token, { assistanteFullAccess: true }),
     (u) => `${personLabel(u, `Utilisateur #${u.id}`)}${u.matricule ? ` (${u.matricule})` : ''}`,
   );
   const properties = useEntityOptions(
@@ -88,7 +93,15 @@ export default function DocumentLinksFields({ values, onChange, compact = false 
   );
   const terrains = useEntityOptions(
     () => window.electron.terrains.list(token, {}, 1, 500),
-    (t) => `${t.reference}${t.numeroParcelle ? ` · Lot ${t.numeroParcelle}` : ''}`,
+    // Format identique à l'interface « Nouvelle activité » :
+    // référence — Îlot X, Lot Y — Nom du lotissement.
+    (t) => {
+      const loc = [
+        t.numeroIlot ? `Îlot ${t.numeroIlot}` : '',
+        t.numeroParcelle ? `Lot ${t.numeroParcelle}` : '',
+      ].filter(Boolean).join(', ');
+      return `${t.reference}${loc ? ` — ${loc}` : ''}${t.lotissement?.nom ? ` — ${t.lotissement.nom}` : ''}`;
+    },
   );
   const lotissements = useEntityOptions(
     () => window.electron.lotissements.list(token, {}, 1, 500),
@@ -104,11 +117,19 @@ export default function DocumentLinksFields({ values, onChange, compact = false 
   );
   const conventions = useEntityOptions(
     () => window.electron.conventions.list(token, {}, 1, 500),
-    (c) => c.reference,
+    // Format identique à « Nouvelle activité » : référence — nom du client.
+    (c) => {
+      const cn = personLabel(c.client, '');
+      return cn ? `${c.reference} — ${cn}` : c.reference;
+    },
   );
   const invoices = useEntityOptions(
     () => window.electron.accounting.getInvoices(token, {}, 1, 500),
-    (i) => i.reference,
+    // Format identique à « Nouvelle activité » : référence — nom du client.
+    (i) => {
+      const cn = personLabel(i.client, '');
+      return cn ? `${i.reference} — ${cn}` : i.reference;
+    },
   );
   const attestations = useEntityOptions(
     () => window.electron.attestations.list(token, {}, 1, 500),
@@ -144,9 +165,14 @@ export default function DocumentLinksFields({ values, onChange, compact = false 
     ['treasuryOperationId', 'Opération de trésorerie', treasuryOperations],
   ];
 
+  // Liste blanche éventuelle (ex. AGENT/AGENT_TECHNIQUE : Prospect uniquement).
+  const shownFields = visibleFields
+    ? fields.filter(([key]) => visibleFields.includes(key))
+    : fields;
+
   return (
     <div className={compact ? 'grid grid-cols-3 gap-3' : 'grid grid-cols-2 gap-3'}>
-      {fields.map(([key, label, list]) => (
+      {shownFields.map(([key, label, list]) => (
         <SearchSelect
           key={key}
           label={label}

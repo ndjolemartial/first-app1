@@ -87,16 +87,16 @@ const STATUS_RECAP_ITEMS: StatusRecapItem[] = [
   { key: 'ANNULE',            label: 'Annulées',      icon: XCircle,       iconBg: 'bg-rose-100',    iconColor: 'text-rose-600',    activeColor: 'text-rose-700' },
 ];
 
-// Écriture (création / édition) réservée à MANAGER+ (ACCOUNTANT/AD inclus).
+// Écriture (création / édition) réservée à MANAGER+ (ACCOUNTANT inclus).
 // L'AGENT est en consultation seule (ses clients référents, BROUILLON).
-const WRITE_ROLES = new Set(['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ACCOUNTANT', 'ASSISTANTE_DIRECTION']);
+// L'ASSISTANTE_DIRECTION est en lecture seule (ni création ni modification).
+const WRITE_ROLES = new Set(['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ACCOUNTANT']);
 
 export default function ConventionsListPage() {
   const navigate = useNavigate();
   const role = useAuthStore((s) => s.user?.role) ?? '';
   const canWrite = WRITE_ROLES.has(role);
-  // L'Assistante de Direction peut consulter/éditer mais pas créer de convention.
-  const canCreate = canWrite && role !== 'ASSISTANTE_DIRECTION';
+  const canCreate = canWrite;
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState('');
   const [type, setType] = useState('');

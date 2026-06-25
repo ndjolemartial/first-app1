@@ -32,9 +32,12 @@ const lotissements_ipc_1 = require("./ipc/lotissements.ipc");
 const terrains_ipc_1 = require("./ipc/terrains.ipc");
 const programmes_ipc_1 = require("./ipc/programmes.ipc");
 const projects_ipc_1 = require("./ipc/projects.ipc");
+const hr_ipc_1 = require("./ipc/hr.ipc");
 const geo_ipc_1 = require("./ipc/geo.ipc");
 const countries_ipc_1 = require("./ipc/countries.ipc");
 const commissions_ipc_1 = require("./ipc/commissions.ipc");
+const forecast_expenses_ipc_1 = require("./ipc/forecast-expenses.ipc");
+const analytics_ipc_1 = require("./ipc/analytics.ipc");
 const export_ipc_1 = require("./ipc/export.ipc");
 const invoice_templates_ipc_1 = require("./ipc/invoice-templates.ipc");
 const list_export_templates_ipc_1 = require("./ipc/list-export-templates.ipc");
@@ -48,6 +51,8 @@ const reminders_ipc_1 = require("./ipc/reminders.ipc");
 const reminders_service_1 = require("./services/reminders.service");
 const attestation_templates_service_1 = require("./services/attestation-templates.service");
 const quote_templates_service_1 = require("./services/quote-templates.service");
+const hr_templates_service_1 = require("./services/hr-templates.service");
+const leave_service_1 = require("./services/leave.service");
 // Distinction dev/prod basée sur l'empaquetage Electron (plus fiable que
 // NODE_ENV, absent dans l'application installée).
 const isDev = !electron_1.app.isPackaged;
@@ -119,9 +124,12 @@ function registerIPC() {
     (0, terrains_ipc_1.registerTerrainsIPC)();
     (0, programmes_ipc_1.registerProgrammesIPC)();
     (0, projects_ipc_1.registerProjectsIPC)();
+    (0, hr_ipc_1.registerHrIPC)();
     (0, geo_ipc_1.registerGeoIPC)();
     (0, countries_ipc_1.registerCountriesIPC)();
     (0, commissions_ipc_1.registerCommissionsIPC)();
+    (0, forecast_expenses_ipc_1.registerForecastExpensesIPC)();
+    (0, analytics_ipc_1.registerAnalyticsIPC)();
     (0, export_ipc_1.registerExportIPC)();
     (0, invoice_templates_ipc_1.registerInvoiceTemplatesIPC)();
     (0, list_export_templates_ipc_1.registerListExportTemplatesIPC)();
@@ -182,6 +190,12 @@ electron_1.app.whenReady().then(async () => {
     // Modèle de devis par défaut (créé une seule fois si absent).
     (0, quote_templates_service_1.seedDefaultQuoteTemplate)()
         .catch((e) => logger_1.default.error(`Quote template bootstrap failed: ${e.message}`));
+    // Modèles RH : contrats (un par type) + bulletins de paie (3 modèles).
+    (0, hr_templates_service_1.seedDefaultContractTemplates)()
+        .then(() => (0, hr_templates_service_1.seedDefaultPayslipTemplates)())
+        .catch((e) => logger_1.default.error(`HR templates bootstrap failed: ${e.message}`));
+    (0, leave_service_1.seedDefaultLeaveTypes)()
+        .catch((e) => logger_1.default.error(`Leave types bootstrap failed: ${e.message}`));
     setupAppMenu();
     createWindow();
     logger_1.default.info('Application started');

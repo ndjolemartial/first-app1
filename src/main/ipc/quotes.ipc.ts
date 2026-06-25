@@ -560,6 +560,8 @@ export function registerQuotesIPC(): void {
 
         if (createInvoice) {
           invoiceRef = await nextInvoiceRef(tx as any);
+          // Reprend les lignes du devis comme lignes de facture (détail des articles).
+          const quoteItems = [...(q.items ?? [])].sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
           const invoice = await tx.invoice.create({
             data: {
               reference: invoiceRef,
@@ -575,6 +577,14 @@ export function registerQuotesIPC(): void {
               issueDate: new Date(),
               dueDate: q.validUntil ?? new Date(),
               notes: `Issu du devis ${q.reference}`,
+              items: {
+                create: quoteItems.map((it) => ({
+                  description: it.category ? `${it.category} — ${it.designation}` : it.designation,
+                  quantity: String(Number(it.quantity)) as never,
+                  unitPrice: String(Number(it.unitPrice)) as never,
+                  total: String(Number(it.total)) as never,
+                })),
+              },
             },
           });
           invoiceId = invoice.id;

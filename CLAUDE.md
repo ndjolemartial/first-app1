@@ -200,6 +200,7 @@ enum UserRole {
   ASSISTANTE_DIRECTION
   AGENT
   AGENT_TECHNIQUE
+  RH                    // Ressources humaines / paie (module RH/Paie)
   READONLY
 }
 
@@ -942,7 +943,10 @@ model ArchivePolicy {
 | Consulter les archives  | ✅          | ✅    | ✅      | 👁️    | ✅         | ❌       |
 | Tableau de bord         | ✅          | ✅    | ✅      | ✅    | ✅         | ✅       |
 | Paramètres app          | ✅          | ✅    | ❌      | ❌    | ❌         | ❌       |
+| Module RH & Paie        | ✅          | ✅    | ❌      | ❌    | ❌         | ❌       |
 
+> **RH (Ressources Humaines / Paie)** — rôle **dédié** au module RH & Paie (personnel, contrats, bulletins de paie, congés, pointage). Il accède **uniquement** au module RH/Paie et au tableau de bord ; les autres modules lui sont **refusés au niveau IPC**. Le module RH/Paie est réservé aux rôles **SUPER_ADMIN, ADMIN et RH** (constantes `HR_WRITE_ROLES` / `HR_READ_ROLES` dans `hr.ipc.ts`) et protégé côté UI par `RoleGuard` (`/hr/*`). Le rôle RH **n'hérite d'aucun autre droit** (aucune équivalence dans `checkRole`).
+>
 > **AGENT_TECHNIQUE (Agent Technique)** — **hérite de tous les droits d'un AGENT** (via l'équivalence `AGENT_TECHNIQUE → AGENT` dans `checkRole`), **plus** la gestion **limitée des utilisateurs** : il peut **créer et modifier** (y compris activer/désactiver et réinitialiser le mot de passe) uniquement les comptes de rôle **AGENT, AGENT_TECHNIQUE ou READONLY**. Il ne peut ni gérer les autres rôles, ni supprimer un compte (réservé au SUPER_ADMIN). Restriction appliquée par `userMgmtScope` dans `users.ipc.ts` et reflétée dans le formulaire (liste de rôles filtrée).
 >
 > **\* AGENT — Conventions / Attestations (lecture restreinte)** — un AGENT ne voit que les **conventions au statut BROUILLON** et les **attestations** des **clients dont il est le référent** (`client.assignedToId`). Il **ne peut ni créer**, ni modifier, ni **changer le statut** d'une convention. Filtrage appliqué côté IPC (`agentScopeWhere` dans `conventions.ipc.ts` / `attestations.ipc.ts`) et boutons d'écriture masqués côté UI ; les routes de création/édition lui sont fermées par `RoleGuard`.
@@ -1168,6 +1172,34 @@ Volet documentaire du module Archivage, coexistant avec l'archivage d'entités. 
 
 **Phases suivantes :** OCR plein texte (Tesseract), archivage physique + QR codes, scan via scanner matériel, sauvegarde automatique. Le chiffrement des fichiers est reporté.
 
+### Module 12 — RH & Paie
+
+**Routes :** `/hr/employees`, `/hr/payslips`, `/hr/leave`, `/hr/attendance`, `/hr/payroll-settings`, `/hr/templates`
+**Accès :** rôles **SUPER_ADMIN, ADMIN, RH** uniquement (RoleGuard + contrôle IPC).
+
+Module complet de gestion des ressources humaines et de la paie, **conforme au contexte ivoirien** (Code du travail Loi n°2015-532, CNPS, ITS, CMU, FDFP). Livré en 4 phases.
+
+**Phase 1 — Personnel & contrats**
+- Dossiers du personnel (`Employee`) : état civil, coordonnées, identité, n° CNPS / CMU, RIB, poste, statut (ACTIF / SUSPENDU / CONGE / SORTI). Matricule auto `EMP-AAAA-NNNN`.
+- Contrats de travail (`EmploymentContract`) : type (CDI, CDD, Stage, Intérim, Consultant, Apprentissage), salaire de base, dates, période d'essai. Référence auto `CTR-AAAA-NNNN`.
+- **Modèles de contrats éditables** par type (`ContractTemplate`, corps HTML avec variables `{{…}}`) — 6 modèles ivoiriens par défaut ; **aperçu / impression PDF** (`hr:contracts:print`).
+
+**Phase 2 — Paie & bulletins**
+- Génération de bulletins (`Payslip` + `PayslipLine`, réf. `BUL-AAAA-NNNN`) avec moteur de calcul `payroll.service.ts` : CNPS (retraite salarié/employeur, prestations familiales, accident du travail, plafonds), **ITS** (barème progressif), CMU, FDFP, charges patronales et coût total employeur.
+- Taux et barème **paramétrables** (AppSetting `payroll.rates`) — écran `/hr/payroll-settings`. ⚠️ Valeurs par défaut **à vérifier** au regard de la réglementation.
+- **3 modèles de bulletins éditables** (`PayslipTemplate` : MODELE_1/2/3, en-tête/pied/couleur).
+- Statuts bulletin : BROUILLON → VALIDE → PAYE / ANNULE. **Aperçu/impression PDF** et **export Excel/PDF** (liste via `ExportMenu` / `exceljs`).
+
+**Phase 3 — Congés & absences**
+- `LeaveType` (7 types par défaut : congé payé, maladie, maternité, paternité, exceptionnel, sans solde, absence) et `LeaveRequest` (réf. `CGE-AAAA-NNNN`).
+- Calcul des jours ouvrés, **solde de congés payés** (acquisition `leave.accrualPerMonth` = 2,2 j/mois − jours pris approuvés), workflow d'approbation (EN_ATTENTE → APPROUVE / REFUSE / ANNULE).
+
+**Phase 4 — Pointage / heures**
+- `AttendanceRecord` (1 par employé/jour) : statut (PRESENT/ABSENT/CONGE/REPOS/FERIE/MALADIE), heures travaillées, heures supplémentaires. Grille mensuelle éditable.
+- Valorisation des **heures supplémentaires** (`attendance.monthlyHours` = 173,33 ; `attendance.overtimeMajoration` = 15 %) **injectée automatiquement dans la paie** (ligne « Heures supplémentaires » du bulletin).
+
+> **Calcul de la paie — avertissement.** Les taux (CNPS/ITS/CMU/FDFP), plafonds et le barème ITS sont des **valeurs de référence paramétrables** ; ils doivent être validés selon la réglementation en vigueur avant exploitation en production. Toute la logique est centralisée dans `payroll.service.ts`, `leave.service.ts` et `attendance.service.ts`.
+
 ---
 
 ## 📡 Communication IPC Electron
@@ -1212,6 +1244,14 @@ Volet documentaire du module Archivage, coexistant avec l'archivage d'entités. 
 - `programmes:create` — Créer un programme immobilier
 - `programmes:update` — Mettre à jour un programme
 - `programmes:delete` — Archiver (soft delete) un programme
+- `hr:employees:list` / `getById` / `create` / `update` / `delete` / `stats` — Personnel
+- `hr:contracts:create` / `update` / `delete` / `print` — Contrats de travail (impression PDF)
+- `hr:contractTemplates:list` / `create` / `update` / `delete` — Modèles de contrats éditables
+- `hr:payslips:list` / `getById` / `generate` / `updateStatus` / `delete` / `print` — Bulletins de paie
+- `hr:payslipTemplates:list` / `update` — Modèles de bulletins (MODELE_1/2/3)
+- `hr:payroll:getRates` / `setRates` — Taux et barème ITS de la paie
+- `hr:leaveTypes:list`, `hr:leave:balance`, `hr:leaveRequests:list` / `create` / `decide` / `delete` — Congés & absences
+- `hr:attendance:list` / `summary` / `bulkUpsert` — Pointage / heures (alimente la paie)
 
 ### Pattern handler IPC (main process)
 
@@ -1415,8 +1455,9 @@ Suivre cet ordre pour une livraison incrémentale et testable :
 11. **CRM** — Agenda, activités, tâches
 12. **Archivage** — Politiques, archivage manuel, restauration, conformité RGPD
 13. **Dashboard** — KPIs, graphiques, exports
-14. **Tests & QA** — Couverture, parcours E2E
-15. **Packaging** — Build distributable (Windows, Linux, macOS)
+14. **RH & Paie** — Personnel & contrats, bulletins (conforme CI), congés, pointage ✅
+15. **Tests & QA** — Couverture, parcours E2E
+16. **Packaging** — Build distributable (Windows, Linux, macOS)
 
 ---
 
@@ -1449,4 +1490,4 @@ Suivre cet ordre pour une livraison incrémentale et testable :
 
 ---
 
-*Dernière mise à jour : Mai 2026 — Afrikimmo-app v1.0 (refonte du module Archivage : GED documentaire — Phase 1)*
+*Dernière mise à jour : Juin 2026 — Afrikimmo-app v1.0 (nouveau module RH & Paie complet, conforme Côte d'Ivoire : personnel & contrats, bulletins de paie CNPS/ITS/CMU/FDFP avec 3 modèles éditables et export Excel/PDF, congés & absences, pointage ; rôle dédié RH ; modèles de contrats éditables)*

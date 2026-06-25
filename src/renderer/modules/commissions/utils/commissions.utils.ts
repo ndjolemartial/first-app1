@@ -31,6 +31,16 @@ export const TRANSACTION_TYPE_LABEL: Record<string, string> = {
   FRAIS_DEMARCHES_ACD: 'Frais de démarches ACD',
 };
 
+/**
+ * Libellé de la colonne « Transaction » d'une commission. Une commission issue
+ * d'une facture d'apport initial est affichée « Apport initial » (plutôt que le
+ * libellé du type de transaction sous-jacent, ex. « Souscription »).
+ */
+export function transactionLabel(commission: { transactionType: string; invoice?: { type?: string } | null }): string {
+  if (commission.invoice?.type === 'APPORT_INITIAL') return 'Apport initial';
+  return TRANSACTION_TYPE_LABEL[commission.transactionType] ?? commission.transactionType;
+}
+
 export const SOURCE_LABEL: Record<string, string> = {
   MANUEL: 'Manuelle',
   AUTOMATIQUE: 'Automatique',

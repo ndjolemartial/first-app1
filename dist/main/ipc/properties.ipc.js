@@ -121,9 +121,27 @@ function registerPropertiesIPC() {
                 where.ownerId = filters.ownerId;
             if (filters.programmeId)
                 where.programmeId = filters.programmeId;
-            // AGENT / READONLY ne voient que les biens DISPONIBLE (statut imposé).
-            if (!hasFullView(session.role))
+            if (filters.crmReferentScope) {
+                // Périmètre dédié au sélecteur « Bien » du formulaire d'activité CRM :
+                //  — vue complète (SUPER_ADMIN / ADMIN / MANAGER / ACCOUNTANT) : tous les biens ;
+                //  — autres rôles : biens DISPONIBLE OU rattachés à un client dont ils sont référents.
+                const CRM_FULL_VIEW_ROLES = ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ACCOUNTANT'];
+                if (!CRM_FULL_VIEW_ROLES.includes(session.role)) {
+                    where.AND = [
+                        ...(where.AND ?? []),
+                        {
+                            OR: [
+                                { status: 'DISPONIBLE' },
+                                { client: { is: { assignedToId: session.userId } } },
+                            ],
+                        },
+                    ];
+                }
+            }
+            else if (!hasFullView(session.role)) {
+                // AGENT / READONLY ne voient que les biens DISPONIBLE (statut imposé).
                 where.status = 'DISPONIBLE';
+            }
             if (filters.city)
                 where.city = { contains: filters.city };
             if (filters.search) {

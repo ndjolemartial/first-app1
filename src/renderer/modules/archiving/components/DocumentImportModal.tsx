@@ -5,10 +5,15 @@ import Modal from '../../../shared/components/ui/Modal';
 import Button from '../../../shared/components/ui/Button';
 import Input from '../../../shared/components/ui/Input';
 import Select from '../../../shared/components/ui/Select';
+import SearchSelect from '../../../shared/components/ui/SearchSelect';
 import Textarea from '../../../shared/components/ui/Textarea';
 import { useImportDocuments, useGedCategories, useGedFolders, useGedTags } from '../hooks/useGed';
 import { hierOptions, formatBytes } from '../utils/gedTree';
+import { useAuthStore } from '../../../shared/stores/auth.store';
 import DocumentLinksFields, { DocumentLinks, EMPTY_LINKS } from './DocumentLinksFields';
+
+/** Rôles pour lesquels le champ Catégorie est entièrement masqué dans la GED. */
+const NO_CATEGORY_ROLES = ['AGENT', 'AGENT_TECHNIQUE'];
 
 interface DocumentImportModalProps {
   open: boolean;
@@ -60,6 +65,18 @@ export default function DocumentImportModal({ open, onClose, defaultFolderId, de
     }
   }, [open, defaultFolderId, defaultLinks]);
 
+  // Pré-sélection de l'espace personnel pour AGENT / AGENT_TECHNIQUE (à défaut
+  // d'un dossier imposé). Les dossiers se chargent parfois après l'ouverture, d'où
+  // cet effet séparé qui réagit à l'arrivée de la liste.
+  const role = useAuthStore((s) => s.user?.role) ?? '';
+  useEffect(() => {
+    if (!open || defaultFolderId || folderId) return;
+    if (!NO_CATEGORY_ROLES.includes(role)) return;
+    const home = (folderRes?.data ?? []).find((f: any) => f.isOwnHome);
+    if (home) setFolderId(String(home.id));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, defaultFolderId, folderId, role, folderRes]);
+
   const addFiles = (list: FileList | File[]) => {
     const snapshot = Array.from(list);
     setFiles((prev) => [...prev, ...snapshot]);
@@ -85,9 +102,9 @@ export default function DocumentImportModal({ open, onClose, defaultFolderId, de
         size: f.size,
       })),
       description: description.trim() || undefined,
-      categoryId: categoryId ? Number(categoryId) : undefined,
+      categoryId: (!hideCategory && categoryId) ? Number(categoryId) : undefined,
       folderId: folderId ? Number(folderId) : undefined,
-      tagIds: tagIds.length ? tagIds : undefined,
+      tagIds: (!hideTags && tagIds.length) ? tagIds : undefined,
       ...linkPayload,
     };
     const r: any = await importDocs.mutateAsync(payload);
@@ -102,6 +119,13 @@ export default function DocumentImportModal({ open, onClose, defaultFolderId, de
   const categoryOptions = hierOptions(catRes?.data ?? [], '— Aucune catégorie —');
   const folderOptions = hierOptions(folderRes?.data ?? [], '— Aucun dossier —');
   const tags: any[] = tagRes?.data ?? [];
+  // Espace personnel : ni catégorie ni étiquette (classement réservé à la GED commune).
+  const selectedFolder = (folderRes?.data ?? []).find((f: any) => String(f.id) === folderId);
+  const isPersonalContext = selectedFolder?.kind === 'PERSONAL';
+  // Catégorie/étiquettes masquées pour l'espace personnel OU pour les rôles
+  // AGENT / AGENT_TECHNIQUE (`role` est déclaré plus haut).
+  const hideCategory = isPersonalContext || NO_CATEGORY_ROLES.includes(role);
+  const hideTags = isPersonalContext || NO_CATEGORY_ROLES.includes(role);
 
   return (
     <Modal
@@ -188,14 +212,16 @@ export default function DocumentImportModal({ open, onClose, defaultFolderId, de
           </div>
         )}
 
-        {/* Classement */}
-        <div className="grid grid-cols-2 gap-4">
-          <Select label="Catégorie" options={categoryOptions} value={categoryId} onChange={(e) => setCategoryId(e.target.value)} />
+        {/* Classement — catégorie masquée (espace personnel ou rôle AGENT/AGENT_TECHNIQUE). */}
+        <div className={hideCategory ? '' : 'grid grid-cols-2 gap-4'}>
+          {!hideCategory && (
+            <SearchSelect label="Catégorie" options={categoryOptions} value={categoryId} onChange={setCategoryId} />
+          )}
           <Select label="Dossier" options={folderOptions} value={folderId} onChange={(e) => setFolderId(e.target.value)} />
         </div>
 
-        {/* Étiquettes */}
-        {tags.length > 0 && (
+        {/* Étiquettes — masquées (espace personnel ou rôle AGENT/AGENT_TECHNIQUE). */}
+        {!hideTags && tags.length > 0 && (
           <div>
             <label className="mb-1 block text-xs font-medium text-slate-700">Étiquettes</label>
             <div className="flex flex-wrap gap-1.5">
@@ -246,6 +272,8 @@ export default function DocumentImportModal({ open, onClose, defaultFolderId, de
                 values={links}
                 onChange={(field, value) => setLinks((prev) => ({ ...prev, [field]: value }))}
                 compact
+                // AGENT / AGENT_TECHNIQUE : seul le rattachement « Prospect » est proposé.
+                visibleFields={NO_CATEGORY_ROLES.includes(role) ? ['prospectId'] : undefined}
               />
             </div>
           )}

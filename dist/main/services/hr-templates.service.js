@@ -1,0 +1,71 @@
+"use strict";
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.seedDefaultContractTemplates = seedDefaultContractTemplates;
+exports.seedDefaultPayslipTemplates = seedDefaultPayslipTemplates;
+exports.resolveContractTemplateBody = resolveContractTemplateBody;
+exports.resolvePayslipTemplate = resolvePayslipTemplate;
+const db_service_1 = require("./db.service");
+const logger_1 = __importDefault(require("../utils/logger"));
+const contract_template_service_1 = require("./contract-template.service");
+/**
+ * Seeding et résolution des modèles éditables RH :
+ *  - modèles de contrats de travail (un par défaut par type) ;
+ *  - modèles de bulletins de paie (3 mises en page MODELE_1/2/3).
+ * Idempotent : ne réécrit jamais un modèle déjà présent (préserve les éditions).
+ */
+/** Crée les modèles de contrats par défaut absents (un par type). */
+async function seedDefaultContractTemplates() {
+    const db = (0, db_service_1.getDb)();
+    for (const def of contract_template_service_1.CONTRACT_TEMPLATE_DEFS) {
+        const exists = await db.contractTemplate.findFirst({
+            where: { type: def.type, deletedAt: null },
+            select: { id: true },
+        });
+        if (exists)
+            continue;
+        await db.contractTemplate.create({
+            data: { name: def.name, type: def.type, body: def.body, isDefault: true, isActive: true },
+        });
+    }
+}
+const PAYSLIP_SEED = [
+    { name: 'Bulletin — Modèle 1 (Classique)', layout: 'MODELE_1', isDefault: true },
+    { name: 'Bulletin — Modèle 2 (Moderne)', layout: 'MODELE_2', isDefault: false },
+    { name: 'Bulletin — Modèle 3 (Compact)', layout: 'MODELE_3', isDefault: false },
+];
+/** Crée les 3 modèles de bulletins par défaut si aucun n'existe. */
+async function seedDefaultPayslipTemplates() {
+    const db = (0, db_service_1.getDb)();
+    const count = await db.payslipTemplate.count();
+    if (count > 0)
+        return;
+    for (const t of PAYSLIP_SEED) {
+        await db.payslipTemplate.create({
+            data: { name: t.name, layout: t.layout, isDefault: t.isDefault, isActive: true },
+        });
+    }
+    logger_1.default.info('Modèles de bulletins de paie créés (3 modèles)');
+}
+/** Résout le corps du modèle de contrat par défaut pour un type donné. */
+async function resolveContractTemplateBody(type) {
+    const db = (0, db_service_1.getDb)();
+    const tpl = await db.contractTemplate.findFirst({
+        where: { type: type, isActive: true, deletedAt: null },
+        orderBy: [{ isDefault: 'desc' }, { id: 'asc' }],
+        select: { body: true },
+    });
+    return tpl?.body ?? null;
+}
+/** Résout le modèle de bulletin par défaut (ou le premier actif). */
+async function resolvePayslipTemplate() {
+    const db = (0, db_service_1.getDb)();
+    const tpl = await db.payslipTemplate.findFirst({
+        where: { isActive: true },
+        orderBy: [{ isDefault: 'desc' }, { id: 'asc' }],
+        select: { layout: true, headerHtml: true, footerHtml: true, accentColor: true },
+    });
+    return tpl ?? null;
+}

@@ -5,10 +5,16 @@ import { toast } from '../../../shared/components/ui/Toast';
 const ipc = () => window.electron.lotissements;
 const token = () => useAuthStore.getState().token!;
 
-export function useLotissements(filters: object = {}, page = 1, limit = 20) {
+export function useLotissements(
+  filters: object = {},
+  page = 1,
+  limit = 20,
+  options: { enabled?: boolean } = {},
+) {
   return useQuery({
     queryKey: ['lotissements', filters, page],
     queryFn: () => ipc().list(token(), filters, page, limit),
+    enabled: options.enabled ?? true,
   });
 }
 

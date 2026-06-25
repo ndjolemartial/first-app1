@@ -17,6 +17,7 @@ interface Window {
     };
     users: {
       list: (token: string, filters?: object, page?: number, limit?: number) => Promise<IpcResponse<any[]>>;
+      listSelectable: (token: string, options?: object) => Promise<IpcResponse<any[]>>;
       getById: (token: string, id: number) => Promise<IpcResponse<any>>;
       create: (token: string, payload: object) => Promise<IpcResponse<any>>;
       update: (token: string, id: number, payload: object) => Promise<IpcResponse<any>>;
@@ -160,7 +161,8 @@ interface Window {
       sendSms: (token: string, payload: object) => Promise<IpcResponse<any>>;
       sendWhatsapp: (token: string, payload: object) => Promise<IpcResponse<any>>;
       resend: (token: string, id: number) => Promise<IpcResponse<any>>;
-      resolveTarget: (token: string, payload: object) => Promise<IpcResponse<{ to: string; label: string; targets: { clientId?: number; ownerId?: number; conventionId?: number } }>>;
+      deleteMessage: (token: string, id: number) => Promise<IpcResponse<any>>;
+      resolveTarget: (token: string, payload: object) => Promise<IpcResponse<{ to: string; label: string; targets: { clientId?: number; ownerId?: number; conventionId?: number }; variables?: Record<string, string> }>>;
       shareLocation: (token: string, payload: {
         entityType: 'LOTISSEMENT' | 'TERRAIN' | 'PROPERTY';
         entityId: number;
@@ -274,6 +276,64 @@ interface Window {
       updateType: (token: string, id: number, payload: object) => Promise<IpcResponse<any>>;
       deleteType: (token: string, id: number) => Promise<IpcResponse>;
     };
+    hr: {
+      employees: {
+        list: (token: string, filters?: object, page?: number, limit?: number) => Promise<IpcResponse<any[]>>;
+        stats: (token: string) => Promise<IpcResponse<Record<string, number>>>;
+        getById: (token: string, id: number) => Promise<IpcResponse<any>>;
+        create: (token: string, payload: object) => Promise<IpcResponse<any>>;
+        update: (token: string, id: number, payload: object) => Promise<IpcResponse<any>>;
+        delete: (token: string, id: number) => Promise<IpcResponse>;
+      };
+      contracts: {
+        create: (token: string, payload: object) => Promise<IpcResponse<any>>;
+        update: (token: string, id: number, payload: object) => Promise<IpcResponse<any>>;
+        delete: (token: string, id: number) => Promise<IpcResponse>;
+        print: (token: string, id: number) => Promise<IpcResponse<{ previewing: boolean }>>;
+      };
+      payslips: {
+        list: (token: string, filters?: object, page?: number, limit?: number) => Promise<IpcResponse<any[]>>;
+        getById: (token: string, id: number) => Promise<IpcResponse<any>>;
+        generate: (token: string, payload: object) => Promise<IpcResponse<any>>;
+        update: (token: string, id: number, payload: object) => Promise<IpcResponse<any>>;
+        updateStatus: (token: string, id: number, status: string, paymentMethod?: string, paidAt?: string, bankAccountId?: number) => Promise<IpcResponse<any>>;
+        updatePayment: (token: string, id: number, paidAt?: string, paymentMethod?: string, bankAccountId?: number) => Promise<IpcResponse<any>>;
+        payAccounts: (token: string) => Promise<IpcResponse<any[]> & { defaultAccountId?: number | null }>;
+        delete: (token: string, id: number) => Promise<IpcResponse>;
+        print: (token: string, id: number) => Promise<IpcResponse<{ previewing: boolean }>>;
+      };
+      payroll: {
+        getRates: (token: string) => Promise<IpcResponse<any>>;
+        setRates: (token: string, rates: object) => Promise<IpcResponse>;
+      };
+      contractTemplates: {
+        list: (token: string) => Promise<IpcResponse<any[]>>;
+        create: (token: string, payload: object) => Promise<IpcResponse<any>>;
+        update: (token: string, id: number, payload: object) => Promise<IpcResponse<any>>;
+        delete: (token: string, id: number) => Promise<IpcResponse>;
+      };
+      payslipTemplates: {
+        list: (token: string) => Promise<IpcResponse<any[]>>;
+        update: (token: string, id: number, payload: object) => Promise<IpcResponse<any>>;
+      };
+      leaveTypes: {
+        list: (token: string) => Promise<IpcResponse<any[]>>;
+      };
+      leave: {
+        balance: (token: string, employeeId: number) => Promise<IpcResponse<{ accrualPerMonth: number; monthsSinceHire: number; acquired: number; taken: number; remaining: number }>>;
+      };
+      leaveRequests: {
+        list: (token: string, filters?: object, page?: number, limit?: number) => Promise<IpcResponse<any[]>>;
+        create: (token: string, payload: object) => Promise<IpcResponse<any>>;
+        decide: (token: string, id: number, status: string, note?: string) => Promise<IpcResponse<any>>;
+        delete: (token: string, id: number) => Promise<IpcResponse>;
+      };
+      attendance: {
+        list: (token: string, employeeId: number, year: number, month: number) => Promise<IpcResponse<any[]>>;
+        summary: (token: string, employeeId: number, year: number, month: number) => Promise<IpcResponse<{ daysPresent: number; daysAbsent: number; daysLeave: number; totalHours: number; overtimeHours: number; overtimeAmount: number }>>;
+        bulkUpsert: (token: string, records: object[]) => Promise<IpcResponse<{ saved: number }>>;
+      };
+    };
     geo: {
       resolveMapLink: (
         token: string,
@@ -381,7 +441,7 @@ interface Window {
       getCancelledInstallments: (token: string) => Promise<IpcResponse<any[]>>;
       getLegacyInstallments: (token: string) => Promise<IpcResponse<any[]>>;
       updateLegacyInstallment: (token: string, payload: object) => Promise<IpcResponse<any>>;
-      listInstallments: (token: string) => Promise<IpcResponse<any[]>>;
+      listInstallments: (token: string, crmReferentScope?: boolean) => Promise<IpcResponse<any[]>>;
       payInstallment: (token: string, installmentId: number, payload: object) => Promise<IpcResponse<any>>;
       cancelInstallment: (token: string, installmentId: number) => Promise<IpcResponse<any>>;
       reinstateInstallment: (token: string, installmentId: number) => Promise<IpcResponse<any>>;
@@ -473,6 +533,28 @@ interface Window {
       listEligibleConventions: (token: string, filters?: { userId?: number; referrerId?: number }) => Promise<IpcResponse<any[]>>;
       getSettings: (token: string) => Promise<IpcResponse<any>>;
       updateSettings: (token: string, payload: object) => Promise<IpcResponse<any>>;
+    };
+    expenses: {
+      listCategories: (token: string) => Promise<IpcResponse<any[]>>;
+      listAccounts: (token: string) => Promise<IpcResponse<any[]> & { defaultAccountId?: number | null }>;
+      list: (token: string, filters?: object, page?: number, limit?: number) => Promise<IpcResponse<any[]>>;
+      stats: (token: string) => Promise<IpcResponse<any>>;
+      getById: (token: string, id: number) => Promise<IpcResponse<any>>;
+      create: (token: string, payload: object) => Promise<IpcResponse<any>>;
+      update: (token: string, id: number, payload: object) => Promise<IpcResponse<any>>;
+      settle: (token: string, payload: object) => Promise<IpcResponse<any>>;
+      cancel: (token: string, id: number) => Promise<IpcResponse<any>>;
+      remove: (token: string, id: number) => Promise<IpcResponse>;
+    };
+    analytics: {
+      executive: (token: string) => Promise<IpcResponse<any>>;
+      financial: (token: string) => Promise<IpcResponse<any>>;
+      portfolio: (token: string) => Promise<IpcResponse<any>>;
+      crm: (token: string) => Promise<IpcResponse<any>>;
+      charges: (token: string) => Promise<IpcResponse<any>>;
+      contracts: (token: string) => Promise<IpcResponse<any>>;
+      risk: (token: string) => Promise<IpcResponse<any>>;
+      recommendations: (token: string) => Promise<IpcResponse<any>>;
     };
     treasury: {
       getDashboard: (token: string) => Promise<IpcResponse<any>>;
@@ -574,6 +656,12 @@ interface Window {
         resolvedPath: string;
       }>>;
       updateStorage: (token: string, payload: object) => Promise<IpcResponse>;
+
+      getPayrollAccount: (token: string) => Promise<IpcResponse<{
+        accountId: number | null;
+        accounts: Array<{ id: number; name: string; type: string }>;
+      }>>;
+      updatePayrollAccount: (token: string, payload: { accountId: number | null }) => Promise<IpcResponse>;
 
       // Email SMTP
       getEmail: (token: string) => Promise<IpcResponse<{

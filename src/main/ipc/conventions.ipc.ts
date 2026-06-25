@@ -14,6 +14,18 @@ const READ_ROLES  = ['SUPER_ADMIN', 'ADMIN', 'MANAGER'];
 const READ_ROLES_AGENT = [...READ_ROLES, 'AGENT'];
 
 /**
+ * Contrôle de rôle pour les écritures sur les conventions (création, mise à jour,
+ * échéances). ASSISTANTE_DIRECTION, qui hérite normalement des permissions MANAGER,
+ * est explicitement exclue : elle ne peut pas modifier une convention (lecture seule).
+ */
+function checkWriteRole(session: { role: string }, allowedRoles: string[]): void {
+  if (session.role === 'ASSISTANTE_DIRECTION') {
+    throw new Error('Permission insuffisante');
+  }
+  checkRole(session as any, allowedRoles);
+}
+
+/**
  * Restriction de visibilité d'un AGENT : conventions des clients dont il est le
  * référent, au statut BROUILLON uniquement. Renvoie `{}` pour les autres rôles.
  */
@@ -304,8 +316,19 @@ export function registerConventionsIPC(): void {
           { terrains: { some: { terrain: { reference: { contains: filters.search } } } } },
         ];
       }
-      // AGENT : restreint au statut BROUILLON et à ses clients référents.
-      Object.assign(where, agentScopeWhere(session));
+      if (filters.crmReferentScope) {
+        // Périmètre dédié au sélecteur « Convention » du formulaire d'activité CRM :
+        //  — vue complète (SUPER_ADMIN / ADMIN / MANAGER / ACCOUNTANT) : toutes les conventions ;
+        //  — autres rôles : conventions rattachées à un client dont ils sont référents
+        //    (tous statuts, sans la restriction BROUILLON propre au module Conventions).
+        const CRM_FULL_VIEW_ROLES = ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ACCOUNTANT'];
+        if (!CRM_FULL_VIEW_ROLES.includes(session.role)) {
+          where.client = { is: { assignedToId: session.userId } };
+        }
+      } else {
+        // AGENT : restreint au statut BROUILLON et à ses clients référents.
+        Object.assign(where, agentScopeWhere(session));
+      }
       const [data, total] = await db.$transaction([
         db.convention.findMany({
           where,
@@ -411,7 +434,7 @@ export function registerConventionsIPC(): void {
     try {
       const session = getSession(token);
       if (!session) return { success: false, error: 'Session expirée' };
-      checkRole(session, WRITE_ROLES);
+      checkWriteRole(session, WRITE_ROLES);
       const parsed = conventionSchema.safeParse(payload);
       if (!parsed.success) {
         const msg = parsed.error.issues
@@ -602,7 +625,7 @@ export function registerConventionsIPC(): void {
     try {
       const session = getSession(token);
       if (!session) return { success: false, error: 'Session expirée' };
-      checkRole(session, WRITE_ROLES);
+      checkWriteRole(session, WRITE_ROLES);
       const parsed = conventionBaseSchema.partial().safeParse(payload);
       if (!parsed.success) {
         const msg = parsed.error.issues
@@ -879,7 +902,7 @@ export function registerConventionsIPC(): void {
     try {
       const session = getSession(token);
       if (!session) return { success: false, error: 'Session expirée' };
-      checkRole(session, WRITE_ROLES);
+      checkWriteRole(session, WRITE_ROLES);
       const db = getDb();
       const convention = await db.convention.findUnique({
         where: { id, deletedAt: null },
@@ -975,7 +998,7 @@ export function registerConventionsIPC(): void {
     try {
       const session = getSession(token);
       if (!session) return { success: false, error: 'Session expirée' };
-      checkRole(session, WRITE_ROLES);
+      checkWriteRole(session, WRITE_ROLES);
       const updateSchema = z.object({
         conventionId: z.number().int().positive(),
         installments: z.array(z.object({

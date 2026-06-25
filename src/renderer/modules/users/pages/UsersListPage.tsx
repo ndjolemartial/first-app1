@@ -24,6 +24,7 @@ const ROLE_OPTIONS = [
   { value: 'ASSISTANTE_DIRECTION', label: 'Assistante de Direction' },
   { value: 'AGENT_TECHNIQUE', label: 'Agent Technique' },
   { value: 'AGENT', label: 'Agent' },
+  { value: 'RH', label: 'RH / Paie' },
   { value: 'READONLY', label: 'Lecture seule' },
 ];
 
@@ -35,6 +36,7 @@ const ROLE_VARIANT: Record<string, any> = {
   ASSISTANTE_DIRECTION: 'warning',
   AGENT: 'success',
   AGENT_TECHNIQUE: 'success',
+  RH: 'info',
   READONLY: 'default',
 };
 

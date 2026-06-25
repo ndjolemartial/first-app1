@@ -15,6 +15,8 @@ export interface AuthUser {
   phone?: string | null;
   mobile?: string | null;
   fonction?: string | null;
+  nomCommercial?: string | null;
+  messageSignature?: string | null;
   idNumber?: string | null;
   civilite?: string | null;
   statutConjugal?: string | null;

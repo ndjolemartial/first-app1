@@ -6,9 +6,9 @@ import { formatCurrency } from '../../../shared/utils/format';
 import {
   COMMISSION_STATUS_LABEL,
   COMMISSION_STATUS_VARIANT,
-  TRANSACTION_TYPE_LABEL,
   SOURCE_LABEL,
   beneficiaryName,
+  transactionLabel,
 } from '../utils/commissions.utils';
 
 interface CommissionTableProps {
@@ -84,7 +84,7 @@ export default function CommissionTable({
                 )}
               </td>
             )}
-            <td className="px-4 py-3 text-slate-600 whitespace-nowrap">{TRANSACTION_TYPE_LABEL[c.transactionType] ?? c.transactionType}</td>
+            <td className="px-4 py-3 text-slate-600 whitespace-nowrap">{transactionLabel(c)}</td>
             <td className="px-4 py-3 text-right text-slate-500 whitespace-nowrap">{formatCurrency(Number(c.baseAmount))}</td>
             <td className="px-4 py-3 text-right text-slate-500 whitespace-nowrap">{Number(c.rate)} %</td>
             <td className="px-4 py-3 text-right font-semibold text-slate-900 whitespace-nowrap">{formatCurrency(Number(c.amount))}</td>

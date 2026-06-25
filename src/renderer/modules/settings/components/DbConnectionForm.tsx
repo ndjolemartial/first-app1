@@ -32,6 +32,9 @@ export default function DbConnectionForm({ onSaved, showEnvFile = true }: Props)
   const [loading, setLoading] = useState(true);
   const [testing, setTesting] = useState(false);
   const [saving, setSaving] = useState(false);
+  // Résultat du test affiché en inline (vert/rouge). Indispensable car cet écran
+  // est aussi utilisé AVANT connexion, où le conteneur de toasts n'est pas monté.
+  const [testResult, setTestResult] = useState<{ ok: boolean; message: string } | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -56,23 +59,33 @@ export default function DbConnectionForm({ onSaved, showEnvFile = true }: Props)
     };
   }, []);
 
-  const set = (k: keyof DbForm) => (e: React.ChangeEvent<HTMLInputElement>) =>
+  const set = (k: keyof DbForm) => (e: React.ChangeEvent<HTMLInputElement>) => {
+    // Toute modification invalide le résultat de test précédent.
+    setTestResult(null);
     setForm((f) => ({ ...f, [k]: e.target.value }));
+  };
 
   const valid = !!(form.host.trim() && form.database.trim() && form.user.trim());
 
   const handleTest = async () => {
     if (!valid) {
-      toast.error('Hôte, base et utilisateur sont requis.');
+      setTestResult({ ok: false, message: 'Hôte, base et utilisateur sont requis.' });
       return;
     }
     setTesting(true);
+    setTestResult(null);
     try {
       const r = await window.electron.config.testDb(form);
-      if (r.success) toast.success('Connexion réussie ✓');
-      else toast.error(`Échec : ${typeof r.error === 'string' ? r.error : 'connexion impossible'}`);
-    } catch {
-      toast.error('Échec du test de connexion.');
+      if (r.success) {
+        setTestResult({ ok: true, message: 'Connexion à la base de données établie.' });
+      } else {
+        setTestResult({
+          ok: false,
+          message: `Connexion impossible : ${typeof r.error === 'string' ? r.error : 'erreur inconnue'}`,
+        });
+      }
+    } catch (e: any) {
+      setTestResult({ ok: false, message: `Échec du test de connexion : ${e?.message ?? 'erreur inconnue'}` });
     } finally {
       setTesting(false);
     }
@@ -84,16 +97,22 @@ export default function DbConnectionForm({ onSaved, showEnvFile = true }: Props)
       return;
     }
     setSaving(true);
+    setTestResult(null);
     try {
       const r = await window.electron.config.saveDb(form);
       if (r.success) {
         toast.success('Configuration enregistrée. Reconnexion effectuée.');
+        setTestResult({ ok: true, message: 'Configuration enregistrée et reconnexion effectuée.' });
         onSaved?.();
       } else {
-        toast.error(`Échec : ${typeof r.error === 'string' ? r.error : "impossible d'enregistrer"}`);
+        const msg = `Échec de l'enregistrement : ${typeof r.error === 'string' ? r.error : 'impossible de se reconnecter'}`;
+        toast.error(msg);
+        setTestResult({ ok: false, message: msg });
       }
-    } catch {
-      toast.error("Échec de l'enregistrement.");
+    } catch (e: any) {
+      const msg = `Échec de l'enregistrement : ${e?.message ?? 'erreur inconnue'}`;
+      toast.error(msg);
+      setTestResult({ ok: false, message: msg });
     } finally {
       setSaving(false);
     }
@@ -138,6 +157,19 @@ export default function DbConnectionForm({ onSaved, showEnvFile = true }: Props)
           Enregistrer
         </Button>
       </div>
+
+      {testResult && (
+        <div
+          role="status"
+          className={`rounded-lg border px-3 py-2 text-sm font-medium ${
+            testResult.ok
+              ? 'border-green-200 bg-green-50 text-green-700'
+              : 'border-red-200 bg-red-50 text-red-700'
+          }`}
+        >
+          {testResult.message}
+        </div>
+      )}
 
       {showEnvFile && envFile && (
         <p className="break-all pt-1 text-xs text-slate-400">

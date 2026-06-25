@@ -37,7 +37,16 @@ function activitiesForUserWhere(uid: number): any {
 
 /** Clause WHERE de visibilité pour les rôles restreints (vide pour full-view). */
 function buildVisibilityWhere(session: { userId: number; role: string }): any {
-  if (hasFullView(session.role)) return {};
+  if (hasFullView(session.role)) {
+    // Rappels de charges prévisionnelles : un MANAGER ne voit que ceux qu'il a
+    // lui-même planifiés (les autres rappels restent visibles). Les rôles ADMIN
+    // et ACCOUNTANT (full-view) voient tout ; ASSISTANTE_DIRECTION est déjà
+    // restreint à ses propres activités via activitiesForUserWhere ci-dessous.
+    if (session.role === 'MANAGER') {
+      return { OR: [{ forecastExpenseId: null }, { createdById: session.userId }] };
+    }
+    return {};
+  }
   return activitiesForUserWhere(session.userId);
 }
 
@@ -59,6 +68,7 @@ const activitySchema = z.object({
   programmeId: z.number().int().positive().optional(),
   invoiceId: z.number().int().positive().optional(),
   installmentId: z.number().int().positive().optional(),
+  documentId: z.number().int().positive().optional(),
 });
 
 export function registerCrmIPC(): void {
@@ -195,6 +205,7 @@ export function registerCrmIPC(): void {
           programmeId: d.programmeId ?? null,
           invoiceId: d.invoiceId ?? null,
           installmentId: d.installmentId ?? null,
+          documentId: d.documentId ?? null,
           createdById: session.userId,
         } as any,
       });

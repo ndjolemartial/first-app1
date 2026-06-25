@@ -14,7 +14,7 @@ import ExportMenu, { ExportColumn } from '../../../shared/components/ExportMenu'
 import {
   BENEFICIARY_TYPE_LABEL, COMMISSION_ADMIN_ROLES,
   COMMISSION_WRITE_ROLES, COMMISSION_REFERRERS_VIEW_ROLES,
-  COMMISSION_STATUS_LABEL, TRANSACTION_TYPE_LABEL, beneficiaryName,
+  COMMISSION_STATUS_LABEL, transactionLabel, beneficiaryName,
 } from '../utils/commissions.utils';
 import { formatCurrency } from '../../../shared/utils/format';
 import { Plus, Users, Wallet, CheckCircle, Ban, Settings, Percent } from 'lucide-react';
@@ -25,7 +25,7 @@ const EXPORT_COLUMNS: ExportColumn[] = [
   { header: 'Convention',   cell: (c) => c.convention?.reference ?? '' },
   { header: 'Bénéficiaire', cell: (c) => beneficiaryName(c) },
   { header: 'Type',         cell: (c) => BENEFICIARY_TYPE_LABEL[c.beneficiaryType] ?? c.beneficiaryType },
-  { header: 'Transaction',  cell: (c) => TRANSACTION_TYPE_LABEL[c.transactionType] ?? c.transactionType },
+  { header: 'Transaction',  cell: (c) => transactionLabel(c) },
   { header: 'Assiette',     cell: (c) => formatCurrency(Number(c.baseAmount)) },
   { header: 'Taux',         cell: (c) => `${Number(c.rate)} %` },
   { header: 'Montant',      cell: (c) => formatCurrency(Number(c.amount)) },

@@ -19,9 +19,26 @@ import { useTerrains } from '../../terrains/hooks/useTerrains';
 import { useLotissements } from '../../lotissements/hooks/useLotissements';
 import { useProgrammes } from '../../programmes/hooks/useProgrammes';
 import { useInvoices, useAllInstallments } from '../../accounting/hooks/useAccounting';
-import { useUsers } from '../../users/hooks/useUsers';
+import { useGedDocuments } from '../../archiving/hooks/useGed';
+import { useSelectableUsers } from '../../users/hooks/useUsers';
+import { useAuthStore } from '../../../shared/stores/auth.store';
 import { formatPersonName } from '../../../shared/utils/format';
 import { Save } from 'lucide-react';
+
+/**
+ * Rôles ayant une vue complète sur les clients (lister tous les clients).
+ * Les autres rôles ne voient que les clients actifs dont ils sont référents.
+ */
+const CLIENT_FULL_VIEW_ROLES = ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ACCOUNTANT'];
+
+/**
+ * Rôles ayant une vue complète sur les prospects (lister tous les prospects).
+ * Les autres rôles ne voient que les prospects actifs dont ils sont référents.
+ */
+const PROSPECT_FULL_VIEW_ROLES = ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ACCOUNTANT'];
+
+/** Statuts considérés comme « inactifs » pour un prospect (converti ou perdu). */
+const PROSPECT_INACTIVE_STATUSES = ['CONVERTI', 'PERDU'];
 
 const schema = z.object({
   type: z.enum(['NOTIFICATION', 'APPEL', 'EMAIL', 'SMS', 'REUNION', 'VISITE', 'TASK', 'RAPPEL', 'DOCUMENT']),
@@ -39,6 +56,7 @@ const schema = z.object({
   conventionId: z.coerce.number().optional(),
   invoiceId: z.coerce.number().optional(),
   installmentId: z.coerce.number().optional(),
+  documentId: z.coerce.number().optional(),
 });
 
 type FormData = z.infer<typeof schema>;
@@ -66,6 +84,7 @@ const STATUS_OPTIONS = [
 const ENTITY_FIELDS = [
   'userId', 'clientId', 'prospectId', 'propertyId', 'programmeId',
   'lotissementId', 'terrainId', 'conventionId', 'invoiceId', 'installmentId',
+  'documentId',
 ] as const;
 
 function toDateTimeLocal(val?: string | null): string {
@@ -88,16 +107,24 @@ export default function ActivityFormPage() {
   const create = useCreateActivity();
   const update = useUpdateActivity();
 
-  const { data: usersRes } = useUsers({ sort: 'idAsc' }, 1, 500);
+  const currentRole = useAuthStore((s) => s.user?.role);
+  const currentUserId = useAuthStore((s) => s.user?.id);
+  // Liste filtrée côté serveur (utilisateurs actifs + rôles autorisés selon le rôle connecté).
+  const { data: usersRes } = useSelectableUsers();
   const { data: clientsRes } = useClients({}, 1, 500);
   const { data: prospectsRes } = useProspects({}, 1, 500);
-  const { data: propertiesRes } = useProperties({}, 1, 500);
-  const { data: programmesRes } = useProgrammes({}, 1, 500);
-  const { data: lotissementsRes } = useLotissements({}, 1, 500);
-  const { data: terrainsRes } = useTerrains({}, 1, 500);
-  const { data: conventionsRes } = useConventions({}, 1, 500);
-  const { data: invoicesRes } = useInvoices({}, 1, 500);
-  const { data: installmentsRes } = useAllInstallments();
+  const { data: propertiesRes } = useProperties({ crmReferentScope: true }, 1, 500);
+  // Lotissement et Programme immobilier sont masqués pour AGENT / AGENT_TECHNIQUE / READONLY.
+  const canSeeLotProg = !['AGENT', 'AGENT_TECHNIQUE', 'READONLY'].includes(currentRole ?? '');
+  const { data: programmesRes } = useProgrammes({}, 1, 500, { enabled: canSeeLotProg });
+  const { data: lotissementsRes } = useLotissements({}, 1, 500, { enabled: canSeeLotProg });
+  const { data: terrainsRes } = useTerrains({ crmReferentScope: true }, 1, 500);
+  const { data: conventionsRes } = useConventions({ crmReferentScope: true }, 1, 500);
+  const { data: invoicesRes } = useInvoices({ crmReferentScope: true }, 1, 500);
+  const { data: installmentsRes } = useAllInstallments(true);
+  // Archives (documents GED) — proposées uniquement à l'Assistante de Direction.
+  const isAssistanteDirection = currentRole === 'ASSISTANTE_DIRECTION';
+  const { data: archivesRes } = useGedDocuments({}, 1, 1000, { enabled: isAssistanteDirection });
 
   const userOptions = [
     { value: '', label: '— Utilisateur (optionnel) —' },
@@ -107,20 +134,31 @@ export default function ActivityFormPage() {
     })),
   ];
 
+  const clientHasFullView = CLIENT_FULL_VIEW_ROLES.includes(currentRole ?? '');
   const clientOptions = [
     { value: '', label: '— Client (optionnel) —' },
-    ...(clientsRes?.data ?? []).map((c: any) => ({
-      value: String(c.id),
-      label: formatPersonName(c, ''),
-    })),
+    ...(clientsRes?.data ?? [])
+      .filter((c: any) =>
+        clientHasFullView || (c.isActive && c.assignedToId === currentUserId)
+      )
+      .map((c: any) => ({
+        value: String(c.id),
+        label: formatPersonName(c, ''),
+      })),
   ];
 
+  const prospectHasFullView = PROSPECT_FULL_VIEW_ROLES.includes(currentRole ?? '');
   const prospectOptions = [
     { value: '', label: '— Prospect (optionnel) —' },
-    ...(prospectsRes?.data ?? []).map((p: any) => ({
-      value: String(p.id),
-      label: formatPersonName(p, ''),
-    })),
+    ...(prospectsRes?.data ?? [])
+      .filter((p: any) =>
+        prospectHasFullView ||
+        (!PROSPECT_INACTIVE_STATUSES.includes(p.status) && p.assignedToId === currentUserId)
+      )
+      .map((p: any) => ({
+        value: String(p.id),
+        label: formatPersonName(p, ''),
+      })),
   ];
 
   const propertyOptions = [
@@ -131,20 +169,25 @@ export default function ActivityFormPage() {
     })),
   ];
 
+  // Programmes / lotissements actifs (hors statut terminal), pour tous les rôles.
   const programmeOptions = [
     { value: '', label: '— Programme immobilier (optionnel) —' },
-    ...(programmesRes?.data ?? []).map((p: any) => ({
-      value: String(p.id),
-      label: `${p.reference} — ${p.nom}`,
-    })),
+    ...(programmesRes?.data ?? [])
+      .filter((p: any) => p.statut !== 'CLOTURE')
+      .map((p: any) => ({
+        value: String(p.id),
+        label: `${p.reference} — ${p.nom}`,
+      })),
   ];
 
   const lotissementOptions = [
     { value: '', label: '— Lotissement (optionnel) —' },
-    ...(lotissementsRes?.data ?? []).map((l: any) => ({
-      value: String(l.id),
-      label: `${l.reference} — ${l.nom}`,
-    })),
+    ...(lotissementsRes?.data ?? [])
+      .filter((l: any) => l.statut !== 'FERME')
+      .map((l: any) => ({
+        value: String(l.id),
+        label: `${l.reference} — ${l.nom}`,
+      })),
   ];
 
   const terrainOptions = [
@@ -195,6 +238,23 @@ export default function ActivityFormPage() {
     }),
   ];
 
+  // Archives : libellé concis (référence — nom) ; la recherche couvre en plus la
+  // catégorie, la description et le dossier via `searchText`.
+  const archiveOptions = [
+    { value: '', label: '— Archive (optionnel) —' },
+    ...(archivesRes?.data ?? []).map((doc: any) => {
+      const ref = doc.numeroArchive ?? '';
+      const cat = doc.documentCategory?.name ?? '';
+      const folder = doc.folder?.name ?? '';
+      const desc = doc.description ?? '';
+      return {
+        value: String(doc.id),
+        label: ref ? `${ref} — ${doc.name}` : doc.name,
+        searchText: [doc.name, cat, desc, ref, folder].filter(Boolean).join(' '),
+      };
+    }),
+  ];
+
   const { register, handleSubmit, reset, control, formState: { errors, isSubmitting } } = useForm<z.input<typeof schema>, any, FormData>({
     resolver: zodResolver(schema),
     defaultValues: { type: 'TASK', status: 'EN_ATTENTE' },
@@ -219,6 +279,7 @@ export default function ActivityFormPage() {
         conventionId: act.conventionId ?? undefined,
         invoiceId: act.invoiceId ?? undefined,
         installmentId: act.installmentId ?? undefined,
+        documentId: act.documentId ?? undefined,
       });
     }
   }, [res, isEdit, reset]);
@@ -271,12 +332,19 @@ export default function ActivityFormPage() {
             <FormSearchSelect control={control} name="clientId" label="Client" options={clientOptions} />
             <FormSearchSelect control={control} name="prospectId" label="Prospect" options={prospectOptions} />
             <FormSearchSelect control={control} name="propertyId" label="Bien immobilier" options={propertyOptions} />
-            <FormSearchSelect control={control} name="programmeId" label="Programme immobilier" options={programmeOptions} />
-            <FormSearchSelect control={control} name="lotissementId" label="Lotissement" options={lotissementOptions} />
+            {canSeeLotProg && (
+              <>
+                <FormSearchSelect control={control} name="programmeId" label="Programme immobilier" options={programmeOptions} />
+                <FormSearchSelect control={control} name="lotissementId" label="Lotissement" options={lotissementOptions} />
+              </>
+            )}
             <FormSearchSelect control={control} name="terrainId" label="Terrain" options={terrainOptions} />
             <FormSearchSelect control={control} name="conventionId" label="Convention" options={conventionOptions} />
             <FormSearchSelect control={control} name="invoiceId" label="Facture" options={invoiceOptions} />
             <FormSearchSelect control={control} name="installmentId" label="Échéance" options={installmentOptions} />
+            {isAssistanteDirection && (
+              <FormSearchSelect control={control} name="documentId" label="Archive" options={archiveOptions} />
+            )}
           </div>
         </Card>
 

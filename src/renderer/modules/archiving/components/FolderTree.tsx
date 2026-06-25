@@ -68,7 +68,7 @@ export default function FolderTree({ folders, selectedId, onSelect }: FolderTree
             <span className="w-3.5" />
           )}
           {isSelected || isOpen ? <FolderOpen className="h-4 w-4 shrink-0" /> : <Folder className="h-4 w-4 shrink-0" />}
-          <span className="truncate flex-1">{node.name}</span>
+          <span className="truncate flex-1" title={node.name}>{node.name}</span>
           {node._count && <span className="text-xs text-slate-400">{node._count.documents}</span>}
         </div>
         {hasChildren && isOpen && node.children.map((c) => renderNode(c, depth + 1))}

@@ -27,9 +27,12 @@ import { registerLotissementsIPC } from './ipc/lotissements.ipc';
 import { registerTerrainsIPC } from './ipc/terrains.ipc';
 import { registerProgrammesIPC } from './ipc/programmes.ipc';
 import { registerProjectsIPC } from './ipc/projects.ipc';
+import { registerHrIPC } from './ipc/hr.ipc';
 import { registerGeoIPC } from './ipc/geo.ipc';
 import { registerCountriesIPC } from './ipc/countries.ipc';
 import { registerCommissionsIPC } from './ipc/commissions.ipc';
+import { registerForecastExpensesIPC } from './ipc/forecast-expenses.ipc';
+import { registerAnalyticsIPC } from './ipc/analytics.ipc';
 import { registerExportIPC } from './ipc/export.ipc';
 import { registerInvoiceTemplatesIPC } from './ipc/invoice-templates.ipc';
 import { registerListExportTemplatesIPC } from './ipc/list-export-templates.ipc';
@@ -43,6 +46,8 @@ import { registerRemindersIPC } from './ipc/reminders.ipc';
 import { seedDefaultRemindersConfig, scheduleReminders } from './services/reminders.service';
 import { seedDefaultAttestationTemplate } from './services/attestation-templates.service';
 import { seedDefaultQuoteTemplate } from './services/quote-templates.service';
+import { seedDefaultContractTemplates, seedDefaultPayslipTemplates } from './services/hr-templates.service';
+import { seedDefaultLeaveTypes } from './services/leave.service';
 
 // Distinction dev/prod basée sur l'empaquetage Electron (plus fiable que
 // NODE_ENV, absent dans l'application installée).
@@ -120,9 +125,12 @@ function registerIPC(): void {
   registerTerrainsIPC();
   registerProgrammesIPC();
   registerProjectsIPC();
+  registerHrIPC();
   registerGeoIPC();
   registerCountriesIPC();
   registerCommissionsIPC();
+  registerForecastExpensesIPC();
+  registerAnalyticsIPC();
   registerExportIPC();
   registerInvoiceTemplatesIPC();
   registerListExportTemplatesIPC();
@@ -185,6 +193,12 @@ app.whenReady().then(async () => {
   // Modèle de devis par défaut (créé une seule fois si absent).
   seedDefaultQuoteTemplate()
     .catch((e) => logger.error(`Quote template bootstrap failed: ${e.message}`));
+  // Modèles RH : contrats (un par type) + bulletins de paie (3 modèles).
+  seedDefaultContractTemplates()
+    .then(() => seedDefaultPayslipTemplates())
+    .catch((e) => logger.error(`HR templates bootstrap failed: ${e.message}`));
+  seedDefaultLeaveTypes()
+    .catch((e) => logger.error(`Leave types bootstrap failed: ${e.message}`));
   setupAppMenu();
   createWindow();
   logger.info('Application started');

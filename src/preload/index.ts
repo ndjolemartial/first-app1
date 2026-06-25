@@ -23,6 +23,7 @@ const auth = {
 const users = {
   list: (token: string, filters?: object, page?: number, limit?: number) =>
     api.invoke('users:list', { token, filters, page, limit }),
+  listSelectable: (token: string, options?: object) => api.invoke('users:listSelectable', { token, options }),
   getById: (token: string, id: number) => api.invoke('users:getById', { token, id }),
   create: (token: string, payload: object) => api.invoke('users:create', { token, payload }),
   update: (token: string, id: number, payload: object) => api.invoke('users:update', { token, id, payload }),
@@ -212,7 +213,8 @@ const accounting = {
     api.invoke('accounting:getLegacyInstallments', { token }),
   updateLegacyInstallment: (token: string, payload: object) =>
     api.invoke('accounting:updateLegacyInstallment', { token, payload }),
-  listInstallments: (token: string) => api.invoke('accounting:listInstallments', { token }),
+  listInstallments: (token: string, crmReferentScope = false) =>
+    api.invoke('accounting:listInstallments', { token, crmReferentScope }),
   payInstallment: (token: string, installmentId: number, payload: object) =>
     api.invoke('accounting:payInstallment', { token, installmentId, payload }),
   printInvoice: (token: string, invoiceId: number) =>
@@ -268,6 +270,8 @@ const communication = {
     api.invoke('communication:sendWhatsapp', { token, payload }),
   resend: (token: string, id: number) =>
     api.invoke('communication:resend', { token, id }),
+  deleteMessage: (token: string, id: number) =>
+    api.invoke('communication:delete', { token, id }),
   resolveTarget: (token: string, payload: object) =>
     api.invoke('communication:resolveTarget', { token, payload }),
   shareLocation: (token: string, payload: object) =>
@@ -401,6 +405,78 @@ const projects = {
     api.invoke('projects:deleteType', { token, id }),
 };
 
+// RH / Paie — personnel et contrats de travail
+const hr = {
+  employees: {
+    list: (token: string, filters?: object, page?: number, limit?: number) =>
+      api.invoke('hr:employees:list', { token, filters, page, limit }),
+    stats: (token: string) => api.invoke('hr:employees:stats', { token }),
+    getById: (token: string, id: number) => api.invoke('hr:employees:getById', { token, id }),
+    create: (token: string, payload: object) => api.invoke('hr:employees:create', { token, payload }),
+    update: (token: string, id: number, payload: object) =>
+      api.invoke('hr:employees:update', { token, id, payload }),
+    delete: (token: string, id: number) => api.invoke('hr:employees:delete', { token, id }),
+  },
+  contracts: {
+    create: (token: string, payload: object) => api.invoke('hr:contracts:create', { token, payload }),
+    update: (token: string, id: number, payload: object) =>
+      api.invoke('hr:contracts:update', { token, id, payload }),
+    delete: (token: string, id: number) => api.invoke('hr:contracts:delete', { token, id }),
+    print: (token: string, id: number) => api.invoke('hr:contracts:print', { token, id }),
+  },
+  payslips: {
+    list: (token: string, filters?: object, page?: number, limit?: number) =>
+      api.invoke('hr:payslips:list', { token, filters, page, limit }),
+    getById: (token: string, id: number) => api.invoke('hr:payslips:getById', { token, id }),
+    generate: (token: string, payload: object) => api.invoke('hr:payslips:generate', { token, payload }),
+    update: (token: string, id: number, payload: object) => api.invoke('hr:payslips:update', { token, id, payload }),
+    updateStatus: (token: string, id: number, status: string, paymentMethod?: string, paidAt?: string, bankAccountId?: number) =>
+      api.invoke('hr:payslips:updateStatus', { token, id, status, paymentMethod, paidAt, bankAccountId }),
+    updatePayment: (token: string, id: number, paidAt?: string, paymentMethod?: string, bankAccountId?: number) =>
+      api.invoke('hr:payslips:updatePayment', { token, id, paidAt, paymentMethod, bankAccountId }),
+    payAccounts: (token: string) => api.invoke('hr:payslips:payAccounts', { token }),
+    delete: (token: string, id: number) => api.invoke('hr:payslips:delete', { token, id }),
+    print: (token: string, id: number) => api.invoke('hr:payslips:print', { token, id }),
+  },
+  payroll: {
+    getRates: (token: string) => api.invoke('hr:payroll:getRates', { token }),
+    setRates: (token: string, rates: object) => api.invoke('hr:payroll:setRates', { token, rates }),
+  },
+  contractTemplates: {
+    list: (token: string) => api.invoke('hr:contractTemplates:list', { token }),
+    create: (token: string, payload: object) => api.invoke('hr:contractTemplates:create', { token, payload }),
+    update: (token: string, id: number, payload: object) =>
+      api.invoke('hr:contractTemplates:update', { token, id, payload }),
+    delete: (token: string, id: number) => api.invoke('hr:contractTemplates:delete', { token, id }),
+  },
+  payslipTemplates: {
+    list: (token: string) => api.invoke('hr:payslipTemplates:list', { token }),
+    update: (token: string, id: number, payload: object) =>
+      api.invoke('hr:payslipTemplates:update', { token, id, payload }),
+  },
+  leaveTypes: {
+    list: (token: string) => api.invoke('hr:leaveTypes:list', { token }),
+  },
+  leave: {
+    balance: (token: string, employeeId: number) => api.invoke('hr:leave:balance', { token, employeeId }),
+  },
+  leaveRequests: {
+    list: (token: string, filters?: object, page?: number, limit?: number) =>
+      api.invoke('hr:leaveRequests:list', { token, filters, page, limit }),
+    create: (token: string, payload: object) => api.invoke('hr:leaveRequests:create', { token, payload }),
+    decide: (token: string, id: number, status: string, note?: string) =>
+      api.invoke('hr:leaveRequests:decide', { token, id, status, note }),
+    delete: (token: string, id: number) => api.invoke('hr:leaveRequests:delete', { token, id }),
+  },
+  attendance: {
+    list: (token: string, employeeId: number, year: number, month: number) =>
+      api.invoke('hr:attendance:list', { token, employeeId, year, month }),
+    summary: (token: string, employeeId: number, year: number, month: number) =>
+      api.invoke('hr:attendance:summary', { token, employeeId, year, month }),
+    bulkUpsert: (token: string, records: object[]) => api.invoke('hr:attendance:bulkUpsert', { token, records }),
+  },
+};
+
 // Géolocalisation
 const geo = {
   resolveMapLink: (token: string, link: string) => api.invoke('geo:resolveMapLink', { token, link }),
@@ -505,6 +581,33 @@ const commissions = {
   updateSettings: (token: string, payload: object) => api.invoke('commissions:updateSettings', { token, payload }),
 };
 
+// Charges / dépenses prévisionnelles
+const expenses = {
+  listCategories: (token: string) => api.invoke('expenses:listCategories', { token }),
+  listAccounts: (token: string) => api.invoke('expenses:listAccounts', { token }),
+  list: (token: string, filters?: object, page?: number, limit?: number) =>
+    api.invoke('expenses:list', { token, filters, page, limit }),
+  stats: (token: string) => api.invoke('expenses:stats', { token }),
+  getById: (token: string, id: number) => api.invoke('expenses:getById', { token, id }),
+  create: (token: string, payload: object) => api.invoke('expenses:create', { token, payload }),
+  update: (token: string, id: number, payload: object) => api.invoke('expenses:update', { token, id, payload }),
+  settle: (token: string, payload: object) => api.invoke('expenses:settle', { token, payload }),
+  cancel: (token: string, id: number) => api.invoke('expenses:cancel', { token, id }),
+  remove: (token: string, id: number) => api.invoke('expenses:remove', { token, id }),
+};
+
+// Analyses décisionnelles (BI) — admin uniquement
+const analytics = {
+  executive: (token: string) => api.invoke('analytics:executive', { token }),
+  financial: (token: string) => api.invoke('analytics:financial', { token }),
+  portfolio: (token: string) => api.invoke('analytics:portfolio', { token }),
+  crm: (token: string) => api.invoke('analytics:crm', { token }),
+  charges: (token: string) => api.invoke('analytics:charges', { token }),
+  contracts: (token: string) => api.invoke('analytics:contracts', { token }),
+  risk: (token: string) => api.invoke('analytics:risk', { token }),
+  recommendations: (token: string) => api.invoke('analytics:recommendations', { token }),
+};
+
 // Budgets
 const budget = {
   getDashboard: (token: string) => api.invoke('budget:getDashboard', { token }),
@@ -593,6 +696,10 @@ const settings = {
   getStorage: (token: string) => api.invoke('settings:getStorage', { token }),
   updateStorage: (token: string, payload: object) =>
     api.invoke('settings:updateStorage', { token, payload }),
+
+  getPayrollAccount: (token: string) => api.invoke('settings:getPayrollAccount', { token }),
+  updatePayrollAccount: (token: string, payload: { accountId: number | null }) =>
+    api.invoke('settings:updatePayrollAccount', { token, payload }),
 
   getEmail: (token: string) => api.invoke('settings:getEmail', { token }),
   updateEmail: (token: string, payload: object) =>
@@ -700,4 +807,4 @@ const documents = {
   pathForFile: (file: File) => webUtils.getPathForFile(file),
 };
 
-contextBridge.exposeInMainWorld('electron', { auth, users, prospects, clients, owners, properties, conventions, conventionTemplates, attestationTemplates, attestations, quotes, quoteTemplates, catalog, accounting, bilan, communication, crm, archiving, documents, documentExport, lotissements, terrains, programmes, projects, geo, countries, commissions, exporter, invoiceTemplates, listExportTemplates, treasury, budget, dashboard, settings, reminders, config });
+contextBridge.exposeInMainWorld('electron', { auth, users, prospects, clients, owners, properties, conventions, conventionTemplates, attestationTemplates, attestations, quotes, quoteTemplates, catalog, accounting, bilan, communication, crm, archiving, documents, documentExport, lotissements, terrains, programmes, projects, hr, geo, countries, commissions, expenses, analytics, exporter, invoiceTemplates, listExportTemplates, treasury, budget, dashboard, settings, reminders, config });

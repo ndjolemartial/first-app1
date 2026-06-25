@@ -39,6 +39,11 @@ const storageSchema = z.object({
   maxFileSizeMb:  z.coerce.number().int().positive().optional(),
 });
 
+const payrollAccountSchema = z.object({
+  // null / absent = aucun compte par défaut
+  accountId: z.number().int().positive().nullable().optional(),
+});
+
 const emailSchema = z.object({
   host:        z.string().optional(),
   port:        z.coerce.number().int().min(1).max(65535).optional(),
@@ -370,6 +375,55 @@ export function registerSettingsIPC(): void {
       return { success: true };
     } catch (err: any) {
       logger.error('settings:updateStorage', err.message);
+      return { success: false, error: err.message };
+    }
+  });
+
+  // ── Paie : compte par défaut à débiter pour les salaires ─────────────────────
+  ipcMain.handle('settings:getPayrollAccount', async (_event, { token }: any) => {
+    try {
+      const session = getSession(token);
+      if (!session) return { success: false, error: 'Session expirée' };
+      checkRole(session, ADMIN_ROLES);
+      const raw = await getSetting(SettingsKeys.payrollDefaultAccountId);
+      const accountId = raw ? Number(raw) : null;
+      // Liste des comptes communs actifs (débitables pour un salaire) pour le sélecteur
+      const db = getDb();
+      const accounts = await db.bankAccount.findMany({
+        where: { deletedAt: null, isActive: true, linkedUserId: null },
+        orderBy: { name: 'asc' },
+        select: { id: true, name: true, type: true },
+      });
+      // Le compte enregistré n'est plus valide (supprimé / désactivé / privé) → null
+      const valid = accountId != null && accounts.some((a) => a.id === accountId) ? accountId : null;
+      return { success: true, data: { accountId: valid, accounts } };
+    } catch (err: any) {
+      return { success: false, error: err.message };
+    }
+  });
+
+  ipcMain.handle('settings:updatePayrollAccount', async (_event, { token, payload }: any) => {
+    try {
+      const session = getSession(token);
+      if (!session) return { success: false, error: 'Session expirée' };
+      checkRole(session, ADMIN_ROLES);
+      const parsed = payrollAccountSchema.safeParse(payload);
+      if (!parsed.success) return { success: false, error: parsed.error.issues.map((i) => i.message).join(', ') };
+      const id = parsed.data.accountId ?? null;
+      if (id != null) {
+        const db = getDb();
+        const account = await db.bankAccount.findFirst({ where: { id, deletedAt: null } });
+        if (!account) return { success: false, error: 'Compte introuvable' };
+        if (account.linkedUserId != null) {
+          return { success: false, error: 'Le compte de paie doit être un compte commun (non rattaché à un utilisateur).' };
+        }
+        if (!account.isActive) return { success: false, error: 'Ce compte est inactif.' };
+      }
+      await setSettings([{ key: SettingsKeys.payrollDefaultAccountId, value: id != null ? String(id) : '' }]);
+      logger.info(`Compte de paie par défaut : ${id ?? '(aucun)'}`);
+      return { success: true };
+    } catch (err: any) {
+      logger.error('settings:updatePayrollAccount', err.message);
       return { success: false, error: err.message };
     }
   });

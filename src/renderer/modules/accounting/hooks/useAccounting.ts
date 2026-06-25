@@ -164,12 +164,16 @@ export function useUpdateLegacyInstallment() {
   });
 }
 
-/** Liste de toutes les échéances de vente (pour sélecteurs / rattachements). */
-export function useAllInstallments() {
+/**
+ * Liste de toutes les échéances de vente (pour sélecteurs / rattachements).
+ * `crmReferentScope` restreint, pour les rôles hors comptabilité, aux échéances
+ * des conventions dont le client leur est rattaché comme référent.
+ */
+export function useAllInstallments(crmReferentScope = false) {
   const token = useAuthStore((s) => s.token)!;
   return useQuery({
-    queryKey: ['installments', 'all'],
-    queryFn: () => ipc.listInstallments(token),
+    queryKey: ['installments', 'all', crmReferentScope],
+    queryFn: () => ipc.listInstallments(token, crmReferentScope),
   });
 }
 

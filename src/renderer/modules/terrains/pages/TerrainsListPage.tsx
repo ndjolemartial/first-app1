@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import PageLayout from '../../../shared/components/layout/PageLayout';
 import Button from '../../../shared/components/ui/Button';
 import Badge from '../../../shared/components/ui/Badge';
@@ -65,7 +65,10 @@ export default function TerrainsListPage() {
   const canWrite = WRITE_ROLES.has(role);
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState('');
-  const [statut, setStatut] = useState('');
+  // Filtre de statut pré-rempli depuis l'URL (ex. accès « Terrains disponibles »
+  // du tableau de bord → /terrains?statut=DISPONIBLE).
+  const [searchParams] = useSearchParams();
+  const [statut, setStatut] = useState(searchParams.get('statut') ?? '');
   const [lotissementId, setLotissementId] = useState('');
   const filters = {
     search: search || undefined,

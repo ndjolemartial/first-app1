@@ -33,9 +33,23 @@ const lotissementSchema = z.object({
 });
 
 // Module Lotissements : réservé aux MANAGER+ (ACCOUNTANT inclus via checkRole).
-// AGENT et READONLY n'ont aucun accès au module.
+// AGENT et READONLY n'ont aucun accès au module. ASSISTANTE_DIRECTION dispose
+// d'un accès en LECTURE seule (via l'équivalence MANAGER), mais ne peut ni créer,
+// ni modifier, ni supprimer un lotissement (voir checkWriteRole).
 const WRITE_ROLES = ['SUPER_ADMIN', 'ADMIN', 'MANAGER'];
 const READ_ROLES  = ['SUPER_ADMIN', 'ADMIN', 'MANAGER'];
+
+/**
+ * Contrôle de rôle pour les écritures sur les lotissements (création, mise à jour,
+ * suppression). ASSISTANTE_DIRECTION, qui hérite normalement des permissions
+ * MANAGER, est explicitement exclue : lecture seule sur ce module.
+ */
+function checkWriteRole(session: { role: string }, allowedRoles: string[]): void {
+  if (session.role === 'ASSISTANTE_DIRECTION') {
+    throw new Error('Permission insuffisante');
+  }
+  checkRole(session as any, allowedRoles);
+}
 
 const ser = <T>(v: T): T => JSON.parse(JSON.stringify(v));
 
@@ -123,7 +137,7 @@ export function registerLotissementsIPC(): void {
     try {
       const session = getSession(token);
       if (!session) return { success: false, error: 'Session expirée' };
-      checkRole(session, WRITE_ROLES);
+      checkWriteRole(session, WRITE_ROLES);
       const parsed = lotissementSchema.safeParse(payload);
       if (!parsed.success) return { success: false, error: parsed.error.format() };
       const db = getDb();
@@ -140,7 +154,7 @@ export function registerLotissementsIPC(): void {
     try {
       const session = getSession(token);
       if (!session) return { success: false, error: 'Session expirée' };
-      checkRole(session, WRITE_ROLES);
+      checkWriteRole(session, WRITE_ROLES);
       const parsed = lotissementSchema.partial().safeParse(payload);
       if (!parsed.success) return { success: false, error: parsed.error.format() };
       const db = getDb();
@@ -193,7 +207,7 @@ export function registerLotissementsIPC(): void {
     try {
       const session = getSession(token);
       if (!session) return { success: false, error: 'Session expirée' };
-      checkRole(session, ['SUPER_ADMIN', 'ADMIN', 'MANAGER']);
+      checkWriteRole(session, WRITE_ROLES);
       const db = getDb();
       await db.lotissement.update({ where: { id }, data: { deletedAt: new Date() } });
       return { success: true };

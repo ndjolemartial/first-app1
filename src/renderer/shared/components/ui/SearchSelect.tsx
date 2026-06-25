@@ -21,6 +21,12 @@ export interface SearchSelectOption {
   label: string;
   /** Applique un fond clair à la ligne (ex. élément déjà rattaché au client courant). */
   highlighted?: boolean;
+  /**
+   * Texte additionnel pris en compte par la recherche, sans être affiché dans le
+   * libellé (ex. catégorie, description, dossier d'une archive). La recherche
+   * porte alors sur `label` ET `searchText`.
+   */
+  searchText?: string;
 }
 
 interface SearchSelectProps {
@@ -92,7 +98,10 @@ export default function SearchSelect({
   const filtered = useMemo(() => {
     const q = normalize(query);
     if (!q) return realOptions;
-    return realOptions.filter((o) => normalize(o.label).includes(q));
+    return realOptions.filter(
+      (o) => normalize(o.label).includes(q)
+        || (o.searchText ? normalize(o.searchText).includes(q) : false),
+    );
   }, [realOptions, query]);
 
   // Ferme la liste lors d'un clic à l'extérieur du composant.

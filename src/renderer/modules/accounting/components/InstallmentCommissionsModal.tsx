@@ -23,14 +23,10 @@ import { TRANSACTION_TYPE_LABEL } from '../../commissions/utils/commissions.util
 // pour SOUSCRIPTION, l'assiette est le montant de l'échéance.
 const TYPE_OPTIONS = ['SOUSCRIPTION', 'FRAIS_DEMARCHES_ACD'] as const;
 
-/** Taux par défaut selon le type de commission (issu des paramètres). */
-function defaultRateFor(type: string, rates: any): number {
-  if (!rates) return 0;
-  switch (type) {
-    case 'LOCATION': return Number(rates.rentalRate ?? 0);
-    case 'FRAIS_DOSSIER': return Number(rates.dossierRate ?? 0);
-    default: return Number(rates.saleRate ?? 0); // VENTE, SOUSCRIPTION, FRAIS_DEMARCHES_ACD
-  }
+/** Taux de commission par défaut pour les échéances héritées : 3,5 % (modifiable). */
+const DEFAULT_INHERITED_RATE = 3.5;
+function defaultRateFor(_type: string, _rates: any): number {
+  return DEFAULT_INHERITED_RATE;
 }
 
 interface Props {
@@ -88,7 +84,7 @@ export default function InstallmentCommissionsModal({ installment, onClose }: Pr
   }));
 
   const { register, handleSubmit, watch, setValue, reset, formState: { isSubmitting } } = useForm({
-    defaultValues: { transactionType: 'SOUSCRIPTION', rate: 0, notes: '' },
+    defaultValues: { transactionType: 'SOUSCRIPTION', rate: DEFAULT_INHERITED_RATE, notes: '' },
   });
   const selectedType = watch('transactionType');
   const isAcd = selectedType === 'FRAIS_DEMARCHES_ACD';

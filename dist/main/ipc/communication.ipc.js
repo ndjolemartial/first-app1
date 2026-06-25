@@ -5,6 +5,8 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.registerCommunicationIPC = registerCommunicationIPC;
 const electron_1 = require("electron");
+const fs_1 = __importDefault(require("fs"));
+const path_1 = __importDefault(require("path"));
 const db_service_1 = require("../services/db.service");
 const auth_service_1 = require("../services/auth.service");
 const email_service_1 = require("../services/email.service");
@@ -43,8 +45,28 @@ const sendEmailSchema = zod_1.z.object({
     body: zod_1.z.string().min(1),
     templateId: zod_1.z.number().int().positive().optional(),
     metadata: zod_1.z.record(zod_1.z.string(), zod_1.z.unknown()).optional(),
+    // Envoi « en tant que » l'utilisateur connecté (mode Particulier) : l'adresse
+    // d'envoi et le nom d'expéditeur deviennent ceux de l'utilisateur, et sa
+    // signature personnelle est ajoutée au message.
+    senderSelf: zod_1.z.boolean().optional(),
+    // Pièces jointes (mode Particulier) : chemins de fichiers locaux à joindre.
+    attachments: zod_1.z.array(zod_1.z.object({
+        path: zod_1.z.string().min(1),
+        name: zod_1.z.string().min(1),
+    })).optional(),
+    // Destinataires en copie (CC) / copie cachée (BCC) — listes séparées par , ; ou espace.
+    cc: zod_1.z.string().optional(),
+    bcc: zod_1.z.string().optional(),
     ...targetFields,
 });
+/** Découpe une liste d'adresses (séparateurs , ; espaces) et valide le format. */
+function parseEmailList(raw) {
+    const list = (raw ?? '').split(/[,;\s]+/).map((s) => s.trim()).filter(Boolean);
+    const invalid = list.filter((a) => !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(a));
+    return { list, invalid };
+}
+/** Taille totale maximale autorisée pour les pièces jointes d'un email (25 Mo). */
+const MAX_ATTACHMENTS_BYTES = 25 * 1024 * 1024;
 const sendSmsSchema = zod_1.z.object({
     to: zod_1.z.string().min(8),
     body: zod_1.z.string().min(1),
@@ -64,6 +86,64 @@ const resolveTargetSchema = zod_1.z.object({
     entityId: zod_1.z.number().int().positive(),
     channel: zod_1.z.enum(['EMAIL', 'SMS', 'WHATSAPP']),
 });
+const CONVENTION_TYPE_LABELS = {
+    RENTAL_UNFURNISHED: 'Bail non meublé',
+    RENTAL_FURNISHED: 'Bail meublé',
+    SALE: 'Vente',
+    MANAGEMENT: 'Mandat de gestion',
+    COMMERCIAL_LEASE: 'Bail commercial',
+};
+const fmtDate = (d) => d ? new Date(d).toLocaleDateString('fr-FR') : '';
+const fmtAmount = (a) => a === null || a === undefined ? '' : Number(a).toLocaleString('fr-FR');
+/**
+ * Variables communes à tout envoi : variables d'entreprise (paramètres),
+ * agence, agent connecté et date du jour. Réutilisées pour la substitution
+ * immédiate des modèles dans le formulaire d'envoi.
+ */
+async function buildCommonVariables(db, userId) {
+    const company = await (0, templating_service_1.loadCompanyVariables)();
+    const user = await db.user.findUnique({
+        where: { id: userId },
+        select: { firstName: true, lastName: true },
+    });
+    const agentName = user ? `${user.firstName ?? ''} ${user.lastName ?? ''}`.trim() : '';
+    return {
+        ...company,
+        agencyName: company.companyName ?? '',
+        agentName,
+        date: new Date().toLocaleDateString('fr-FR'),
+    };
+}
+/** Retire les balises HTML pour produire une version texte brut (alternative email). */
+function htmlToPlainText(html) {
+    return html
+        .replace(/<\s*br\s*\/?>/gi, '\n')
+        .replace(/<\/\s*(p|div|h[1-6]|li)\s*>/gi, '\n')
+        .replace(/<[^>]+>/g, '')
+        .replace(/&nbsp;/g, ' ')
+        .replace(/&amp;/g, '&')
+        .replace(/&lt;/g, '<')
+        .replace(/&gt;/g, '>')
+        .replace(/&#39;/g, "'")
+        .replace(/&quot;/g, '"')
+        .replace(/\n{3,}/g, '\n\n')
+        .trim();
+}
+/** Variables « destinataire » à partir d'un client / propriétaire. */
+function recipientVariables(rec) {
+    const isCompany = rec.type === 'ENTREPRISE';
+    const fullName = isCompany
+        ? (rec.entreprise ?? rec.companyName ?? '')
+        : `${rec.firstName ?? ''} ${rec.lastName ?? ''}`.trim();
+    return {
+        civilite: rec.civilite ?? '',
+        firstName: rec.firstName ?? '',
+        lastName: rec.lastName ?? '',
+        fullName,
+        email: rec.email ?? '',
+        phone: rec.mobile ?? rec.phone ?? '',
+    };
+}
 // Partage de localisation GPS depuis Lotissement / Terrain / Bien vers
 // Client / Prospect / Apporteur d'affaires. Le template est lu côté serveur
 // (paramètre AppSetting) — il n'est pas modifiable depuis le formulaire de
@@ -438,18 +518,75 @@ function registerCommunicationIPC() {
                 return { success: false, error: parsed.error.format() };
             const db = (0, db_service_1.getDb)();
             const d = parsed.data;
+            // Envoi « en tant que » l'utilisateur connecté (mode Particulier) :
+            // adresse + nom d'expéditeur de l'utilisateur, et sa signature personnelle
+            // (HTML, avec logo optionnel) ajoutée au corps du message.
+            let fromOverride = {};
+            let bodyWithSignature = d.body;
+            let senderSelfHtml = false;
+            if (d.senderSelf) {
+                const me = await db.user.findUnique({
+                    where: { id: session.userId },
+                    select: {
+                        firstName: true, lastName: true, email: true, nomCommercial: true,
+                        messageSignature: true,
+                    },
+                });
+                if (me) {
+                    const senderName = (me.nomCommercial || `${me.firstName ?? ''} ${me.lastName ?? ''}`.trim()) || undefined;
+                    fromOverride = { fromName: senderName, fromAddress: me.email };
+                    // Signature HTML personnelle.
+                    const sigHtml = (me.messageSignature ?? '').trim();
+                    if (sigHtml) {
+                        // Le corps (provenant de l'éditeur riche) est déjà du HTML : on
+                        // assemble corps + signature en HTML et on enverra en HTML.
+                        bodyWithSignature = `${d.body}<br><br>${sigHtml}`;
+                        senderSelfHtml = true;
+                    }
+                }
+            }
+            // Destinataires en copie (CC) / copie cachée (BCC).
+            const cc = parseEmailList(d.cc);
+            const bcc = parseEmailList(d.bcc);
+            const badAddrs = [...cc.invalid, ...bcc.invalid];
+            if (badAddrs.length) {
+                return { success: false, error: `Adresse(s) invalide(s) en copie : ${badAddrs.join(', ')}` };
+            }
+            // Pièces jointes (mode Particulier) : valide l'existence et la taille totale
+            // (≤ 25 Mo), puis prépare les attachements Nodemailer (lecture par chemin).
+            let mailAttachments;
+            if (d.attachments && d.attachments.length) {
+                let totalBytes = 0;
+                for (const att of d.attachments) {
+                    if (!fs_1.default.existsSync(att.path)) {
+                        return { success: false, error: `Pièce jointe introuvable : ${att.name}` };
+                    }
+                    totalBytes += fs_1.default.statSync(att.path).size;
+                }
+                if (totalBytes > MAX_ATTACHMENTS_BYTES) {
+                    return { success: false, error: 'Pièces jointes : taille totale supérieure à 25 Mo.' };
+                }
+                mailAttachments = d.attachments.map((att) => ({
+                    filename: att.name || path_1.default.basename(att.path),
+                    path: att.path,
+                }));
+            }
             // Résout les variables d'entreprise ({{companyName}}, {{companyPhoneFixed}}, …)
             // côté serveur — les valeurs ne transitent pas par le renderer.
-            const rendered = await (0, templating_service_1.renderMessage)({ subject: d.subject, body: d.body }, d.metadata ?? {});
+            const rendered = await (0, templating_service_1.renderMessage)({ subject: d.subject, body: bodyWithSignature }, d.metadata ?? {});
             const finalSubject = rendered.subject ?? d.subject;
             const finalBody = rendered.body;
+            // Corps historisé : en mode senderSelf, le HTML peut contenir un logo en
+            // base64 (volumineux) → on stocke une version texte pour rester sous la
+            // limite de la colonne et garder l'historique lisible.
+            const storedBody = senderSelfHtml ? htmlToPlainText(finalBody) : finalBody;
             const comm = await db.communication.create({
                 data: {
                     channel: 'EMAIL',
                     direction: 'SORTANT',
                     to: d.to,
                     subject: finalSubject,
-                    body: finalBody,
+                    body: storedBody,
                     status: 'EN_ATTENTE',
                     templateId: d.templateId ?? null,
                     senderId: session.userId,
@@ -461,7 +598,18 @@ function registerCommunicationIPC() {
             });
             // Envoi via Nodemailer (SMTP) — paramétré côté AppSetting.
             try {
-                await (0, email_service_1.sendEmail)({ to: d.to, subject: finalSubject, body: finalBody });
+                await (0, email_service_1.sendEmail)({
+                    to: d.to,
+                    subject: finalSubject,
+                    body: storedBody,
+                    // Signature HTML : on fournit explicitement le HTML (corps + signature
+                    // + logo) pour un rendu fidèle, sinon comportement par défaut.
+                    ...(senderSelfHtml ? { html: finalBody } : {}),
+                    ...(mailAttachments ? { attachments: mailAttachments } : {}),
+                    ...(cc.list.length ? { cc: cc.list } : {}),
+                    ...(bcc.list.length ? { bcc: bcc.list } : {}),
+                    ...fromOverride,
+                });
                 await db.communication.update({
                     where: { id: comm.id },
                     data: { status: 'ENVOYE', sentAt: new Date() },
@@ -641,6 +789,29 @@ function registerCommunicationIPC() {
             return { success: false, error: error.message };
         }
     });
+    // Suppression d'un message en échec uniquement (les envois réussis sont conservés).
+    electron_1.ipcMain.handle('communication:delete', async (_event, { token, id }) => {
+        try {
+            const session = (0, auth_service_1.getSession)(token);
+            if (!session)
+                return { success: false, error: 'Session expirée' };
+            (0, auth_service_1.checkRole)(session, WRITE_ROLES);
+            const db = (0, db_service_1.getDb)();
+            const comm = await db.communication.findUnique({ where: { id } });
+            if (!comm)
+                return { success: false, error: 'Message introuvable' };
+            if (comm.status !== 'ECHEC') {
+                return { success: false, error: "Seuls les messages dont l'envoi a échoué peuvent être supprimés" };
+            }
+            await db.communication.delete({ where: { id } });
+            logger_1.default.info(`Communication ${id} supprimée (échec, ${comm.channel} → ${comm.to})`);
+            return { success: true };
+        }
+        catch (error) {
+            logger_1.default.error('communication:delete error', error.message);
+            return { success: false, error: error.message };
+        }
+    });
     // ── Résolution d'une cible (Client / Owner / Convention) ────────────────────
     // Retourne le destinataire à utiliser pour un canal donné et les FK à stamper
     // sur Communication. Le destinataire est calculé côté serveur pour garantir
@@ -656,6 +827,8 @@ function registerCommunicationIPC() {
                 return { success: false, error: parsed.error.format() };
             const db = (0, db_service_1.getDb)();
             const { entityType, entityId, channel } = parsed.data;
+            // Variables communes (entreprise / agence / agent / date) résolues une fois.
+            const commonVars = await buildCommonVariables(db, session.userId);
             // Sélectionne la propriété adresse selon le canal.
             // EMAIL → email ; SMS/WHATSAPP → mobile puis phone en repli.
             const pickRecipient = (rec) => {
@@ -666,7 +839,7 @@ function registerCommunicationIPC() {
             if (entityType === 'CLIENT') {
                 const c = await db.client.findUnique({
                     where: { id: entityId },
-                    select: { id: true, firstName: true, lastName: true, entreprise: true, type: true, email: true, phone: true, mobile: true, deletedAt: true },
+                    select: { id: true, civilite: true, firstName: true, lastName: true, entreprise: true, type: true, email: true, phone: true, mobile: true, deletedAt: true },
                 });
                 if (!c || c.deletedAt)
                     return { success: false, error: 'Client introuvable' };
@@ -674,7 +847,8 @@ function registerCommunicationIPC() {
                 if (!to)
                     return { success: false, error: `Le client n'a pas de ${channel === 'EMAIL' ? 'email' : 'numéro mobile/téléphone'} renseigné` };
                 const label = c.type === 'ENTREPRISE' ? (c.entreprise ?? `Client #${c.id}`) : `${c.firstName ?? ''} ${c.lastName ?? ''}`.trim();
-                return { success: true, data: { to, label, targets: { clientId: c.id } } };
+                const variables = { ...commonVars, ...recipientVariables(c) };
+                return { success: true, data: { to, label, targets: { clientId: c.id }, variables } };
             }
             if (entityType === 'OWNER') {
                 const o = await db.owner.findUnique({
@@ -687,14 +861,15 @@ function registerCommunicationIPC() {
                 if (!to)
                     return { success: false, error: `Le propriétaire n'a pas de ${channel === 'EMAIL' ? 'email' : 'numéro mobile/téléphone'} renseigné` };
                 const label = o.type === 'ENTREPRISE' ? (o.companyName ?? `Propriétaire #${o.id}`) : `${o.firstName ?? ''} ${o.lastName ?? ''}`.trim();
-                return { success: true, data: { to, label, targets: { ownerId: o.id } } };
+                const variables = { ...commonVars, ...recipientVariables(o) };
+                return { success: true, data: { to, label, targets: { ownerId: o.id }, variables } };
             }
             // CONVENTION → client principal de la convention.
             const conv = await db.convention.findUnique({
                 where: { id: entityId },
                 select: {
-                    id: true, reference: true, deletedAt: true,
-                    client: { select: { id: true, firstName: true, lastName: true, entreprise: true, type: true, email: true, phone: true, mobile: true } },
+                    id: true, reference: true, type: true, startDate: true, endDate: true, rentAmount: true, deletedAt: true,
+                    client: { select: { id: true, civilite: true, firstName: true, lastName: true, entreprise: true, type: true, email: true, phone: true, mobile: true } },
                 },
             });
             if (!conv || conv.deletedAt)
@@ -707,9 +882,18 @@ function registerCommunicationIPC() {
             const clientLabel = conv.client.type === 'ENTREPRISE'
                 ? (conv.client.entreprise ?? `Client #${conv.client.id}`)
                 : `${conv.client.firstName ?? ''} ${conv.client.lastName ?? ''}`.trim();
+            const variables = {
+                ...commonVars,
+                ...recipientVariables(conv.client),
+                conventionRef: conv.reference ?? '',
+                conventionType: CONVENTION_TYPE_LABELS[conv.type] ?? String(conv.type ?? ''),
+                startDate: fmtDate(conv.startDate),
+                endDate: fmtDate(conv.endDate),
+                rentAmount: fmtAmount(conv.rentAmount),
+            };
             return {
                 success: true,
-                data: { to, label: `${conv.reference} — ${clientLabel}`, targets: { clientId: conv.client.id, conventionId: conv.id } },
+                data: { to, label: `${conv.reference} — ${clientLabel}`, targets: { clientId: conv.client.id, conventionId: conv.id }, variables },
             };
         }
         catch (error) {

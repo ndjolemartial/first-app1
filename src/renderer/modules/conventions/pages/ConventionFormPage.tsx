@@ -904,15 +904,15 @@ export default function ConventionFormPage() {
     return resolved ? total : null;
   };
 
-  // Recalcule automatiquement le montant de vente quand la modalité ou la
-  // sélection d'actifs change. En édition, on ignore le premier passage pour
-  // préserver le montant enregistré (l'utilisateur peut toujours changer la
-  // modalité ensuite pour re-déclencher le calcul). Le champ reste modifiable.
-  const priceInitRef = useRef(false);
+  // Calcul automatique du prix de vente (somme des biens souscrits selon la
+  // modalité) réservé à la CRÉATION, avant enregistrement en base. Après
+  // enregistrement (édition), le montant affiché provient de la base de données
+  // (chargé par reset) : il n'est plus recalculé à partir des biens souscrits et
+  // sert de référence à l'imprimé de la convention. Le champ reste modifiable.
   const terrainKey = (watchTerrainIds ?? []).join(',');
   const propertyKey = (watchPropertyIds ?? []).join(',');
   useEffect(() => {
-    if (isEdit && !priceInitRef.current) { priceInitRef.current = true; return; }
+    if (isEdit) return;
     // Pas de prix de vente pour les conventions à paiement additionnel facultatif.
     if (showPaymentChoice) return;
     const total = computeSaleTotal(watchModalites as string);

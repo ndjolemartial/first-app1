@@ -10,8 +10,19 @@ import RichTextEditor from '../../../shared/components/ui/RichTextEditor';
 import { useSendEmail, useSendSms, useSendWhatsapp, useTemplates } from '../hooks/useCommunication';
 import VariablePicker from '../components/VariablePicker';
 import TargetSelector, { MessageTarget } from '../components/TargetSelector';
+import { useAuthStore } from '../../../shared/stores/auth.store';
 import { COMM_VARIABLE_GROUPS_FOR_EDITOR } from '../utils/variables';
-import { Mail, MessageSquare, Send } from 'lucide-react';
+import { Mail, MessageSquare, Send, Paperclip, X } from 'lucide-react';
+
+/** Taille totale maximale des pièces jointes (25 Mo). */
+const MAX_ATTACH_BYTES = 25 * 1024 * 1024;
+
+/** Formate une taille en octets de façon lisible. */
+function formatBytes(n: number): string {
+  if (n < 1024) return `${n} o`;
+  if (n < 1024 * 1024) return `${Math.round(n / 1024)} Ko`;
+  return `${(n / 1024 / 1024).toFixed(1)} Mo`;
+}
 
 type Channel = 'EMAIL' | 'SMS' | 'WHATSAPP';
 
@@ -26,6 +37,14 @@ const phoneSchema = z.object({
   body: z.string().min(1, 'Message requis'),
 });
 
+/**
+ * Remplace les jetons `{{cle}}` par leur valeur résolue. Un jeton sans valeur
+ * connue est remplacé par une chaîne vide (aucune variable ne reste visible).
+ */
+function substituteVariables(text: string, vars: Record<string, string>): string {
+  return text.replace(/\{\{\s*([a-zA-Z0-9_]+)\s*\}\}/g, (_, k) => vars[k] ?? '');
+}
+
 function EmailForm({ target, setTarget, onSuccess }: {
   target:    MessageTarget | null;
   setTarget: (t: MessageTarget | null) => void;
@@ -34,6 +53,20 @@ function EmailForm({ target, setTarget, onSuccess }: {
   const sendEmail = useSendEmail();
   const { data: tmplRes } = useTemplates('EMAIL');
   const templates = (tmplRes?.data ?? []).filter((t: any) => t.isActive);
+  // Onglet « Particulier » (saisie libre) : pas d'entité → on masque l'insertion
+  // de variables (sujet et corps), aucune variable ne pouvant être résolue.
+  const [isParticulier, setIsParticulier] = useState(false);
+  // En mode Particulier, l'envoi se fait « en tant que » l'utilisateur connecté.
+  const me = useAuthStore((s) => s.user);
+  const senderName = (me?.nomCommercial || `${me?.firstName ?? ''} ${me?.lastName ?? ''}`.trim()) || '—';
+  const senderEmail = me?.email ?? '';
+  // Pièces jointes (mode Particulier uniquement), total ≤ 25 Mo.
+  const [files, setFiles] = useState<File[]>([]);
+  const totalBytes = files.reduce((s, f) => s + f.size, 0);
+  const tooBig = totalBytes > MAX_ATTACH_BYTES;
+  // Copie (CC) / copie cachée (BCC) — mode Particulier uniquement.
+  const [cc, setCc] = useState('');
+  const [bcc, setBcc] = useState('');
 
   const { register, handleSubmit, setValue, getValues, control, formState: { errors, isSubmitting } } = useForm({
     resolver: zodResolver(emailSchema),
@@ -61,21 +94,54 @@ function EmailForm({ target, setTarget, onSuccess }: {
 
   const applyTemplate = (id: string) => {
     const t = templates.find((t: any) => String(t.id) === id);
-    if (t) {
-      if (t.subject) setValue('subject', t.subject);
-      setValue('body', t.body);
-    }
+    if (!t) return;
+    // Si une entité est ciblée, on substitue immédiatement les variables par
+    // leurs valeurs (l'utilisateur voit les valeurs, pas les {{variables}}).
+    const vars = target?.variables;
+    if (t.subject) setValue('subject', vars ? substituteVariables(t.subject, vars) : t.subject);
+    setValue('body', vars ? substituteVariables(t.body, vars) : t.body);
   };
 
   const onSubmit = async (data: any) => {
-    const r = await sendEmail.mutateAsync({ ...data, ...(target ? target.targets : {}) });
+    if (tooBig) return;
+    // Pièces jointes transmises par chemin de fichier local.
+    const attachments = files.length
+      ? files.map((f) => ({ path: window.electron.documents.pathForFile(f), name: f.name }))
+      : undefined;
+    const r = await sendEmail.mutateAsync({
+      ...data,
+      ...(target ? target.targets : {}),
+      // Particulier : envoi avec l'identité (email + nom commercial) de l'utilisateur.
+      ...(isParticulier ? { senderSelf: true } : {}),
+      ...(attachments ? { attachments } : {}),
+      ...(cc.trim() ? { cc } : {}),
+      ...(bcc.trim() ? { bcc } : {}),
+    });
     if (r.success) onSuccess();
   };
 
   return (
     <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
-      <TargetSelector channel="EMAIL" value={target} onChange={setTarget} />
-      {templates.length > 0 && (
+      <TargetSelector
+        channel="EMAIL"
+        value={target}
+        onChange={setTarget}
+        onParticulierChange={setIsParticulier}
+      />
+      {isParticulier && (
+        <div>
+          <label className="block text-xs font-medium text-slate-700 mb-1">Expéditeur</label>
+          <input
+            readOnly
+            value={senderEmail ? `${senderName} <${senderEmail}>` : senderName}
+            className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm bg-slate-50 text-slate-500"
+          />
+          <p className="text-xs text-slate-400 mt-1">
+            Le message sera envoyé avec votre adresse et votre nom commercial.
+          </p>
+        </div>
+      )}
+      {!isParticulier && templates.length > 0 && (
         <div>
           <label className="block text-xs font-medium text-slate-700 mb-1">Utiliser un modèle</label>
           <select
@@ -98,10 +164,30 @@ function EmailForm({ target, setTarget, onSuccess }: {
         />
         {errors.to && <p className="text-xs text-red-500 mt-1">{String(errors.to.message)}</p>}
       </div>
+      <div className="grid grid-cols-2 gap-4">
+        <div>
+          <label className="block text-xs font-medium text-slate-700 mb-1">Copie (Cc)</label>
+          <input
+            value={cc}
+            onChange={(e) => setCc(e.target.value)}
+            placeholder="adresses séparées par , ou ;"
+            className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+          />
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-slate-700 mb-1">Copie cachée (Cci)</label>
+          <input
+            value={bcc}
+            onChange={(e) => setBcc(e.target.value)}
+            placeholder="adresses séparées par , ou ;"
+            className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+          />
+        </div>
+      </div>
       <div>
         <div className="flex items-center justify-between mb-1">
           <label className="block text-xs font-medium text-slate-700">Sujet *</label>
-          <VariablePicker onInsert={insertSubjectVariable} />
+          {!isParticulier && <VariablePicker onInsert={insertSubjectVariable} />}
         </div>
         <input
           {...subjectReg}
@@ -121,7 +207,7 @@ function EmailForm({ target, setTarget, onSuccess }: {
             <RichTextEditor
               value={field.value || ''}
               onChange={field.onChange}
-              variables={COMM_VARIABLE_GROUPS_FOR_EDITOR}
+              variables={isParticulier ? undefined : COMM_VARIABLE_GROUPS_FOR_EDITOR}
               minHeight={300}
               placeholder="Rédigez votre message — barre d'outils pour mise en forme, images, liens…"
             />
@@ -129,11 +215,55 @@ function EmailForm({ target, setTarget, onSuccess }: {
         />
         {errors.body && <p className="text-xs text-red-500 mt-1">{String(errors.body.message)}</p>}
       </div>
+      <div>
+        <div className="flex items-center justify-between mb-1">
+          <label className="block text-xs font-medium text-slate-700">Pièces jointes</label>
+            <span className={`text-xs ${tooBig ? 'text-red-500' : 'text-slate-400'}`}>
+              {formatBytes(totalBytes)} / 25 Mo max
+            </span>
+          </div>
+          <label className="inline-flex items-center gap-2 cursor-pointer rounded-lg border border-dashed border-slate-300 px-3 py-2 text-sm text-slate-600 hover:border-indigo-400 hover:bg-slate-50">
+            <Paperclip className="h-4 w-4" />
+            Ajouter des fichiers
+            <input
+              type="file"
+              multiple
+              tabIndex={-1}
+              className="hidden"
+              onChange={(e) => {
+                if (e.target.files?.length) setFiles((prev) => [...prev, ...Array.from(e.target.files!)]);
+                e.target.value = '';
+              }}
+            />
+          </label>
+          {files.length > 0 && (
+            <div className="mt-2 space-y-1">
+              {files.map((f, i) => (
+                <div key={`${f.name}-${i}`} className="flex items-center gap-2 rounded-md border border-slate-100 px-2 py-1.5 text-sm">
+                  <Paperclip className="h-3.5 w-3.5 shrink-0 text-slate-400" />
+                  <span className="flex-1 truncate text-slate-700">{f.name}</span>
+                  <span className="text-xs text-slate-400">{formatBytes(f.size)}</span>
+                  <button
+                    type="button"
+                    onClick={() => setFiles((prev) => prev.filter((_, idx) => idx !== i))}
+                    className="text-slate-400 hover:text-red-500"
+                    aria-label="Retirer"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+          {tooBig && (
+            <p className="text-xs text-red-500 mt-1">La taille totale des pièces jointes dépasse 25 Mo.</p>
+          )}
+      </div>
       {sendEmail.data && !sendEmail.data.success && (
         <p className="text-sm text-red-600 bg-red-50 px-3 py-2 rounded-lg">{String(sendEmail.data.error)}</p>
       )}
       <div className="flex justify-end">
-        <Button type="submit" loading={isSubmitting} icon={<Send className="h-4 w-4" />}>Envoyer l'email</Button>
+        <Button type="submit" loading={isSubmitting} disabled={tooBig} icon={<Send className="h-4 w-4" />}>Envoyer l'email</Button>
       </div>
     </form>
   );
@@ -154,6 +284,8 @@ function PhoneForm({ kind, target, setTarget, onSuccess }: {
   const sendMutation = kind === 'WHATSAPP' ? sendWhatsapp : sendSms;
   const { data: tmplRes } = useTemplates(kind);
   const templates = (tmplRes?.data ?? []).filter((t: any) => t.isActive);
+  // Onglet « Particulier » (saisie libre) : masque l'insertion de variables.
+  const [isParticulier, setIsParticulier] = useState(false);
 
   const { register, handleSubmit, setValue, getValues, formState: { errors, isSubmitting } } = useForm({
     resolver: zodResolver(phoneSchema),
@@ -180,7 +312,10 @@ function PhoneForm({ kind, target, setTarget, onSuccess }: {
 
   const applyTemplate = (id: string) => {
     const t = templates.find((t: any) => String(t.id) === id);
-    if (t) setValue('body', t.body);
+    if (!t) return;
+    // Substitution immédiate des variables si une entité est ciblée.
+    const vars = target?.variables;
+    setValue('body', vars ? substituteVariables(t.body, vars) : t.body);
   };
 
   const onSubmit = async (data: any) => {
@@ -196,8 +331,8 @@ function PhoneForm({ kind, target, setTarget, onSuccess }: {
 
   return (
     <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
-      <TargetSelector channel={kind} value={target} onChange={setTarget} />
-      {templates.length > 0 && (
+      <TargetSelector channel={kind} value={target} onChange={setTarget} onParticulierChange={setIsParticulier} />
+      {!isParticulier && templates.length > 0 && (
         <div>
           <label className="block text-xs font-medium text-slate-700 mb-1">Utiliser un modèle</label>
           <select
@@ -222,7 +357,7 @@ function PhoneForm({ kind, target, setTarget, onSuccess }: {
       <div>
         <div className="flex items-center justify-between mb-1">
           <label className="block text-xs font-medium text-slate-700">Message *</label>
-          <VariablePicker onInsert={insertVariable} />
+          {!isParticulier && <VariablePicker onInsert={insertVariable} />}
         </div>
         <textarea
           rows={4}

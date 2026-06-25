@@ -57,11 +57,10 @@ export default function ConventionDetailPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   // Écriture (édition, suppression, changement de statut) réservée à MANAGER+.
-  // L'AGENT est en consultation seule.
+  // L'AGENT et l'ASSISTANTE_DIRECTION sont en consultation seule.
   const role = useAuthStore((s) => s.user?.role) ?? '';
-  const canWrite = ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ACCOUNTANT', 'ASSISTANTE_DIRECTION'].includes(role);
-  // L'Assistante de Direction peut consulter/éditer mais pas émettre d'attestation.
-  const canCreate = canWrite && role !== 'ASSISTANTE_DIRECTION';
+  const canWrite = ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ACCOUNTANT'].includes(role);
+  const canCreate = canWrite;
   const { data: res, isLoading, refetch } = useConvention(Number(id));
   const deleteConvention = useDeleteConvention();
   const updateConvention = useUpdateConvention();

@@ -81,6 +81,9 @@ export default function GedDocumentDetailPage() {
   const categoryOptions = hierOptions(catRes?.data ?? [], '— Aucune catégorie —');
   const folderOptions = hierOptions(folderRes?.data ?? [], '— Aucun dossier —');
   const tags: any[] = tagRes?.data ?? [];
+  // Espace personnel : ni catégorie ni étiquette.
+  const selectedFolder = (folderRes?.data ?? []).find((f: any) => String(f.id) === folderId);
+  const isPersonalContext = selectedFolder?.kind === 'PERSONAL';
 
   const personName = (p: any) =>
     [p?.firstName, p?.lastName].filter(Boolean).join(' ').trim()
@@ -114,9 +117,9 @@ export default function GedDocumentDetailPage() {
       payload: {
         name: name.trim(),
         description: description.trim(),
-        categoryId: categoryId ? Number(categoryId) : null,
+        categoryId: isPersonalContext ? null : (categoryId ? Number(categoryId) : null),
         folderId: folderId ? Number(folderId) : null,
-        tagIds,
+        tagIds: isPersonalContext ? [] : tagIds,
         ...linkPayload,
       },
     });
@@ -181,33 +184,37 @@ export default function GedDocumentDetailPage() {
             <div className="space-y-3">
               <Input label="Nom" value={name} onChange={(e) => setName(e.target.value)} />
               <Textarea label="Description" rows={3} value={description} onChange={(e) => setDescription(e.target.value)} />
-              <Select label="Catégorie" options={categoryOptions} value={categoryId} onChange={(e) => setCategoryId(e.target.value)} />
+              {!isPersonalContext && (
+                <Select label="Catégorie" options={categoryOptions} value={categoryId} onChange={(e) => setCategoryId(e.target.value)} />
+              )}
               <Select label="Dossier" options={folderOptions} value={folderId} onChange={(e) => setFolderId(e.target.value)} />
-              <div>
-                <label className="mb-1 block text-xs font-medium text-slate-700">Étiquettes</label>
-                {tags.length === 0 ? (
-                  <p className="text-xs text-slate-400">Aucune étiquette définie.</p>
-                ) : (
-                  <div className="flex flex-wrap gap-1.5">
-                    {tags.map((t) => {
-                      const active = tagIds.includes(t.id);
-                      return (
-                        <button
-                          key={t.id}
-                          type="button"
-                          onClick={() => setTagIds((prev) => (active ? prev.filter((x) => x !== t.id) : [...prev, t.id]))}
-                          className={clsx(
-                            'rounded-full px-2.5 py-0.5 text-xs font-medium transition-colors',
-                            active ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200',
-                          )}
-                        >
-                          {t.name}
-                        </button>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
+              {!isPersonalContext && (
+                <div>
+                  <label className="mb-1 block text-xs font-medium text-slate-700">Étiquettes</label>
+                  {tags.length === 0 ? (
+                    <p className="text-xs text-slate-400">Aucune étiquette définie.</p>
+                  ) : (
+                    <div className="flex flex-wrap gap-1.5">
+                      {tags.map((t) => {
+                        const active = tagIds.includes(t.id);
+                        return (
+                          <button
+                            key={t.id}
+                            type="button"
+                            onClick={() => setTagIds((prev) => (active ? prev.filter((x) => x !== t.id) : [...prev, t.id]))}
+                            className={clsx(
+                              'rounded-full px-2.5 py-0.5 text-xs font-medium transition-colors',
+                              active ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200',
+                            )}
+                          >
+                            {t.name}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              )}
               <Button onClick={handleSave} loading={update.isPending} icon={<Save className="h-4 w-4" />} className="w-full">
                 Enregistrer
               </Button>

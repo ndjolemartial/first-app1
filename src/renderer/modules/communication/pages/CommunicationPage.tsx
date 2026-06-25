@@ -5,12 +5,13 @@ import Button from '../../../shared/components/ui/Button';
 import Badge from '../../../shared/components/ui/Badge';
 import Card from '../../../shared/components/ui/Card';
 import { SkeletonTable } from '../../../shared/components/ui/Skeleton';
-import { useCommunicationHistory, useResendCommunication } from '../hooks/useCommunication';
+import { useCommunicationHistory, useResendCommunication, useDeleteCommunication } from '../hooks/useCommunication';
 import { formatDateTime } from '../../../shared/utils/format';
 import ExportMenu, { ExportColumn } from '../../../shared/components/ExportMenu';
+import ConfirmDialog from '../../../shared/components/ui/ConfirmDialog';
 import { useAuthStore } from '../../../shared/stores/auth.store';
 import { toast } from '../../../shared/components/ui/Toast';
-import { Mail, MessageSquare, Send, RefreshCw } from 'lucide-react';
+import { Mail, MessageSquare, Send, RefreshCw, Trash2 } from 'lucide-react';
 
 const CHANNEL_VARIANT: Record<string, 'info' | 'success' | 'default'> = {
   EMAIL: 'info',
@@ -66,6 +67,8 @@ export default function CommunicationPage() {
 
   const { data: res, isLoading } = useCommunicationHistory(filters, page, limit);
   const resend = useResendCommunication();
+  const del = useDeleteCommunication();
+  const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null);
 
   const handleResend = async (id: number) => {
     const r = await resend.mutateAsync(id);
@@ -75,6 +78,17 @@ export default function CommunicationPage() {
       const msg = typeof r?.error === 'string' ? r.error : 'Échec du renvoi';
       toast.error(msg);
     }
+  };
+
+  const handleDelete = async () => {
+    if (confirmDeleteId == null) return;
+    const r = await del.mutateAsync(confirmDeleteId);
+    if (r?.success) {
+      toast.success('Message supprimé');
+    } else {
+      toast.error(typeof r?.error === 'string' ? r.error : 'Échec de la suppression');
+    }
+    setConfirmDeleteId(null);
   };
   // Une réponse `{ success:false }` (ex. session expirée après redémarrage du
   // main process) doit être affichée, pas avalée comme « Aucune communication ».
@@ -179,16 +193,28 @@ export default function CommunicationPage() {
                   </td>
                   <td className="px-4 py-3 text-right">
                     {comm.status === 'ECHEC' && (
-                      <Button
-                        variant="secondary"
-                        size="sm"
-                        icon={<RefreshCw className={`h-3.5 w-3.5 ${resend.isPending && resend.variables === comm.id ? 'animate-spin' : ''}`} />}
-                        onClick={() => handleResend(comm.id)}
-                        disabled={resend.isPending}
-                        title="Renvoyer ce message"
-                      >
-                        Renvoyer
-                      </Button>
+                      <div className="flex justify-end gap-2">
+                        <Button
+                          variant="secondary"
+                          size="sm"
+                          icon={<RefreshCw className={`h-3.5 w-3.5 ${resend.isPending && resend.variables === comm.id ? 'animate-spin' : ''}`} />}
+                          onClick={() => handleResend(comm.id)}
+                          disabled={resend.isPending}
+                          title="Renvoyer ce message"
+                        >
+                          Renvoyer
+                        </Button>
+                        <Button
+                          variant="danger"
+                          size="sm"
+                          icon={<Trash2 className="h-3.5 w-3.5" />}
+                          onClick={() => setConfirmDeleteId(comm.id)}
+                          disabled={del.isPending}
+                          title="Supprimer ce message en échec"
+                        >
+                          Supprimer
+                        </Button>
+                      </div>
                     )}
                   </td>
                 </tr>
@@ -208,6 +234,16 @@ export default function CommunicationPage() {
           </div>
         </div>
       )}
+
+      <ConfirmDialog
+        open={confirmDeleteId != null}
+        onClose={() => setConfirmDeleteId(null)}
+        onConfirm={handleDelete}
+        title="Supprimer le message"
+        message="Supprimer définitivement ce message en échec ? Cette action est irréversible."
+        confirmLabel="Supprimer"
+        loading={del.isPending}
+      />
     </PageLayout>
   );
 }

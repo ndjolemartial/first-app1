@@ -13,6 +13,20 @@ export function useUsers(filters?: object, page = 1, limit = 20) {
   });
 }
 
+/**
+ * Liste des utilisateurs actifs proposables dans un sélecteur, filtrée par rôle
+ * côté serveur selon le rôle du demandeur. Accessible à tous les rôles connectés
+ * (contrairement à `useUsers`/`users:list`, réservé à la gestion des comptes).
+ */
+export function useSelectableUsers() {
+  const token = useAuthStore((s) => s.token)!;
+  return useQuery({
+    queryKey: ['users', 'selectable'],
+    queryFn: () => ipc().listSelectable(token),
+    enabled: !!token,
+  });
+}
+
 export function useUser(id: number) {
   const token = useAuthStore((s) => s.token)!;
   return useQuery({

@@ -1,11 +1,11 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import SearchSelect, { SearchSelectOption } from '../../../shared/components/ui/SearchSelect';
 import Button from '../../../shared/components/ui/Button';
 import { useAuthStore } from '../../../shared/stores/auth.store';
 import { useClients } from '../../clients/hooks/useClients';
 import { useOwners } from '../../owners/hooks/useOwners';
 import { useConventions } from '../../conventions/hooks/useConventions';
-import { X, User, Building2, FileText } from 'lucide-react';
+import { X, User, Building2, FileText, UserRound } from 'lucide-react';
 
 /**
  * Cible d'un envoi de message — entité rattachée + destinataire résolu côté
@@ -17,21 +17,37 @@ export interface MessageTarget {
   to:      string;
   label:   string;
   targets: { clientId?: number; ownerId?: number; conventionId?: number };
+  /**
+   * Valeurs des variables ({{firstName}}, {{conventionRef}}…) résolues côté
+   * serveur pour l'entité ciblée. Utilisées pour substituer immédiatement les
+   * variables d'un modèle dans le formulaire d'envoi.
+   */
+  variables?: Record<string, string>;
 }
 
 interface Props {
   channel:  'EMAIL' | 'SMS' | 'WHATSAPP';
   value:    MessageTarget | null;
   onChange: (target: MessageTarget | null) => void;
+  /** Notifie le parent quand l'onglet « Particulier » (saisie libre) est actif. */
+  onParticulierChange?: (isParticulier: boolean) => void;
 }
 
-type EntityKind = 'CLIENT' | 'OWNER' | 'CONVENTION';
+type EntityKind = 'CLIENT' | 'OWNER' | 'CONVENTION' | 'PARTICULIER';
 
-const KIND_TABS: Array<{ kind: EntityKind; label: string; icon: any }> = [
+// Onglets de ciblage par entité — réservés aux rôles privilégiés.
+const ENTITY_TABS: Array<{ kind: EntityKind; label: string; icon: any }> = [
   { kind: 'CLIENT',     label: 'Client',       icon: User },
   { kind: 'OWNER',      label: 'Propriétaire', icon: Building2 },
   { kind: 'CONVENTION', label: 'Convention',   icon: FileText },
 ];
+
+// Onglet « Particulier » : saisie libre du destinataire, visible par TOUS les rôles.
+const PARTICULIER_TAB = { kind: 'PARTICULIER' as EntityKind, label: 'Particulier', icon: UserRound };
+
+// Rôles autorisés à cibler une entité (Client / Propriétaire / Convention).
+// Les autres rôles ne voient que l'onglet « Particulier ».
+const ENTITY_TARGET_ROLES = ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ACCOUNTANT'];
 
 function clientLabel(c: any): string {
   if (c.type === 'ENTREPRISE') return c.entreprise || `Client #${c.id}`;
@@ -47,11 +63,22 @@ function conventionLabel(c: any): string {
   return client ? `${ref} — ${client}` : ref;
 }
 
-export default function TargetSelector({ channel, value, onChange }: Props) {
-  const [kind, setKind] = useState<EntityKind>('CLIENT');
+export default function TargetSelector({ channel, value, onChange, onParticulierChange }: Props) {
+  const role = useAuthStore((s) => s.user?.role) ?? '';
+  const canTargetEntities = ENTITY_TARGET_ROLES.includes(role);
+  // Onglets visibles : Client/Propriétaire/Convention (privilégiés) puis Particulier,
+  // ou uniquement Particulier pour les autres rôles.
+  const tabs = canTargetEntities ? [...ENTITY_TABS, PARTICULIER_TAB] : [PARTICULIER_TAB];
+
+  const [kind, setKind] = useState<EntityKind>(canTargetEntities ? 'CLIENT' : 'PARTICULIER');
   const [resolving, setResolving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const token = useAuthStore((s) => s.token);
+
+  // Informe le parent de l'état « Particulier » (à l'initialisation et à chaque changement).
+  useEffect(() => {
+    onParticulierChange?.(kind === 'PARTICULIER');
+  }, [kind, onParticulierChange]);
 
   // Charge un large pool d'entités pour le combobox — la recherche est locale.
   const { data: clientsRes }     = useClients({},     1, 1000);
@@ -125,11 +152,11 @@ export default function TargetSelector({ channel, value, onChange }: Props) {
         <p className="text-xs text-slate-400">le destinataire sera rempli automatiquement</p>
       </div>
       <div className="flex gap-1 bg-white p-1 rounded-md w-fit border border-slate-200">
-        {KIND_TABS.map(({ kind: k, label, icon: Icon }) => (
+        {tabs.map(({ kind: k, label, icon: Icon }) => (
           <button
             key={k}
             type="button"
-            onClick={() => setKind(k)}
+            onClick={() => { setKind(k); if (k === 'PARTICULIER') onChange(null); }}
             className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded transition-colors ${
               kind === k ? 'bg-indigo-600 text-white' : 'text-slate-600 hover:bg-slate-100'
             }`}
@@ -139,17 +166,23 @@ export default function TargetSelector({ channel, value, onChange }: Props) {
           </button>
         ))}
       </div>
-      <SearchSelect
-        options={options}
-        value=""
-        onChange={handleSelect}
-        disabled={resolving}
-        placeholder={
-          kind === 'CLIENT'     ? 'Rechercher un client…'
-        : kind === 'OWNER'      ? 'Rechercher un propriétaire…'
-                                : 'Rechercher une convention…'
-        }
-      />
+      {kind === 'PARTICULIER' ? (
+        <p className="text-xs text-slate-500">
+          Saisissez directement le destinataire (email ou numéro) dans le champ ci-dessous.
+        </p>
+      ) : (
+        <SearchSelect
+          options={options}
+          value=""
+          onChange={handleSelect}
+          disabled={resolving}
+          placeholder={
+            kind === 'CLIENT'     ? 'Rechercher un client…'
+          : kind === 'OWNER'      ? 'Rechercher un propriétaire…'
+                                  : 'Rechercher une convention…'
+          }
+        />
+      )}
       {error && <p className="text-xs text-red-600">{error}</p>}
     </div>
   );

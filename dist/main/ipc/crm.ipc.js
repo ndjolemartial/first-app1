@@ -38,8 +38,16 @@ function activitiesForUserWhere(uid) {
 }
 /** Clause WHERE de visibilité pour les rôles restreints (vide pour full-view). */
 function buildVisibilityWhere(session) {
-    if (hasFullView(session.role))
+    if (hasFullView(session.role)) {
+        // Rappels de charges prévisionnelles : un MANAGER ne voit que ceux qu'il a
+        // lui-même planifiés (les autres rappels restent visibles). Les rôles ADMIN
+        // et ACCOUNTANT (full-view) voient tout ; ASSISTANTE_DIRECTION est déjà
+        // restreint à ses propres activités via activitiesForUserWhere ci-dessous.
+        if (session.role === 'MANAGER') {
+            return { OR: [{ forecastExpenseId: null }, { createdById: session.userId }] };
+        }
         return {};
+    }
     return activitiesForUserWhere(session.userId);
 }
 const activitySchema = zod_1.z.object({
@@ -60,6 +68,7 @@ const activitySchema = zod_1.z.object({
     programmeId: zod_1.z.number().int().positive().optional(),
     invoiceId: zod_1.z.number().int().positive().optional(),
     installmentId: zod_1.z.number().int().positive().optional(),
+    documentId: zod_1.z.number().int().positive().optional(),
 });
 function registerCrmIPC() {
     electron_1.ipcMain.handle('crm:listActivities', async (_event, { token, filters = {}, page = 1, limit = 30 }) => {
@@ -210,6 +219,7 @@ function registerCrmIPC() {
                     programmeId: d.programmeId ?? null,
                     invoiceId: d.invoiceId ?? null,
                     installmentId: d.installmentId ?? null,
+                    documentId: d.documentId ?? null,
                     createdById: session.userId,
                 },
             });

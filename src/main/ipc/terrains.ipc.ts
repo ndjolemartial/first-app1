@@ -36,11 +36,12 @@ const terrainSchema = z.object({
 });
 
 // Module Terrains : MANAGER+ (ACCOUNTANT inclus via checkRole) ont un accès complet.
-// AGENT et READONLY peuvent consulter uniquement les terrains DISPONIBLE (lecture seule).
+// AGENT, READONLY et ASSISTANTE_DIRECTION peuvent consulter uniquement les terrains
+// DISPONIBLE (lecture seule).
 const WRITE_ROLES = ['SUPER_ADMIN', 'ADMIN', 'MANAGER'];
 const READ_ROLES  = [...WRITE_ROLES, 'AGENT', 'ACCOUNTANT', 'READONLY'];
 /** Rôles disposant d'une vue globale (sans filtrage par statut). */
-const FULL_VIEW_ROLES = ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ACCOUNTANT', 'ASSISTANTE_DIRECTION'];
+const FULL_VIEW_ROLES = ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ACCOUNTANT'];
 function hasFullView(role: string): boolean {
   return FULL_VIEW_ROLES.includes(role);
 }
@@ -89,8 +90,26 @@ export function registerTerrainsIPC(): void {
       if (filters.statut) where.statut = filters.statut;
       if (filters.viabilise !== undefined) where.viabilise = filters.viabilise;
       if (filters.clientId) where.clientId = Number(filters.clientId);
-      // AGENT / READONLY ne voient que les terrains DISPONIBLE (statut imposé).
-      if (!hasFullView(session.role)) where.statut = 'DISPONIBLE';
+      if (filters.crmReferentScope) {
+        // Périmètre dédié au sélecteur « Terrain » du formulaire d'activité CRM :
+        //  — vue complète (SUPER_ADMIN / ADMIN / MANAGER / ACCOUNTANT) : tous les terrains ;
+        //  — autres rôles : terrains DISPONIBLE OU rattachés à un client dont ils sont référents.
+        const CRM_FULL_VIEW_ROLES = ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ACCOUNTANT'];
+        if (!CRM_FULL_VIEW_ROLES.includes(session.role)) {
+          where.AND = [
+            ...(where.AND ?? []),
+            {
+              OR: [
+                { statut: 'DISPONIBLE' },
+                { client: { is: { assignedToId: session.userId } } },
+              ],
+            },
+          ];
+        }
+      } else if (!hasFullView(session.role)) {
+        // AGENT / READONLY ne voient que les terrains DISPONIBLE (statut imposé).
+        where.statut = 'DISPONIBLE';
+      }
       if (filters.search) {
         where.OR = [
           { reference: { contains: filters.search } },

@@ -48,10 +48,21 @@ exports.SECRET_MASK = '••••••••';
 // portabilité des secrets dans une base partagée). Calculée à la demande pour
 // laisser le temps à `loadEnv` de renseigner `process.env`.
 let cachedKey = null;
+// Constante partagée par tous les builds (dev ET packagé) — garantit que les
+// secrets restent déchiffrables quel que soit le contexte d'exécution.
+const PORTABLE_KEY_FALLBACK = 'afrikimmo-app::portable-secret-key::v1';
+// Valeurs placeholder d'APP_SECRET_KEY à NE PAS utiliser comme clé : sinon le
+// dev (.env avec placeholder) dériverait une clé différente de l'app packagée
+// (sans .env), rendant les secrets mutuellement indéchiffrables.
+const APP_SECRET_PLACEHOLDERS = new Set([
+    'change-me-in-production',
+    'your-secret-key-here',
+]);
 function getPortableKey() {
     if (cachedKey)
         return cachedKey;
-    const material = (process.env.APP_SECRET_KEY ?? '').trim() || 'afrikimmo-app::portable-secret-key::v1';
+    const raw = (process.env.APP_SECRET_KEY ?? '').trim();
+    const material = (raw && !APP_SECRET_PLACEHOLDERS.has(raw)) ? raw : PORTABLE_KEY_FALLBACK;
     cachedKey = crypto_1.default.scryptSync(material, 'afrikimmo.settings.secret.salt.v1', 32);
     return cachedKey;
 }
@@ -244,6 +255,9 @@ exports.SettingsKeys = {
     // Conditions particulières (liste de textes multi-lignes, JSON array) — proposées
     // dans le formulaire de convention pour les types hérités.
     conventionConditionsParticulieres: 'conventions.conditionsParticulieres',
+    // Trésorerie — compte par défaut à débiter lors du paiement des salaires (RH/Paie).
+    // Identifiant de BankAccount (commun et actif) ; vide = aucun compte par défaut.
+    payrollDefaultAccountId: 'treasury.defaultSalaryAccount',
 };
 /** Liste des clés correspondant à des secrets chiffrés. */
 exports.SECRET_KEYS = new Set([

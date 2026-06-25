@@ -21,7 +21,7 @@ const schema = z.object({
   email: z.string().email('Email invalide'),
   login: z.string().optional(),
   password: z.string().min(6, 'Min. 6 caractères').optional().or(z.literal('')),
-  role: z.enum(['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ACCOUNTANT', 'ASSISTANTE_DIRECTION', 'AGENT', 'AGENT_TECHNIQUE', 'READONLY']),
+  role: z.enum(['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ACCOUNTANT', 'ASSISTANTE_DIRECTION', 'AGENT', 'AGENT_TECHNIQUE', 'RH', 'READONLY']),
   fonction: z.string().optional(),
   nomCommercial: z.string().optional(),
   phone: z.string().optional(),
@@ -46,6 +46,7 @@ const ROLE_OPTIONS = [
   { value: 'ASSISTANTE_DIRECTION', label: 'Assistante de Direction' },
   { value: 'AGENT_TECHNIQUE', label: 'Agent Technique' },
   { value: 'AGENT', label: 'Agent' },
+  { value: 'RH', label: 'RH / Paie' },
   { value: 'READONLY', label: 'Lecture seule' },
 ];
 

@@ -240,7 +240,7 @@ function buildInvoiceHtml(inv, tpl, company = null) {
     return `<!DOCTYPE html>
 <html lang="fr"><head><meta charset="utf-8"><style>
   * { box-sizing: border-box; }
-  body { font-family: 'Segoe UI', Arial, sans-serif; color: #0f172a; margin: 0; font-size: 12px; }
+  body { font-family: 'Segoe UI', Arial, sans-serif; color: #0f172a; margin: 0; font-size: 13px; }
   .head { display: flex; justify-content: space-between; align-items: flex-start; }
   .head .brand p { margin: 0; }
   .doc { text-align: right; }
@@ -248,13 +248,15 @@ function buildInvoiceHtml(inv, tpl, company = null) {
   .doc .ref { font-size: 13px; color: #475569; margin-top: 2px; }
   .badge { display: inline-block; margin-top: 6px; padding: 2px 10px; border-radius: 4px; font-size: 11px; font-weight: bold; }
   .parties { display: flex; justify-content: space-between; margin-top: 20px; gap: 24px; }
-  .parties h3 { font-size: 10px; text-transform: uppercase; color: #94a3b8; margin: 0 0 4px; }
+  .parties h3 { font-size: 11px; text-transform: uppercase; color: #475569; margin: 0 0 4px; }
   .parties .name { font-weight: bold; font-size: 13px; }
-  .meta { margin-top: 18px; display: flex; gap: 28px; font-size: 11px; }
-  .meta span { color: #94a3b8; }
+  .meta { margin-top: 18px; display: flex; gap: 28px; font-size: 12px; }
+  /* Titre au-dessus de la valeur, séparé par un trait fin unique (display:block
+     évite que le trait s'insère entre les lignes d'un titre sur deux lignes). */
+  .meta span { color: #475569; display: block; padding-bottom: 4px; margin-bottom: 2px; border-bottom: 1px solid #cbd5e1; }
   table.items { width: 100%; border-collapse: collapse; margin-top: 16px; }
   table.items thead { display: table-header-group; }
-  table.items th { text-align: left; padding: 6px 8px; font-size: 11px; }
+  table.items th { text-align: left; padding: 6px 8px; font-size: 12px; }
   table.items td { padding: 6px 8px; }
   table.items tr { break-inside: avoid; page-break-inside: avoid; }
   table.items .num { text-align: right; }
@@ -268,7 +270,7 @@ function buildInvoiceHtml(inv, tpl, company = null) {
   .totals div span:last-child { white-space: nowrap; }
   .totals .grand { font-weight: bold; font-size: 14px; color: ${accent}; padding-top: 6px; margin-top: 2px; }
   /* Le titre de section reste collé au bloc qui suit. */
-  .sec { margin-top: 24px; font-size: 10px; text-transform: uppercase; color: #94a3b8; break-after: avoid; page-break-after: avoid; }
+  .sec { margin-top: 24px; font-size: 11px; text-transform: uppercase; color: #475569; break-after: avoid; page-break-after: avoid; }
   .end-doc { margin-top: 28px; font-size: 11px; color: #0f172a; break-inside: avoid; page-break-inside: avoid; }
   .foot { margin-top: 32px; padding-top: 10px; font-size: 11px; color: #475569; break-inside: avoid; page-break-inside: avoid; }
   ${invoiceLayoutCss(layout, accent)}
@@ -294,14 +296,14 @@ function buildInvoiceHtml(inv, tpl, company = null) {
     </div>
   </div>
   <div class="meta">
-    <div><span>Type</span><br>${esc(INVOICE_TYPE_LABEL[inv.type] ?? inv.type)}</div>
-    <div><span>Date d'émission</span><br>${fmtDate(inv.issueDate)}</div>
-    <div><span>Date d'échéance</span><br>${fmtDate(inv.dueDate)}</div>
-    ${inv.paidAt ? `<div><span>Date de paiement</span><br>${fmtDate(inv.paidAt)}</div>` : ''}
+    <div><span>Type</span>${esc(INVOICE_TYPE_LABEL[inv.type] ?? inv.type)}</div>
+    <div><span>Date d'émission</span>${fmtDate(inv.issueDate)}</div>
+    <div><span>Date d'échéance</span>${fmtDate(inv.dueDate)}</div>
+    ${inv.paidAt ? `<div><span>Date de paiement</span>${fmtDate(inv.paidAt)}</div>` : ''}
     ${inv.convention
-        ? `<div><span>Convention</span><br>${esc(inv.convention.reference)}${inv.convention.lotsSouscrits ? `<br>${esc(inv.convention.lotsSouscrits)}` : ''}</div>`
+        ? `<div><span>Convention</span>${esc(inv.convention.reference)}${inv.convention.lotsSouscrits ? `<br>${esc(inv.convention.lotsSouscrits)}` : ''}</div>`
         : inv.detailsSouscription
-            ? `<div><span>Souscription</span><br>${esc(inv.detailsSouscription)}</div>`
+            ? `<div><span>Souscription</span>${esc(inv.detailsSouscription)}</div>`
             : ''}
   </div>
   <table class="items">
@@ -324,7 +326,7 @@ function buildInvoiceHtml(inv, tpl, company = null) {
     <div class="grand"><span>Reste à payer</span><span>${fmt(balance)}</span></div>
   </div>` : ''}
   ${inv.installmentRecap ? `
-  <div class="sec">Échéancier de la convention</div>
+  <div class="sec">Échéancier ${inv.conventionId ? 'de la convention' : 'de la souscription'}</div>
   <div class="totals recap">
     <div><span>Échéances réglées</span><span>${inv.installmentRecap.paidCount} / ${inv.installmentRecap.totalCount} — ${fmt(inv.installmentRecap.paidAmount)}</span></div>
     <div class="grand"><span>Solde des échéances restantes (${inv.installmentRecap.remainingCount})</span><span>${fmt(inv.installmentRecap.remainingAmount)}</span></div>
@@ -533,7 +535,16 @@ function registerAccountingIPC() {
             const session = (0, auth_service_1.getSession)(token);
             if (!session)
                 return { success: false, error: 'Session expirée' };
-            checkAccountingRole(session, READ_ROLES);
+            // Périmètre dédié au sélecteur « Facture » du formulaire d'activité CRM :
+            //  — vue complète (SUPER_ADMIN / ADMIN / MANAGER / ACCOUNTANT) : toutes les factures ;
+            //  — autres rôles : lecture restreinte aux factures des clients dont ils sont
+            //    référents. Ces rôles n'ont normalement aucun accès au module Comptabilité ;
+            //    le périmètre ci-dessous leur accorde une lecture strictement limitée.
+            const CRM_FULL_VIEW_ROLES = ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ACCOUNTANT'];
+            const crmReferentScope = !!filters.crmReferentScope && !CRM_FULL_VIEW_ROLES.includes(session.role);
+            if (!crmReferentScope) {
+                checkAccountingRole(session, READ_ROLES);
+            }
             const db = (0, db_service_1.getDb)();
             const where = { deletedAt: null };
             if (filters.type)
@@ -546,6 +557,8 @@ function registerAccountingIPC() {
                 where.clientId = filters.clientId;
             if (filters.conventionId)
                 where.conventionId = filters.conventionId;
+            if (crmReferentScope)
+                where.client = { is: { assignedToId: session.userId } };
             if (filters.search) {
                 where.OR = [
                     { reference: { contains: filters.search } },
@@ -920,11 +933,12 @@ function registerAccountingIPC() {
                 await syncInvoiceActivities(db, d.invoiceId, 'PAYEE');
             }
             logger_1.default.info(`Payment recorded: invoice=${d.invoiceId} amount=${d.amount}`);
-            // Accrual de commission sur encaissement d'une facture de VENTE comptant.
+            // Accrual de commission sur encaissement d'une facture de VENTE comptant
+            // ou d'APPORT INITIAL (l'apport fait partie du prix de vente encaissé).
             // L'assiette suit le cumul encaissé sur la facture (totalPaid). Les
             // factures d'échéance (ECHEANCE_VENTE) sont traitées par payInstallment ;
             // les autres types (frais, caution, avance…) ne génèrent pas de commission.
-            if (invoice.type === 'VENTE' && invoice.conventionId && invoice.convention) {
+            if ((invoice.type === 'VENTE' || invoice.type === 'APPORT_INITIAL') && invoice.conventionId && invoice.convention) {
                 try {
                     const rates = await (0, commission_service_1.getDefaultRates)(db);
                     const tr = (0, commission_service_1.commissionTypeAndRate)(invoice.convention.type, rates);
@@ -985,21 +999,54 @@ function registerAccountingIPC() {
                 if (country)
                     invoice.client.countryName = country.name;
             }
-            // Pour une facture d'échéance, joint le solde des échéances restantes de la convention.
+            // Pour une facture d'échéance, joint le solde des échéances restantes.
+            // — Convention : toutes les échéances de la convention.
+            // — Souscription héritée (sans convention) : toutes les échéances héritées
+            //   de la même souscription = même client + même jeu de terrains.
             let installmentRecap = null;
-            if (invoice.type === 'ECHEANCE_VENTE' && invoice.conventionId) {
+            const buildRecap = (active) => {
+                if (active.length === 0)
+                    return null;
+                const paid = active.filter((i) => i.status === 'PAYE');
+                const remaining = active.filter((i) => i.status !== 'PAYE');
+                return {
+                    totalCount: active.length,
+                    paidCount: paid.length,
+                    paidAmount: paid.reduce((s, i) => s + Number(i.amount), 0),
+                    remainingCount: remaining.length,
+                    remainingAmount: remaining.reduce((s, i) => s + Number(i.amount), 0),
+                };
+            };
+            // L'apport initial est facturé à l'ouverture : on y joint aussi l'échéancier
+            // de la convention pour rappeler au client le solde des échéances restantes.
+            const recapByConvention = invoice.type === 'ECHEANCE_VENTE' || invoice.type === 'APPORT_INITIAL';
+            if (recapByConvention && invoice.conventionId) {
                 const insts = await db.saleInstallment.findMany({ where: { conventionId: invoice.conventionId } });
-                const active = insts.filter((i) => i.status !== 'ANNULE');
-                if (active.length > 0) {
-                    const paid = active.filter((i) => i.status === 'PAYE');
-                    const remaining = active.filter((i) => i.status !== 'PAYE');
-                    installmentRecap = {
-                        totalCount: active.length,
-                        paidCount: paid.length,
-                        paidAmount: paid.reduce((s, i) => s + Number(i.amount), 0),
-                        remainingCount: remaining.length,
-                        remainingAmount: remaining.reduce((s, i) => s + Number(i.amount), 0),
-                    };
+                installmentRecap = buildRecap(insts.filter((i) => i.status !== 'ANNULE'));
+            }
+            else if (invoice.type === 'ECHEANCE_VENTE' && !invoice.conventionId) {
+                // Clé de souscription héritée : jeu de terrains trié (liens multiples,
+                // repli sur le terrain direct), identique à l'agrégation côté UI.
+                const terrainKey = (i) => {
+                    const ids = (i.terrainLinks ?? []).map((l) => l.terrain?.id).filter(Boolean);
+                    if (ids.length === 0 && i.terrainId)
+                        ids.push(i.terrainId);
+                    return [...ids].sort((a, b) => a - b).join(',');
+                };
+                const linksInclude = { terrainLinks: { select: { terrain: { select: { id: true } } } } };
+                // Échéance héritée rattachée à cette facture → identifie la souscription.
+                const paidInst = await db.saleInstallment.findFirst({
+                    where: { invoiceId: invoice.id, conventionId: null },
+                    include: linksInclude,
+                });
+                const cId = paidInst?.clientId ?? invoice.clientId;
+                if (paidInst && cId) {
+                    const key = terrainKey(paidInst);
+                    const all = await db.saleInstallment.findMany({
+                        where: { conventionId: null, clientId: cId },
+                        include: linksInclude,
+                    });
+                    installmentRecap = buildRecap(all.filter((i) => i.status !== 'ANNULE' && terrainKey(i) === key));
                 }
             }
             const template = await (0, invoice_templates_ipc_1.resolveInvoiceTemplate)(db, invoice.type);
@@ -1148,15 +1195,28 @@ function registerAccountingIPC() {
             return { success: false, error: error.message };
         }
     });
-    electron_1.ipcMain.handle('accounting:listInstallments', async (_event, { token }) => {
+    electron_1.ipcMain.handle('accounting:listInstallments', async (_event, { token, crmReferentScope }) => {
         try {
             const session = (0, auth_service_1.getSession)(token);
             if (!session)
                 return { success: false, error: 'Session expirée' };
-            checkAccountingRole(session, READ_ROLES);
+            // Périmètre dédié au sélecteur « Échéance » du formulaire d'activité CRM :
+            //  — vue complète (SUPER_ADMIN / ADMIN / MANAGER / ACCOUNTANT) : toutes les échéances ;
+            //  — autres rôles : lecture restreinte aux échéances des conventions dont le client
+            //    leur est rattaché comme référent. Ces rôles n'ont normalement aucun accès au
+            //    module Comptabilité ; le périmètre ci-dessous leur accorde une lecture limitée.
+            const CRM_FULL_VIEW_ROLES = ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ACCOUNTANT'];
+            const scoped = !!crmReferentScope && !CRM_FULL_VIEW_ROLES.includes(session.role);
+            if (!scoped) {
+                checkAccountingRole(session, READ_ROLES);
+            }
             const db = (0, db_service_1.getDb)();
+            const where = { conventionId: { not: null } };
+            if (scoped) {
+                where.convention = { is: { client: { is: { assignedToId: session.userId } } } };
+            }
             const data = await db.saleInstallment.findMany({
-                where: { conventionId: { not: null } },
+                where,
                 orderBy: [{ conventionId: 'asc' }, { installmentNumber: 'asc' }],
                 select: {
                     id: true,
@@ -1305,145 +1365,233 @@ function registerAccountingIPC() {
                     return { success: false, error: 'Compte de trésorerie introuvable' };
             }
             const paidAt = d.paidAt ? new Date(d.paidAt) : new Date();
-            const totalAmount = Number(installment.amount);
-            const alreadyPaid = Number(installment.paidAmount);
-            const remaining = Math.round((totalAmount - alreadyPaid) * 100) / 100;
-            if (!(remaining > 0))
+            const round2 = (n) => Math.round(n * 100) / 100;
+            const currentTotal = Number(installment.amount);
+            const currentRemaining = round2(currentTotal - Number(installment.paidAmount));
+            if (!(currentRemaining > 0))
                 return { success: false, error: 'Échéance déjà soldée' };
-            // Montant encaissé : précisé (paiement partiel) ou solde restant par défaut.
-            const payAmount = d.amount != null ? Math.round(d.amount * 100) / 100 : remaining;
+            // Montant encaissé : précisé ou solde restant de l'échéance par défaut.
+            const payAmount = d.amount != null ? round2(d.amount) : currentRemaining;
             if (payAmount <= 0)
                 return { success: false, error: 'Montant à encaisser invalide' };
-            if (payAmount - remaining > 0.001) {
-                return { success: false, error: `Le montant dépasse le reste dû (${remaining}).` };
-            }
-            const newPaid = Math.round((alreadyPaid + payAmount) * 100) / 100;
-            const fullyPaid = newPaid + 0.001 >= totalAmount;
-            const newStatus = fullyPaid ? 'PAYE' : 'PARTIEL';
-            const invoiceStatus = fullyPaid ? 'PAYEE' : 'PARTIEL';
-            // Référence de facture pré-calculée hors transaction (lecture seule).
-            const invoiceRef = installment.invoiceId ? null : await nextInvoiceRef(db);
-            const result = await db.$transaction(async (tx) => {
-                const updated = await tx.saleInstallment.update({
-                    where: { id: d.installmentId },
-                    data: {
-                        status: newStatus,
-                        paidAmount: newPaid,
-                        // paidAt n'est posée qu'au solde complet.
-                        paidAt: fullyPaid ? paidAt : null,
-                        paymentMethod: d.method,
-                        paymentRef: d.paymentRef,
-                        notes: d.notes,
-                    },
-                });
-                let invoiceId = installment.invoiceId;
-                if (invoiceRef) {
-                    // Première encaisse : crée la facture d'échéance (montant total dû),
-                    // avec un premier règlement (partiel ou intégral).
-                    const invoice = await tx.invoice.create({
-                        data: {
-                            reference: invoiceRef,
-                            type: 'ECHEANCE_VENTE',
-                            status: invoiceStatus,
-                            clientId: installmentClientId,
-                            conventionId: installment.conventionId,
-                            terrainId: installment.terrainId,
-                            subtotal: totalAmount,
-                            taxRate: 0,
-                            taxAmount: 0,
-                            total: totalAmount,
-                            issueDate: paidAt,
-                            dueDate: installment.dueDate,
-                            paidAt: fullyPaid ? paidAt : null,
-                            notes: d.notes,
-                            items: {
-                                create: [{
-                                        description: `Échéance n°${installment.installmentNumber} — ${installmentLabel}`,
-                                        quantity: 1,
-                                        unitPrice: totalAmount,
-                                        total: totalAmount,
-                                    }],
-                            },
-                            payments: {
-                                create: [{
-                                        amount: payAmount,
-                                        method: d.method,
-                                        paidAt,
-                                        reference: d.paymentRef,
-                                        notes: d.notes,
-                                        bankAccountId: d.bankAccountId ?? null,
-                                    }],
-                            },
-                        },
-                    });
-                    await tx.saleInstallment.update({
-                        where: { id: d.installmentId },
-                        data: { invoiceId: invoice.id },
-                    });
-                    invoiceId = invoice.id;
-                }
-                else if (invoiceId) {
-                    // Encaisses suivantes : ajoute un règlement à la facture existante et
-                    // met à jour son statut.
-                    await tx.payment.create({
-                        data: {
-                            invoiceId,
-                            amount: payAmount,
-                            method: d.method,
-                            paidAt,
-                            reference: d.paymentRef,
-                            notes: d.notes,
-                            bankAccountId: d.bankAccountId ?? null,
-                        },
-                    });
-                    await tx.invoice.update({
-                        where: { id: invoiceId },
-                        data: { status: invoiceStatus, paidAt: fullyPaid ? paidAt : null },
-                    });
-                }
-                // Règlement rattaché à un compte → mouvement de trésorerie (entrée).
-                if (d.bankAccountId) {
-                    await (0, treasury_service_1.recordTreasuryOperation)(tx, {
-                        bankAccountId: d.bankAccountId,
-                        direction: 'ENTREE',
-                        amount: payAmount,
-                        label: `Échéance n°${installment.installmentNumber} — ${installmentLabel}${fullyPaid ? '' : ' (partiel)'}`,
-                        operationDate: paidAt,
-                        categoryId: d.categoryId ?? null,
-                        paymentMethod: d.method,
-                        paymentRef: d.paymentRef,
-                        source: 'ECHEANCE',
-                        installmentId: d.installmentId,
-                        createdById: session.userId,
-                    });
-                }
-                return { updated, invoiceId };
+            const labelOf = (i) => installment.convention
+                ? `convention ${installment.convention.reference}`
+                : (i.detailsSouscription ?? i.terrain?.reference ?? installmentLabel);
+            const toChain = (i) => ({
+                id: i.id, installmentNumber: i.installmentNumber, amount: Number(i.amount),
+                paidAmount: Number(i.paidAmount), invoiceId: i.invoiceId, dueDate: i.dueDate,
+                terrainId: i.terrainId ?? null, label: labelOf(i),
             });
-            logger_1.default.info(`Installment payment: id=${d.installmentId} +${payAmount} (${newStatus}) ${installmentLabel} invoice=${result.invoiceId ?? '—'}`);
+            let siblings = [];
+            if (payAmount - currentRemaining > 0.001) {
+                if (installment.conventionId) {
+                    // Échéances suivantes de la même convention, non soldées / non annulées.
+                    siblings = await db.saleInstallment.findMany({
+                        where: {
+                            conventionId: installment.conventionId,
+                            status: { notIn: ['PAYE', 'ANNULE'] },
+                            installmentNumber: { gt: installment.installmentNumber },
+                        },
+                        orderBy: { installmentNumber: 'asc' },
+                    });
+                }
+                else if (installmentClientId) {
+                    // Échéances héritées : même souscription = même client + même jeu de
+                    // terrains (liens multiples, repli sur le terrain direct).
+                    const terrainKey = (i) => {
+                        const ids = (i.terrainLinks ?? []).map((l) => l.terrainId).filter(Boolean);
+                        if (ids.length === 0 && i.terrainId)
+                            ids.push(i.terrainId);
+                        return [...ids].sort((a, b) => a - b).join(',');
+                    };
+                    const linksInclude = {
+                        terrainLinks: { select: { terrainId: true } },
+                        terrain: { select: { reference: true } },
+                    };
+                    const self = await db.saleInstallment.findUnique({
+                        where: { id: installment.id }, include: linksInclude,
+                    });
+                    const key = terrainKey(self);
+                    const all = await db.saleInstallment.findMany({
+                        where: {
+                            conventionId: null,
+                            clientId: installmentClientId,
+                            status: { notIn: ['PAYE', 'ANNULE'] },
+                            installmentNumber: { gt: installment.installmentNumber },
+                        },
+                        orderBy: { installmentNumber: 'asc' },
+                        include: linksInclude,
+                    });
+                    siblings = all.filter((i) => terrainKey(i) === key);
+                }
+            }
+            const chain = [toChain(installment), ...siblings.map(toChain)];
+            // Le versement ne peut dépasser le total restant dû de la chaîne couvrable.
+            const totalDistributable = round2(chain.reduce((s, c) => s + (c.amount - c.paidAmount), 0));
+            if (payAmount - totalDistributable > 0.001) {
+                return { success: false, error: `Le montant dépasse le total des échéances restantes (${totalDistributable}).` };
+            }
+            const plan = [];
+            let left = payAmount;
+            for (const c of chain) {
+                const instRemaining = round2(c.amount - c.paidAmount);
+                if (instRemaining <= 0)
+                    continue;
+                const apply = round2(Math.min(left, instRemaining));
+                if (apply <= 0)
+                    break;
+                const newPaid = round2(c.paidAmount + apply);
+                plan.push({ ...c, apply, newPaid, fullyPaid: newPaid + 0.001 >= c.amount });
+                left = round2(left - apply);
+                if (left <= 0.001)
+                    break;
+            }
+            // Séquence de référence facture (incrémentée pour chaque facture créée).
+            const year = new Date().getFullYear();
+            const lastInv = await db.invoice.findFirst({
+                where: { reference: { startsWith: `FAC-${year}-` } },
+                orderBy: { reference: 'desc' },
+                select: { reference: true },
+            });
+            let seq = lastInv ? parseInt(lastInv.reference.split('-')[2], 10) : 0;
+            const result = await db.$transaction(async (tx) => {
+                const applied = [];
+                let currentUpdated = null;
+                let currentInvoiceId = null;
+                for (const p of plan) {
+                    const invStatus = p.fullyPaid ? 'PAYEE' : 'PARTIEL';
+                    const updated = await tx.saleInstallment.update({
+                        where: { id: p.id },
+                        data: {
+                            status: p.fullyPaid ? 'PAYE' : 'PARTIEL',
+                            paidAmount: p.newPaid,
+                            // paidAt n'est posée qu'au solde complet.
+                            paidAt: p.fullyPaid ? paidAt : null,
+                            paymentMethod: d.method,
+                            paymentRef: d.paymentRef,
+                            notes: d.notes,
+                        },
+                    });
+                    let invoiceId = p.invoiceId;
+                    if (!invoiceId) {
+                        // Première encaisse de l'échéance : crée la facture (montant total dû)
+                        // avec son premier règlement (partiel ou intégral).
+                        seq += 1;
+                        const invoice = await tx.invoice.create({
+                            data: {
+                                reference: `FAC-${year}-${String(seq).padStart(4, '0')}`,
+                                type: 'ECHEANCE_VENTE',
+                                status: invStatus,
+                                clientId: installmentClientId,
+                                conventionId: installment.conventionId,
+                                terrainId: p.terrainId,
+                                subtotal: p.amount,
+                                taxRate: 0,
+                                taxAmount: 0,
+                                total: p.amount,
+                                issueDate: paidAt,
+                                dueDate: p.dueDate,
+                                paidAt: p.fullyPaid ? paidAt : null,
+                                notes: d.notes,
+                                items: {
+                                    create: [{
+                                            description: `Échéance n°${p.installmentNumber} — ${p.label}`,
+                                            quantity: 1,
+                                            unitPrice: p.amount,
+                                            total: p.amount,
+                                        }],
+                                },
+                                payments: {
+                                    create: [{
+                                            amount: p.apply,
+                                            method: d.method,
+                                            paidAt,
+                                            reference: d.paymentRef,
+                                            notes: d.notes,
+                                            bankAccountId: d.bankAccountId ?? null,
+                                        }],
+                                },
+                            },
+                        });
+                        await tx.saleInstallment.update({ where: { id: p.id }, data: { invoiceId: invoice.id } });
+                        invoiceId = invoice.id;
+                    }
+                    else {
+                        // Échéance déjà partiellement facturée : ajoute un règlement et met à
+                        // jour le statut de la facture existante.
+                        await tx.payment.create({
+                            data: {
+                                invoiceId,
+                                amount: p.apply,
+                                method: d.method,
+                                paidAt,
+                                reference: d.paymentRef,
+                                notes: d.notes,
+                                bankAccountId: d.bankAccountId ?? null,
+                            },
+                        });
+                        await tx.invoice.update({
+                            where: { id: invoiceId },
+                            data: { status: invStatus, paidAt: p.fullyPaid ? paidAt : null },
+                        });
+                    }
+                    // Règlement rattaché à un compte → mouvement de trésorerie (entrée).
+                    if (d.bankAccountId) {
+                        await (0, treasury_service_1.recordTreasuryOperation)(tx, {
+                            bankAccountId: d.bankAccountId,
+                            direction: 'ENTREE',
+                            amount: p.apply,
+                            label: `Échéance n°${p.installmentNumber} — ${p.label}${p.fullyPaid ? '' : ' (partiel)'}`,
+                            operationDate: paidAt,
+                            categoryId: d.categoryId ?? null,
+                            paymentMethod: d.method,
+                            paymentRef: d.paymentRef,
+                            source: 'ECHEANCE',
+                            installmentId: p.id,
+                            createdById: session.userId,
+                        });
+                    }
+                    applied.push({ installmentId: p.id, newPaid: p.newPaid, fullyPaid: p.fullyPaid, invoiceId });
+                    if (p.id === d.installmentId) {
+                        currentUpdated = updated;
+                        currentInvoiceId = invoiceId;
+                    }
+                }
+                return { currentUpdated, currentInvoiceId, applied };
+            });
+            const coveredCount = result.applied.length;
+            logger_1.default.info(`Installment payment: id=${d.installmentId} +${payAmount} réparti sur ${coveredCount} échéance(s) ` +
+                `[${result.applied.map((a) => `#${a.installmentId}:${a.newPaid}${a.fullyPaid ? '✓' : '~'}`).join(', ')}]`);
             // Accrual de commission sur le montant encaissé (échéances de convention).
-            // L'assiette suit le cumul réellement encaissé sur l'échéance (newPaid),
-            // pas le coût total du bien. Hors transaction et non bloquant.
+            // L'assiette suit le cumul réellement encaissé sur chaque échéance, pas le
+            // coût total du bien. Hors transaction et non bloquant. Appliqué à chacune
+            // des échéances couvertes par le versement.
             if (installment.conventionId && installment.convention) {
                 try {
                     const rates = await (0, commission_service_1.getDefaultRates)(db);
                     const tr = (0, commission_service_1.commissionTypeAndRate)(installment.convention.type, rates);
                     const beneficiaryUserId = installment.convention.agentId ?? installment.convention.client?.assignedToId ?? null;
                     if (tr && beneficiaryUserId) {
-                        await (0, commission_service_1.accrueCollectionCommission)(db, {
-                            conventionId: installment.conventionId,
-                            installmentId: installment.id,
-                            beneficiaryUserId,
-                            transactionType: tr.transactionType,
-                            rate: tr.rate,
-                            collectedTotal: newPaid,
-                        });
+                        for (const a of result.applied) {
+                            await (0, commission_service_1.accrueCollectionCommission)(db, {
+                                conventionId: installment.conventionId,
+                                installmentId: a.installmentId,
+                                beneficiaryUserId,
+                                transactionType: tr.transactionType,
+                                rate: tr.rate,
+                                collectedTotal: a.newPaid,
+                            });
+                        }
                     }
                 }
                 catch (e) {
                     logger_1.default.error('accrueCollectionCommission (échéance) error', e?.message ?? e);
                 }
             }
-            return ser({ success: true, data: { ...result.updated, invoiceId: result.invoiceId } });
+            return ser({
+                success: true,
+                data: { ...result.currentUpdated, invoiceId: result.currentInvoiceId, coveredCount },
+            });
         }
         catch (error) {
             return { success: false, error: error.message };

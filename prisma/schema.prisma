@@ -33,6 +33,9 @@ model User {
   // Nom commercial / d'usage affiché sur les documents (devis…) en tant
   // qu'émetteur. À défaut, on retombe sur « nom + prénom ».
   nomCommercial  String?
+  // Signature personnelle (HTML) ajoutée aux messages « personnels » (envoi en
+  // tant que Particulier depuis le module Communication).
+  messageSignature String? @db.Text
   idNumber       String?
   civilite       CiviliteType?
   statutConjugal StatutConjugalType?
@@ -76,6 +79,12 @@ model User {
   communicationsSent   Communication[]     @relation("CommunicationSentBy")
   quotesAsAgent        Quote[]             @relation("QuoteAgent")
   quotesCreated        Quote[]             @relation("QuoteCreatedBy")
+  ownedDocumentFolders   DocumentFolder[]       @relation("FolderOwner")
+  documentFolderAccesses DocumentFolderAccess[] @relation("FolderAccessUser")
+  employee               Employee?              @relation("UserEmployee")
+  leaveDecisions         LeaveRequest[]         @relation("LeaveDecidedBy")
+  forecastExpensesCreated ForecastExpense[]     @relation("ForecastExpenseCreatedBy")
+  forecastExpensesSettled ForecastExpense[]     @relation("ForecastExpenseSettledBy")
 }
 
 enum UserRole {
@@ -86,6 +95,7 @@ enum UserRole {
   ASSISTANTE_DIRECTION
   AGENT
   AGENT_TECHNIQUE
+  RH
   READONLY
 }
 
@@ -1229,12 +1239,15 @@ model CrmActivity {
   installmentId  Int?
   projectId      Int?
   quoteId        Int?
+  documentId     Int?
+  forecastExpenseId Int?
   createdById    Int?
   createdAt      DateTime       @default(now())
   updatedAt      DateTime       @updatedAt
 
   user        User?                @relation("ActivityAssignedTo", fields: [userId], references: [id])
   createdBy   User?                @relation("ActivityCreatedBy", fields: [createdById], references: [id])
+  forecastExpense ForecastExpense? @relation(fields: [forecastExpenseId], references: [id])
   prospect    Prospect?            @relation(fields: [prospectId], references: [id])
   client      Client?              @relation(fields: [clientId], references: [id])
   owner       Owner?               @relation(fields: [ownerId], references: [id])
@@ -1247,6 +1260,7 @@ model CrmActivity {
   installment SaleInstallment?     @relation(fields: [installmentId], references: [id])
   project     Project?             @relation(fields: [projectId], references: [id])
   quote       Quote?               @relation(fields: [quoteId], references: [id])
+  document    Document?            @relation(fields: [documentId], references: [id])
 }
 
 enum ActivityType {
@@ -1437,6 +1451,7 @@ model Document {
   uploadedBy       User?                @relation("DocumentUploadedBy", fields: [uploadedById], references: [id])
   tags             DocumentTag[]
   auditLogs        DocumentAuditLog[]
+  activities       CrmActivity[]
 }
 
 // Catégorie documentaire — auto-référencée pour les sous-catégories.
@@ -1459,13 +1474,39 @@ model DocumentFolder {
   id        Int       @id @default(autoincrement())
   name      String
   parentId  Int?
+  // Type de dossier :
+  //  - GENERAL  : arborescence commune, visible par tous (comportement historique) ;
+  //  - PERSONAL : espace personnel d'un utilisateur (ownerId), privé sauf admin/manager ;
+  //  - SHARED   : dossier partagé, accessible aux utilisateurs listés (accesses).
+  kind      DocumentFolderKind @default(GENERAL)
+  // Propriétaire : utilisateur pour un dossier PERSONAL, créateur pour un SHARED.
+  ownerId   Int?
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
   deletedAt DateTime?
 
   parent    DocumentFolder?  @relation("FolderTree", fields: [parentId], references: [id])
   children  DocumentFolder[] @relation("FolderTree")
+  owner     User?            @relation("FolderOwner", fields: [ownerId], references: [id])
+  accesses  DocumentFolderAccess[]
   documents Document[]
+}
+
+enum DocumentFolderKind {
+  GENERAL
+  PERSONAL
+  SHARED
+}
+
+// Droit d'accès d'un utilisateur à un dossier partagé (lecture + dépôt).
+model DocumentFolderAccess {
+  folderId Int
+  userId   Int
+
+  folder DocumentFolder @relation(fields: [folderId], references: [id], onDelete: Cascade)
+  user   User           @relation("FolderAccessUser", fields: [userId], references: [id])
+
+  @@id([folderId, userId])
 }
 
 // Étiquette appliquée à un document (jointure réutilisant le modèle Tag).
@@ -1823,7 +1864,8 @@ model TreasuryCategory {
   updatedAt      DateTime          @updatedAt
   deletedAt      DateTime?
 
-  operations TreasuryOperation[]
+  operations       TreasuryOperation[]
+  forecastExpenses ForecastExpense[]
 }
 
 enum TreasuryDirection {
@@ -1848,6 +1890,8 @@ model TreasuryOperation {
   paymentId     Int?              // Paiement de facture rattaché (source FACTURE)
   installmentId Int?              // Échéance de vente rattachée (source ECHEANCE)
   commissionId  Int?              // Commission rattachée (source COMMISSION)
+  payslipId     Int?              // Bulletin de salaire rattaché (source PAIE)
+  forecastExpenseId Int?          // Charge prévisionnelle réglée (source CHARGE)
   budgetLineId  Int?              // Ligne budgétaire d'imputation (sorties uniquement)
   // Tiers de l'opération : bénéficiaire (« à destination de » pour une sortie)
   // ou émetteur (« en provenance de » pour une entrée). Facultatif.
@@ -1872,6 +1916,8 @@ model TreasuryOperation {
   lotissement Lotissement?         @relation(fields: [lotissementId], references: [id])
   programme   ProgrammeImmobilier? @relation(fields: [programmeId], references: [id])
   thirdParty  TreasuryThirdParty?  @relation(fields: [thirdPartyId], references: [id])
+  payslip     Payslip?             @relation(fields: [payslipId], references: [id])
+  forecastExpense ForecastExpense? @relation(fields: [forecastExpenseId], references: [id])
   documents   Document[]
 }
 
@@ -1896,6 +1942,48 @@ enum TreasurySource {
   FACTURE     // Générée par l'encaissement d'une facture
   ECHEANCE    // Générée par le règlement d'une échéance de vente
   COMMISSION  // Générée par le paiement d'une commission
+  PAIE        // Générée par le paiement d'un bulletin de salaire
+  CHARGE      // Générée par le règlement d'une charge prévisionnelle
+}
+
+// Charge / dépense prévisionnelle : montant à régler à une date prévue, dont
+// l'objet provient des objets de sortie de la trésorerie. Son règlement génère
+// une opération de trésorerie (sortie) et clôt le rappel CRM associé.
+model ForecastExpense {
+  id            Int                   @id @default(autoincrement())
+  uuid          String                @unique @default(cuid())
+  reference     String                @unique  // Ex: CHP-2026-0001
+  label         String                // Libellé de la charge
+  categoryId    Int                   // Objet de sortie (TreasuryCategory direction SORTIE)
+  amount        Decimal               @db.Decimal(15, 2)  // Montant prévisionnel
+  dueDate       DateTime              // Date prévue de règlement
+  status        ForecastExpenseStatus @default(PREVUE)
+  notes         String?               @db.Text
+  // Règlement effectif
+  settledAt     DateTime?
+  settledAmount Decimal?              @db.Decimal(15, 2)
+  paymentMethod PaymentMethod?
+  // Traçabilité
+  createdById   Int?                  // Planificateur (visibilité par rôle)
+  settledById   Int?
+  createdAt     DateTime              @default(now())
+  updatedAt     DateTime              @updatedAt
+  deletedAt     DateTime?
+
+  category   TreasuryCategory    @relation(fields: [categoryId], references: [id])
+  createdBy  User?               @relation("ForecastExpenseCreatedBy", fields: [createdById], references: [id])
+  settledBy  User?               @relation("ForecastExpenseSettledBy", fields: [settledById], references: [id])
+  operations TreasuryOperation[]
+  activities CrmActivity[]
+
+  @@index([categoryId])
+  @@index([createdById])
+}
+
+enum ForecastExpenseStatus {
+  PREVUE   // Planifiée, non réglée
+  REGLEE   // Réglée (opération de trésorerie générée)
+  ANNULEE  // Annulée
 }
 
 // ── BUDGETS ───────────────────────────────────────────────────
@@ -2043,4 +2131,305 @@ model ProjectPhoto {
   createdAt DateTime @default(now())
 
   project Project @relation(fields: [projectId], references: [id])
+}
+
+// ── RESSOURCES HUMAINES — PERSONNEL ───────────────────────────
+// Module RH/Paie (gestion conforme Côte d'Ivoire). Phase 1 : dossiers du
+// personnel et contrats de travail. Les bulletins de paie, congés et pointage
+// sont ajoutés dans les phases suivantes.
+model Employee {
+  id             Int                 @id @default(autoincrement())
+  uuid           String              @unique @default(cuid())
+  matricule      String              @unique // Ex: EMP-2026-0001
+  // État civil
+  civilite       CiviliteType?
+  firstName      String
+  lastName       String
+  sexe           EmployeeSexe?
+  birthDate      DateTime?
+  birthPlace     String?
+  nationality    String?             @default("CI")
+  maritalStatus  StatutConjugalType?
+  childrenCount  Int                 @default(0)
+  igrParts       Decimal             @default(1) @db.Decimal(4, 1) // nombre de parts IGR (quotient familial)
+  // Coordonnées
+  email          String?
+  phone          String?
+  mobile         String?
+  address        String?
+  city           String?
+  // Identité & protection sociale
+  idNumber       String? // numéro pièce d'identité
+  cnpsNumber     String? // numéro CNPS (sécurité sociale)
+  cmuNumber      String? // numéro CMU (couverture maladie universelle)
+  // Coordonnées bancaires (versement du salaire)
+  bankName       String?
+  bankRib        String?
+  // Poste
+  poste          String?
+  departement    String?
+  // Lien optionnel vers un compte utilisateur de l'application
+  userId         Int?                @unique
+  // Statut emploi
+  status         EmployeeStatus      @default(ACTIF)
+  hireDate       DateTime?
+  exitDate       DateTime?
+  exitReason     String?
+  photo          String?
+  notes          String?             @db.Text
+  createdAt      DateTime            @default(now())
+  updatedAt      DateTime            @updatedAt
+  deletedAt      DateTime?
+
+  user          User?                @relation("UserEmployee", fields: [userId], references: [id])
+  contracts     EmploymentContract[]
+  payslips      Payslip[]
+  leaveRequests LeaveRequest[]
+  attendance    AttendanceRecord[]
+}
+
+enum EmployeeSexe {
+  MASCULIN
+  FEMININ
+}
+
+enum EmployeeStatus {
+  ACTIF
+  SUSPENDU
+  CONGE
+  SORTI
+}
+
+model EmploymentContract {
+  id           Int            @id @default(autoincrement())
+  uuid         String         @unique @default(cuid())
+  reference    String         @unique // Ex: CTR-2026-0001
+  employeeId   Int
+  type         ContractType   @default(CDI)
+  status       ContractStatus @default(ACTIF)
+  poste        String?
+  categorie    String? // catégorie / classification professionnelle
+  startDate    DateTime
+  endDate      DateTime? // requis pour CDD / STAGE
+  trialEndDate DateTime? // fin de période d'essai
+  weeklyHours  Decimal?       @db.Decimal(5, 2) // durée hebdomadaire
+  baseSalary   Decimal        @db.Decimal(15, 2) // salaire de base mensuel brut
+  // Détail de rémunération inscrit au contrat (CDI/CDD). Saisi manuellement —
+  // valeurs négociées figurant dans la clause de rémunération.
+  sursalaire         Decimal? @db.Decimal(15, 2)
+  primeAnciennete    Decimal? @db.Decimal(15, 2)
+  grossSalary        Decimal? @db.Decimal(15, 2) // salaire brut (base + sursalaire + prime d'ancienneté)
+  its                Decimal? @db.Decimal(15, 2) // retenue ITS
+  cnps               Decimal? @db.Decimal(15, 2) // retenue CNPS
+  totalDeductions    Decimal? @db.Decimal(15, 2) // total des retenues
+  transportAllowance Decimal? @db.Decimal(15, 2) // prime de transport
+  netSalary          Decimal? @db.Decimal(15, 2) // salaire net à payer
+  notes        String?        @db.Text
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+  deletedAt    DateTime?
+
+  employee Employee  @relation(fields: [employeeId], references: [id])
+  payslips Payslip[]
+
+  @@index([employeeId])
+}
+
+enum ContractType {
+  CDI
+  CDD
+  STAGE
+  INTERIM
+  CONSULTANT
+  APPRENTISSAGE
+}
+
+enum ContractStatus {
+  BROUILLON
+  ACTIF
+  SUSPENDU
+  TERMINE
+  ROMPU
+}
+
+// ── RESSOURCES HUMAINES — PAIE (bulletins) ────────────────────
+// Calcul conforme Côte d'Ivoire (CNPS, ITS, CMU, charges patronales). Les taux
+// et barèmes sont paramétrables via AppSetting (clés payroll.*).
+model Payslip {
+  id              Int            @id @default(autoincrement())
+  uuid            String         @unique @default(cuid())
+  reference       String         @unique // BUL-YYYY-NNNN
+  employeeId      Int
+  contractId      Int?
+  periodYear      Int
+  periodMonth     Int            // 1-12
+  // Montants (FCFA)
+  baseSalary      Decimal        @db.Decimal(15, 2) // salaire de base
+  grossTaxable    Decimal        @db.Decimal(15, 2) // brut imposable
+  totalGains      Decimal        @db.Decimal(15, 2) // total des gains (brut + indemnités)
+  cnpsEmployee    Decimal        @db.Decimal(15, 2) // retenue CNPS salarié
+  its             Decimal        @db.Decimal(15, 2) // impôt sur traitements et salaires
+  cmuEmployee     Decimal        @db.Decimal(15, 2) // CMU part salarié
+  otherDeductions Decimal        @db.Decimal(15, 2) @default(0)
+  totalDeductions Decimal        @db.Decimal(15, 2)
+  netSalary       Decimal        @db.Decimal(15, 2) // net à payer
+  employerCharges Decimal        @db.Decimal(15, 2) // total charges patronales
+  employerCost    Decimal        @db.Decimal(15, 2) // coût total employeur
+  status          PayslipStatus  @default(BROUILLON)
+  paidAt          DateTime?
+  paymentMethod   PaymentMethod?
+  notes           String?        @db.Text
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+  deletedAt       DateTime?
+
+  employee   Employee            @relation(fields: [employeeId], references: [id])
+  contract   EmploymentContract? @relation(fields: [contractId], references: [id])
+  lines      PayslipLine[]
+  operations TreasuryOperation[]
+
+  @@unique([employeeId, periodYear, periodMonth])
+  @@index([employeeId])
+}
+
+enum PayslipStatus {
+  BROUILLON
+  VALIDE
+  PAYE
+  ANNULE
+}
+
+model PayslipLine {
+  id        Int             @id @default(autoincrement())
+  payslipId Int
+  type      PayslipLineType
+  label     String
+  base      Decimal?        @db.Decimal(15, 2)
+  rate      Decimal?        @db.Decimal(7, 4)
+  amount    Decimal         @db.Decimal(15, 2)
+  order     Int             @default(0)
+
+  payslip Payslip @relation(fields: [payslipId], references: [id], onDelete: Cascade)
+
+  @@index([payslipId])
+}
+
+enum PayslipLineType {
+  GAIN
+  RETENUE
+  CHARGE_PATRONALE
+  INFO
+}
+
+// Modèles éditables de contrats de travail (corps en HTML avec variables {{…}}).
+// Un modèle par défaut par type de contrat ; repli sur le modèle intégré si aucun.
+model ContractTemplate {
+  id        Int          @id @default(autoincrement())
+  uuid      String       @unique @default(cuid())
+  name      String
+  type      ContractType
+  body      String       @db.LongText
+  isDefault Boolean      @default(false)
+  isActive  Boolean      @default(true)
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+  deletedAt DateTime?
+}
+
+// Modèles éditables de bulletins de paie : 3 mises en page (MODELE_1/2/3),
+// en-tête / pied de page / couleur d'accent personnalisables.
+model PayslipTemplate {
+  id          Int                   @id @default(autoincrement())
+  uuid        String                @unique @default(cuid())
+  name        String
+  layout      PayslipTemplateLayout @default(MODELE_1)
+  headerHtml  String?               @db.LongText
+  footerHtml  String?               @db.LongText
+  accentColor String                @default("#1E3A5F")
+  isDefault   Boolean               @default(false)
+  isActive    Boolean               @default(true)
+  createdAt   DateTime              @default(now())
+  updatedAt   DateTime              @updatedAt
+}
+
+enum PayslipTemplateLayout {
+  MODELE_1
+  MODELE_2
+  MODELE_3
+}
+
+// ── RESSOURCES HUMAINES — CONGÉS & ABSENCES ───────────────────
+model LeaveType {
+  id             Int            @id @default(autoincrement())
+  code           String         @unique
+  name           String
+  isPaid         Boolean        @default(true)
+  affectsBalance Boolean        @default(false) // déduit du solde de congés payés
+  color          String?
+  isActive       Boolean        @default(true)
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+
+  requests LeaveRequest[]
+}
+
+model LeaveRequest {
+  id           Int         @id @default(autoincrement())
+  uuid         String      @unique @default(cuid())
+  reference    String      @unique // CGE-YYYY-NNNN
+  employeeId   Int
+  typeId       Int
+  startDate    DateTime
+  endDate      DateTime
+  days         Decimal     @db.Decimal(5, 1) // jours décomptés
+  reason       String?     @db.Text
+  status       LeaveStatus @default(EN_ATTENTE)
+  decidedById  Int?
+  decidedAt    DateTime?
+  decisionNote String?
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+  deletedAt    DateTime?
+
+  employee  Employee  @relation(fields: [employeeId], references: [id])
+  type      LeaveType @relation(fields: [typeId], references: [id])
+  decidedBy User?     @relation("LeaveDecidedBy", fields: [decidedById], references: [id])
+
+  @@index([employeeId])
+  @@index([typeId])
+}
+
+enum LeaveStatus {
+  EN_ATTENTE
+  APPROUVE
+  REFUSE
+  ANNULE
+}
+
+// ── RESSOURCES HUMAINES — POINTAGE / HEURES ───────────────────
+model AttendanceRecord {
+  id            Int              @id @default(autoincrement())
+  uuid          String           @unique @default(cuid())
+  employeeId    Int
+  date          DateTime         @db.Date
+  status        AttendanceStatus @default(PRESENT)
+  hoursWorked   Decimal          @default(0) @db.Decimal(5, 2)
+  overtimeHours Decimal          @default(0) @db.Decimal(5, 2)
+  notes         String?
+  createdAt     DateTime         @default(now())
+  updatedAt     DateTime         @updatedAt
+
+  employee Employee @relation(fields: [employeeId], references: [id])
+
+  @@unique([employeeId, date])
+  @@index([employeeId])
+}
+
+enum AttendanceStatus {
+  PRESENT
+  ABSENT
+  CONGE
+  REPOS
+  FERIE
+  MALADIE
 }

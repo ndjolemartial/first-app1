@@ -13,7 +13,12 @@ import {
   useGedTags, useCreateTag, useUpdateTag, useDeleteTag,
 } from '../hooks/useGed';
 import { hierOptions } from '../utils/gedTree';
+import SharedFoldersSection from '../components/SharedFoldersSection';
+import { useAuthStore } from '../../../shared/stores/auth.store';
 import { Plus, Trash2, Pencil, Check, X, FolderTree as FolderTreeIcon, Tags, Layers } from 'lucide-react';
+
+/** Rôles habilités à gérer les dossiers partagés. */
+const FOLDER_PRIVILEGED_ROLES = ['SUPER_ADMIN', 'ADMIN', 'MANAGER'];
 
 /** Champ d'édition en ligne (renommage). */
 function InlineEdit({ value, onSave, onCancel }: { value: string; onSave: (v: string) => void; onCancel: () => void }) {
@@ -142,6 +147,13 @@ export default function GedSettingsPage() {
   const [deleteTagTarget, setDeleteTagTarget] = useState<any>(null);
   const tags: any[] = tagRes?.data ?? [];
 
+  const role = useAuthStore((s) => s.user?.role) ?? '';
+  const canManageShared = FOLDER_PRIVILEGED_ROLES.includes(role);
+  const allFolders: any[] = folderRes?.data ?? [];
+  // Le TreeSection « Dossiers » ne gère que l'arborescence générale ; les
+  // dossiers personnels (auto) et partagés sont exclus.
+  const generalFolders = allFolders.filter((f) => !f.kind || f.kind === 'GENERAL');
+
   return (
     <PageLayout
       title="Organisation de la GED"
@@ -163,12 +175,14 @@ export default function GedSettingsPage() {
         <TreeSection
           title="Dossiers"
           icon={<FolderTreeIcon className="h-4 w-4 text-slate-500" />}
-          items={folderRes?.data ?? []}
+          items={generalFolders}
           creating={createFolder.isPending}
           onCreate={(name, parentId) => createFolder.mutate({ name, parentId })}
           onRename={(id, name) => updateFolder.mutate({ id, payload: { name } })}
           onDelete={(id) => deleteFolder.mutate(id)}
         />
+
+        {canManageShared && <SharedFoldersSection folders={allFolders} />}
 
         {/* Étiquettes */}
         <Card className="col-span-2">

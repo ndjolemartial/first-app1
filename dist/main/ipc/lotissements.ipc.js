@@ -34,9 +34,22 @@ const lotissementSchema = zod_1.z.object({
     titleNumber: zod_1.z.string().optional(),
 });
 // Module Lotissements : réservé aux MANAGER+ (ACCOUNTANT inclus via checkRole).
-// AGENT et READONLY n'ont aucun accès au module.
+// AGENT et READONLY n'ont aucun accès au module. ASSISTANTE_DIRECTION dispose
+// d'un accès en LECTURE seule (via l'équivalence MANAGER), mais ne peut ni créer,
+// ni modifier, ni supprimer un lotissement (voir checkWriteRole).
 const WRITE_ROLES = ['SUPER_ADMIN', 'ADMIN', 'MANAGER'];
 const READ_ROLES = ['SUPER_ADMIN', 'ADMIN', 'MANAGER'];
+/**
+ * Contrôle de rôle pour les écritures sur les lotissements (création, mise à jour,
+ * suppression). ASSISTANTE_DIRECTION, qui hérite normalement des permissions
+ * MANAGER, est explicitement exclue : lecture seule sur ce module.
+ */
+function checkWriteRole(session, allowedRoles) {
+    if (session.role === 'ASSISTANTE_DIRECTION') {
+        throw new Error('Permission insuffisante');
+    }
+    (0, auth_service_1.checkRole)(session, allowedRoles);
+}
 const ser = (v) => JSON.parse(JSON.stringify(v));
 /**
  * Génère la prochaine référence LOT-YYYY-NNNN.
@@ -127,7 +140,7 @@ function registerLotissementsIPC() {
             const session = (0, auth_service_1.getSession)(token);
             if (!session)
                 return { success: false, error: 'Session expirée' };
-            (0, auth_service_1.checkRole)(session, WRITE_ROLES);
+            checkWriteRole(session, WRITE_ROLES);
             const parsed = lotissementSchema.safeParse(payload);
             if (!parsed.success)
                 return { success: false, error: parsed.error.format() };
@@ -146,7 +159,7 @@ function registerLotissementsIPC() {
             const session = (0, auth_service_1.getSession)(token);
             if (!session)
                 return { success: false, error: 'Session expirée' };
-            (0, auth_service_1.checkRole)(session, WRITE_ROLES);
+            checkWriteRole(session, WRITE_ROLES);
             const parsed = lotissementSchema.partial().safeParse(payload);
             if (!parsed.success)
                 return { success: false, error: parsed.error.format() };
@@ -203,7 +216,7 @@ function registerLotissementsIPC() {
             const session = (0, auth_service_1.getSession)(token);
             if (!session)
                 return { success: false, error: 'Session expirée' };
-            (0, auth_service_1.checkRole)(session, ['SUPER_ADMIN', 'ADMIN', 'MANAGER']);
+            checkWriteRole(session, WRITE_ROLES);
             const db = (0, db_service_1.getDb)();
             await db.lotissement.update({ where: { id }, data: { deletedAt: new Date() } });
             return { success: true };

@@ -31,8 +31,9 @@ export default function AttestationDetailPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const role = useAuthStore((s) => s.user?.role) ?? '';
-  // Écriture réservée à MANAGER+. AGENT en consultation seule.
-  const canWrite = ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ACCOUNTANT', 'ASSISTANTE_DIRECTION'].includes(role);
+  // Écriture réservée à MANAGER+ (ACCOUNTANT inclus). AGENT et
+  // ASSISTANTE_DIRECTION en consultation seule.
+  const canWrite = ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ACCOUNTANT'].includes(role);
   const { data: res, isLoading } = useAttestation(Number(id));
   const deleteAttestation = useDeleteAttestation();
   const [showDelete, setShowDelete] = useState(false);

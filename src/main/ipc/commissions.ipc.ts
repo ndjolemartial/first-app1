@@ -162,6 +162,8 @@ const commissionInclude = {
   },
   user: { select: { id: true, firstName: true, lastName: true, role: true, fonction: true } },
   referrer: { select: { id: true, firstName: true, lastName: true, companyName: true } },
+  // Facture d'origine : permet de distinguer une commission d'apport initial.
+  invoice: { select: { type: true } },
 } as const;
 
 /**

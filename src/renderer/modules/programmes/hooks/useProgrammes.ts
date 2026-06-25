@@ -5,10 +5,16 @@ import { toast } from '../../../shared/components/ui/Toast';
 const ipc = () => window.electron.programmes;
 const token = () => useAuthStore.getState().token!;
 
-export function useProgrammes(filters: object = {}, page = 1, limit = 20) {
+export function useProgrammes(
+  filters: object = {},
+  page = 1,
+  limit = 20,
+  options: { enabled?: boolean } = {},
+) {
   return useQuery({
     queryKey: ['programmes', filters, page],
     queryFn: () => ipc().list(token(), filters, page, limit),
+    enabled: options.enabled ?? true,
   });
 }
 
