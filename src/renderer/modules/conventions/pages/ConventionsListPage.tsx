@@ -27,6 +27,7 @@ const TYPE_OPTIONS = [
   { value: 'RESILIATION', label: 'Résiliation' },
   { value: 'AVENANT_DELAI_HERITE', label: 'Avenant Délai - convention héritée' },
   { value: 'AVENANT_RESILIATION_HERITE', label: 'Résiliation - convention héritée' },
+  { value: 'AVENANT_TRANSFERT_SITE_HERITE', label: 'Avenant transfert de Site ou de Lot - convention héritée' },
 ];
 
 const STATUS_OPTIONS = [
@@ -54,6 +55,7 @@ const TYPE_LABEL: Record<string, string> = {
   SOUSCRIPTION: 'Souscription', AVENANT: 'Avenant', RESILIATION: 'Résiliation',
   AVENANT_DELAI_HERITE: 'Avenant délai (hérité)',
   AVENANT_RESILIATION_HERITE: 'Résiliation (hérité)',
+  AVENANT_TRANSFERT_SITE_HERITE: 'Avenant transfert site/lot (hérité)',
 };
 
 const AMENDMENT_TYPE_LABEL: Record<string, string> = {

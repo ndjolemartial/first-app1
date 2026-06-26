@@ -31,6 +31,7 @@ const TYPE_LABEL: Record<string, string> = {
   SOUSCRIPTION: 'Souscription', AVENANT: 'Avenant', RESILIATION: 'Résiliation',
   AVENANT_DELAI_HERITE: 'Avenant Délai - convention héritée',
   AVENANT_RESILIATION_HERITE: 'Résiliation - convention héritée',
+  AVENANT_TRANSFERT_SITE_HERITE: 'Avenant transfert de Site ou de Lot - convention héritée',
 };
 const AMENDMENT_NATURE_LABEL: Record<string, string> = {
   PROLONGATION_DELAI: 'Avenant de prolongation de délai',

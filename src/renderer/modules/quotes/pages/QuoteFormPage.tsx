@@ -14,6 +14,7 @@ import { useTerrains } from '../../terrains/hooks/useTerrains';
 import { useProperties } from '../../properties/hooks/useProperties';
 import { QUOTE_TYPE_LABELS } from '../utils/quoteTemplate';
 import { formatCurrency, formatPersonName } from '../../../shared/utils/format';
+import { makeEntitySearch } from '../../../shared/utils/entitySearch';
 import { useAuthStore } from '../../../shared/stores/auth.store';
 import CatalogPicker, { CatalogPick } from '../../../shared/components/CatalogPicker';
 import { useCatalog } from '../../../shared/hooks/useCatalog';
@@ -85,6 +86,7 @@ export default function QuoteFormPage() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const currentUserId = useAuthStore((s) => s.user?.id);
+  const token = useAuthStore((s) => s.token)!;
 
   const { data: res } = useQuote(isEdit ? Number(id) : 0);
   const create = useCreateQuote();
@@ -182,6 +184,40 @@ export default function QuoteFormPage() {
   const terrainOptions = [{ value: '', label: '— Choisir un terrain —' }, ...(terrainsRes?.data ?? []).map((t: any) => ({ value: String(t.id), label: `${t.reference}${t.numeroParcelle ? ` — parc. ${t.numeroParcelle}` : ''}` }))];
   const propertyOptions = [{ value: '', label: '— Choisir un bien —' }, ...(propertiesRes?.data ?? []).map((p: any) => ({ value: String(p.id), label: `${p.reference} — ${p.address ?? ''}` }))];
 
+  // Recherche côté serveur : l'élément s'affiche quel que soit le volume.
+  const searchClients = useMemo(
+    () =>
+      makeEntitySearch(
+        (filters, page, limit) => window.electron.clients.list(token, filters, page, limit),
+        (c: any) => ({ value: String(c.id), label: formatPersonName(c, '') }),
+      ),
+    [token],
+  );
+  const searchProspects = useMemo(
+    () =>
+      makeEntitySearch(
+        (filters, page, limit) => window.electron.prospects.list(token, filters, page, limit),
+        (p: any) => ({ value: String(p.id), label: `${p.firstName ?? ''} ${p.lastName ?? ''}`.trim() }),
+      ),
+    [token],
+  );
+  const searchTerrains = useMemo(
+    () =>
+      makeEntitySearch(
+        (filters, page, limit) => window.electron.terrains.list(token, filters, page, limit),
+        (t: any) => ({ value: String(t.id), label: `${t.reference}${t.numeroParcelle ? ` — parc. ${t.numeroParcelle}` : ''}` }),
+      ),
+    [token],
+  );
+  const searchProperties = useMemo(
+    () =>
+      makeEntitySearch(
+        (filters, page, limit) => window.electron.properties.list(token, filters, page, limit),
+        (p: any) => ({ value: String(p.id), label: `${p.reference} — ${p.address ?? ''}` }),
+      ),
+    [token],
+  );
+
   const setLine = (idx: number, patch: Partial<Line>) =>
     setItems((prev) => prev.map((l, i) => (i === idx ? { ...l, ...patch } : l)));
   const addLine = () => setItems((prev) => [...prev, { designation: '', category: '', quantity: '1', unitPrice: '0' }]);
@@ -245,8 +281,8 @@ export default function QuoteFormPage() {
               options={[{ value: 'CLIENT', label: 'Client' }, { value: 'PROSPECT', label: 'Prospect' }]}
               onChange={(e) => setRecipientType(e.target.value as any)} />
             {recipientType === 'CLIENT'
-              ? <SearchSelect label="Client *" options={clientOptions} value={clientId} onChange={setClientId} placeholder="Rechercher un client…" />
-              : <SearchSelect label="Prospect *" options={prospectOptions} value={prospectId} onChange={setProspectId} placeholder="Rechercher un prospect…" />}
+              ? <SearchSelect label="Client *" options={clientOptions} value={clientId} onChange={setClientId} onSearch={searchClients} placeholder="Rechercher un client…" />
+              : <SearchSelect label="Prospect *" options={prospectOptions} value={prospectId} onChange={setProspectId} onSearch={searchProspects} placeholder="Rechercher un prospect…" />}
             <Select label="Type de devis *" options={TYPE_OPTIONS} value={type} onChange={(e) => setType(e.target.value)} />
             <Input label="Validité (jusqu'au)" type="date" value={validUntil} onChange={(e) => setValidUntil(e.target.value)} />
             <Select label="Bien concerné" value={assetType}
@@ -254,8 +290,8 @@ export default function QuoteFormPage() {
               onChange={(e) => setAssetType(e.target.value as any)} />
             <Input label="Objet du devis" value={objet} onChange={(e) => setObjet(e.target.value)}
               placeholder="Ex. : Aménagement de villa, Étude de viabilisation…" maxLength={255} />
-            {assetType === 'TERRAIN' && <SearchSelect label="Terrain" options={terrainOptions} value={terrainId} onChange={setTerrainId} placeholder="Rechercher un terrain…" />}
-            {assetType === 'PROPERTY' && <SearchSelect label="Bien" options={propertyOptions} value={propertyId} onChange={setPropertyId} placeholder="Rechercher un bien…" />}
+            {assetType === 'TERRAIN' && <SearchSelect label="Terrain" options={terrainOptions} value={terrainId} onChange={setTerrainId} onSearch={searchTerrains} placeholder="Rechercher un terrain…" />}
+            {assetType === 'PROPERTY' && <SearchSelect label="Bien" options={propertyOptions} value={propertyId} onChange={setPropertyId} onSearch={searchProperties} placeholder="Rechercher un bien…" />}
           </div>
         </Card>
 

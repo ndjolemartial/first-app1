@@ -1,5 +1,5 @@
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -156,8 +156,21 @@ export default function TerrainFormPage() {
   const create = useCreateTerrain();
   const update = useUpdateTerrain();
   const { data: lotsRes } = useLotissements({}, 1, 200);
-  const { data: clientsRes } = useClients({}, 1, 200);
+  // Liste initiale (vue par défaut du sélecteur, sans saisie) — la recherche
+  // d'un attributaire passe ensuite par le backend (`searchClients`), donc
+  // l'élément cherché s'affiche quel que soit le volume de la base, sans
+  // dépendre d'une limite de page côté client.
+  const { data: clientsRes } = useClients({}, 1, 50);
   const { data: programmesRes } = useProgrammes({}, 1, 200);
+
+  // Recherche distante des clients pour le champ Attributaire : interroge la
+  // base au fil de la frappe (filtre serveur), au lieu de filtrer une page
+  // figée préchargée. Garantit l'affichage de n'importe quel client, ancien ou
+  // au-delà de toute limite de pagination.
+  const searchClients = useCallback(async (q: string) => {
+    const res: any = await window.electron.clients.list(token, q ? { search: q } : {}, 1, 50);
+    return (res?.data ?? []).map((c: any) => ({ value: String(c.id), label: formatPersonName(c) }));
+  }, [token]);
 
   const [scanFiles, setScanFiles] = useState<Partial<Record<ScanKey, File>>>({});
   const [existingDocs, setExistingDocs] = useState<Record<string, any>>({});
@@ -186,12 +199,17 @@ export default function TerrainFormPage() {
     { value: '', label: '— Sélectionner un lotissement —' },
     ...(lotsRes?.data ?? []).map((l: any) => ({ value: String(l.id), label: `${l.reference} — ${l.nom} (${l.ville})` })),
   ];
+  // Base d'options : placeholder + attributaire déjà rattaché (édition) — pour
+  // afficher son libellé même s'il est hors de la liste initiale — + liste
+  // initiale récente. La recherche complète est déléguée à `searchClients`.
   const clientOptions = [
     { value: '', label: '— Aucun attributaire —' },
-    ...(clientsRes?.data ?? []).map((c: any) => ({
-      value: String(c.id),
-      label: formatPersonName(c),
-    })),
+    ...(res?.data?.client
+      ? [{ value: String(res.data.client.id), label: formatPersonName(res.data.client) }]
+      : []),
+    ...(clientsRes?.data ?? [])
+      .filter((c: any) => c.id !== res?.data?.client?.id)
+      .map((c: any) => ({ value: String(c.id), label: formatPersonName(c) })),
   ];
 
   const programmeOptions = [
@@ -464,6 +482,7 @@ export default function TerrainFormPage() {
                 name="clientId"
                 label="Attributaire (obligatoire pour Réservé / Vendu / Sous option)"
                 options={clientOptions}
+                onSearch={searchClients}
                 error={errors.clientId?.message}
               />
             )}

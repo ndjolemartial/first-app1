@@ -94,6 +94,12 @@ export const ATTESTATION_VARIABLE_GROUPS: VariableGroup[] = [
       { token: 'convention.nombreTerrains', label: 'Nombre de terrains rattachés' },
       { token: 'convention.nombreTerrains.enLettres', label: 'Nombre de terrains rattachés (en lettres)' },
       { token: 'convention.lotsSouscrits', label: 'Énumération des lots souscrits' },
+      { token: 'convention.lotissementAnterieur.nom', label: 'Nom du lotissement antérieur' },
+      { token: 'convention.lotissementAnterieur.ville', label: 'Ville du lotissement antérieur' },
+      { token: 'convention.coutTotalLotsAnterieurs', label: 'Coût total des lots antérieurs souscrits' },
+      { token: 'convention.coutTotalLotsAnterieurs.enLettres', label: 'Coût total des lots antérieurs souscrits (en lettres)' },
+      { token: 'convention.coutTotalBiensAnterieurs', label: 'Coût Total biens antérieurs' },
+      { token: 'convention.coutTotalBiensAnterieurs.enLettres', label: 'Coût Total biens antérieurs (en lettres)' },
       { token: 'convention.fraisOuvertureDossier', label: "Frais d'ouverture de dossier" },
       { token: 'convention.fraisOuvertureDossier.enLettres', label: "Frais d'ouverture de dossier (en lettres)" },
       { token: 'convention.montantSouscription', label: 'Montant de souscription' },
@@ -332,6 +338,28 @@ export function resolveAttestationVariables(
       a.convention?.terrains?.[0]?.terrain?.lotissement?.nom ?? '',
     'convention.lotissement.ville':
       a.convention?.terrains?.[0]?.terrain?.lotissement?.ville ?? '',
+    // Lotissement antérieur — pris sur le premier terrain ANTÉRIEUR rattaché
+    // à la convention liée (champ « Terrains antérieurs rattachés »).
+    'convention.lotissementAnterieur.nom':
+      a.convention?.priorTerrains?.[0]?.terrain?.lotissement?.nom ?? '',
+    'convention.lotissementAnterieur.ville':
+      a.convention?.priorTerrains?.[0]?.terrain?.lotissement?.ville ?? '',
+    // Coût total des lots antérieurs = somme des prix de vente des terrains
+    // antérieurs rattachés à la convention liée. Vide si aucun n'est valorisé.
+    'convention.coutTotalLotsAnterieurs': (() => {
+      const total = (a.convention?.priorTerrains ?? [])
+        .reduce((s: number, l: any) => s + (Number(l.terrain?.prixVente) || 0), 0);
+      return total > 0 ? formatCurrency(total) : '';
+    })(),
+    'convention.coutTotalLotsAnterieurs.enLettres': (() => {
+      const total = (a.convention?.priorTerrains ?? [])
+        .reduce((s: number, l: any) => s + (Number(l.terrain?.prixVente) || 0), 0);
+      return total > 0 ? moneyToFrenchWords(total) : '';
+    })(),
+    // Coût total des biens antérieurs — saisi manuellement sur la convention
+    // liée (avenant de transfert de site d'une convention héritée).
+    'convention.coutTotalBiensAnterieurs': money(a.convention?.priorTotalBiens),
+    'convention.coutTotalBiensAnterieurs.enLettres': moneyL(a.convention?.priorTotalBiens),
     // Montant de souscription = prix de vente (`saleAmount`) de la convention liée.
     'convention.montantSouscription': money(a.convention?.saleAmount),
     'convention.montantSouscription.enLettres': moneyL(a.convention?.saleAmount),

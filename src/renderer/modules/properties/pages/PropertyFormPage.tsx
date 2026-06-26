@@ -1,5 +1,5 @@
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useForm, useWatch } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -20,6 +20,7 @@ import { useAuthStore } from '../../../shared/stores/auth.store';
 import MapLinkField from '../../../shared/components/MapLinkField';
 import PriceTierEditor from '../../../shared/components/forms/PriceTierEditor';
 import { formatPersonName } from '../../../shared/utils/format';
+import { makeEntitySearch } from '../../../shared/utils/entitySearch';
 import { Save } from 'lucide-react';
 
 // Statuts pour lesquels un client rattaché est obligatoire.
@@ -164,6 +165,24 @@ export default function PropertyFormPage() {
     })),
   ];
 
+  // Recherche côté serveur : l'élément s'affiche quel que soit le volume.
+  const searchOwners = useMemo(
+    () =>
+      makeEntitySearch(
+        (filters, page, limit) => window.electron.owners.list(token, filters, page, limit),
+        (o: any) => ({ value: String(o.id), label: formatPersonName(o, '') }),
+      ),
+    [token],
+  );
+  const searchClients = useMemo(
+    () =>
+      makeEntitySearch(
+        (filters, page, limit) => window.electron.clients.list(token, filters, page, limit),
+        (c: any) => ({ value: String(c.id), label: formatPersonName(c, '') }),
+      ),
+    [token],
+  );
+
   const { register, handleSubmit, reset, setValue, control, formState: { errors, isSubmitting } } = useForm<
     z.input<typeof schema>,
     any,
@@ -281,7 +300,7 @@ export default function PropertyFormPage() {
 
           <div className="grid grid-cols-2 gap-4 mt-4">
             {sourceType === 'OWNER' && (
-              <FormSearchSelect control={control} name="ownerId" label="Propriétaire" options={ownerOptions} />
+              <FormSearchSelect control={control} name="ownerId" label="Propriétaire" options={ownerOptions} onSearch={searchOwners} />
             )}
             {sourceType === 'PROGRAMME' && (
               <FormSearchSelect control={control} name="programmeId" label="Programme immobilier" options={programmeOptions} />
@@ -302,6 +321,7 @@ export default function PropertyFormPage() {
                 name="clientId"
                 label={statusNeedsClient(currentStatus ?? '') ? 'Client rattaché *' : 'Client rattaché'}
                 options={clientOptions}
+                onSearch={searchClients}
                 error={errors.clientId?.message as string | undefined}
               />
             </div>

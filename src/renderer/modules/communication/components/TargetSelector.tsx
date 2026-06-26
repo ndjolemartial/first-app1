@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import SearchSelect, { SearchSelectOption } from '../../../shared/components/ui/SearchSelect';
 import Button from '../../../shared/components/ui/Button';
 import { useAuthStore } from '../../../shared/stores/auth.store';
+import { makeEntitySearch } from '../../../shared/utils/entitySearch';
 import { useClients } from '../../clients/hooks/useClients';
 import { useOwners } from '../../owners/hooks/useOwners';
 import { useConventions } from '../../conventions/hooks/useConventions';
@@ -104,6 +105,29 @@ export default function TargetSelector({ channel, value, onChange, onParticulier
     }));
   }, [kind, clientsRes, ownersRes, conventionsRes]);
 
+  // Recherche côté serveur pour les entités à fort volume (Client / Propriétaire).
+  // Le `toOption` réplique exactement le format de libellé des préchargements ci-dessus.
+  const searchClients = useMemo(
+    () => makeEntitySearch(
+      (filters, page, limit) => window.electron.clients.list(token!, filters, page, limit),
+      (c: any) => ({ value: String(c.id), label: clientLabel(c) }),
+    ),
+    [token],
+  );
+  const searchOwners = useMemo(
+    () => makeEntitySearch(
+      (filters, page, limit) => window.electron.owners.list(token!, filters, page, limit),
+      (o: any) => ({ value: String(o.id), label: ownerLabel(o) }),
+    ),
+    [token],
+  );
+  // Sélection dynamique selon l'onglet courant ; les conventions restent en
+  // filtrage local (hors périmètre de la recherche serveur demandée).
+  const onSearch =
+    kind === 'CLIENT' ? searchClients
+  : kind === 'OWNER'  ? searchOwners
+                      : undefined;
+
   const handleSelect = async (idStr: string) => {
     if (!idStr) { onChange(null); return; }
     setError(null);
@@ -173,6 +197,7 @@ export default function TargetSelector({ channel, value, onChange, onParticulier
       ) : (
         <SearchSelect
           options={options}
+          onSearch={onSearch}
           value=""
           onChange={handleSelect}
           disabled={resolving}

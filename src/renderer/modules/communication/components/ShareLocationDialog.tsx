@@ -9,6 +9,7 @@ import { useProspects } from '../../prospects/hooks/useProspects';
 import { useReferrers } from '../../commissions/hooks/useCommissions';
 import { toast } from '../../../shared/components/ui/Toast';
 import { formatPersonName } from '../../../shared/utils/format';
+import { makeEntitySearch } from '../../../shared/utils/entitySearch';
 import { Send, Mail, MessageSquare, User, UserCheck, Handshake, MapPin, Lock, Settings as SettingsIcon } from 'lucide-react';
 
 type EntityType = 'LOTISSEMENT' | 'TERRAIN' | 'PROPERTY';
@@ -68,6 +69,34 @@ export default function ShareLocationDialog({ open, onClose, entityType, entityI
       label: r.companyName || `${r.firstName} ${r.lastName}`.trim() || `Apporteur #${r.id}`,
     }));
   }, [recipientType, clientsRes, prospectsRes, referrersRes]);
+
+  // Recherche côté serveur pour Client / Prospect (entités à fort volume).
+  // Le `toOption` réplique exactement le format de libellé des préchargements ci-dessus.
+  const searchClients = useMemo(
+    () => makeEntitySearch(
+      (filters, page, limit) => window.electron.clients.list(token, filters, page, limit),
+      (c: any) => ({
+        value: String(c.id),
+        label: c.type === 'ENTREPRISE'
+          ? (c.entreprise || `Client #${c.id}`)
+          : formatPersonName(c) || `Client #${c.id}`,
+      }),
+    ),
+    [token],
+  );
+  const searchProspects = useMemo(
+    () => makeEntitySearch(
+      (filters, page, limit) => window.electron.prospects.list(token, filters, page, limit),
+      (p: any) => ({ value: String(p.id), label: formatPersonName(p) || `Prospect #${p.id}` }),
+    ),
+    [token],
+  );
+  // Sélection dynamique selon l'onglet ; les apporteurs (REFERRER) restent en
+  // filtrage local — hors périmètre (entité Commission/Referrer, pas owner).
+  const onSearch =
+    recipientType === 'CLIENT'   ? searchClients
+  : recipientType === 'PROSPECT' ? searchProspects
+                                 : undefined;
 
   // Aperçu en lecture seule : dès que (entité + destinataire + canal) sont
   // sélectionnés, le serveur applique le modèle et renvoie le message rendu.
@@ -183,6 +212,7 @@ export default function ShareLocationDialog({ open, onClose, entityType, entityI
           </div>
           <SearchSelect
             options={options}
+            onSearch={onSearch}
             value={recipientId}
             onChange={setRecipientId}
             placeholder={

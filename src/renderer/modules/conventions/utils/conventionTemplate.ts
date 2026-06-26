@@ -32,6 +32,17 @@ export const CONVENTION_VARIABLE_GROUPS: VariableGroup[] = [
       { token: 'convention.nombreTerrains', label: 'Nombre de terrains rattachés' },
       { token: 'convention.nombreTerrains.enLettres', label: 'Nombre de terrains rattachés (en lettres)' },
       { token: 'convention.lotsSouscrits', label: 'Énumération des lots souscrits' },
+      { token: 'convention.lotsAnterieursSouscrits', label: 'Énumération des lots antérieurs souscrits' },
+      { token: 'convention.lotissementAnterieur.nom', label: 'Nom du lotissement antérieur' },
+      { token: 'convention.lotissementAnterieur.ville', label: 'Ville du lotissement antérieur' },
+      { token: 'convention.coutTotalLotsAnterieurs', label: 'Coût total des lots antérieurs souscrits' },
+      { token: 'convention.coutTotalLotsAnterieurs.enLettres', label: 'Coût total des lots antérieurs souscrits (en lettres)' },
+      { token: 'convention.totalVersementsAnterieurs', label: 'Total versements antérieurs' },
+      { token: 'convention.totalVersementsAnterieurs.enLettres', label: 'Total versements antérieurs (en lettres)' },
+      { token: 'convention.soldeAnterieur', label: 'Solde antérieur' },
+      { token: 'convention.soldeAnterieur.enLettres', label: 'Solde antérieur (en lettres)' },
+      { token: 'convention.coutTotalBiensAnterieurs', label: 'Coût Total biens antérieurs' },
+      { token: 'convention.coutTotalBiensAnterieurs.enLettres', label: 'Coût Total biens antérieurs (en lettres)' },
       { token: 'convention.prixVente', label: 'Prix de vente' },
       { token: 'convention.prixVente.enLettres', label: 'Prix de vente (en lettres)' },
       { token: 'convention.apportInitial', label: 'Apport initial' },
@@ -161,6 +172,7 @@ const TYPE_LABELS: Record<string, string> = {
   SOUSCRIPTION: 'Souscription', AVENANT: 'Avenant', RESILIATION: 'Résiliation',
   AVENANT_DELAI_HERITE: 'Avenant Délai - convention héritée',
   AVENANT_RESILIATION_HERITE: 'Résiliation - convention héritée',
+  AVENANT_TRANSFERT_SITE_HERITE: 'Avenant transfert de Site ou de Lot - convention héritée',
 };
 const STATUS_LABELS: Record<string, string> = {
   BROUILLON: 'Brouillon', ACTIVE: 'Actif', EXPIRE: 'Expiré',
@@ -328,6 +340,9 @@ export function resolveConventionVariables(
   const date = (v: any) => (v ? formatDate(v) : '');
   // Liste des terrains / biens rattachés (table pivot) — concaténation lisible des champs.
   const terrains: any[] = (c.terrains ?? []).map((l: any) => l.terrain).filter(Boolean);
+  // Terrains ANTÉRIEURS rattachés (avenant de transfert de site) — source de la
+  // variable {{convention.lotsAnterieursSouscrits}}.
+  const priorTerrains: any[] = (c.priorTerrains ?? []).map((l: any) => l.terrain).filter(Boolean);
   const properties: any[] = (c.properties ?? []).map((l: any) => l.property).filter(Boolean);
   const joinComma = (xs: (string | null | undefined)[]) =>
     xs.filter((x) => x != null && x !== '').join(', ');
@@ -349,6 +364,30 @@ export function resolveConventionVariables(
     'convention.nombreTerrains': String(terrains.length),
     'convention.nombreTerrains.enLettres': numL(terrains.length),
     'convention.lotsSouscrits': lotsEnumeration(terrains),
+    'convention.lotsAnterieursSouscrits': lotsEnumeration(priorTerrains),
+    // Lotissement antérieur — pris sur le premier terrain ANTÉRIEUR rattaché
+    // (champ « Terrains antérieurs rattachés » du formulaire de convention).
+    // Les terrains antérieurs partagent le même lotissement (contrainte métier).
+    'convention.lotissementAnterieur.nom': priorTerrains[0]?.lotissement?.nom ?? '',
+    'convention.lotissementAnterieur.ville': priorTerrains[0]?.lotissement?.ville ?? '',
+    // Coût total des lots antérieurs = somme des prix de vente des terrains
+    // antérieurs rattachés. Chaîne vide si aucun terrain antérieur valorisé.
+    'convention.coutTotalLotsAnterieurs': (() => {
+      const total = priorTerrains.reduce((s, t) => s + (Number(t.prixVente) || 0), 0);
+      return total > 0 ? formatCurrency(total) : '';
+    })(),
+    'convention.coutTotalLotsAnterieurs.enLettres': (() => {
+      const total = priorTerrains.reduce((s, t) => s + (Number(t.prixVente) || 0), 0);
+      return total > 0 ? moneyToFrenchWords(total) : '';
+    })(),
+    // Total des versements antérieurs / solde antérieur — saisis manuellement
+    // sur l'avenant de transfert de site d'une convention héritée.
+    'convention.totalVersementsAnterieurs': money(c.priorTotalVersements),
+    'convention.totalVersementsAnterieurs.enLettres': moneyL(c.priorTotalVersements),
+    'convention.soldeAnterieur': money(c.priorSolde),
+    'convention.soldeAnterieur.enLettres': moneyL(c.priorSolde),
+    'convention.coutTotalBiensAnterieurs': money(c.priorTotalBiens),
+    'convention.coutTotalBiensAnterieurs.enLettres': moneyL(c.priorTotalBiens),
     'convention.prixVente': money(c.saleAmount),
     'convention.prixVente.enLettres': moneyL(c.saleAmount),
     'convention.apportInitial': money(c.apportInitial),

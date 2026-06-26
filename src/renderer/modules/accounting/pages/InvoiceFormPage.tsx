@@ -1,5 +1,5 @@
 import { useNavigate, useParams } from 'react-router-dom';
-import { useEffect } from 'react';
+import { useEffect, useMemo } from 'react';
 import { useForm, useFieldArray } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -14,6 +14,8 @@ import { useInvoice, useCreateInvoice } from '../hooks/useAccounting';
 import { useClients } from '../../clients/hooks/useClients';
 import { useConventions } from '../../conventions/hooks/useConventions';
 import { formatPersonName } from '../../../shared/utils/format';
+import { makeEntitySearch } from '../../../shared/utils/entitySearch';
+import { useAuthStore } from '../../../shared/stores/auth.store';
 import CatalogPicker from '../../../shared/components/CatalogPicker';
 import { Save, Plus, Trash2 } from 'lucide-react';
 
@@ -58,6 +60,7 @@ export default function InvoiceFormPage() {
   const { id } = useParams<{ id?: string }>();
   const isEdit = !!id;
   const navigate = useNavigate();
+  const token = useAuthStore((s) => s.token)!;
   const { data: res } = useInvoice(isEdit ? Number(id) : 0);
   const create = useCreateInvoice();
   const { data: clientsRes } = useClients({}, 1, 500);
@@ -91,6 +94,16 @@ export default function InvoiceFormPage() {
       label: formatPersonName(c, ''),
     })),
   ];
+
+  // Recherche côté serveur : l'élément s'affiche quel que soit le volume.
+  const searchClients = useMemo(
+    () =>
+      makeEntitySearch(
+        (filters, page, limit) => window.electron.clients.list(token, filters, page, limit),
+        (c: any) => ({ value: String(c.id), label: formatPersonName(c, '') }),
+      ),
+    [token],
+  );
 
   const conventionOptions = [
     { value: '', label: '— Convention (optionnel) —' },
@@ -158,7 +171,7 @@ export default function InvoiceFormPage() {
             <Input label="Date d'échéance *" type="date" error={errors.dueDate?.message} {...register('dueDate')} />
           </div>
           <div className="grid grid-cols-2 gap-4 mt-4">
-            <FormSearchSelect control={control} name="clientId" label="Client" options={clientOptions} />
+            <FormSearchSelect control={control} name="clientId" label="Client" options={clientOptions} onSearch={searchClients} />
             <FormSearchSelect control={control} name="conventionId" label="Convention liée" options={conventionOptions} />
           </div>
         </Card>

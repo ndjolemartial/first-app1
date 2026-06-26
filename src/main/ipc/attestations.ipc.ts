@@ -172,6 +172,22 @@ const INCLUDE = {
           },
         },
       },
+      // Terrains ANTÉRIEURS rattachés à la convention — nécessaires pour
+      // résoudre {{convention.lotissementAnterieur.nom|ville}} et le coût total
+      // des lots antérieurs dans le modèle d'attestation (champ « Terrains
+      // antérieurs rattachés »).
+      priorTerrains: {
+        orderBy: { order: 'asc' as const },
+        include: {
+          terrain: {
+            select: {
+              id: true, reference: true, numeroIlot: true, numeroParcelle: true,
+              surface: true, prixVente: true,
+              lotissement: { select: { id: true, nom: true, ville: true } },
+            },
+          },
+        },
+      },
       // Échéancier de la convention liée — utilisé pour résoudre
       // {{avenant.echeancier}} lorsque la convention est un avenant
       // de transfert de site en paiement échelonné.

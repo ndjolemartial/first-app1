@@ -46,6 +46,14 @@ interface SearchSelectProps {
   name?: string;
   id?: string;
   className?: string;
+  /**
+   * Recherche distante optionnelle. Si fournie, la frappe déclenche un appel
+   * (débattu ~250 ms) qui renvoie les options correspondantes : le filtrage
+   * n'est plus borné aux options préchargées — l'élément recherché s'affiche
+   * **quel que soit le volume** de la base. Les `options` passées restent la
+   * vue par défaut (liste initiale + libellé de l'élément déjà sélectionné).
+   */
+  onSearch?: (query: string) => Promise<SearchSelectOption[]>;
 }
 
 /** Normalise une chaîne pour une recherche insensible à la casse et aux accents. */
@@ -77,6 +85,7 @@ export default function SearchSelect({
   name,
   id,
   className,
+  onSearch,
 }: SearchSelectProps) {
   const autoId = useId();
   const fieldId = id ?? `searchselect-${autoId}`;
@@ -89,20 +98,67 @@ export default function SearchSelect({
   const [query, setQuery] = useState('');
   const [highlight, setHighlight] = useState(0);
 
+  // Mode recherche distante : résultats renvoyés par le backend + indicateur de
+  // chargement. `onSearch` est référencé via un ref pour ne pas relancer l'effet
+  // à chaque rendu (les parents passent souvent une fonction inline).
+  const [remoteOptions, setRemoteOptions] = useState<SearchSelectOption[]>([]);
+  const [loading, setLoading] = useState(false);
+  const onSearchRef = useRef(onSearch);
+  onSearchRef.current = onSearch;
+
+  // On dépend uniquement de [query, open] : `onSearch` est appelé via le ref,
+  // ce qui permet aux parents de passer une closure inline réactive (ex. filtres
+  // métier dépendant de l'état) sans relancer l'effet en boucle à chaque rendu.
+  const hasSearch = !!onSearch;
+  useEffect(() => {
+    if (!hasSearch || !open) return;
+    let cancelled = false;
+    setLoading(true);
+    const handle = window.setTimeout(() => {
+      onSearchRef.current?.(query)
+        .then((res) => { if (!cancelled) setRemoteOptions(res); })
+        .catch(() => { if (!cancelled) setRemoteOptions([]); })
+        .finally(() => { if (!cancelled) setLoading(false); });
+    }, 250);
+    return () => { cancelled = true; window.clearTimeout(handle); };
+  }, [query, open, hasSearch]);
+
   // L'option « vide » sert de libellé indicatif, pas d'élément sélectionnable.
   const emptyOption = options.find((o) => o.value === '');
-  const realOptions = useMemo(() => options.filter((o) => o.value !== ''), [options]);
-  const selected = realOptions.find((o) => o.value === value);
+  const baseOptions = useMemo(() => options.filter((o) => o.value !== ''), [options]);
+  // En mode distant, on fusionne les options préchargées (dont l'élément déjà
+  // sélectionné) avec les résultats du backend, dédupliqués par `value`.
+  const realOptions = useMemo(() => {
+    if (!onSearch) return baseOptions;
+    const byValue = new Map<string, SearchSelectOption>();
+    for (const o of baseOptions) byValue.set(o.value, o);
+    for (const o of remoteOptions) if (o.value !== '') byValue.set(o.value, o);
+    return Array.from(byValue.values());
+  }, [baseOptions, remoteOptions, onSearch]);
   const resolvedPlaceholder = placeholder ?? emptyOption?.label ?? 'Sélectionner…';
 
+  // Conserve le libellé de l'élément sélectionné même s'il sort des derniers
+  // résultats distants (sinon l'input afficherait un libellé vide après une
+  // nouvelle recherche).
+  const [selectedSnapshot, setSelectedSnapshot] = useState<SearchSelectOption | null>(null);
+  useEffect(() => {
+    if (!value) { setSelectedSnapshot(null); return; }
+    const found = realOptions.find((o) => o.value === value);
+    if (found) setSelectedSnapshot(found);
+  }, [value, realOptions]);
+  const selected = realOptions.find((o) => o.value === value)
+    ?? (selectedSnapshot?.value === value ? selectedSnapshot : undefined);
+
   const filtered = useMemo(() => {
+    // Mode distant : le backend a déjà filtré, on affiche ses résultats tels quels.
+    if (onSearch) return remoteOptions.filter((o) => o.value !== '');
     const q = normalize(query);
-    if (!q) return realOptions;
-    return realOptions.filter(
+    if (!q) return baseOptions;
+    return baseOptions.filter(
       (o) => normalize(o.label).includes(q)
         || (o.searchText ? normalize(o.searchText).includes(q) : false),
     );
-  }, [realOptions, query]);
+  }, [baseOptions, remoteOptions, query, onSearch]);
 
   // Ferme la liste lors d'un clic à l'extérieur du composant.
   useEffect(() => {
@@ -139,6 +195,7 @@ export default function SearchSelect({
   };
 
   const commit = (opt: SearchSelectOption) => {
+    setSelectedSnapshot(opt);
     onChange(opt.value);
     setOpen(false);
     setQuery('');
@@ -253,7 +310,9 @@ export default function SearchSelect({
             role="listbox"
             className="absolute z-30 mt-1 max-h-60 w-full overflow-auto rounded-lg border border-slate-200 bg-white py-1 shadow-lg"
           >
-            {filtered.length === 0 ? (
+            {loading && filtered.length === 0 ? (
+              <li className="px-3 py-2 text-sm text-slate-400">Recherche…</li>
+            ) : filtered.length === 0 ? (
               <li className="px-3 py-2 text-sm text-slate-400">Aucun résultat</li>
             ) : (
               filtered.map((opt, i) => (
@@ -302,6 +361,8 @@ interface FormSearchSelectProps<T extends FieldValues> {
   rules?: Omit<RegisterOptions<T, Path<T>>, 'valueAsNumber' | 'valueAsDate' | 'setValueAs' | 'disabled'>;
   /** Notifié après mise à jour de la valeur — pour les effets de bord (pré-remplissage…). */
   onValueChange?: (value: string) => void;
+  /** Recherche distante optionnelle (voir {@link SearchSelectProps.onSearch}). */
+  onSearch?: (query: string) => Promise<SearchSelectOption[]>;
 }
 
 /**

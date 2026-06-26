@@ -448,6 +448,7 @@ model Terrain {
   photos      TerrainPhoto[]
   activities  CrmActivity[]
   conventionLinks ConventionTerrain[]
+  priorConventionLinks ConventionPriorTerrain[]
   attestations Attestation[]
   invoices    Invoice[]
   installments SaleInstallment[]
@@ -593,7 +594,8 @@ model Convention {
   endDate              DateTime?
   signedAt             DateTime?
   // Date de la convention héritée (importée de la base antérieure) — renseignée
-  // pour les types AVENANT_DELAI_HERITE et AVENANT_RESILIATION_HERITE.
+  // pour les types AVENANT_DELAI_HERITE, AVENANT_RESILIATION_HERITE et
+  // AVENANT_TRANSFERT_SITE_HERITE.
   priorConventionDate  DateTime?
   // Conditions particulières (texte multi-lignes) choisies dans le formulaire de
   // convention (types hérités) parmi la liste configurée dans les Paramètres.
@@ -610,6 +612,15 @@ model Convention {
   // de site / changement de lot lorsque le nouveau lot induit un complément
   // à payer par le client (différence de prix, frais d'avenant…).
   additionalAmount     Decimal?         @db.Decimal(15, 2)
+  // Total des versements antérieurs et solde antérieur — saisis manuellement
+  // pour l'avenant de transfert de site/lot d'une convention HÉRITÉE
+  // (AVENANT_TRANSFERT_SITE_HERITE), où la convention initiale n'existe pas
+  // dans le système et ne permet pas de calculer ces montants automatiquement.
+  priorTotalVersements Decimal?         @db.Decimal(15, 2)
+  priorSolde           Decimal?         @db.Decimal(15, 2)
+  // Coût total des biens antérieurs — saisi manuellement pour le même avenant
+  // de transfert de site/lot d'une convention HÉRITÉE.
+  priorTotalBiens      Decimal?         @db.Decimal(15, 2)
   paymentDay           Int?
   paymentMethod        PaymentMethod    @default(ESPECE)
   paymentModalites     PaymentModalites @default(CASH)
@@ -623,6 +634,11 @@ model Convention {
   // valeur que la variable de template {{convention.lotsSouscrits}}). Stockée
   // pour être affichée sur les factures en face de la référence de convention.
   lotsSouscrits        String?          @db.Text
+  // Énumération des lots ANTÉRIEURS souscrits, figée à l'édition (même valeur que
+  // la variable de template {{convention.lotsAnterieursSouscrits}}). Renseignée
+  // pour l'avenant de transfert de site / changement de lot (hérité ou non) :
+  // énumère les terrains du champ « Terrains antérieurs rattachés ».
+  lotsAnterieursSouscrits String?       @db.Text
   notes                String?          @db.Text
   createdAt            DateTime         @default(now())
   updatedAt            DateTime         @updatedAt
@@ -630,6 +646,7 @@ model Convention {
 
   properties       ConventionProperty[]
   terrains         ConventionTerrain[]
+  priorTerrains    ConventionPriorTerrain[]
   client           Client         @relation("ConventionClient", fields: [clientId], references: [id])
   secondaryClient  Client?        @relation("ConventionSecondaryClient", fields: [secondaryClientId], references: [id])
   agent            User?          @relation("AgentConventions", fields: [agentId], references: [id])
@@ -674,6 +691,22 @@ model ConventionTerrain {
   @@index([terrainId])
 }
 
+// Liaison Convention ↔ Terrain ANTÉRIEUR (avenant de transfert de site /
+// changement de lot) : terrains précédemment rattachés, distincts des terrains
+// rattachés courants. Même structure que ConventionTerrain.
+model ConventionPriorTerrain {
+  conventionId Int
+  terrainId    Int
+  order        Int      @default(0)
+  createdAt    DateTime @default(now())
+
+  convention Convention @relation(fields: [conventionId], references: [id], onDelete: Cascade)
+  terrain    Terrain    @relation(fields: [terrainId], references: [id])
+
+  @@id([conventionId, terrainId])
+  @@index([terrainId])
+}
+
 enum ConventionType {
   RENTAL_UNFURNISHED
   RENTAL_FURNISHED
@@ -685,6 +718,7 @@ enum ConventionType {
   RESILIATION
   AVENANT_DELAI_HERITE
   AVENANT_RESILIATION_HERITE
+  AVENANT_TRANSFERT_SITE_HERITE
 }
 
 enum ConventionAssetType {

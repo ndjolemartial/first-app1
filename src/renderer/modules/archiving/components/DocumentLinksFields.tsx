@@ -1,7 +1,8 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import SearchSelect from '../../../shared/components/ui/SearchSelect';
 import { useAuthStore } from '../../../shared/stores/auth.store';
 import { formatPersonName } from '../../../shared/utils/format';
+import { makeEntitySearch } from '../../../shared/utils/entitySearch';
 
 /** Champ de rattachement d'un document : couvre les 14 entités cibles. */
 export type DocumentLinks = {
@@ -144,25 +145,114 @@ export default function DocumentLinksFields({ values, onChange, compact = false,
     (o) => `${o.reference} · ${o.label}`,
   );
 
+  // ── Recherche serveur pour les entités en fort volume (client, propriétaire,
+  // prospect, bien, terrain). Le `toOption` réplique exactement le libellé
+  // utilisé par le préchargement `useEntityOptions` correspondant ci-dessus.
+  const searchClients = useMemo(
+    () => makeEntitySearch(
+      (filters, page, limit) => window.electron.clients.list(token, filters, page, limit),
+      (c) => ({ value: String(c.id), label: personLabel(c, `Client #${c.id}`) }),
+    ),
+    [token],
+  );
+  const searchOwners = useMemo(
+    () => makeEntitySearch(
+      (filters, page, limit) => window.electron.owners.list(token, filters, page, limit),
+      (o) => ({ value: String(o.id), label: personLabel(o, `Propriétaire #${o.id}`) }),
+    ),
+    [token],
+  );
+  const searchProspects = useMemo(
+    () => makeEntitySearch(
+      (filters, page, limit) => window.electron.prospects.list(token, filters, page, limit),
+      (p) => ({ value: String(p.id), label: personLabel(p, `Prospect #${p.id}`) }),
+    ),
+    [token],
+  );
+  const searchProperties = useMemo(
+    () => makeEntitySearch(
+      (filters, page, limit) => window.electron.properties.list(token, filters, page, limit),
+      (p) => ({ value: String(p.id), label: p.reference }),
+    ),
+    [token],
+  );
+  const searchTerrains = useMemo(
+    () => makeEntitySearch(
+      (filters, page, limit) => window.electron.terrains.list(token, filters, page, limit),
+      (t) => {
+        const loc = [
+          t.numeroIlot ? `Îlot ${t.numeroIlot}` : '',
+          t.numeroParcelle ? `Lot ${t.numeroParcelle}` : '',
+        ].filter(Boolean).join(', ');
+        return {
+          value: String(t.id),
+          label: `${t.reference}${loc ? ` — ${loc}` : ''}${t.lotissement?.nom ? ` — ${t.lotissement.nom}` : ''}`,
+        };
+      },
+    ),
+    [token],
+  );
+
+  // ── Recherche serveur pour les autres entités rattachables (référence/nom).
+  // Endpoints confirmés supportant `{ search }` + pagination. `users` est exclu
+  // (liste restreinte par rôle, sans pagination → filtrage local conservé).
+  const searchReferrers = useMemo(() => makeEntitySearch(
+    (f, p, l) => window.electron.commissions.listReferrers(token, f, p, l),
+    (r) => ({ value: String(r.id), label: r.companyName || personLabel(r, `Apporteur #${r.id}`) }),
+  ), [token]);
+  const searchConventions = useMemo(() => makeEntitySearch(
+    (f, p, l) => window.electron.conventions.list(token, f, p, l),
+    (c) => { const cn = personLabel(c.client, ''); return { value: String(c.id), label: cn ? `${c.reference} — ${cn}` : c.reference }; },
+  ), [token]);
+  const searchInvoices = useMemo(() => makeEntitySearch(
+    (f, p, l) => window.electron.accounting.getInvoices(token, f, p, l),
+    (i) => { const cn = personLabel(i.client, ''); return { value: String(i.id), label: cn ? `${i.reference} — ${cn}` : i.reference }; },
+  ), [token]);
+  const searchAttestations = useMemo(() => makeEntitySearch(
+    (f, p, l) => window.electron.attestations.list(token, f, p, l),
+    (a) => ({ value: String(a.id), label: a.reference }),
+  ), [token]);
+  const searchCommissions = useMemo(() => makeEntitySearch(
+    (f, p, l) => window.electron.commissions.list(token, f, p, l),
+    (c) => ({ value: String(c.id), label: c.reference }),
+  ), [token]);
+  const searchTreasuryOperations = useMemo(() => makeEntitySearch(
+    (f, p, l) => window.electron.treasury.listOperations(token, f, p, l),
+    (o) => ({ value: String(o.id), label: `${o.reference} · ${o.label}` }),
+  ), [token]);
+  const searchLotissements = useMemo(() => makeEntitySearch(
+    (f, p, l) => window.electron.lotissements.list(token, f, p, l),
+    (l) => ({ value: String(l.id), label: `${l.reference} · ${l.nom}` }),
+  ), [token]);
+  const searchProgrammes = useMemo(() => makeEntitySearch(
+    (f, p, l) => window.electron.programmes.list(token, f, p, l),
+    (p) => ({ value: String(p.id), label: `${p.reference} · ${p.nom}` }),
+  ), [token]);
+  const searchProjects = useMemo(() => makeEntitySearch(
+    (f, p, l) => window.electron.projects.list(token, f, p, l),
+    (p) => ({ value: String(p.id), label: `${p.reference} · ${p.nom}` }),
+  ), [token]);
+
   const opts = (list: SelectOption[], placeholder = '— Aucun —') =>
     [{ value: '', label: placeholder }, ...list];
 
-  const fields: Array<[keyof DocumentLinks, string, SelectOption[]]> = [
-    ['clientId',      'Client',              clients],
-    ['ownerId',       'Propriétaire',        owners],
-    ['prospectId',    'Prospect',            prospects],
-    ['referrerId',    "Apporteur d'affaires", referrers],
+  type EntitySearch = (query: string) => Promise<SelectOption[]>;
+  const fields: Array<[keyof DocumentLinks, string, SelectOption[], EntitySearch?]> = [
+    ['clientId',      'Client',              clients,    searchClients],
+    ['ownerId',       'Propriétaire',        owners,     searchOwners],
+    ['prospectId',    'Prospect',            prospects,  searchProspects],
+    ['referrerId',    "Apporteur d'affaires", referrers, searchReferrers],
     ['linkedUserId',  'Utilisateur',         users],
-    ['propertyId',    'Bien',                properties],
-    ['terrainId',     'Terrain',             terrains],
-    ['lotissementId', 'Lotissement',         lotissements],
-    ['programmeId',   'Programme',           programmes],
-    ['projectId',     'Projet',              projects],
-    ['conventionId',  'Convention',          conventions],
-    ['invoiceId',     'Facture',             invoices],
-    ['attestationId', 'Attestation',         attestations],
-    ['commissionId',  'Commission',          commissions],
-    ['treasuryOperationId', 'Opération de trésorerie', treasuryOperations],
+    ['propertyId',    'Bien',                properties, searchProperties],
+    ['terrainId',     'Terrain',             terrains,   searchTerrains],
+    ['lotissementId', 'Lotissement',         lotissements, searchLotissements],
+    ['programmeId',   'Programme',           programmes, searchProgrammes],
+    ['projectId',     'Projet',              projects,   searchProjects],
+    ['conventionId',  'Convention',          conventions, searchConventions],
+    ['invoiceId',     'Facture',             invoices,   searchInvoices],
+    ['attestationId', 'Attestation',         attestations, searchAttestations],
+    ['commissionId',  'Commission',          commissions, searchCommissions],
+    ['treasuryOperationId', 'Opération de trésorerie', treasuryOperations, searchTreasuryOperations],
   ];
 
   // Liste blanche éventuelle (ex. AGENT/AGENT_TECHNIQUE : Prospect uniquement).
@@ -172,13 +262,14 @@ export default function DocumentLinksFields({ values, onChange, compact = false,
 
   return (
     <div className={compact ? 'grid grid-cols-3 gap-3' : 'grid grid-cols-2 gap-3'}>
-      {shownFields.map(([key, label, list]) => (
+      {shownFields.map(([key, label, list, onSearch]) => (
         <SearchSelect
           key={key}
           label={label}
           options={opts(list)}
           value={values[key]}
           onChange={(v) => onChange(key, v)}
+          onSearch={onSearch}
         />
       ))}
     </div>

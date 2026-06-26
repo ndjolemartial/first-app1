@@ -44,6 +44,9 @@ const conventionBaseSchema = zod_1.z.object({
     // Une convention peut couvrir plusieurs biens OU plusieurs terrains.
     propertyIds: zod_1.z.array(zod_1.z.number().int().positive()).optional(),
     terrainIds: zod_1.z.array(zod_1.z.number().int().positive()).optional(),
+    // Terrains ANTÉRIEURS rattachés (avenant de transfert de site / changement de
+    // lot, hérité ou non) — disjoints des terrainIds courants.
+    priorTerrainIds: zod_1.z.array(zod_1.z.number().int().positive()).optional(),
     clientId: zod_1.z.number().int().positive(),
     secondaryClientId: zod_1.z.number().int().positive().optional(),
     parentConventionId: zod_1.z.number().int().positive().optional(),
@@ -51,12 +54,12 @@ const conventionBaseSchema = zod_1.z.object({
     souscriptionType: zod_1.z.enum(['STANDARD', 'AVEC_ACD', 'FINANCEMENT_PROJET']).optional(),
     agentId: zod_1.z.number().int().nullable().optional(),
     referrerId: zod_1.z.number().int().nullable().optional(),
-    type: zod_1.z.enum(['RENTAL_UNFURNISHED', 'RENTAL_FURNISHED', 'SALE', 'MANAGEMENT', 'COMMERCIAL_LEASE', 'SOUSCRIPTION', 'AVENANT', 'RESILIATION', 'AVENANT_DELAI_HERITE', 'AVENANT_RESILIATION_HERITE']),
+    type: zod_1.z.enum(['RENTAL_UNFURNISHED', 'RENTAL_FURNISHED', 'SALE', 'MANAGEMENT', 'COMMERCIAL_LEASE', 'SOUSCRIPTION', 'AVENANT', 'RESILIATION', 'AVENANT_DELAI_HERITE', 'AVENANT_RESILIATION_HERITE', 'AVENANT_TRANSFERT_SITE_HERITE']),
     status: zod_1.z.enum(['BROUILLON', 'ACTIVE', 'EXPIRE', 'TERMINER', 'ANNULE', 'ATTENTE_SIGNATURE']).default('BROUILLON'),
     startDate: zod_1.z.string().datetime(),
     endDate: zod_1.z.string().datetime().optional(),
     signedAt: zod_1.z.string().datetime().optional(),
-    // Date de la convention héritée (types AVENANT_DELAI_HERITE / AVENANT_RESILIATION_HERITE).
+    // Date de la convention héritée (types AVENANT_DELAI_HERITE / AVENANT_RESILIATION_HERITE / AVENANT_TRANSFERT_SITE_HERITE).
     priorConventionDate: zod_1.z.string().datetime().optional(),
     // Conditions particulières (texte multi-lignes) — types hérités uniquement.
     conditionsParticulieres: zod_1.z.string().optional(),
@@ -70,6 +73,12 @@ const conventionBaseSchema = zod_1.z.object({
     // Avenant de transfert de site uniquement — complément éventuel à payer
     // lié au changement de lot. Ignoré pour tout autre type de convention.
     additionalAmount: zod_1.z.number().optional(),
+    // Avenant de transfert de site d'une convention HÉRITÉE uniquement — total
+    // des versements antérieurs, solde antérieur et coût total des biens
+    // antérieurs saisis manuellement.
+    priorTotalVersements: zod_1.z.number().optional(),
+    priorSolde: zod_1.z.number().optional(),
+    priorTotalBiens: zod_1.z.number().optional(),
     paymentDay: zod_1.z.number().int().min(1).max(31).optional(),
     paymentMethod: zod_1.z.enum(['ESPECE', 'CHEQUE', 'TRANSFERT', 'VIREMENT', 'MOBILE_MONEY', 'NON_DEFINI']).default('ESPECE'),
     paymentModalites: zod_1.z.enum(['CASH', 'SUR_3_MOIS', 'SUR_6_MOIS', 'SUR_9_MOIS', 'SUR_12_MOIS', 'SUR_24_MOIS', 'SUR_36_MOIS', 'SUR_48_MOIS', 'SUR_60_MOIS', 'SUR_PLUS_60_MOIS']).default('CASH'),
@@ -85,18 +94,21 @@ const conventionBaseSchema = zod_1.z.object({
     // Énumération des lots souscrits, calculée côté formulaire et figée en base
     // pour affichage sur les factures (en face de la référence de convention).
     lotsSouscrits: zod_1.z.string().optional(),
+    // Énumération figée des lots antérieurs souscrits (variable de template
+    // {{convention.lotsAnterieursSouscrits}}), calculée depuis priorTerrainIds.
+    lotsAnterieursSouscrits: zod_1.z.string().optional(),
     notes: zod_1.z.string().optional(),
 });
 /** Types de convention autorisés pour un terrain. */
-const TERRAIN_CONVENTION_TYPES = ['SOUSCRIPTION', 'SALE', 'AVENANT', 'RESILIATION', 'AVENANT_DELAI_HERITE', 'AVENANT_RESILIATION_HERITE'];
+const TERRAIN_CONVENTION_TYPES = ['SOUSCRIPTION', 'SALE', 'AVENANT', 'RESILIATION', 'AVENANT_DELAI_HERITE', 'AVENANT_RESILIATION_HERITE', 'AVENANT_TRANSFERT_SITE_HERITE'];
 /** Types de convention autorisés pour un bien immobilier. */
 const PROPERTY_CONVENTION_TYPES = ['RENTAL_UNFURNISHED', 'RENTAL_FURNISHED', 'SALE', 'MANAGEMENT', 'COMMERCIAL_LEASE'];
 /** Types de convention devant être liés à une convention initiale/précédente. */
 const AMENDMENT_TYPES = ['AVENANT', 'RESILIATION'];
 /** Types proposant un paiement additionnel facultatif (« Avec / Sans paiement »). */
-const PAYMENT_OPTION_TYPES = ['RESILIATION', 'AVENANT', 'AVENANT_DELAI_HERITE', 'AVENANT_RESILIATION_HERITE'];
+const PAYMENT_OPTION_TYPES = ['RESILIATION', 'AVENANT', 'AVENANT_DELAI_HERITE', 'AVENANT_RESILIATION_HERITE', 'AVENANT_TRANSFERT_SITE_HERITE'];
 /** Types de convention héritée (base antérieure) portant une « date convention antérieure ». */
-const INHERITED_CONVENTION_TYPES = ['AVENANT_DELAI_HERITE', 'AVENANT_RESILIATION_HERITE'];
+const INHERITED_CONVENTION_TYPES = ['AVENANT_DELAI_HERITE', 'AVENANT_RESILIATION_HERITE', 'AVENANT_TRANSFERT_SITE_HERITE'];
 /**
  * Vrai si la convention relève de l'option « Avec / Sans paiement » : un paiement
  * additionnel facultatif, sans frais d'ouverture ni facture de vente. L'avenant de
@@ -107,6 +119,15 @@ function isPaymentOptionType(type, amendmentType) {
     if (!type || !PAYMENT_OPTION_TYPES.includes(type))
         return false;
     return !(type === 'AVENANT' && amendmentType === 'TRANSFERT_SITE');
+}
+/**
+ * Vrai si la convention gère des « Terrains antérieurs rattachés » : avenant de
+ * transfert de site / changement de lot (hérité `AVENANT_TRANSFERT_SITE_HERITE`,
+ * ou `AVENANT` de nature `TRANSFERT_SITE`).
+ */
+function usesPriorTerrains(type, amendmentType) {
+    return type === 'AVENANT_TRANSFERT_SITE_HERITE'
+        || (type === 'AVENANT' && amendmentType === 'TRANSFERT_SITE');
 }
 /** Vérifie la cohérence rattachement (bien/terrain) ↔ élément sélectionné et type de convention. */
 const conventionSchema = conventionBaseSchema
@@ -217,6 +238,17 @@ const linksIncludeList = {
             },
         },
     },
+    priorTerrains: {
+        orderBy: { order: 'asc' },
+        include: {
+            terrain: {
+                select: {
+                    id: true, reference: true, numeroIlot: true, numeroParcelle: true,
+                    lotissement: { select: { nom: true, ville: true } },
+                },
+            },
+        },
+    },
 };
 /** Include utilisé pour la fiche détail d'une convention (relations enrichies). */
 const linksIncludeDetail = {
@@ -231,6 +263,24 @@ const linksIncludeDetail = {
         },
     },
     terrains: {
+        orderBy: { order: 'asc' },
+        include: {
+            terrain: {
+                include: {
+                    lotissement: {
+                        select: {
+                            id: true, reference: true, nom: true,
+                            commune: true, ville: true, pays: true,
+                            titleNumber: true,
+                            titleType: { select: { id: true, code: true, label: true, documentsLivres: true } },
+                        },
+                    },
+                    owner: { select: { id: true, firstName: true, lastName: true, companyName: true } },
+                },
+            },
+        },
+    },
+    priorTerrains: {
         orderBy: { order: 'asc' },
         include: {
             terrain: {
@@ -424,8 +474,17 @@ function registerConventionsIPC() {
             await assertSingleResiliation(db, d.type, d.parentConventionId);
             const propertyIds = isTerrain ? [] : (d.propertyIds ?? []);
             const terrainIds = isTerrain ? (d.terrainIds ?? []) : [];
+            // Terrains antérieurs (avenant de transfert de site / changement de lot) :
+            // disjoints des terrains rattachés courants.
+            const withPrior = isTerrain && usesPriorTerrains(d.type, d.amendmentType);
+            const priorTerrainIds = withPrior ? (d.priorTerrainIds ?? []) : [];
+            if (priorTerrainIds.some((tid) => terrainIds.includes(tid))) {
+                return { success: false, error: 'Un même terrain ne peut pas figurer à la fois dans « Terrains rattachés » et « Terrains antérieurs rattachés ».' };
+            }
             if (isTerrain)
                 await assertSingleLotissement(db, terrainIds);
+            if (priorTerrainIds.length > 0)
+                await assertSingleLotissement(db, priorTerrainIds);
             const convention = await db.convention.create({
                 data: {
                     reference,
@@ -462,6 +521,15 @@ function registerConventionsIPC() {
                         || isPaymentOptionType(d.type, d.amendmentType))
                         ? toDecimal(d.additionalAmount)
                         : null,
+                    // Total des versements antérieurs / solde antérieur / coût total des
+                    // biens antérieurs : avenant de transfert de site d'une convention
+                    // HÉRITÉE uniquement.
+                    priorTotalVersements: d.type === 'AVENANT_TRANSFERT_SITE_HERITE'
+                        ? toDecimal(d.priorTotalVersements) : null,
+                    priorSolde: d.type === 'AVENANT_TRANSFERT_SITE_HERITE'
+                        ? toDecimal(d.priorSolde) : null,
+                    priorTotalBiens: d.type === 'AVENANT_TRANSFERT_SITE_HERITE'
+                        ? toDecimal(d.priorTotalBiens) : null,
                     paymentDay: d.paymentDay,
                     paymentMethod: d.paymentMethod,
                     paymentModalites: d.paymentModalites,
@@ -471,12 +539,17 @@ function registerConventionsIPC() {
                     indexType: d.indexType,
                     // Lots souscrits : seulement pertinent pour les conventions de terrain.
                     lotsSouscrits: isTerrain ? (d.lotsSouscrits || null) : null,
+                    // Lots antérieurs souscrits : avenant de transfert de site uniquement.
+                    lotsAnterieursSouscrits: withPrior ? (d.lotsAnterieursSouscrits || null) : null,
                     notes: d.notes,
                     properties: propertyIds.length > 0
                         ? { create: propertyIds.map((propertyId, i) => ({ propertyId, order: i })) }
                         : undefined,
                     terrains: terrainIds.length > 0
                         ? { create: terrainIds.map((terrainId, i) => ({ terrainId, order: i })) }
+                        : undefined,
+                    priorTerrains: priorTerrainIds.length > 0
+                        ? { create: priorTerrainIds.map((terrainId, i) => ({ terrainId, order: i })) }
                         : undefined,
                 },
             });
@@ -627,10 +700,17 @@ function registerConventionsIPC() {
                     d[k] = parsed.data[k];
             }
             const data = { ...d };
+            // État courant (avant MAJ) : type / nature d'avenant / asset / statut — sert
+            // à résoudre les règles dépendant du type sur une mise à jour partielle.
+            const before = await db.convention.findUnique({
+                where: { id },
+                select: { status: true, assetType: true, type: true, amendmentType: true },
+            });
             // Champs traités séparément (relations / dates)
             delete data.installments;
             delete data.propertyIds;
             delete data.terrainIds;
+            delete data.priorTerrainIds;
             if (d.startDate)
                 data.startDate = new Date(d.startDate);
             if (d.endDate)
@@ -651,10 +731,19 @@ function registerConventionsIPC() {
                 data.secondaryClientId = null;
                 // Les lots souscrits ne concernent que les conventions de terrain.
                 data.lotsSouscrits = null;
+                data.lotsAnterieursSouscrits = null;
             }
             // Normalise une énumération vide en NULL.
             if ('lotsSouscrits' in data)
                 data.lotsSouscrits = data.lotsSouscrits || null;
+            // Lots antérieurs souscrits : avenant de transfert de site uniquement.
+            const effTypePrior = d.type ?? before?.type ?? undefined;
+            const effAmendPrior = ('amendmentType' in d ? d.amendmentType : before?.amendmentType) ?? null;
+            const effWithPrior = usesPriorTerrains(effTypePrior, effAmendPrior);
+            if (!effWithPrior)
+                data.lotsAnterieursSouscrits = null;
+            if ('lotsAnterieursSouscrits' in data)
+                data.lotsAnterieursSouscrits = data.lotsAnterieursSouscrits || null;
             // Le lien vers la convention initiale/précédente est réservé aux avenants et résiliations
             if (d.type && !AMENDMENT_TYPES.includes(d.type))
                 data.parentConventionId = null;
@@ -679,16 +768,18 @@ function registerConventionsIPC() {
                 || isPaymentOptionType(d.type, d.amendmentType))) {
                 data.additionalAmount = null;
             }
+            // Total des versements antérieurs / solde antérieur : avenant de transfert
+            // de site d'une convention HÉRITÉE uniquement — neutralisés sinon.
+            if (effTypePrior && effTypePrior !== 'AVENANT_TRANSFERT_SITE_HERITE') {
+                data.priorTotalVersements = null;
+                data.priorSolde = null;
+                data.priorTotalBiens = null;
+            }
             if (d.parentConventionId && d.parentConventionId === id) {
                 return { success: false, error: 'Une convention ne peut pas être liée à elle-même' };
             }
             await assertParentNotDraft(db, d.type, d.parentConventionId);
             await assertSingleResiliation(db, d.type, d.parentConventionId, id);
-            // Statut avant mise à jour, pour détecter le passage à ACTIVE
-            const before = await db.convention.findUnique({
-                where: { id },
-                select: { status: true, assetType: true },
-            });
             const convention = await db.convention.update({ where: { id, deletedAt: null }, data });
             // Remplace les rattachements si une liste est fournie
             const effectiveAssetType = d.assetType ?? before?.assetType ?? 'PROPERTY';
@@ -709,6 +800,25 @@ function registerConventionsIPC() {
                 if (effectiveAssetType === 'TERRAIN' && d.terrainIds && d.terrainIds.length > 0) {
                     await db.conventionTerrain.createMany({
                         data: d.terrainIds.map((terrainId, i) => ({ conventionId: id, terrainId, order: i })),
+                    });
+                }
+            }
+            // Terrains antérieurs rattachés (avenant de transfert de site). On remplace
+            // la liste si elle est fournie, ou on la vide si la convention n'est plus
+            // concernée (changement de type / passage en bien immobilier).
+            if (d.priorTerrainIds !== undefined || !effWithPrior || d.assetType === 'PROPERTY') {
+                if (d.priorTerrainIds && d.priorTerrainIds.length > 0) {
+                    // Disjonction avec les terrains rattachés courants (liste fournie sinon existante).
+                    const currentTerrainIds = d.terrainIds ?? (await db.conventionTerrain.findMany({ where: { conventionId: id }, select: { terrainId: true } })).map((r) => r.terrainId);
+                    if (d.priorTerrainIds.some((tid) => currentTerrainIds.includes(tid))) {
+                        return { success: false, error: 'Un même terrain ne peut pas figurer à la fois dans « Terrains rattachés » et « Terrains antérieurs rattachés ».' };
+                    }
+                }
+                await db.conventionPriorTerrain.deleteMany({ where: { conventionId: id } });
+                if (effWithPrior && effectiveAssetType === 'TERRAIN' && d.priorTerrainIds && d.priorTerrainIds.length > 0) {
+                    await assertSingleLotissement(db, d.priorTerrainIds);
+                    await db.conventionPriorTerrain.createMany({
+                        data: d.priorTerrainIds.map((terrainId, i) => ({ conventionId: id, terrainId, order: i })),
                     });
                 }
             }

@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useMemo } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -23,6 +23,7 @@ import { useGedDocuments } from '../../archiving/hooks/useGed';
 import { useSelectableUsers } from '../../users/hooks/useUsers';
 import { useAuthStore } from '../../../shared/stores/auth.store';
 import { formatPersonName } from '../../../shared/utils/format';
+import { makeEntitySearch } from '../../../shared/utils/entitySearch';
 import { Save } from 'lucide-react';
 
 /**
@@ -109,6 +110,7 @@ export default function ActivityFormPage() {
 
   const currentRole = useAuthStore((s) => s.user?.role);
   const currentUserId = useAuthStore((s) => s.user?.id);
+  const token = useAuthStore((s) => s.token)!;
   // Liste filtrée côté serveur (utilisateurs actifs + rôles autorisés selon le rôle connecté).
   const { data: usersRes } = useSelectableUsers();
   const { data: clientsRes } = useClients({}, 1, 500);
@@ -203,6 +205,47 @@ export default function ActivityFormPage() {
       };
     }),
   ];
+
+  // Recherche distante (serveur) pour afficher n'importe quel enregistrement
+  // quel que soit le volume. On réplique les mêmes prédicats que les listes
+  // préchargées ci-dessus (visibilité par rôle pour client/prospect, périmètre
+  // référent CRM pour bien/terrain) afin de conserver un comportement identique.
+  const searchClients = useMemo(() => async (q: string) => {
+    const r: any = await window.electron.clients.list(token, q ? { search: q } : {}, 1, 100);
+    return (r?.data ?? [])
+      .filter((c: any) => clientHasFullView || (c.isActive && c.assignedToId === currentUserId))
+      .map((c: any) => ({ value: String(c.id), label: formatPersonName(c, '') }));
+  }, [token, clientHasFullView, currentUserId]);
+
+  const searchProspects = useMemo(() => async (q: string) => {
+    const r: any = await window.electron.prospects.list(token, q ? { search: q } : {}, 1, 100);
+    return (r?.data ?? [])
+      .filter((p: any) =>
+        prospectHasFullView ||
+        (!PROSPECT_INACTIVE_STATUSES.includes(p.status) && p.assignedToId === currentUserId))
+      .map((p: any) => ({ value: String(p.id), label: formatPersonName(p, '') }));
+  }, [token, prospectHasFullView, currentUserId]);
+
+  const searchProperties = useMemo(() => makeEntitySearch(
+    (f, p, l) => window.electron.properties.list(token, f, p, l),
+    (p: any) => ({ value: String(p.id), label: `${p.reference} — ${p.address}` }),
+    { crmReferentScope: true },
+  ), [token]);
+
+  const searchTerrains = useMemo(() => makeEntitySearch(
+    (f, p, l) => window.electron.terrains.list(token, f, p, l),
+    (t: any) => {
+      const loc = [
+        t.numeroIlot ? `Îlot ${t.numeroIlot}` : '',
+        t.numeroParcelle ? `Lot ${t.numeroParcelle}` : '',
+      ].filter(Boolean).join(', ');
+      return {
+        value: String(t.id),
+        label: `${t.reference}${loc ? ` — ${loc}` : ''}${t.lotissement?.nom ? ` — ${t.lotissement.nom}` : ''}`,
+      };
+    },
+    { crmReferentScope: true },
+  ), [token]);
 
   const conventionOptions = [
     { value: '', label: '— Convention (optionnel) —' },
@@ -329,16 +372,16 @@ export default function ActivityFormPage() {
           </p>
           <div className="grid grid-cols-2 gap-4">
             <FormSearchSelect control={control} name="userId" label="Utilisateur" options={userOptions} />
-            <FormSearchSelect control={control} name="clientId" label="Client" options={clientOptions} />
-            <FormSearchSelect control={control} name="prospectId" label="Prospect" options={prospectOptions} />
-            <FormSearchSelect control={control} name="propertyId" label="Bien immobilier" options={propertyOptions} />
+            <FormSearchSelect control={control} name="clientId" label="Client" options={clientOptions} onSearch={searchClients} />
+            <FormSearchSelect control={control} name="prospectId" label="Prospect" options={prospectOptions} onSearch={searchProspects} />
+            <FormSearchSelect control={control} name="propertyId" label="Bien immobilier" options={propertyOptions} onSearch={searchProperties} />
             {canSeeLotProg && (
               <>
                 <FormSearchSelect control={control} name="programmeId" label="Programme immobilier" options={programmeOptions} />
                 <FormSearchSelect control={control} name="lotissementId" label="Lotissement" options={lotissementOptions} />
               </>
             )}
-            <FormSearchSelect control={control} name="terrainId" label="Terrain" options={terrainOptions} />
+            <FormSearchSelect control={control} name="terrainId" label="Terrain" options={terrainOptions} onSearch={searchTerrains} />
             <FormSearchSelect control={control} name="conventionId" label="Convention" options={conventionOptions} />
             <FormSearchSelect control={control} name="invoiceId" label="Facture" options={invoiceOptions} />
             <FormSearchSelect control={control} name="installmentId" label="Échéance" options={installmentOptions} />

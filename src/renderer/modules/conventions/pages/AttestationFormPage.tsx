@@ -4,6 +4,7 @@ import PageLayout from '../../../shared/components/layout/PageLayout';
 import Button from '../../../shared/components/ui/Button';
 import Input from '../../../shared/components/ui/Input';
 import Select from '../../../shared/components/ui/Select';
+import SearchSelect from '../../../shared/components/ui/SearchSelect';
 import Textarea from '../../../shared/components/ui/Textarea';
 import Card from '../../../shared/components/ui/Card';
 import { useAttestation, useCreateAttestation, useUpdateAttestation, useLegacyBalance } from '../hooks/useAttestations';
@@ -13,6 +14,8 @@ import { useTerrains } from '../../terrains/hooks/useTerrains';
 import { useConvention, useConventions } from '../hooks/useConventions';
 import { ATTESTATION_TYPE_LABELS } from '../utils/attestationTemplate';
 import { formatPersonName, formatCurrency } from '../../../shared/utils/format';
+import { makeEntitySearch } from '../../../shared/utils/entitySearch';
+import { useAuthStore } from '../../../shared/stores/auth.store';
 import { Save } from 'lucide-react';
 
 const TYPE_OPTIONS = Object.entries(ATTESTATION_TYPE_LABELS).map(([value, label]) => ({ value, label }));
@@ -96,6 +99,7 @@ export default function AttestationFormPage() {
   const { data: prefilledConv } = useConvention(prefilledConventionId ? Number(prefilledConventionId) : 0);
   const create = useCreateAttestation();
   const update = useUpdateAttestation();
+  const token = useAuthStore((s) => s.token)!;
   const { data: clientsRes } = useClients({}, 1, 500);
   const { data: propertiesRes } = useProperties({}, 1, 500);
 
@@ -283,6 +287,34 @@ export default function AttestationFormPage() {
     })),
   ];
 
+  // Recherche distante (serveur) pour afficher n'importe quel enregistrement
+  // quel que soit le volume, en conservant les mêmes règles que les listes
+  // ci-dessus (cédant exclu du bénéficiaire ; périmètre terrain selon cession/
+  // souscription héritée ; verrouillage cession tant qu'aucun cédant n'est choisi).
+  const searchClients = makeEntitySearch(
+    (f, p, l) => window.electron.clients.list(token, f, p, l),
+    (c: any) => ({ value: String(c.id), label: clientLabel(c) }),
+  );
+  const searchSecondaryClients = async (q: string) => {
+    const r: any = await window.electron.clients.list(token, q ? { search: q } : {}, 1, 100);
+    return (r?.data ?? [])
+      .filter((c: any) => String(c.id) !== clientId)
+      .map((c: any) => ({ value: String(c.id), label: clientLabel(c) }));
+  };
+  const searchProperties = makeEntitySearch(
+    (f, p, l) => window.electron.properties.list(token, f, p, l),
+    (p: any) => ({ value: String(p.id), label: `${p.reference} — ${p.address}, ${p.city}` }),
+  );
+  const searchTerrains = async (q: string) => {
+    if (isCession && secondaryClientIdNum <= 0) return []; // bloqué tant que pas de cédant
+    const filters: any = { ...terrainFilters, ...(q ? { search: q } : {}) };
+    const r: any = await window.electron.terrains.list(token, filters, 1, 100);
+    return (r?.data ?? []).map((t: any) => ({
+      value: String(t.id),
+      label: `${t.reference}${t.numeroParcelle ? ` — parcelle ${t.numeroParcelle}` : ''}`,
+    }));
+  };
+
   // Options du select Convention liée : dépend du propriétaire des conventions
   // (client bénéficiaire ou ancien propriétaire pour TRANSFERT_PROPRIETE). Si
   // aucun n'est sélectionné, on invite à en choisir un. S'il n'a aucune
@@ -421,21 +453,23 @@ export default function AttestationFormPage() {
               }} />
             <Input label="Date d'émission *" type="date" value={emittedAt}
               onChange={(e) => setEmittedAt(e.target.value)} />
-            <Select label={type === 'CESSION' ? 'Cessionnaire (bénéficiaire) *' : 'Client bénéficiaire *'}
-              options={clientOptions} value={clientId}
-              onChange={(e) => setClientId(e.target.value)} />
+            <SearchSelect label={type === 'CESSION' ? 'Cessionnaire (bénéficiaire) *' : 'Client bénéficiaire *'}
+              options={clientOptions} value={clientId} onSearch={searchClients}
+              onChange={(v) => setClientId(v)} />
             {type === 'CESSION' && (
-              <Select label="Cédant *" options={secondaryClientOptions} value={secondaryClientId}
-                onChange={(e) => {
-                  setSecondaryClientId(e.target.value);
+              <SearchSelect label="Cédant *" options={secondaryClientOptions} value={secondaryClientId}
+                onSearch={searchSecondaryClients}
+                onChange={(v) => {
+                  setSecondaryClientId(v);
                   // La liste des terrains se restreint au nouveau cédant : on
                   // efface le terrain précédemment choisi.
                   setTerrainId('');
                 }} />
             )}
             {type === 'TRANSFERT_PROPRIETE' && (
-              <Select label="Ancien propriétaire *" options={secondaryClientOptions}
-                value={secondaryClientId} onChange={(e) => setSecondaryClientId(e.target.value)} />
+              <SearchSelect label="Ancien propriétaire *" options={secondaryClientOptions}
+                value={secondaryClientId} onSearch={searchSecondaryClients}
+                onChange={(v) => setSecondaryClientId(v)} />
             )}
           </div>
         </Card>
@@ -444,8 +478,8 @@ export default function AttestationFormPage() {
           <Card>
             <h3 className="text-base font-semibold text-slate-800 mb-4">Terrain de la souscription</h3>
             <div className="grid grid-cols-2 gap-4">
-              <Select label="Terrain *" options={terrainOptions} value={terrainId}
-                onChange={(e) => setTerrainId(e.target.value)} />
+              <SearchSelect label="Terrain *" options={terrainOptions} value={terrainId}
+                onSearch={searchTerrains} onChange={(v) => setTerrainId(v)} />
             </div>
             <p className="mt-2 text-xs text-slate-400">
               Le solde est calculé sur l'ensemble des échéances héritées de ce client rattachées au terrain choisi.
@@ -458,11 +492,11 @@ export default function AttestationFormPage() {
               <Select label={isCession ? 'Type de bien *' : 'Type de bien'} options={ASSET_OPTIONS} value={assetType}
                 onChange={(e) => setAssetType(e.target.value)} />
               {assetType === 'TERRAIN' ? (
-                <Select label={isCession ? 'Terrain *' : 'Terrain'} options={terrainOptions} value={terrainId}
-                  onChange={(e) => setTerrainId(e.target.value)} />
+                <SearchSelect label={isCession ? 'Terrain *' : 'Terrain'} options={terrainOptions} value={terrainId}
+                  onSearch={searchTerrains} onChange={(v) => setTerrainId(v)} />
               ) : (
-                <Select label={isCession ? 'Bien immobilier *' : 'Bien immobilier'} options={propertyOptions} value={propertyId}
-                  onChange={(e) => setPropertyId(e.target.value)} />
+                <SearchSelect label={isCession ? 'Bien immobilier *' : 'Bien immobilier'} options={propertyOptions} value={propertyId}
+                  onSearch={searchProperties} onChange={(v) => setPropertyId(v)} />
               )}
             </div>
           </Card>

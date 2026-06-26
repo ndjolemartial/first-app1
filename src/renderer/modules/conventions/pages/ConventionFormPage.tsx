@@ -1,5 +1,5 @@
 import { useNavigate, useParams } from 'react-router-dom';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useForm, Controller } from 'react-hook-form';
 import { nearestSurfaceRow } from '../../../shared/components/forms/SurfacePriceMatrixEditor';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -20,6 +20,7 @@ import { useProperties } from '../../properties/hooks/useProperties';
 import { useTerrains } from '../../terrains/hooks/useTerrains';
 import { lotsEnumeration } from '../utils/lotsEnumeration';
 import { formatPersonName, formatCurrency } from '../../../shared/utils/format';
+import { makeEntitySearch } from '../../../shared/utils/entitySearch';
 import { Save } from 'lucide-react';
 
 /** Identifiant optionnel : une chaîne vide est traitée comme « non renseigné ». */
@@ -46,6 +47,7 @@ const schema = z.object({
   assetType: z.enum(['PROPERTY', 'TERRAIN']).default('TERRAIN'),
   propertyIds: idArray,
   terrainIds: idArray,
+  priorTerrainIds: idArray,
   clientId: z.coerce.number().int().positive('Client principal requis'),
   secondaryClientId: optionalId,
   parentConventionId: optionalId,
@@ -57,7 +59,7 @@ const schema = z.object({
     (v) => (v === '' || v === undefined || v === null ? undefined : v),
     z.enum(['STANDARD', 'AVEC_ACD', 'FINANCEMENT_PROJET']).optional(),
   ),
-  type: z.enum(['RENTAL_UNFURNISHED', 'RENTAL_FURNISHED', 'SALE', 'MANAGEMENT', 'COMMERCIAL_LEASE', 'SOUSCRIPTION', 'AVENANT', 'RESILIATION', 'AVENANT_DELAI_HERITE', 'AVENANT_RESILIATION_HERITE']),
+  type: z.enum(['RENTAL_UNFURNISHED', 'RENTAL_FURNISHED', 'SALE', 'MANAGEMENT', 'COMMERCIAL_LEASE', 'SOUSCRIPTION', 'AVENANT', 'RESILIATION', 'AVENANT_DELAI_HERITE', 'AVENANT_RESILIATION_HERITE', 'AVENANT_TRANSFERT_SITE_HERITE']),
   status: z.enum(['BROUILLON', 'ACTIVE', 'EXPIRE', 'TERMINER', 'ANNULE', 'ATTENTE_SIGNATURE']).default('BROUILLON'),
   startDate: z.string().min(1, 'Date de début requise'),
   endDate: z.string().min(1, 'Délai requis : choisissez une durée ou saisissez la date de fin'),
@@ -72,6 +74,9 @@ const schema = z.object({
   charges: optionalNumber,
   fraisOuvertureDossier: optionalNumber,
   additionalAmount: optionalNumber,
+  priorTotalVersements: optionalNumber,
+  priorSolde: optionalNumber,
+  priorTotalBiens: optionalNumber,
   paymentDay: optionalDay,
   paymentMethod: z.enum(['ESPECE', 'CHEQUE', 'TRANSFERT', 'VIREMENT', 'MOBILE_MONEY', 'NON_DEFINI']).default('ESPECE'),
   paymentModalites: z.enum(['CASH', 'SUR_3_MOIS', 'SUR_6_MOIS', 'SUR_9_MOIS', 'SUR_12_MOIS', 'SUR_24_MOIS', 'SUR_36_MOIS', 'SUR_48_MOIS', 'SUR_60_MOIS', 'SUR_PLUS_60_MOIS']).default('CASH'),
@@ -158,6 +163,7 @@ const TERRAIN_TYPE_OPTIONS = [
   { value: 'RESILIATION', label: 'Résiliation' },
   { value: 'AVENANT_DELAI_HERITE', label: 'Avenant Délai - convention héritée' },
   { value: 'AVENANT_RESILIATION_HERITE', label: 'Résiliation - convention héritée' },
+  { value: 'AVENANT_TRANSFERT_SITE_HERITE', label: 'Avenant transfert de Site ou de Lot - convention héritée' },
 ];
 
 /** Types de convention de terrain n'exigeant pas un pré-rattachement client (le terrain est encore DISPONIBLE — la convention acte la réservation). */
@@ -179,10 +185,10 @@ const AMENDMENT_TYPES = ['AVENANT', 'RESILIATION'];
  * additionnel » (défaut 0) et génère une facture à l'enregistrement si > 0 ;
  * dans ce cas les frais d'ouverture de dossier ne s'appliquent pas.
  */
-const PAYMENT_OPTION_TYPES = ['RESILIATION', 'AVENANT', 'AVENANT_DELAI_HERITE', 'AVENANT_RESILIATION_HERITE'];
+const PAYMENT_OPTION_TYPES = ['RESILIATION', 'AVENANT', 'AVENANT_DELAI_HERITE', 'AVENANT_RESILIATION_HERITE', 'AVENANT_TRANSFERT_SITE_HERITE'];
 
 /** Types de convention héritée (base antérieure) : affichent le champ « Date convention antérieure ». */
-const INHERITED_CONVENTION_TYPES = ['AVENANT_DELAI_HERITE', 'AVENANT_RESILIATION_HERITE'];
+const INHERITED_CONVENTION_TYPES = ['AVENANT_DELAI_HERITE', 'AVENANT_RESILIATION_HERITE', 'AVENANT_TRANSFERT_SITE_HERITE'];
 
 const PAYMENT_CHOICE_OPTIONS = [
   { value: 'WITHOUT', label: 'Sans paiement' },
@@ -209,6 +215,7 @@ const TYPE_LABELS: Record<string, string> = {
   SOUSCRIPTION: 'Souscription', AVENANT: 'Avenant', RESILIATION: 'Résiliation',
   AVENANT_DELAI_HERITE: 'Avenant Délai - convention héritée',
   AVENANT_RESILIATION_HERITE: 'Résiliation - convention héritée',
+  AVENANT_TRANSFERT_SITE_HERITE: 'Avenant transfert de Site ou de Lot - convention héritée',
 };
 
 const STATUS_OPTIONS = [
@@ -351,12 +358,14 @@ function MultiAssetSelect({
   onChange,
   error,
   onAdd,
+  onSearch,
 }: {
   label: string;
   options: SearchSelectOption[];
   values: number[];
   onChange: (next: number[]) => void;
   error?: string;
+  onSearch?: (query: string) => Promise<SearchSelectOption[]>;
   onAdd?: (addedId: number) => void;
 }) {
   const selectedSet = new Set(values.map(String));
@@ -402,6 +411,7 @@ function MultiAssetSelect({
           onChange([...values, num]);
           onAdd?.(num);
         }}
+        onSearch={onSearch}
       />
       {error && <p className="text-xs text-red-500">{error}</p>}
     </div>
@@ -416,6 +426,7 @@ export default function ConventionFormPage() {
   const isEdit = !!id;
   const navigate = useNavigate();
   const role = useAuthStore((s) => s.user?.role) ?? '';
+  const token = useAuthStore((s) => s.token)!;
   const canAssign = ASSIGN_ROLES.has(role);
   const { data: res } = useConvention(isEdit ? Number(id) : 0);
   const create = useCreateConvention();
@@ -471,12 +482,19 @@ export default function ConventionFormPage() {
     })),
   ];
 
+  // Recherche distante des clients (principal + souscripteur associé) : affiche
+  // n'importe quel client quel que soit le volume, sans limite de page côté client.
+  const searchClients = useMemo(() => makeEntitySearch(
+    (f, p, l) => window.electron.clients.list(token, f, p, l),
+    (c: any) => ({ value: String(c.id), label: formatPersonName(c) }),
+  ), [token]);
+
   const { register, handleSubmit, reset, watch, setValue, control, formState: { errors, isSubmitting } } = useForm<z.input<typeof schema>, any, FormData>({
     resolver: zodResolver(schema),
     defaultValues: {
       assetType: 'TERRAIN', type: 'SOUSCRIPTION', status: 'BROUILLON',
       paymentMethod: 'ESPECE', paymentModalites: 'CASH',
-      propertyIds: [], terrainIds: [],
+      propertyIds: [], terrainIds: [], priorTerrainIds: [],
       fraisOuvertureDossier: 100000,
     },
   });
@@ -487,6 +505,7 @@ export default function ConventionFormPage() {
   const watchAssetType = watch('assetType');
   const watchStartDate = watch('startDate');
   const watchTerrainIds = watch('terrainIds') ?? [];
+  const watchPriorTerrainIds = watch('priorTerrainIds') ?? [];
   const watchPropertyIds = watch('propertyIds') ?? [];
   const watchClientId = watch('clientId');
   const watchInstallmentCount = watch('installmentCount');
@@ -494,12 +513,19 @@ export default function ConventionFormPage() {
   const watchSaleAmount = watch('saleAmount');
   const watchApport = watch('apportInitial');
   const watchAdditionalAmount = watch('additionalAmount');
+  const watchPriorTotalBiens = watch('priorTotalBiens');
+  const watchPriorTotalVersements = watch('priorTotalVersements');
   const clientIdNum = Number(watchClientId) || 0;
   // Cas particulier : l'avenant de transfert de site / changement de lot.
   // L'utilisateur doit pouvoir sélectionner de nouveaux terrains (parmi les
   // DISPONIBLES) — on ne masque pas le sélecteur et on n'hérite pas de la
   // convention parente.
   const isTransfertSite = watchType === 'AVENANT' && watchAmendmentType === 'TRANSFERT_SITE';
+  // Champ « Terrains antérieurs rattachés » : avenant de transfert de site /
+  // changement de lot (hérité `AVENANT_TRANSFERT_SITE_HERITE` ou `AVENANT` de
+  // nature `TRANSFERT_SITE`). Réservé aux conventions de terrain.
+  const showPriorTerrains = watchAssetType === 'TERRAIN'
+    && (watchType === 'AVENANT_TRANSFERT_SITE_HERITE' || isTransfertSite);
   // Conventions proposant l'option « Avec / Sans paiement » (paiement additionnel
   // facultatif). L'avenant de transfert de site conserve son propre flux financier.
   const showPaymentChoice = PAYMENT_OPTION_TYPES.includes(watchType ?? '') && !isTransfertSite;
@@ -557,11 +583,16 @@ export default function ConventionFormPage() {
   const typeOptions = watchAssetType === 'TERRAIN' ? TERRAIN_TYPE_OPTIONS : PROPERTY_TYPE_OPTIONS;
 
   // Règle métier : pour SOUSCRIPTION de terrain (et pour l'avenant de
-  // TRANSFERT_SITE qui acte le changement de lot vers un nouveau terrain), la
-  // convention propose les terrains DISPONIBLES. Pour les autres types
-  // (SALE/AVENANT autres natures/RESILIATION), le terrain doit avoir été
-  // préalablement assigné au client choisi depuis la fiche terrain.
-  const terrainStrictByClient = !TERRAIN_DISPONIBLE_TYPES.includes(watchType) && !isTransfertSite;
+  // TRANSFERT_SITE — hérité ou non — qui acte le changement de lot vers un
+  // nouveau terrain), la convention propose les terrains DISPONIBLES. Pour les
+  // autres types (SALE/AVENANT autres natures/RESILIATION), le terrain doit
+  // avoir été préalablement assigné au client choisi depuis la fiche terrain.
+  // L'avenant de transfert de site hérité rattache des terrains DISPONIBLES qui
+  // ne reçoivent pas de clientId : un filtrage strict les masquerait à la
+  // réédition (« Terrains rattachés » vide).
+  const terrainStrictByClient = !TERRAIN_DISPONIBLE_TYPES.includes(watchType)
+    && !isTransfertSite
+    && watchType !== 'AVENANT_TRANSFERT_SITE_HERITE';
   // Terrains déjà rattachés en édition — conservés en option même hors filtre courant.
   const editingTerrains: any[] = isEdit
     ? (res?.data?.terrains ?? []).map((l: any) => l.terrain)
@@ -599,38 +630,52 @@ export default function ConventionFormPage() {
   // sélectionné, on verrouille les options d'ajout sur son lotissementId. Les
   // terrains déjà sélectionnés restent visibles (pour pouvoir les retirer).
   const selectedTerrainIdsSet = new Set(watchTerrainIds.map(Number));
-  const lockedLotissementId: number | null = (() => {
-    if (watchTerrainIds.length === 0) return null;
-    const first = filteredTerrains.find((t: any) => selectedTerrainIdsSet.has(Number(t.id)));
-    if (!first) return null;
-    return first.lotissementId ?? null;
-  })();
-  const terrainOptions = [
-    { value: '', label: '— Choisir un terrain —' },
-    ...filteredTerrains
-      .filter((t: any) => {
-        if (selectedTerrainIdsSet.has(Number(t.id))) return true; // toujours visible
-        if (watchTerrainIds.length === 0) return true;
-        return (t.lotissementId ?? null) === lockedLotissementId;
-      })
-      .map((t: any) => {
-        const loc = [
-          t.numeroIlot ? `Îlot ${t.numeroIlot}` : '',
-          t.numeroParcelle ? `Lot ${t.numeroParcelle}` : '',
-        ].filter(Boolean).join(', ');
-        // Surface affichée si renseignée — utile pour comparer les parcelles
-        // d'un même lotissement directement dans la liste de sélection.
-        const surface = (t.surface !== null && t.surface !== undefined && t.surface !== '')
-          ? ` · ${t.surface} m²`
-          : '';
-        const isClientOwned = clientIdNum > 0 && Number(t.clientId) === clientIdNum;
-        return {
-          value: String(t.id),
-          label: `${t.reference} — ${t.lotissement?.nom ?? ''}`.trim() + (loc ? ` (${loc})` : '') + surface,
-          highlighted: isClientOwned,
-        };
-      }),
-  ];
+  // Libellé d'option terrain (partagé entre « Terrains rattachés » et
+  // « Terrains antérieurs rattachés »).
+  const terrainOptLabel = (t: any): SearchSelectOption => {
+    const loc = [
+      t.numeroIlot ? `Îlot ${t.numeroIlot}` : '',
+      t.numeroParcelle ? `Lot ${t.numeroParcelle}` : '',
+    ].filter(Boolean).join(', ');
+    const surface = (t.surface !== null && t.surface !== undefined && t.surface !== '')
+      ? ` · ${t.surface} m²`
+      : '';
+    const isClientOwned = clientIdNum > 0 && Number(t.clientId) === clientIdNum;
+    return {
+      value: String(t.id),
+      label: `${t.reference} — ${t.lotissement?.nom ?? ''}`.trim() + (loc ? ` (${loc})` : '') + surface,
+      highlighted: isClientOwned,
+    };
+  };
+  // Lotissement verrouillé d'un champ (lotissement du 1er terrain sélectionné).
+  const lockedLotissementOf = (ids: number[]): number | null => {
+    if (ids.length === 0) return null;
+    const set = new Set(ids.map(Number));
+    const first = filteredTerrains.find((t: any) => set.has(Number(t.id)));
+    return first ? (first.lotissementId ?? null) : null;
+  };
+  // Construit les options d'un champ terrain : sélection propre toujours visible,
+  // exclusion des terrains choisis dans l'AUTRE champ (les deux champs sont
+  // mutuellement exclusifs), verrouillage lotissement propre au champ.
+  const buildTerrainOptions = (selectedIds: number[], excludeIds: number[], locked: number | null): SearchSelectOption[] => {
+    const selSet = new Set(selectedIds.map(Number));
+    const exclSet = new Set(excludeIds.map(Number));
+    return [
+      { value: '', label: '— Choisir un terrain —' },
+      ...filteredTerrains
+        .filter((t: any) => {
+          if (exclSet.has(Number(t.id))) return false; // choisi dans l'autre champ
+          if (selSet.has(Number(t.id))) return true; // déjà sélectionné ici → visible
+          if (selectedIds.length === 0) return true;
+          return (t.lotissementId ?? null) === locked;
+        })
+        .map(terrainOptLabel),
+    ];
+  };
+  const lockedLotissementId = lockedLotissementOf(watchTerrainIds);
+  const lockedPriorLotissementId = lockedLotissementOf(watchPriorTerrainIds);
+  const terrainOptions = buildTerrainOptions(watchTerrainIds, watchPriorTerrainIds, lockedLotissementId);
+  const priorTerrainOptions = buildTerrainOptions(watchPriorTerrainIds, watchTerrainIds, lockedPriorLotissementId);
 
   // Détection d'une éventuelle incohérence (cas d'édition d'une convention
   // historique) : terrains rattachés provenant de lotissements différents.
@@ -680,6 +725,60 @@ export default function ConventionFormPage() {
       };
     }),
   ];
+
+  // Recherche distante (serveur) pour les multi-sélecteurs terrain/bien : affiche
+  // n'importe quel actif éligible quel que soit le volume, en RÉPLIQUANT les
+  // mêmes règles d'éligibilité que les listes ci-dessus (statut DISPONIBLE /
+  // rattaché au client, lotissement verrouillé, exclusion des éléments déjà
+  // sélectionnés). Closures inline : SearchSelect les appelle via un ref, donc
+  // elles reflètent toujours l'état courant sans relancer la recherche en boucle.
+  // Factory de recherche serveur d'un champ terrain : `selectedIds` = sélection
+  // du champ (exclue, déjà ajoutée), `excludeIds` = terrains de l'AUTRE champ
+  // (exclusion mutuelle), `locked` = lotissement verrouillé propre au champ.
+  const makeTerrainConventionSearch = (selectedIds: number[], excludeIds: number[], locked: number | null) =>
+    async (q: string): Promise<SearchSelectOption[]> => {
+      const filters: any = q ? { search: q } : {};
+      if (locked != null) filters.lotissementId = locked;
+      if (terrainStrictByClient && clientIdNum > 0) filters.clientId = clientIdNum;
+      const r: any = await window.electron.terrains.list(token, filters, 1, 100);
+      const sel = new Set(selectedIds.map(Number));
+      const excl = new Set(excludeIds.map(Number));
+      return (r?.data ?? [])
+        .filter((t: any) => {
+          if (sel.has(Number(t.id)) || excl.has(Number(t.id))) return false;
+          if (locked != null && (t.lotissementId ?? null) !== locked) return false;
+          if (terrainStrictByClient) {
+            return TERRAIN_ENGAGED_STATUTS.includes(t.statut) && clientIdNum > 0 && Number(t.clientId) === clientIdNum;
+          }
+          return t.statut === 'DISPONIBLE' || (clientIdNum > 0 && Number(t.clientId) === clientIdNum);
+        })
+        .map(terrainOptLabel);
+    };
+  const searchTerrainsForConvention = makeTerrainConventionSearch(watchTerrainIds, watchPriorTerrainIds, lockedLotissementId);
+  const searchPriorTerrainsForConvention = makeTerrainConventionSearch(watchPriorTerrainIds, watchTerrainIds, lockedPriorLotissementId);
+
+  const searchPropertiesForConvention = async (q: string): Promise<SearchSelectOption[]> => {
+    const filters: any = q ? { search: q } : {};
+    if (propertyStrictByClient && clientIdNum > 0) filters.clientId = clientIdNum;
+    const r: any = await window.electron.properties.list(token, filters, 1, 100);
+    const selected = new Set(watchPropertyIds.map(Number));
+    return (r?.data ?? [])
+      .filter((p: any) => {
+        if (selected.has(Number(p.id))) return false; // déjà ajouté
+        if (propertyStrictByClient) {
+          return PROPERTY_ENGAGED_STATUTS.includes(p.status) && clientIdNum > 0 && Number(p.clientId) === clientIdNum;
+        }
+        return p.status === 'DISPONIBLE' || (clientIdNum > 0 && Number(p.clientId) === clientIdNum);
+      })
+      .map((p: any) => {
+        const isClientOwned = clientIdNum > 0 && Number(p.clientId) === clientIdNum;
+        return {
+          value: String(p.id),
+          label: `${p.reference} — ${p.address}, ${p.city}`,
+          highlighted: isClientOwned,
+        };
+      });
+  };
 
   // Avenant / résiliation : la convention parente est choisie parmi les
   // conventions « principales » déjà créées au nom du client sélectionné
@@ -805,11 +904,22 @@ export default function ConventionFormPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [installmentCount]);
 
+  // Avenant de transfert de site hérité : le « Solde antérieur » est dérivé —
+  // égal au « Coût Total biens antérieurs » moins le « Total versements
+  // antérieurs ». Recalculé automatiquement (champ en lecture seule).
+  useEffect(() => {
+    if (watchType !== 'AVENANT_TRANSFERT_SITE_HERITE') return;
+    const biens = Number(watchPriorTotalBiens) || 0;
+    const versements = Number(watchPriorTotalVersements) || 0;
+    setValue('priorSolde', biens - versements, { shouldValidate: false });
+  }, [watchType, watchPriorTotalBiens, watchPriorTotalVersements, setValue]);
+
   useEffect(() => {
     if (isEdit && res?.data) {
       const c = res.data;
       const propIds: number[] = (c.properties ?? []).map((l: any) => Number(l.property?.id ?? l.propertyId)).filter(Boolean);
       const terrIds: number[] = (c.terrains ?? []).map((l: any) => Number(l.terrain?.id ?? l.terrainId)).filter(Boolean);
+      const priorTerrIds: number[] = (c.priorTerrains ?? []).map((l: any) => Number(l.terrain?.id ?? l.terrainId)).filter(Boolean);
       // Coercion des null Prisma en '' / undefined pour les champs optional :
       // Zod n'accepte pas null sur un string/enum optional, sinon handleSubmit
       // échoue silencieusement et RHF focus le premier champ "invalide".
@@ -818,6 +928,7 @@ export default function ConventionFormPage() {
         assetType: c.assetType ?? 'PROPERTY',
         propertyIds: propIds,
         terrainIds: terrIds,
+        priorTerrainIds: priorTerrIds,
         clientId: c.clientId,
         secondaryClientId: c.secondaryClientId ?? undefined,
         parentConventionId: c.parentConventionId ?? undefined,
@@ -836,6 +947,9 @@ export default function ConventionFormPage() {
         charges: c.charges ? Number(c.charges) : undefined,
         fraisOuvertureDossier: c.fraisOuvertureDossier ? Number(c.fraisOuvertureDossier) : undefined,
         additionalAmount: c.additionalAmount ? Number(c.additionalAmount) : undefined,
+        priorTotalVersements: c.priorTotalVersements ? Number(c.priorTotalVersements) : undefined,
+        priorSolde: c.priorSolde ? Number(c.priorSolde) : undefined,
+        priorTotalBiens: c.priorTotalBiens ? Number(c.priorTotalBiens) : undefined,
         indexType: c.indexType ?? '',
         agentId:    c.agentId    != null ? String(c.agentId)    : '',
         referrerId: c.referrerId != null ? String(c.referrerId) : '',
@@ -933,6 +1047,18 @@ export default function ConventionFormPage() {
       setSubmitError('Tous les terrains rattachés doivent provenir du même lotissement.');
       return;
     }
+    // Avenant de transfert de site : gère le champ « Terrains antérieurs rattachés ».
+    const usesPriorPayload = data.assetType === 'TERRAIN'
+      && (data.type === 'AVENANT_TRANSFERT_SITE_HERITE'
+        || (data.type === 'AVENANT' && data.amendmentType === 'TRANSFERT_SITE'));
+    // Garde-fou client : un terrain ne peut pas figurer dans les deux champs.
+    if (usesPriorPayload) {
+      const cur = new Set((data.terrainIds ?? []).map(Number));
+      if ((data.priorTerrainIds ?? []).some((tid) => cur.has(Number(tid)))) {
+        setSubmitError('Un même terrain ne peut pas figurer à la fois dans « Terrains rattachés » et « Terrains antérieurs rattachés ».');
+        return;
+      }
+    }
     try {
     const payload: any = { ...data };
     // Fige l'énumération des lots souscrits (identique à la variable de template
@@ -954,6 +1080,21 @@ export default function ConventionFormPage() {
     } else {
       payload.lotsSouscrits = '';
     }
+    // Fige l'énumération des lots ANTÉRIEURS souscrits (variable de template
+    // {{convention.lotsAnterieursSouscrits}}) depuis « Terrains antérieurs rattachés ».
+    if (usesPriorPayload) {
+      const allT = (terrainsRes?.data ?? []) as any[];
+      const orderedPrior = (data.priorTerrainIds ?? [])
+        .map((tid) => allT.find((t) => Number(t.id) === Number(tid)))
+        .filter(Boolean);
+      const enumPrior = lotsEnumeration(orderedPrior);
+      const lotNamePrior = (orderedPrior[0] as any)?.lotissement?.nom ?? '';
+      payload.lotsAnterieursSouscrits = enumPrior && lotNamePrior
+        ? `${enumPrior} (${lotNamePrior})`
+        : enumPrior;
+    } else {
+      payload.lotsAnterieursSouscrits = '';
+    }
     // Convertit les sélecteurs d'affectation (chaînes) en number|null. Si
     // l'utilisateur n'a pas le droit d'affecter, on retire ces champs du
     // payload (le backend ne touchera pas à l'affectation existante).
@@ -967,8 +1108,12 @@ export default function ConventionFormPage() {
     // N'envoie que les identifiants correspondant au type de rattachement choisi
     if (payload.assetType === 'TERRAIN') {
       delete payload.propertyIds;
+      // Terrains antérieurs : seulement pour l'avenant de transfert de site ;
+      // sinon on envoie une liste vide pour purger d'éventuels liens hérités.
+      if (!usesPriorPayload) payload.priorTerrainIds = [];
     } else {
       delete payload.terrainIds;
+      delete payload.priorTerrainIds;
       delete payload.secondaryClientId;
     }
     // La convention liée ne concerne que les avenants et résiliations
@@ -1022,6 +1167,17 @@ export default function ConventionFormPage() {
       payload.conditionsParticulieres = payload.conditionsParticulieres || '';
     } else {
       delete payload.conditionsParticulieres;
+    }
+    // Total des versements antérieurs / solde antérieur : avenant de transfert de
+    // site d'une convention HÉRITÉE uniquement.
+    if (payload.type === 'AVENANT_TRANSFERT_SITE_HERITE') {
+      payload.priorTotalVersements = Number(payload.priorTotalVersements) || 0;
+      payload.priorSolde = Number(payload.priorSolde) || 0;
+      payload.priorTotalBiens = Number(payload.priorTotalBiens) || 0;
+    } else {
+      delete payload.priorTotalVersements;
+      delete payload.priorSolde;
+      delete payload.priorTotalBiens;
     }
     if (payload.firstInstallmentDate) payload.firstInstallmentDate = new Date(payload.firstInstallmentDate).toISOString();
     else delete payload.firstInstallmentDate;
@@ -1117,6 +1273,7 @@ export default function ConventionFormPage() {
                   name="clientId"
                   label="Client principal *"
                   options={clientOptions}
+                  onSearch={searchClients}
                   error={errors.clientId?.message}
                 />
                 <FormSearchSelect
@@ -1124,6 +1281,7 @@ export default function ConventionFormPage() {
                   name="secondaryClientId"
                   label="Souscripteur associé / successeur"
                   options={secondaryClientOptions}
+                  onSearch={searchClients}
                   error={errors.secondaryClientId?.message}
                 />
               </div>
@@ -1133,6 +1291,7 @@ export default function ConventionFormPage() {
                 name="clientId"
                 label="Client principal *"
                 options={clientOptions}
+                onSearch={searchClients}
                 error={errors.clientId?.message}
               />
             )}
@@ -1155,10 +1314,27 @@ export default function ConventionFormPage() {
                           options={terrainOptions}
                           values={(field.value ?? []) as number[]}
                           onChange={field.onChange}
+                          onSearch={searchTerrainsForConvention}
                           error={errors.terrainIds?.message as string | undefined}
                         />
                       )}
                     />
+                    {showPriorTerrains && (
+                      <Controller
+                        control={control}
+                        name="priorTerrainIds"
+                        render={({ field }) => (
+                          <MultiAssetSelect
+                            label="Terrains antérieurs rattachés"
+                            options={priorTerrainOptions}
+                            values={(field.value ?? []) as number[]}
+                            onChange={field.onChange}
+                            onSearch={searchPriorTerrainsForConvention}
+                            error={errors.priorTerrainIds?.message as string | undefined}
+                          />
+                        )}
+                      />
+                    )}
                     {terrainStrictByClient && clientIdNum === 0 && (
                       <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-3 py-2">
                         Sélectionnez d'abord le client principal pour afficher les terrains qui lui sont déjà attribués.
@@ -1189,6 +1365,7 @@ export default function ConventionFormPage() {
                           options={filteredPropertyOptions}
                           values={(field.value ?? []) as number[]}
                           onChange={field.onChange}
+                          onSearch={searchPropertiesForConvention}
                           error={errors.propertyIds?.message as string | undefined}
                         />
                       )}
@@ -1442,6 +1619,52 @@ export default function ConventionFormPage() {
                 placeholder="100 000"
                 {...register('fraisOuvertureDossier')}
               />
+            </div>
+          )}
+
+          {/* Avenant de transfert de site / lot d'une convention HÉRITÉE :
+              montants saisis manuellement (la convention initiale n'existe pas
+              dans le système). Alimentent les variables de template. */}
+          {watchType === 'AVENANT_TRANSFERT_SITE_HERITE' && (
+            <div className="mt-4 border-t border-slate-100 pt-4 grid grid-cols-2 gap-4">
+              <div>
+                <Input
+                  label="Coût Total biens antérieurs (FCFA)"
+                  type="number"
+                  step="1000"
+                  placeholder="0"
+                  {...register('priorTotalBiens')}
+                />
+                <p className="text-xs text-slate-500 mt-1">
+                  Coût total des biens antérieurs de la convention héritée.
+                </p>
+              </div>
+              <div>
+                <Input
+                  label="Total versements antérieurs (FCFA)"
+                  type="number"
+                  step="1000"
+                  placeholder="0"
+                  {...register('priorTotalVersements')}
+                />
+                <p className="text-xs text-slate-500 mt-1">
+                  Total déjà versé sur la convention héritée (base antérieure).
+                </p>
+              </div>
+              <div>
+                <Input
+                  label="Solde antérieur (FCFA)"
+                  type="number"
+                  step="1000"
+                  placeholder="0"
+                  readOnly
+                  className="bg-slate-50"
+                  {...register('priorSolde')}
+                />
+                <p className="text-xs text-slate-500 mt-1">
+                  Calculé automatiquement : Coût Total biens antérieurs − Total versements antérieurs.
+                </p>
+              </div>
             </div>
           )}
         </Card>
