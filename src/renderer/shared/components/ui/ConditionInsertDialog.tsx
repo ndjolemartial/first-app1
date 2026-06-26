@@ -3,7 +3,7 @@ import Modal from './Modal';
 import Button from './Button';
 import Input from './Input';
 import Select from './Select';
-import { buildConditionalSnippet } from '../../utils/templateConditionals';
+import { buildConditionalSnippet, type ConditionOperator } from '../../utils/templateConditionals';
 
 interface VariableItem {
   token: string;
@@ -26,6 +26,10 @@ interface ConditionInsertDialogProps {
 const OPERATOR_OPTIONS = [
   { value: '==', label: 'est égale à' },
   { value: '!=', label: 'est différente de' },
+  { value: '>', label: 'est supérieure à' },
+  { value: '<', label: 'est inférieure à' },
+  { value: '>=', label: 'est supérieure ou égale à' },
+  { value: '<=', label: 'est inférieure ou égale à' },
 ];
 
 /**
@@ -40,7 +44,7 @@ export default function ConditionInsertDialog({
   open, onClose, onInsert, variables,
 }: ConditionInsertDialogProps) {
   const [variable, setVariable] = useState('');
-  const [operator, setOperator] = useState<'==' | '!='>('==');
+  const [operator, setOperator] = useState<ConditionOperator>('==');
   const [expected, setExpected] = useState('');
   const [trueText, setTrueText] = useState('');
   const [falseText, setFalseText] = useState('');
@@ -107,7 +111,7 @@ export default function ConditionInsertDialog({
             label="Opérateur"
             options={OPERATOR_OPTIONS}
             value={operator}
-            onChange={(e) => setOperator(e.target.value as '==' | '!=')}
+            onChange={(e) => setOperator(e.target.value as ConditionOperator)}
           />
         </div>
 
@@ -118,9 +122,11 @@ export default function ConditionInsertDialog({
           onChange={(e) => setExpected(e.target.value)}
         />
         <p className="text-xs text-slate-500 -mt-2">
-          La comparaison est sensible à la casse. Pour les énumérations
-          (civilité, type d'attestation…), utilisez la valeur exacte (ex.
-          MADAME et non « Madame »).
+          Pour les montants (solde, versements, prix…), saisissez un nombre
+          (ex. 0 ou 1500000) : la comparaison est numérique et ignore le
+          formatage (« 0 F CFA »). Pour les énumérations (civilité, type
+          d'attestation…), la comparaison est du texte sensible à la casse —
+          utilisez la valeur exacte (ex. MADAME et non « Madame »).
         </p>
 
         <div>

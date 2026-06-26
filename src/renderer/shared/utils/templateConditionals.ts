@@ -7,8 +7,16 @@
  *
  *   {{#si variable != "valeur"}}…{{sinon}}…{{/si}}
  *
+ *   {{#si variable > "0"}}…{{/si}}           (comparaison numérique : > < >= <=)
+ *
  *   {{#si variable}}…{{/si}}                 (vrai si la variable est non vide)
  *   {{#si !variable}}…{{/si}}                (vrai si la variable est vide)
+ *
+ * Les comparaisons sont **numériques** dès que la valeur attendue et la valeur
+ * résolue se réduisent toutes deux à un nombre (le formatage monétaire — espaces,
+ * « F CFA », séparateurs — est ignoré). Ainsi `convention.soldeAnterieur == "0"`
+ * est vrai lorsque le solde vaut 0, même affiché « 0 F CFA ». À défaut (civilité,
+ * type d'attestation…), on retombe sur une comparaison de texte stricte.
  *
  * Les blocs conditionnels sont résolus AVANT la substitution des variables
  * (`{{token}}`), pour que le contenu non retenu ne soit pas inutilement
@@ -28,16 +36,67 @@ function splitOnSinon(content: string): { trueText: string; falseText: string } 
   };
 }
 
-/** Évalue une comparaison entre la valeur résolue et la valeur attendue. */
+/** Opérateurs de comparaison reconnus par le moteur de conditions. */
+export type ConditionOperator = '==' | '!=' | '>' | '<' | '>=' | '<=';
+
+/**
+ * Tente d'interpréter une chaîne comme un nombre, en ignorant le formatage
+ * monétaire/français (espaces, symbole devise « F CFA », séparateurs de
+ * milliers, virgule décimale). Retourne `null` si la chaîne ne représente pas
+ * un nombre — auquel cas la comparaison retombe sur du texte.
+ */
+function toNumber(raw: string): number | null {
+  if (raw == null) return null;
+  // Ne conserver que chiffres, séparateurs et signe.
+  let s = String(raw).replace(/[^\d.,-]/g, '');
+  if (s === '' || s === '-') return null;
+  const lastComma = s.lastIndexOf(',');
+  const lastDot = s.lastIndexOf('.');
+  if (lastComma > -1 && lastDot > -1) {
+    // Le dernier séparateur rencontré est le séparateur décimal.
+    s = lastComma > lastDot
+      ? s.replace(/\./g, '').replace(',', '.')
+      : s.replace(/,/g, '');
+  } else if (lastComma > -1) {
+    const parts = s.split(',');
+    // « 1234,56 » → décimal ; « 1,500,000 » → séparateurs de milliers.
+    s = (parts.length === 2 && parts[1].length <= 2)
+      ? `${parts[0]}.${parts[1]}`
+      : s.replace(/,/g, '');
+  } else if (lastDot > -1) {
+    const parts = s.split('.');
+    if (!(parts.length === 2 && parts[1].length <= 2)) {
+      s = s.replace(/\./g, ''); // points = séparateurs de milliers
+    }
+  }
+  const n = Number(s);
+  return Number.isFinite(n) ? n : null;
+}
+
+/**
+ * Évalue une comparaison entre la valeur résolue et la valeur attendue.
+ * Numérique si les deux côtés sont des nombres (formatage devise ignoré),
+ * sinon comparaison de texte stricte.
+ */
 function compare(
   actual: string,
-  operator: '==' | '!=',
+  operator: ConditionOperator,
   expected: string,
 ): boolean {
   const a = actual.trim();
   const e = expected.trim();
-  if (operator === '==') return a === e;
-  return a !== e;
+  const na = toNumber(a);
+  const ne = toNumber(e);
+  const numeric = na !== null && ne !== null;
+  switch (operator) {
+    case '==': return numeric ? na === ne : a === e;
+    case '!=': return numeric ? na !== ne : a !== e;
+    case '>':  return numeric ? na! > ne! : a > e;
+    case '<':  return numeric ? na! < ne! : a < e;
+    case '>=': return numeric ? na! >= ne! : a >= e;
+    case '<=': return numeric ? na! <= ne! : a <= e;
+    default:   return false;
+  }
 }
 
 /**
@@ -51,11 +110,13 @@ export function evaluateConditionals(
 ): string {
   if (!html) return html;
   // Bloc avec comparaison : {{#si <var> <op> "<value>"}}…{{/si}}
-  const compareRegex = /\{\{#si\s+([\w.]+)\s*(==|!=)\s*"([^"]*)"\s*\}\}([\s\S]*?)\{\{\/si\}\}/g;
+  // Les opérateurs à deux caractères (>=, <=) sont placés avant les variantes
+  // à un caractère pour être reconnus en priorité par l'alternance.
+  const compareRegex = /\{\{#si\s+([\w.]+)\s*(>=|<=|==|!=|>|<)\s*"([^"]*)"\s*\}\}([\s\S]*?)\{\{\/si\}\}/g;
   let result = html.replace(compareRegex, (_m, variable, operator, expected, content) => {
     const { trueText, falseText } = splitOnSinon(content);
     const actual = Object.prototype.hasOwnProperty.call(vars, variable) ? vars[variable] : '';
-    return compare(actual, operator as '==' | '!=', expected) ? trueText : falseText;
+    return compare(actual, operator as ConditionOperator, expected) ? trueText : falseText;
   });
   // Bloc « truthy » : {{#si <var>}}…{{/si}} ou {{#si !<var>}}…{{/si}}
   const truthyRegex = /\{\{#si\s+(!)?([\w.]+)\s*\}\}([\s\S]*?)\{\{\/si\}\}/g;
@@ -74,7 +135,7 @@ export function evaluateConditionals(
  */
 export function buildConditionalSnippet(args: {
   variable: string;
-  operator: '==' | '!=';
+  operator: ConditionOperator;
   expected: string;
   trueText: string;
   falseText?: string;
