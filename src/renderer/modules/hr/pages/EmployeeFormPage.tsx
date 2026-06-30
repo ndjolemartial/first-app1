@@ -7,7 +7,7 @@ import Input from '../../../shared/components/ui/Input';
 import Select from '../../../shared/components/ui/Select';
 import Button from '../../../shared/components/ui/Button';
 import { Save } from 'lucide-react';
-import { useEmployee, useCreateEmployee, useUpdateEmployee } from '../hooks/useHr';
+import { useEmployee, useCreateEmployee, useUpdateEmployee, useLinkableUsers } from '../hooks/useHr';
 import {
   CIVILITE_OPTIONS, SEXE_OPTIONS, MARITAL_OPTIONS, EMPLOYEE_STATUS_OPTIONS,
 } from '../types/hr.types';
@@ -38,6 +38,7 @@ interface FormData {
   bankRib: string;
   poste: string;
   departement: string;
+  userId: string;
   status: string;
   hireDate: string;
   exitDate: string;
@@ -49,7 +50,7 @@ const EMPTY: FormData = {
   matricule: '', civilite: '', firstName: '', lastName: '', sexe: '', birthDate: '', birthPlace: '',
   nationality: 'CI', maritalStatus: '', childrenCount: 0, igrParts: 1, email: '', phone: '', mobile: '',
   address: '', city: '', idNumber: '', cnpsNumber: '', cmuNumber: '', bankName: '', bankRib: '',
-  poste: '', departement: '', status: 'ACTIF', hireDate: '', exitDate: '', exitReason: '', notes: '',
+  poste: '', departement: '', userId: '', status: 'ACTIF', hireDate: '', exitDate: '', exitReason: '', notes: '',
 };
 
 export default function EmployeeFormPage() {
@@ -59,8 +60,19 @@ export default function EmployeeFormPage() {
   const employeeId = Number(id);
 
   const { data: res } = useEmployee(isEdit ? employeeId : 0);
+  const { data: usersRes } = useLinkableUsers(isEdit ? employeeId : undefined);
   const create = useCreateEmployee();
   const update = useUpdateEmployee();
+
+  const userOptions = [
+    { value: '', label: '— Aucun compte lié —' },
+    ...((usersRes?.success && usersRes.data ? usersRes.data : []).map((u: any) => ({
+      value: String(u.id),
+      label: `${u.lastName ?? ''} ${u.firstName ?? ''}`.trim()
+        + (u.matricule ? ` (${u.matricule})` : '')
+        + (u.role ? ` — ${u.role}` : ''),
+    }))),
+  ];
 
   const { register, handleSubmit, reset, formState: { errors, isSubmitting } } = useForm<FormData>({
     defaultValues: EMPTY,
@@ -94,6 +106,7 @@ export default function EmployeeFormPage() {
         bankRib: e.bankRib ?? '',
         poste: e.poste ?? '',
         departement: e.departement ?? '',
+        userId: e.userId != null ? String(e.userId) : '',
         status: e.status ?? 'ACTIF',
         hireDate: toDateInput(e.hireDate),
         exitDate: toDateInput(e.exitDate),
@@ -180,6 +193,17 @@ export default function EmployeeFormPage() {
               {...register('notes')}
               className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
+          </div>
+        </Card>
+
+        <Card>
+          <h3 className="mb-1 text-sm font-semibold text-slate-800">Compte utilisateur lié</h3>
+          <p className="mb-3 text-xs text-slate-500">
+            Rattachez ce membre du personnel à un compte de connexion de l'application.
+            Seuls les comptes actifs non déjà liés à un autre employé sont proposés.
+          </p>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <Select label="Utilisateur de l'application" options={userOptions} {...register('userId')} />
           </div>
         </Card>
 

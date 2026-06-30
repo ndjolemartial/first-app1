@@ -15,6 +15,7 @@ import { useAuthStore } from '../../shared/stores/auth.store';
 import DashboardSlideshow, { type SlideshowItem } from './components/DashboardSlideshow';
 import AdDashboardSections from './components/AdDashboardSections';
 import CrmRecapSection from './components/CrmRecapSection';
+import QrCodeBox from '../../shared/components/QrCodeBox';
 
 interface DashboardData {
   isPrivileged: boolean;
@@ -28,6 +29,8 @@ interface DashboardData {
     programmes: number | null;
   };
   slideshow: SlideshowItem[];
+  attendanceQr: { url: string; model: string } | null;
+  visitorQr: { url: string; model: string } | null;
 }
 
 interface StatTile {
@@ -213,6 +216,32 @@ export default function DashboardPage() {
         <div className="mt-8">
           <CrmRecapSection title="Activité CRM" />
         </div>
+      )}
+
+      {data?.attendanceQr?.url && (
+        <Card className="mt-8 flex flex-col items-center gap-3 sm:flex-row sm:items-center sm:gap-6">
+          <div className="flex-1">
+            <h3 className="text-base font-semibold text-slate-900">Pointage du personnel</h3>
+            <p className="mt-1 text-sm text-slate-500">
+              Scannez ce QR Code depuis votre téléphone pour enregistrer votre arrivée ou votre départ.
+              Vous pouvez le télécharger ou l'imprimer pour l'afficher.
+            </p>
+          </div>
+          <QrCodeBox value={data.attendanceQr.url} model={data.attendanceQr.model} size={180} downloadName="qr-pointage" printTitle="Pointage du personnel — Afrikimmo" />
+        </Card>
+      )}
+
+      {data?.visitorQr?.url && (
+        <Card className="mt-8 flex flex-col items-center gap-3 sm:flex-row sm:items-center sm:gap-6">
+          <div className="flex-1">
+            <h3 className="text-base font-semibold text-slate-900">Enregistrement des visiteurs</h3>
+            <p className="mt-1 text-sm text-slate-500">
+              Affichez ce QR Code à l'accueil : les visiteurs le scannent pour renseigner leur visite.
+              Vous pouvez le télécharger ou l'imprimer.
+            </p>
+          </div>
+          <QrCodeBox value={data.visitorQr.url} model={data.visitorQr.model} size={180} downloadName="qr-visiteurs" printTitle="Enregistrement des visiteurs — Afrikimmo" caption="VISITEURS" />
+        </Card>
       )}
 
     </PageLayout>

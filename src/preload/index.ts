@@ -352,6 +352,23 @@ const lotissements = {
     api.invoke('lotissements:statusStats', { token, filters }),
 };
 
+// Gestion des visiteurs
+const visitors = {
+  list: (token: string, filters?: object, page?: number, limit?: number) =>
+    api.invoke('visitors:list', { token, filters, page, limit }),
+  getById: (token: string, id: number) => api.invoke('visitors:getById', { token, id }),
+  create: (token: string, payload: object) => api.invoke('visitors:create', { token, payload }),
+  update: (token: string, id: number, payload: object) => api.invoke('visitors:update', { token, id, payload }),
+  delete: (token: string, id: number) => api.invoke('visitors:delete', { token, id }),
+  stats: (token: string) => api.invoke('visitors:stats', { token }),
+  listObjects: (token: string, includeInactive?: boolean) =>
+    api.invoke('visitors:listObjects', { token, includeInactive }),
+  createObject: (token: string, label: string) => api.invoke('visitors:createObject', { token, label }),
+  updateObject: (token: string, id: number, payload: object) =>
+    api.invoke('visitors:updateObject', { token, id, payload }),
+  deleteObject: (token: string, id: number) => api.invoke('visitors:deleteObject', { token, id }),
+};
+
 // Terrains
 const terrains = {
   list: (token: string, filters?: object, page?: number, limit?: number) =>
@@ -412,6 +429,8 @@ const hr = {
       api.invoke('hr:employees:list', { token, filters, page, limit }),
     stats: (token: string) => api.invoke('hr:employees:stats', { token }),
     getById: (token: string, id: number) => api.invoke('hr:employees:getById', { token, id }),
+    linkableUsers: (token: string, excludeEmployeeId?: number) =>
+      api.invoke('hr:employees:linkableUsers', { token, excludeEmployeeId }),
     create: (token: string, payload: object) => api.invoke('hr:employees:create', { token, payload }),
     update: (token: string, id: number, payload: object) =>
       api.invoke('hr:employees:update', { token, id, payload }),
@@ -592,6 +611,7 @@ const expenses = {
   create: (token: string, payload: object) => api.invoke('expenses:create', { token, payload }),
   update: (token: string, id: number, payload: object) => api.invoke('expenses:update', { token, id, payload }),
   settle: (token: string, payload: object) => api.invoke('expenses:settle', { token, payload }),
+  fundAccount: (token: string, payload: object) => api.invoke('expenses:fundAccount', { token, payload }),
   cancel: (token: string, id: number) => api.invoke('expenses:cancel', { token, id }),
   remove: (token: string, id: number) => api.invoke('expenses:remove', { token, id }),
 };
@@ -701,6 +721,14 @@ const settings = {
   updatePayrollAccount: (token: string, payload: { accountId: number | null }) =>
     api.invoke('settings:updatePayrollAccount', { token, payload }),
 
+  getAttendanceQr: (token: string) => api.invoke('settings:getAttendanceQr', { token }),
+  updateAttendanceQr: (token: string, payload: object) =>
+    api.invoke('settings:updateAttendanceQr', { token, payload }),
+
+  getVisitorQr: (token: string) => api.invoke('settings:getVisitorQr', { token }),
+  updateVisitorQr: (token: string, payload: object) =>
+    api.invoke('settings:updateVisitorQr', { token, payload }),
+
   getEmail: (token: string) => api.invoke('settings:getEmail', { token }),
   updateEmail: (token: string, payload: object) =>
     api.invoke('settings:updateEmail', { token, payload }),
@@ -807,4 +835,4 @@ const documents = {
   pathForFile: (file: File) => webUtils.getPathForFile(file),
 };
 
-contextBridge.exposeInMainWorld('electron', { auth, users, prospects, clients, owners, properties, conventions, conventionTemplates, attestationTemplates, attestations, quotes, quoteTemplates, catalog, accounting, bilan, communication, crm, archiving, documents, documentExport, lotissements, terrains, programmes, projects, hr, geo, countries, commissions, expenses, analytics, exporter, invoiceTemplates, listExportTemplates, treasury, budget, dashboard, settings, reminders, config });
+contextBridge.exposeInMainWorld('electron', { auth, users, prospects, clients, owners, properties, conventions, conventionTemplates, attestationTemplates, attestations, quotes, quoteTemplates, catalog, accounting, bilan, communication, crm, archiving, documents, documentExport, lotissements, terrains, programmes, projects, hr, visitors, geo, countries, commissions, expenses, analytics, exporter, invoiceTemplates, listExportTemplates, treasury, budget, dashboard, settings, reminders, config });

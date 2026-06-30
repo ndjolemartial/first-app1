@@ -99,6 +99,9 @@ import AttendancePage from './modules/hr/pages/AttendancePage';
 import ProgrammesListPage from './modules/programmes/pages/ProgrammesListPage';
 import ProgrammeFormPage from './modules/programmes/pages/ProgrammeFormPage';
 import ProgrammeDetailPage from './modules/programmes/pages/ProgrammeDetailPage';
+import VisitorsListPage from './modules/visitors/pages/VisitorsListPage';
+import VisitorFormPage from './modules/visitors/pages/VisitorFormPage';
+import VisitObjectsPage from './modules/visitors/pages/VisitObjectsPage';
 
 // Projets
 import ProjectsListPage from './modules/projects/pages/ProjectsListPage';
@@ -312,6 +315,17 @@ export const router = createHashRouter([
           { path: 'terrains/new', element: <TerrainFormPage /> },
           { path: 'terrains/:id', element: <TerrainDetailPage /> },
           { path: 'terrains/:id/edit', element: <TerrainFormPage /> },
+
+          // Gestion des visiteurs — SUPER_ADMIN, ADMIN, ASSISTANTE_DIRECTION (accueil).
+          {
+            element: <RoleGuard allowedRoles={['SUPER_ADMIN', 'ADMIN', 'ASSISTANTE_DIRECTION']} />,
+            children: [
+              { path: 'visitors', element: <VisitorsListPage /> },
+              { path: 'visitors/objects', element: <VisitObjectsPage /> },
+              { path: 'visitors/new', element: <VisitorFormPage /> },
+              { path: 'visitors/:id/edit', element: <VisitorFormPage /> },
+            ],
+          },
 
           // Programmes immobiliers — réservé aux MANAGER+ (ACCOUNTANT inclus). AGENT/READONLY n'ont pas accès.
           {

@@ -263,6 +263,20 @@ export const SettingsKeys = {
   // Trésorerie — compte par défaut à débiter lors du paiement des salaires (RH/Paie).
   // Identifiant de BankAccount (commun et actif) ; vide = aucun compte par défaut.
   payrollDefaultAccountId: 'treasury.defaultSalaryAccount',
+
+  // Pointage par QR Code — app web autonome (dossier web/ sur le serveur local).
+  attendanceQrEnabled:     'attendance.qr.enabled',        // 'true' | 'false'
+  attendanceQrBaseUrl:     'attendance.qr.baseUrl',        // URL de l'app web encodée dans le QR (ex. http://192.168.1.10/pointage/)
+  attendanceQrAllowedRoles:'attendance.qr.allowedRoles',   // rôles voyant le QR au tableau de bord (JSON array)
+  attendanceQrModel:       'attendance.qr.model',          // modèle visuel du QR ('1' | '2' | '3')
+  attendanceExpectedArrival:   'attendance.expectedArrival',   // 'HH:MM' seuil de retard (défaut 08:00)
+  attendanceExpectedDeparture: 'attendance.expectedDeparture', // 'HH:MM' seuil de départ anticipé (défaut 17:00)
+
+  // QR Visiteurs — app web autonome (dossier web-visiteurs/ sur le serveur local).
+  visitorQrEnabled:     'visitors.qr.enabled',        // 'true' | 'false'
+  visitorQrBaseUrl:     'visitors.qr.baseUrl',        // URL de l'app web visiteurs (ex. http://192.168.1.10/visiteurs/)
+  visitorQrAllowedRoles:'visitors.qr.allowedRoles',   // rôles voyant le QR au tableau de bord (JSON array)
+  visitorQrModel:       'visitors.qr.model',          // modèle visuel du QR ('1' | '2' | '3')
 } as const;
 
 /** Liste des clés correspondant à des secrets chiffrés. */

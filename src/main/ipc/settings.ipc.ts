@@ -13,9 +13,22 @@ import {
   storageRoot, setStorageRootOverride, writeLogoFile, writeSlideshowFile,
   resolveStoragePath, removeStorageFile,
 } from '../services/storage.service';
+import os from 'os';
 import { sendTestEmail } from '../services/email.service';
 import { sendTestSms } from '../services/sms.service';
 import { sendTestWhatsapp } from '../services/whatsapp.service';
+
+/** Adresses IPv4 locales (hors loopback) — pour suggérer l'URL du QR. */
+function getLocalIps(): string[] {
+  const ips: string[] = [];
+  const ifaces = os.networkInterfaces();
+  for (const name of Object.keys(ifaces)) {
+    for (const iface of ifaces[name] ?? []) {
+      if (iface.family === 'IPv4' && !iface.internal) ips.push(iface.address);
+    }
+  }
+  return ips;
+}
 
 /** Paramètres applicatifs : réservés aux administrateurs. */
 const ADMIN_ROLES = ['SUPER_ADMIN', 'ADMIN'];
@@ -837,6 +850,147 @@ export function registerSettingsIPC(): void {
       return { success: true };
     } catch (err: any) {
       logger.error('settings:updateShareLocation', err.message);
+      return { success: false, error: err.message };
+    }
+  });
+
+  // ── Pointage par QR Code ────────────────────────────────────────────────────
+
+  /** Lit la configuration du pointage par QR (URL de l'app web + seuils horaires). */
+  ipcMain.handle('settings:getAttendanceQr', async (_event, { token }: any) => {
+    try {
+      const session = getSession(token);
+      if (!session) return { success: false, error: 'Session expirée' };
+      checkRole(session, ADMIN_ROLES);
+      const map = await getSettings([
+        SettingsKeys.attendanceQrEnabled, SettingsKeys.attendanceQrBaseUrl,
+        SettingsKeys.attendanceQrAllowedRoles, SettingsKeys.attendanceQrModel,
+        SettingsKeys.attendanceExpectedArrival, SettingsKeys.attendanceExpectedDeparture,
+      ]);
+      let allowedRoles: string[] = [];
+      const rawRoles = map[SettingsKeys.attendanceQrAllowedRoles];
+      if (rawRoles) {
+        try { const p = JSON.parse(rawRoles); if (Array.isArray(p)) allowedRoles = p.filter((r) => typeof r === 'string'); }
+        catch { allowedRoles = []; }
+      }
+      const model = ['1', '2', '3'].includes(map[SettingsKeys.attendanceQrModel] ?? '') ? map[SettingsKeys.attendanceQrModel]! : '1';
+      return {
+        success: true,
+        data: {
+          enabled: map[SettingsKeys.attendanceQrEnabled] === 'true',
+          baseUrl: map[SettingsKeys.attendanceQrBaseUrl] ?? '',
+          allowedRoles,
+          model,
+          expectedArrival: map[SettingsKeys.attendanceExpectedArrival] || '08:00',
+          expectedDeparture: map[SettingsKeys.attendanceExpectedDeparture] || '17:00',
+          localIps: getLocalIps(),
+        },
+      };
+    } catch (err: any) {
+      logger.error('settings:getAttendanceQr', err.message);
+      return { success: false, error: err.message };
+    }
+  });
+
+  /**
+   * Met à jour la config du pointage QR. Le pointage est servi par l'app web
+   * autonome (dossier `web/` déposé sur le serveur web local) ; l'application ne
+   * stocke que l'URL du QR, les rôles autorisés et les seuils horaires (ces
+   * derniers lus par l'app web depuis AppSetting).
+   */
+  ipcMain.handle('settings:updateAttendanceQr', async (_event, { token, payload }: any) => {
+    try {
+      const session = getSession(token);
+      if (!session) return { success: false, error: 'Session expirée' };
+      checkRole(session, ADMIN_ROLES);
+      const hhmm = z.string().regex(/^([01]?\d|2[0-3]):([0-5]\d)$/, 'Format HH:MM attendu');
+      const schema = z.object({
+        enabled: z.boolean(),
+        baseUrl: z.string().trim().max(300).optional().default(''),
+        allowedRoles: z.array(z.string()).default([]),
+        model: z.enum(['1', '2', '3']).default('1'),
+        expectedArrival: hhmm,
+        expectedDeparture: hhmm,
+      });
+      const parsed = schema.safeParse(payload);
+      if (!parsed.success) return { success: false, error: parsed.error.issues.map((i) => i.message).join(', ') };
+      const d = parsed.data;
+      await setSettings([
+        { key: SettingsKeys.attendanceQrEnabled, value: d.enabled ? 'true' : 'false' },
+        { key: SettingsKeys.attendanceQrBaseUrl, value: d.baseUrl },
+        { key: SettingsKeys.attendanceQrAllowedRoles, value: JSON.stringify(Array.from(new Set(d.allowedRoles))) },
+        { key: SettingsKeys.attendanceQrModel, value: d.model },
+        { key: SettingsKeys.attendanceExpectedArrival, value: d.expectedArrival },
+        { key: SettingsKeys.attendanceExpectedDeparture, value: d.expectedDeparture },
+      ]);
+      logger.info(`Pointage QR mis à jour (activé=${d.enabled})`);
+      return { success: true };
+    } catch (err: any) {
+      logger.error('settings:updateAttendanceQr', err.message);
+      return { success: false, error: err.message };
+    }
+  });
+
+  // ── QR Visiteurs (app web autonome) ─────────────────────────────────────────
+
+  /** Lit la configuration du QR Visiteurs (URL de l'app web + rôles + modèle). */
+  ipcMain.handle('settings:getVisitorQr', async (_event, { token }: any) => {
+    try {
+      const session = getSession(token);
+      if (!session) return { success: false, error: 'Session expirée' };
+      checkRole(session, ADMIN_ROLES);
+      const map = await getSettings([
+        SettingsKeys.visitorQrEnabled, SettingsKeys.visitorQrBaseUrl,
+        SettingsKeys.visitorQrAllowedRoles, SettingsKeys.visitorQrModel,
+      ]);
+      let allowedRoles: string[] = [];
+      const rawRoles = map[SettingsKeys.visitorQrAllowedRoles];
+      if (rawRoles) {
+        try { const p = JSON.parse(rawRoles); if (Array.isArray(p)) allowedRoles = p.filter((r) => typeof r === 'string'); }
+        catch { allowedRoles = []; }
+      }
+      const model = ['1', '2', '3'].includes(map[SettingsKeys.visitorQrModel] ?? '') ? map[SettingsKeys.visitorQrModel]! : '1';
+      return {
+        success: true,
+        data: {
+          enabled: map[SettingsKeys.visitorQrEnabled] === 'true',
+          baseUrl: map[SettingsKeys.visitorQrBaseUrl] ?? '',
+          allowedRoles,
+          model,
+          localIps: getLocalIps(),
+        },
+      };
+    } catch (err: any) {
+      logger.error('settings:getVisitorQr', err.message);
+      return { success: false, error: err.message };
+    }
+  });
+
+  /** Met à jour la config du QR Visiteurs (servi par l'app web `web-visiteurs/`). */
+  ipcMain.handle('settings:updateVisitorQr', async (_event, { token, payload }: any) => {
+    try {
+      const session = getSession(token);
+      if (!session) return { success: false, error: 'Session expirée' };
+      checkRole(session, ADMIN_ROLES);
+      const schema = z.object({
+        enabled: z.boolean(),
+        baseUrl: z.string().trim().max(300).optional().default(''),
+        allowedRoles: z.array(z.string()).default([]),
+        model: z.enum(['1', '2', '3']).default('1'),
+      });
+      const parsed = schema.safeParse(payload);
+      if (!parsed.success) return { success: false, error: parsed.error.issues.map((i) => i.message).join(', ') };
+      const d = parsed.data;
+      await setSettings([
+        { key: SettingsKeys.visitorQrEnabled, value: d.enabled ? 'true' : 'false' },
+        { key: SettingsKeys.visitorQrBaseUrl, value: d.baseUrl },
+        { key: SettingsKeys.visitorQrAllowedRoles, value: JSON.stringify(Array.from(new Set(d.allowedRoles))) },
+        { key: SettingsKeys.visitorQrModel, value: d.model },
+      ]);
+      logger.info(`QR Visiteurs mis à jour (activé=${d.enabled})`);
+      return { success: true };
+    } catch (err: any) {
+      logger.error('settings:updateVisitorQr', err.message);
       return { success: false, error: err.message };
     }
   });

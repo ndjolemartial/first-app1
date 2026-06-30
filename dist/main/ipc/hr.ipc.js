@@ -213,6 +213,37 @@ function registerHrIPC() {
             return { success: false, error: error.message };
         }
     });
+    /**
+     * Liste des utilisateurs de l'application proposables pour être liés à un
+     * membre du personnel. Renvoie les comptes actifs non encore rattachés à un
+     * autre employé (le compte de l'employé en cours d'édition est conservé via
+     * `excludeEmployeeId`). Réservé aux rôles RH/Admin.
+     */
+    electron_1.ipcMain.handle('hr:employees:linkableUsers', async (_event, { token, excludeEmployeeId }) => {
+        try {
+            const session = (0, auth_service_1.getSession)(token);
+            if (!session)
+                return { success: false, error: 'Session expirée' };
+            (0, auth_service_1.checkRole)(session, HR_READ_ROLES);
+            const db = (0, db_service_1.getDb)();
+            // « Lié » s'entend au sens de la contrainte d'unicité userId (tout employé,
+            // y compris archivé) : on n'expose donc que les comptes sans employé, plus
+            // celui déjà rattaché à l'employé édité.
+            const orClauses = [{ employee: { is: null } }];
+            if (excludeEmployeeId)
+                orClauses.push({ employee: { is: { id: Number(excludeEmployeeId) } } });
+            const data = await db.user.findMany({
+                where: { deletedAt: null, isActive: true, OR: orClauses },
+                select: { id: true, firstName: true, lastName: true, matricule: true, email: true, role: true },
+                orderBy: [{ lastName: 'asc' }, { firstName: 'asc' }],
+            });
+            return { success: true, data };
+        }
+        catch (error) {
+            logger_1.default.error('hr:employees:linkableUsers error', error.message);
+            return { success: false, error: error.message };
+        }
+    });
     electron_1.ipcMain.handle('hr:employees:create', async (_event, { token, payload }) => {
         try {
             const session = (0, auth_service_1.getSession)(token);
@@ -237,6 +268,12 @@ function registerHrIPC() {
             else {
                 const year = d.hireDate ? new Date(d.hireDate).getFullYear() : new Date().getFullYear();
                 matricule = await nextEmployeeMatricule(db, year);
+            }
+            // Compte utilisateur lié : un utilisateur ne peut être rattaché qu'à un seul employé.
+            if (d.userId != null) {
+                const linked = await db.employee.findFirst({ where: { userId: d.userId }, select: { id: true } });
+                if (linked)
+                    return { success: false, error: 'Cet utilisateur est déjà lié à un autre membre du personnel.' };
             }
             const employee = await db.employee.create({
                 data: {
@@ -280,6 +317,12 @@ function registerHrIPC() {
                         return { success: false, error: 'Ce matricule est déjà utilisé.' };
                     data.matricule = m;
                 }
+            }
+            // Compte utilisateur lié : vérifier qu'il n'est pas déjà rattaché à un autre employé.
+            if (data.userId != null) {
+                const linked = await db.employee.findFirst({ where: { userId: data.userId, id: { not: id } }, select: { id: true } });
+                if (linked)
+                    return { success: false, error: 'Cet utilisateur est déjà lié à un autre membre du personnel.' };
             }
             const employee = await db.employee.update({ where: { id }, data });
             logger_1.default.info(`Employé mis à jour : id=${id}`);

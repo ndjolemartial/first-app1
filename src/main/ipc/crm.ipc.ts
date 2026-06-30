@@ -133,6 +133,7 @@ export function registerCrmIPC(): void {
             programme: { select: { id: true, reference: true, nom: true } },
             invoice: { select: { id: true, reference: true } },
             installment: { select: { id: true, installmentNumber: true, convention: { select: { reference: true } } } },
+            _count: { select: { attachments: { where: { deletedAt: null } } } },
           },
         }),
         db.crmActivity.count({ where: finalWhere }),
@@ -158,6 +159,7 @@ export function registerCrmIPC(): void {
         where,
         include: {
           user: { select: { id: true, firstName: true, lastName: true } },
+          createdBy: { select: { id: true, firstName: true, lastName: true } },
           client: { select: { id: true, firstName: true, lastName: true, entreprise: true, type: true } },
           prospect: { select: { id: true, firstName: true, lastName: true } },
           owner: { select: { id: true, firstName: true, lastName: true, companyName: true } },
@@ -168,6 +170,11 @@ export function registerCrmIPC(): void {
           programme: { select: { id: true, reference: true, nom: true } },
           invoice: { select: { id: true, reference: true } },
           installment: { select: { id: true, installmentNumber: true, convention: { select: { reference: true } } } },
+          attachments: {
+            where: { deletedAt: null },
+            select: { id: true, name: true, type: true, size: true, numeroArchive: true, uploadedAt: true },
+            orderBy: { uploadedAt: 'desc' },
+          },
         },
       });
       if (!activity) return { success: false, error: 'Activité introuvable ou inaccessible' };

@@ -14,9 +14,10 @@ import { useAccessibleBudgetLines } from '../../budget/hooks/useBudget';
 import { DIRECTION_OPTIONS, PAYMENT_METHOD_OPTIONS, categoryLabel } from '../utils/treasury.utils';
 import { formatCurrency } from '../../../shared/utils/format';
 import { useAuthStore } from '../../../shared/stores/auth.store';
-import { Save, Briefcase, Map, Building, UploadCloud, File as FileIcon, X, Plus } from 'lucide-react';
+import { Save, Briefcase, Map, Building, UploadCloud, File as FileIcon, X, Plus, AlertTriangle, Wallet } from 'lucide-react';
 import { clsx } from 'clsx';
 import { formatBytes } from '../../archiving/utils/gedTree';
+import FundAccountModal from '../../../shared/components/FundAccountModal';
 
 interface FormData {
   bankAccountId: string;
@@ -131,6 +132,18 @@ export default function OperationFormPage() {
   });
 
   const direction = watch('direction');
+  const watchedAccountId = watch('bankAccountId');
+  const watchedAmount = watch('amount');
+  // Approvisionnement d'un compte ne couvrant pas le montant avant une SORTIE.
+  const [funding, setFunding] = useState(false);
+  const selectedAccount = accounts.find((a: any) => String(a.id) === watchedAccountId) ?? null;
+  const accountBalance = selectedAccount ? Number(selectedAccount.balance ?? 0) : null;
+  const operationAmount = Number(watchedAmount) || 0;
+  // Sortie dont le compte ne couvre pas le montant : enregistrement bloqué tant
+  // que le compte n'est pas approvisionné à hauteur du montant (solde ≥ montant).
+  const insufficientFunds =
+    direction === 'SORTIE' && selectedAccount != null && accountBalance != null
+    && operationAmount > 0 && accountBalance < operationAmount;
 
   // Préremplit le champ « Compte » selon le sens choisi : compte par défaut
   // « entrée » ou « sortie » configuré sur la fiche de l'utilisateur connecté.
@@ -165,6 +178,8 @@ export default function OperationFormPage() {
   const apiError = create.data && !create.data.success ? create.data.error : null;
 
   const onSubmit = async (data: FormData) => {
+    // Garde-fou : une SORTIE sur un compte au solde ≤ 0 est bloquée.
+    if (insufficientFunds) return;
     // Imputation analytique : on n'envoie qu'UN seul des trois IDs selon le type choisi.
     const projectId     = data.imputationKind === 'PROJECT'     && data.projectId     ? Number(data.projectId)     : null;
     const lotissementId = data.imputationKind === 'LOTISSEMENT' && data.lotissementId ? Number(data.lotissementId) : null;
@@ -271,6 +286,36 @@ export default function OperationFormPage() {
                   />
                   <Input label="Date de l'opération" type="date" {...register('operationDate')} />
                 </div>
+
+                {/* Solde du compte + blocage si ≤ 0 pour une SORTIE. */}
+                {direction === 'SORTIE' && selectedAccount && (
+                  <>
+                    <p className="-mt-2 text-xs text-slate-500">
+                      Solde du compte :{' '}
+                      <span className={`font-semibold ${insufficientFunds ? 'text-red-600' : 'text-slate-700'}`}>
+                        {formatCurrency(accountBalance ?? 0)}
+                      </span>
+                    </p>
+                    {insufficientFunds && (
+                      <div className="rounded-lg border border-red-200 bg-red-50 p-3">
+                        <div className="flex items-start gap-2">
+                          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-red-600" />
+                          <div className="flex-1">
+                            <p className="text-sm font-medium text-red-700">Solde insuffisant</p>
+                            <p className="mt-0.5 text-xs text-red-600">
+                              Le solde de ce compte ({formatCurrency(accountBalance ?? 0)}) ne couvre pas le montant de l'opération ({formatCurrency(operationAmount)}). Approvisionnez-le pour pouvoir enregistrer cette sortie.
+                            </p>
+                            <Button size="sm" variant="secondary" type="button" className="mt-2" icon={<Wallet className="h-4 w-4" />}
+                              onClick={() => setFunding(true)}>
+                              Approvisionner le compte
+                            </Button>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </>
+                )}
+
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <FormSearchSelect
@@ -472,7 +517,7 @@ export default function OperationFormPage() {
                 <Button variant="secondary" type="button" onClick={() => navigate('/treasury')}>
                   Annuler
                 </Button>
-                <Button type="submit" loading={isSubmitting} icon={<Save className="h-4 w-4" />}>
+                <Button type="submit" loading={isSubmitting} disabled={insufficientFunds} icon={<Save className="h-4 w-4" />}>
                   Enregistrer l'opération
                 </Button>
               </div>
@@ -486,6 +531,10 @@ export default function OperationFormPage() {
         onClose={() => setThirdPartyModalOpen(false)}
         onCreated={(id) => setValue('thirdPartyId', String(id))}
       />
+
+      {funding && selectedAccount && (
+        <FundAccountModal account={selectedAccount} onClose={() => setFunding(false)} />
+      )}
     </PageLayout>
   );
 }

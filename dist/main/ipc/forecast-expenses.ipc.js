@@ -60,6 +60,14 @@ const settleSchema = zod_1.z.object({
     paymentMethod: zod_1.z.enum(PAYMENT_METHODS).optional(),
     paymentRef: zod_1.z.string().optional().nullable(),
 });
+const fundSchema = zod_1.z.object({
+    bankAccountId: zod_1.z.number().int().positive('Compte requis'),
+    amount: zod_1.z.number().positive('Montant requis'),
+    operationDate: zod_1.z.string().min(1, 'Date requise'),
+    label: zod_1.z.string().optional().nullable(),
+    paymentMethod: zod_1.z.enum(PAYMENT_METHODS).optional(),
+    paymentRef: zod_1.z.string().optional().nullable(),
+});
 /** Crée le rappel CRM (type RAPPEL) associé à une charge prévisionnelle. */
 async function createReminder(db, expense) {
     await db.crmActivity.create({
@@ -99,6 +107,25 @@ async function syncReminders(db, forecastExpenseId, status) {
         });
     }
 }
+/** Libellé et code comptable de l'objet d'approvisionnement de caisse. */
+const APPRO_CAISSE_LABEL = 'APPRO CAISSE';
+const APPRO_CAISSE_CODE = '585';
+/**
+ * Retrouve (ou crée) l'objet d'opération « APPRO CAISSE » (585, sens ENTREE),
+ * utilisé pour les approvisionnements de caisse depuis le règlement des charges.
+ */
+async function getOrCreateApproCaisseCategory(db) {
+    const existing = await db.treasuryCategory.findFirst({
+        where: { deletedAt: null, direction: 'ENTREE', label: APPRO_CAISSE_LABEL, accountingCode: APPRO_CAISSE_CODE },
+        select: { id: true },
+    });
+    if (existing)
+        return existing;
+    return db.treasuryCategory.create({
+        data: { label: APPRO_CAISSE_LABEL, direction: 'ENTREE', accountingCode: APPRO_CAISSE_CODE, isActive: true },
+        select: { id: true },
+    });
+}
 function registerForecastExpensesIPC() {
     /* ─── Objets de sortie (catégories de trésorerie SORTIE) ─────────── */
     electron_1.ipcMain.handle('expenses:listCategories', async (_event, { token }) => {
@@ -134,13 +161,22 @@ function registerForecastExpensesIPC() {
                     OR: [{ linkedUserId: null }, { linkedUserId: session.userId }],
                 },
                 orderBy: { name: 'asc' },
-                select: { id: true, name: true, type: true },
+                select: { id: true, name: true, type: true, initialBalance: true },
             });
+            // Solde courant de chaque compte (pour bloquer un règlement sur un compte
+            // au solde ≤ 0 côté UI et proposer un approvisionnement).
+            const balances = await (0, treasury_service_1.computeBalances)(db, accounts.map((a) => a.id));
+            const data = accounts.map((a) => ({
+                id: a.id,
+                name: a.name,
+                type: a.type,
+                balance: balances.get(a.id)?.balance ?? Number(a.initialBalance),
+            }));
             // Compte de sortie par défaut paramétré pour l'utilisateur (s'il est listé).
             const me = await db.user.findUnique({ where: { id: session.userId }, select: { defaultAccountSortieId: true } });
             const defId = me?.defaultAccountSortieId ?? null;
             const defaultAccountId = defId != null && accounts.some((a) => a.id === defId) ? defId : null;
-            return ser({ success: true, data: accounts, defaultAccountId });
+            return ser({ success: true, data, defaultAccountId });
         }
         catch (error) {
             logger_1.default.error('expenses:listAccounts error', error.message);
@@ -402,6 +438,56 @@ function registerForecastExpensesIPC() {
         }
         catch (error) {
             logger_1.default.error('expenses:settle error', error.message);
+            return { success: false, error: error.message };
+        }
+    });
+    /* ─── Approvisionnement d'un compte (opération ENTREE) ─────────────── */
+    electron_1.ipcMain.handle('expenses:fundAccount', async (_event, { token, payload }) => {
+        try {
+            const session = (0, auth_service_1.getSession)(token);
+            if (!session)
+                return { success: false, error: 'Session expirée' };
+            (0, auth_service_1.checkRole)(session, ACCESS_ROLES);
+            const parsed = fundSchema.safeParse(payload);
+            if (!parsed.success)
+                return { success: false, error: parsed.error.issues.map((i) => i.message).join(' ; ') };
+            const d = parsed.data;
+            const db = (0, db_service_1.getDb)();
+            const account = await db.bankAccount.findFirst({ where: { id: d.bankAccountId, deletedAt: null } });
+            if (!account)
+                return { success: false, error: 'Compte à approvisionner introuvable' };
+            if (!account.isActive)
+                return { success: false, error: 'Ce compte de trésorerie est inactif.' };
+            // Compte privé : réservé à son titulaire (ou aux administrateurs).
+            if (account.linkedUserId != null && account.linkedUserId !== session.userId
+                && !['SUPER_ADMIN', 'ADMIN'].includes(session.role)) {
+                return { success: false, error: 'Vous n\'avez pas accès à ce compte de trésorerie.' };
+            }
+            // Approvisionnement d'une CAISSE : objet d'opération « APPRO CAISSE » (585),
+            // retrouvé ou créé à la volée (sens ENTREE).
+            let categoryId;
+            if (account.type === 'CAISSE') {
+                categoryId = (await getOrCreateApproCaisseCategory(db)).id;
+            }
+            await (0, treasury_service_1.recordTreasuryOperation)(db, {
+                bankAccountId: d.bankAccountId,
+                direction: 'ENTREE',
+                amount: d.amount,
+                label: d.label?.trim() || `Approvisionnement compte ${account.name}`,
+                operationDate: parseDay(d.operationDate),
+                categoryId,
+                paymentMethod: d.paymentMethod,
+                paymentRef: d.paymentRef ?? null,
+                source: 'MANUEL',
+                createdById: session.userId,
+            });
+            const balances = await (0, treasury_service_1.computeBalances)(db, [d.bankAccountId]);
+            const balance = balances.get(d.bankAccountId)?.balance ?? 0;
+            logger_1.default.info(`Compte ${account.name} approvisionné de ${d.amount} (solde: ${balance})`);
+            return ser({ success: true, data: { balance } });
+        }
+        catch (error) {
+            logger_1.default.error('expenses:fundAccount error', error.message);
             return { success: false, error: error.message };
         }
     });

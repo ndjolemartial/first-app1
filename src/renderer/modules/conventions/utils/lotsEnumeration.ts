@@ -65,9 +65,19 @@ function joinFrench(items: string[]): string {
  *     « quatre (4) lots à savoir le lot 1 ilot 2 …, le lot 4 ilot 37 … et
  *     deux (2) lots de superficie totale 1 023 m² (les références manquantes
  *     seront précisées plus tard). »
+ *
+ * Option `omitPendingRefNote` : supprime la mention « dont les références
+ * seront précisées plus tard » (cas 2) et « (les références manquantes seront
+ * précisées plus tard) » (cas 3). Utilisée pour les lots ANTÉRIEURS souscrits
+ * (convention héritée), où seule la superficie totale est prise en compte
+ * lorsque les références ne sont pas renseignées.
  */
-export function lotsEnumeration(terrains: LotEnumItem[] | null | undefined): string {
+export function lotsEnumeration(
+  terrains: LotEnumItem[] | null | undefined,
+  options?: { omitPendingRefNote?: boolean },
+): string {
   if (!terrains || terrains.length === 0) return '';
+  const omitNote = options?.omitPendingRefNote ?? false;
   const total = terrains.length;
   const known = terrains.filter(hasKnownRef);
   const unknown = terrains.filter((t) => !hasKnownRef(t));
@@ -84,12 +94,13 @@ export function lotsEnumeration(terrains: LotEnumItem[] | null | undefined): str
 
   // Cas 2 : aucune référence n'est connue.
   if (known.length === 0) {
-    return `${lotsHeader(total)} ${surfacePhrase(total, surfaceLabel(unknownTotalSurface))} dont les références seront précisées plus tard`;
+    const base = `${lotsHeader(total)} ${surfacePhrase(total, surfaceLabel(unknownTotalSurface))}`;
+    return omitNote ? base : `${base} dont les références seront précisées plus tard`;
   }
 
   // Cas 3 : mixte — on liste les connus puis on regroupe le reste.
   const unknownGroup =
     `${lotsHeader(unknown.length)} ${surfacePhrase(unknown.length, surfaceLabel(unknownTotalSurface))}`
-    + ` (les références manquantes seront précisées plus tard)`;
+    + (omitNote ? '' : ` (les références manquantes seront précisées plus tard)`);
   return `${lotsHeader(total)} à savoir ${joinFrench([...knownParts, unknownGroup])}`;
 }

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useAuthStore } from '../../../shared/stores/auth.store';
-import { Building2, HardDrive, Database, Mail, MessageSquare, Images, FileText, FileSignature, Award, Briefcase, Tags, Landmark, IdCard, Layers, Bell, BookOpen, ChevronDown, ChevronRight, Inbox, Printer, MapPin, ShoppingBag } from 'lucide-react';
+import { Building2, HardDrive, Database, Mail, MessageSquare, Images, FileText, FileSignature, Award, Briefcase, Tags, Landmark, IdCard, Layers, Bell, BookOpen, ChevronDown, ChevronRight, Inbox, Printer, MapPin, ShoppingBag, QrCode } from 'lucide-react';
 import PageLayout from '../../../shared/components/layout/PageLayout';
 import Card from '../../../shared/components/ui/Card';
 import { clsx } from 'clsx';
@@ -27,6 +27,8 @@ import ShareLocationSettingsTab        from '../components/ShareLocationSettings
 import CatalogSettingsTab              from '../components/CatalogSettingsTab';
 import QuoteTemplatesSettingsTab       from '../components/QuoteTemplatesSettingsTab';
 import ConditionsParticulieresSettingsTab from '../components/ConditionsParticulieresSettingsTab';
+import AttendanceQrSettingsTab          from '../components/AttendanceQrSettingsTab';
+import VisitorQrSettingsTab             from '../components/VisitorQrSettingsTab';
 
 type TabKey =
   | 'company'
@@ -50,6 +52,8 @@ type TabKey =
   | 'reminders'
   | 'commTemplates'
   | 'shareLocation'
+  | 'attendanceQr'
+  | 'visitorQr'
   | 'conditionsParticulieres';
 
 type GroupKey = 'communication' | 'treasury' | 'printedTemplates';
@@ -105,6 +109,9 @@ const TABS: TabDef[] = [
   { key: 'treasuryAccounts',     label: "Comptes d'opérations",    icon: <Landmark className="h-4 w-4" />, group: 'treasury' },
   { key: 'treasuryCategories',   label: "Objets d'opération",      icon: <Tags className="h-4 w-4" />,     group: 'treasury' },
   { key: 'payrollAccount',       label: 'Compte de paie (salaires)', icon: <Landmark className="h-4 w-4" />, group: 'treasury' },
+  // ─────────────────────────────────────────────────────────────
+  { key: 'attendanceQr',         label: 'Pointage QR (personnel)', icon: <QrCode className="h-4 w-4" /> },
+  { key: 'visitorQr',            label: 'QR Visiteurs',            icon: <QrCode className="h-4 w-4" /> },
 ];
 
 export default function SettingsPage() {
@@ -259,6 +266,8 @@ export default function SettingsPage() {
           {active === 'email'                && <EmailSettingsTab />}
           {active === 'sms'                  && <SmsSettingsTab />}
           {active === 'slideshow'            && <SlideshowSettingsTab />}
+          {active === 'attendanceQr'         && <AttendanceQrSettingsTab />}
+          {active === 'visitorQr'            && <VisitorQrSettingsTab />}
           {active === 'invoiceTemplates'     && <InvoiceTemplatesSettingsTab />}
           {active === 'listExportTemplates'  && <ListExportTemplatesSettingsTab />}
           {active === 'conventionTemplates'  && <ConventionTemplatesSettingsTab />}

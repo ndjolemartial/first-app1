@@ -81,6 +81,20 @@ export function useSettleExpense() {
   });
 }
 
+export function useFundAccount() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: object) => ipc().fundAccount(token(), payload),
+    onSuccess: (res) => {
+      if (res.success) {
+        qc.invalidateQueries({ queryKey: ['expenses', 'accounts'] });
+        qc.invalidateQueries({ queryKey: ['treasury'] });
+        toast.success('Compte approvisionné');
+      } else toast.error(String(res.error));
+    },
+  });
+}
+
 export function useCancelExpense() {
   const qc = useQueryClient();
   return useMutation({

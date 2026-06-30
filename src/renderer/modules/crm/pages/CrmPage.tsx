@@ -10,12 +10,13 @@ import { useActivities, useCrmStats, useDeleteActivity, useCompleteActivity, use
 import { formatDate, formatRelative } from '../../../shared/utils/format';
 import ExportMenu, { ExportColumn } from '../../../shared/components/ExportMenu';
 import { useAuthStore } from '../../../shared/stores/auth.store';
+import ActivityDetailModal from '../components/ActivityDetailModal';
 
 const FULL_VIEW_ROLES = ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ACCOUNTANT'];
 import {
   Plus, CheckCircle2, Trash2, Phone, Mail, MessageSquare,
   Calendar, Eye, Users, Briefcase, FileText, Bell, File,
-  AlertCircle, Clock,
+  AlertCircle, Clock, Paperclip,
 } from 'lucide-react';
 
 const TYPE_ICON: Record<string, React.ReactNode> = {
@@ -94,6 +95,7 @@ export default function CrmPage() {
   const [quickFilter, setQuickFilter] = useState<QuickFilter>('pending');
   const [page, setPage] = useState(1);
   const [deleteTarget, setDeleteTarget] = useState<any>(null);
+  const [detailId, setDetailId] = useState<number | null>(null);
   const limit = 30;
 
   const assigneesQuery = useCrmAssignees(canFilterByUser);
@@ -193,8 +195,8 @@ export default function CrmPage() {
 
   return (
     <PageLayout
-      title="CRM — Activités"
-      breadcrumbs={[{ label: 'CRM' }]}
+      title="Activités & CRM"
+      breadcrumbs={[{ label: 'Activités & CRM' }]}
       actions={
         <div className="flex gap-2">
           <ExportMenu
@@ -318,7 +320,13 @@ export default function CrmPage() {
                 </div>
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2">
-                    <p className="font-medium text-slate-900 truncate">{act.subject}</p>
+                    <button
+                      onClick={() => setDetailId(act.id)}
+                      className="font-medium text-slate-900 truncate text-left hover:text-indigo-600 hover:underline"
+                      title="Voir les détails"
+                    >
+                      {act.subject}
+                    </button>
                     <Badge variant={STATUS_VARIANT[act.status] ?? 'default'}>{STATUS_LABEL[act.status] ?? act.status}</Badge>
                   </div>
                   <div className="flex items-center gap-3 text-xs text-slate-400 mt-0.5">
@@ -337,9 +345,22 @@ export default function CrmPage() {
                       </button>
                     )}
                     {act.user && <span>{act.user.firstName} {act.user.lastName}</span>}
+                    {act._count?.attachments > 0 && (
+                      <span className="flex items-center gap-1 text-slate-500" title={`${act._count.attachments} pièce(s) jointe(s)`}>
+                        <Paperclip className="h-3 w-3" />{act._count.attachments}
+                      </span>
+                    )}
                   </div>
                 </div>
                 <div className="flex items-center gap-2 shrink-0">
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    icon={<Eye className="h-4 w-4" />}
+                    onClick={() => setDetailId(act.id)}
+                  >
+                    Voir
+                  </Button>
                   {act.status !== 'TRAITE' && act.status !== 'ANNULE' && (
                     <Button
                       variant="secondary"
@@ -388,6 +409,8 @@ export default function CrmPage() {
         onConfirm={handleDelete}
         onClose={() => setDeleteTarget(null)}
       />
+
+      <ActivityDetailModal activityId={detailId} onClose={() => setDetailId(null)} />
     </PageLayout>
   );
 }

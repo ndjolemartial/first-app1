@@ -3,18 +3,20 @@ import { useParams } from 'react-router-dom';
 import PageLayout from '../../../shared/components/layout/PageLayout';
 import Card from '../../../shared/components/ui/Card';
 import Badge from '../../../shared/components/ui/Badge';
+import Button from '../../../shared/components/ui/Button';
 import { SkeletonTable } from '../../../shared/components/ui/Skeleton';
+import { toast } from '../../../shared/components/ui/Toast';
 import { useAuthStore } from '../../../shared/stores/auth.store';
 import { useBeneficiarySummary } from '../hooks/useCommissions';
 import CommissionTable from '../components/CommissionTable';
 import { PayCommissionModal, EditCommissionModal, CancelCommissionModal } from '../components/CommissionModals';
 import {
   BENEFICIARY_TYPE_LABEL, COMMISSION_WRITE_ROLES,
-  COMMISSION_STATUS_LABEL, transactionLabel,
+  COMMISSION_STATUS_LABEL, transactionLabel, commissionTotals,
 } from '../utils/commissions.utils';
 import { formatCurrency } from '../../../shared/utils/format';
 import ExportMenu, { ExportColumn } from '../../../shared/components/ExportMenu';
-import { Wallet, CheckCircle, Ban } from 'lucide-react';
+import { Wallet, CheckCircle, Ban, Printer } from 'lucide-react';
 
 const EXPORT_COLUMNS: ExportColumn[] = [
   { header: 'Référence',   cell: (c) => c.reference },
@@ -25,6 +27,23 @@ const EXPORT_COLUMNS: ExportColumn[] = [
   { header: 'Montant',     cell: (c) => formatCurrency(Number(c.amount)) },
   { header: 'Statut',      cell: (c) => COMMISSION_STATUS_LABEL[c.status] ?? c.status },
 ];
+
+/**
+ * Ligne de total du tableau exporté/imprimé : nombre de lignes, somme des
+ * assiettes (colonne 4) et somme des montants (colonne 6). L'ordre suit
+ * EXPORT_COLUMNS (7 colonnes).
+ */
+function buildTotalRow(rows: any[]): string[] {
+  const t = commissionTotals(rows);
+  return [
+    `TOTAL (${t.count} ligne${t.count > 1 ? 's' : ''})`,
+    '', '',
+    formatCurrency(t.base),
+    '',
+    formatCurrency(t.amount),
+    '',
+  ];
+}
 
 type Tab = 'A_PAYER' | 'PAYEE' | 'ANNULEE';
 
@@ -37,9 +56,11 @@ const TABS: { value: Tab; label: string }[] = [
 export default function BeneficiaryCommissionsPage() {
   const { type = '', id = '0' } = useParams<{ type: string; id: string }>();
   const role = useAuthStore((s) => s.user?.role ?? '');
+  const token = useAuthStore((s) => s.token)!;
   const canManage = COMMISSION_WRITE_ROLES.includes(role);
 
   const [tab, setTab] = useState<Tab>('A_PAYER');
+  const [printing, setPrinting] = useState(false);
   const [payTarget, setPayTarget] = useState<any>(null);
   const [editTarget, setEditTarget] = useState<any>(null);
   const [cancelTarget, setCancelTarget] = useState<any>(null);
@@ -59,19 +80,55 @@ export default function BeneficiaryCommissionsPage() {
     : 'Bénéficiaire';
 
   const filtered = commissions.filter((c) => c.status === tab);
+  const tabLabel = TABS.find((t) => t.value === tab)?.label ?? tab;
+
+  // Impression de l'onglet courant avec aperçu avant impression (comme pour les
+  // conventions) : construit la matrice depuis les colonnes d'export, ajoute la
+  // ligne de total et ouvre l'aperçu.
+  const handlePrint = async () => {
+    if (filtered.length === 0) { toast.error('Aucune commission à imprimer'); return; }
+    setPrinting(true);
+    try {
+      const matrix = filtered.map((row) =>
+        EXPORT_COLUMNS.map((c) => {
+          const v = c.cell(row);
+          return v === null || v === undefined ? '' : String(v);
+        }),
+      );
+      const pr = await window.electron.exporter.print(token, {
+        fileName: `commissions-${name.replace(/\s+/g, '-').toLowerCase()}`,
+        title: `Commissions de ${name}`,
+        subtitle: tabLabel,
+        headers: EXPORT_COLUMNS.map((c) => c.header),
+        rows: matrix,
+        totalRow: buildTotalRow(filtered),
+      });
+      if (!pr.success) toast.error(typeof pr.error === 'string' ? pr.error : "Erreur lors de l'impression");
+    } catch (e: any) {
+      toast.error(e?.message ?? "Erreur lors de l'impression");
+    } finally {
+      setPrinting(false);
+    }
+  };
 
   return (
     <PageLayout
       title={`Commissions — ${name}`}
       breadcrumbs={[{ label: 'Commissions', to: '/commissions' }, { label: name }]}
       actions={
-        <ExportMenu
-          fileName={`commissions-${name.replace(/\s+/g, '-').toLowerCase()}`}
-          title={`Commissions de ${name}`}
-          subtitle={`Onglet : ${TABS.find((t) => t.value === tab)?.label ?? tab}`}
-          columns={EXPORT_COLUMNS}
-          fetchRows={async () => filtered}
-        />
+        <div className="flex gap-2">
+          <ExportMenu
+            fileName={`commissions-${name.replace(/\s+/g, '-').toLowerCase()}`}
+            title={`Commissions de ${name}`}
+            subtitle={tabLabel}
+            columns={EXPORT_COLUMNS}
+            totalRow={buildTotalRow}
+            fetchRows={async () => filtered}
+          />
+          <Button variant="secondary" icon={<Printer className="h-4 w-4" />} loading={printing} onClick={handlePrint}>
+            Imprimer
+          </Button>
+        </div>
       }
     >
       {isLoading ? (

@@ -1130,7 +1130,7 @@ model ArchivePolicy {
 
 ### Module 10 — CRM
 
-**Route :** `/crm`  
+**Route :** `/crm` — libellé dans l'interface (menu, titre) : **« Activités & CRM »**.  
 **Fonctionnalités :**
 - Agenda partagé : rendez-vous, visites, rappels (vue jour/semaine/mois)
 - Activités : notes, appels, tâches, tous rattachables à n'importe quelle entité
@@ -1138,6 +1138,8 @@ model ArchivePolicy {
 - Alertes et rappels (notification système Electron)
 - Rapport d'activité par agent (appels passés, visites réalisées, conversions)
 - Scoring des prospects basé sur l'activité CRM
+- **Pièces jointes d'activité** : depuis le formulaire « Nouvelle activité » (et en édition), possibilité de **joindre un ou plusieurs documents** (PDF, Word, Excel, images, audio, vidéo) — accessible à **tous les rôles sauf READONLY** (aligné sur le droit de création d'activité). Les fichiers sont archivés dans la GED et rattachés à l'activité via `Document.crmActivityId` (relation `ActivityAttachments`, distincte du lien `documentId` qui pointe une archive unique). Le téléversement réutilise `documents:import` (chemin disque via `webUtils.getPathForFile`). La liste affiche un indicateur trombone avec le nombre de pièces jointes.
+- **Vue détail d'une activité** : depuis la liste, un clic sur le sujet ou le bouton « Voir » ouvre un panneau (modal `ActivityDetailModal`) présentant type, statut, description, dates (prévue / terminée / créée), assigné à, **créé par**, **entités rattachées** (puces cliquables vers chaque fiche) et **pièces jointes** (ouverture via `documents:open`). Alimenté par `crm:getActivity` (qui inclut `createdBy` et `attachments`).
 
 ### Module 11 — Archivage
 
@@ -1181,6 +1183,7 @@ Module complet de gestion des ressources humaines et de la paie, **conforme au c
 
 **Phase 1 — Personnel & contrats**
 - Dossiers du personnel (`Employee`) : état civil, coordonnées, identité, n° CNPS / CMU, RIB, poste, statut (ACTIF / SUSPENDU / CONGE / SORTI). Matricule auto `EMP-AAAA-NNNN`.
+- **Rattachement à un compte utilisateur** (`Employee.userId`, relation 1-1 `@unique` vers `User`) : depuis le formulaire personnel, l'admin/RH peut lier un membre du personnel à un compte de connexion de l'application. Le sélecteur ne propose que les comptes **actifs non déjà rattachés** à un autre employé (`hr:employees:linkableUsers`, avec conservation du compte de l'employé édité) ; l'unicité est contrôlée côté IPC (création & modification) et le compte lié est affiché sur la fiche détail.
 - Contrats de travail (`EmploymentContract`) : type (CDI, CDD, Stage, Intérim, Consultant, Apprentissage), salaire de base, dates, période d'essai. Référence auto `CTR-AAAA-NNNN`.
 - **Modèles de contrats éditables** par type (`ContractTemplate`, corps HTML avec variables `{{…}}`) — 6 modèles ivoiriens par défaut ; **aperçu / impression PDF** (`hr:contracts:print`).
 
@@ -1195,10 +1198,35 @@ Module complet de gestion des ressources humaines et de la paie, **conforme au c
 - Calcul des jours ouvrés, **solde de congés payés** (acquisition `leave.accrualPerMonth` = 2,2 j/mois − jours pris approuvés), workflow d'approbation (EN_ATTENTE → APPROUVE / REFUSE / ANNULE).
 
 **Phase 4 — Pointage / heures**
-- `AttendanceRecord` (1 par employé/jour) : statut (PRESENT/ABSENT/CONGE/REPOS/FERIE/MALADIE), heures travaillées, heures supplémentaires. Grille mensuelle éditable.
+- `AttendanceRecord` (1 par employé/jour) : statut (PRESENT/ABSENT/CONGE/REPOS/FERIE/MALADIE), heures travaillées, heures supplémentaires, **heures d'arrivée / de départ** (`arrivalTime` / `departureTime`). Grille mensuelle éditable avec colonnes Arrivée / Départ (alimentées par le pointage QR).
 - Valorisation des **heures supplémentaires** (`attendance.monthlyHours` = 173,33 ; `attendance.overtimeMajoration` = 15 %) **injectée automatiquement dans la paie** (ligne « Heures supplémentaires » du bulletin).
 
+**Pointage par QR Code (application web autonome — dossier `web/`)**
+- Le pointage est servi par une **application web autonome en PHP** (dossier `web/` à la racine du dépôt : `index.php`, `api.php`, `db.php`, `config.php`, `README.md`), **déposée sur le serveur web local de l'entreprise** (Apache / XAMPP / WAMP). Elle est **indépendante de l'application de bureau** : le personnel peut pointer tant que le serveur web et MariaDB sont actifs, même si l'app Electron n'est lancée sur aucun poste. *(L'ancien serveur HTTP embarqué dans le process principal a été retiré.)*
+- L'app web se connecte **directement à la même base MariaDB** (PDO, identifiants dans `config.php`). Le **QR Code encode l'URL de l'app web déployée** (ex. `http://192.168.1.10/pointage/`), configurable par l'admin.
+- Parcours : l'employé scanne le QR → page web → **connexion** (login/mot de passe du compte applicatif, vérifié par `password_verify` compatible bcrypt) → choix **arrivée / départ** → écriture dans `AttendanceRecord`.
+- Règles (implémentées dans `web/api.php`) : si le compte n'est pas lié à un membre du personnel (`Employee.userId`), message **« Compte d'utilisateur non encore associé à un membre du personnel »** ; **un seul** pointage d'arrivée et **un seul** de départ par jour ; **avertissement** si l'arrivée dépasse le seuil (défaut 08:00) ou si le départ le précède (défaut 17:00). Seuils lus depuis `AppSetting` (`attendance.expectedArrival` / `attendance.expectedDeparture`), repli sur `config.php`.
+- **Paramètres** (`/settings` → onglet *Pointage QR*, SUPER_ADMIN/ADMIN) : activation (affichage du QR), **URL de l'app web** déployée (avec détection des IP locales), seuils horaires, **rôles autorisés** à voir le QR au tableau de bord (mécanisme calqué sur le slideshow), **aperçu du QR modifiable**.
+- **Tableau de bord** : les rôles autorisés voient un widget QR **téléchargeable et imprimable** (composant `QrCodeBox`, rendu canvas via lib `qrcode`), comme le slide. Clés : `attendance.qr.enabled` / `attendance.qr.baseUrl` / `attendance.qr.allowedRoles` / `attendance.qr.model`.
+- **3 modèles de QR** sélectionnables (`attendance.qr.model` = `1`/`2`/`3`) : (1) classique noir & blanc, (2) logo au centre, (3) couleur + logo. Les modèles « avec logo » insèrent le **logo de l'entreprise au centre** du QR (correction d'erreur niveau H pour rester scannable).
+- Sécurité : usage interne sur réseau local ; mots de passe vérifiés par bcrypt, jamais stockés ni transmis en clair.
+
 > **Calcul de la paie — avertissement.** Les taux (CNPS/ITS/CMU/FDFP), plafonds et le barème ITS sont des **valeurs de référence paramétrables** ; ils doivent être validés selon la réglementation en vigueur avant exploitation en production. Toute la logique est centralisée dans `payroll.service.ts`, `leave.service.ts` et `attendance.service.ts`.
+
+---
+
+### Module 13 — Gestion des visiteurs
+
+**Route :** `/visitors`
+**Accès (interface interne) :** rôles **SUPER_ADMIN, ADMIN, ASSISTANTE_DIRECTION** (accueil / secrétariat), via `RoleGuard` + contrôle IPC (`VISITOR_ROLES` dans `visitors.ipc.ts`). Configuration du QR : SUPER_ADMIN / ADMIN uniquement.
+
+Module d'enregistrement des visiteurs. Modèle Prisma `Visitor` : `firstName` (Prénoms), `lastName` (Nom), `company` (Entreprise), `phone` (Contacts), `email`, `objet` (Objet de visite), `details`, `visitedAt` (**jour + heure automatiques**), `source` (`QR` | `INTERNE`), `createdById`.
+
+- **Double saisie** : (1) **interface dédiée** dans l'application (liste + formulaire `/visitors/new`, source `INTERNE`) ; (2) **auto-enregistrement par le visiteur** via le **QR Code Visiteurs** (source `QR`).
+- **Objets de visite paramétrables** : modèle `VisitObject` (libellés actifs/inactifs) géré depuis l'**onglet « Objets de visite »** du module (`/visitors/objects`, barre d'onglets `VisitorsTabs`). Le champ « Objet de visite » devient un **sélecteur avec recherche** (`FormSearchSelect`) alimenté par cette liste — côté app **et** côté formulaire web public (`<datalist>` peuplé depuis `VisitObject`). IPC : `visitors:listObjects` / `createObject` / `updateObject` / `deleteObject`.
+- **QR Visiteurs** — même principe que le pointage QR : une **application web autonome PHP** (dossier `web-visiteurs/`) déposée sur le serveur web local, **publique (sans connexion)** car les visiteurs n'ont pas de compte. Elle se connecte directement à MariaDB (`web-visiteurs/api.php` → insert `Visitor` source `QR`, date/heure auto, honeypot anti-spam).
+- **Paramétrage** identique au pointage (`/settings` → onglet *QR Visiteurs*, admin) : activation, **URL de l'app web déployée**, **rôles autorisés** à voir le QR au tableau de bord, **3 modèles de QR**. Clés : `visitors.qr.enabled` / `visitors.qr.baseUrl` / `visitors.qr.allowedRoles` / `visitors.qr.model`.
+- **Tableau de bord** : widget QR Visiteurs (téléchargeable / imprimable, légende « VISITEURS ») pour les rôles autorisés. La liste affiche des compteurs (aujourd'hui / mois / total).
 
 ---
 
@@ -1225,7 +1253,7 @@ Module complet de gestion des ressources humaines et de la paie, **conforme au c
 - `archiving:createPolicy` — Créer une politique d'archivage
 - `documents:list` — Liste paginée des documents de la GED (filtres : recherche, catégorie, dossier, type)
 - `documents:getById` — Document GED avec relations et journal des actions
-- `documents:import` — Importer un ou plusieurs fichiers dans la GED
+- `documents:import` — Importer un ou plusieurs fichiers dans la GED (rattachements optionnels, dont `crmActivityId` pour les pièces jointes d'activité CRM)
 - `documents:update` — Mettre à jour les métadonnées d'un document
 - `documents:remove` — Mettre un document à la corbeille (soft delete)
 - `documents:open` — Ouvrir un document dans l'application externe
@@ -1234,6 +1262,9 @@ Module complet de gestion des ressources humaines et de la paie, **conforme au c
 - `documents:listFolders` / `createFolder` / `updateFolder` / `deleteFolder`
 - `documents:listTags` / `createTag` — Étiquettes documentaires
 - `documents:gedDashboard` — Statistiques du tableau de bord GED
+- `crm:listActivities` — Liste des activités CRM (inclut `_count.attachments` pour l'indicateur de pièces jointes)
+- `crm:getActivity` — Détail d'une activité (inclut entités rattachées, `createdBy` et `attachments`) — alimente la vue détail
+- `crm:createActivity` / `crm:updateActivity` — Créer / mettre à jour une activité (réservé aux rôles en écriture, hors READONLY)
 - `conventions:generateInstallments` — Générer le tableau d'échéances d'une convention de vente
 - `conventions:getInstallments` — Récupérer les échéances d'une convention
 - `accounting:payInstallment` — Enregistrer le paiement d'une échéance
@@ -1245,13 +1276,19 @@ Module complet de gestion des ressources humaines et de la paie, **conforme au c
 - `programmes:update` — Mettre à jour un programme
 - `programmes:delete` — Archiver (soft delete) un programme
 - `hr:employees:list` / `getById` / `create` / `update` / `delete` / `stats` — Personnel
+- `hr:employees:linkableUsers` — Comptes utilisateurs liables à un employé (actifs, non déjà rattachés ; `excludeEmployeeId` pour conserver le compte de l'employé édité)
 - `hr:contracts:create` / `update` / `delete` / `print` — Contrats de travail (impression PDF)
 - `hr:contractTemplates:list` / `create` / `update` / `delete` — Modèles de contrats éditables
 - `hr:payslips:list` / `getById` / `generate` / `updateStatus` / `delete` / `print` — Bulletins de paie
 - `hr:payslipTemplates:list` / `update` — Modèles de bulletins (MODELE_1/2/3)
 - `hr:payroll:getRates` / `setRates` — Taux et barème ITS de la paie
 - `hr:leaveTypes:list`, `hr:leave:balance`, `hr:leaveRequests:list` / `create` / `decide` / `delete` — Congés & absences
-- `hr:attendance:list` / `summary` / `bulkUpsert` — Pointage / heures (alimente la paie)
+- `hr:attendance:list` / `summary` / `bulkUpsert` — Pointage / heures (alimente la paie ; inclut heures d'arrivée/départ)
+- `settings:getAttendanceQr` / `updateAttendanceQr` — Config du pointage par QR (URL de l'app web déployée, seuils, rôles autorisés) ; admin uniquement
+- *(le pointage lui-même est servi hors IPC par l'app web autonome `web/` — `index.php` / `api.php`, connectée directement à MariaDB)*
+- `visitors:list` / `getById` / `create` / `update` / `delete` / `stats` — Gestion des visiteurs (rôles SUPER_ADMIN/ADMIN/ASSISTANTE_DIRECTION)
+- `settings:getVisitorQr` / `updateVisitorQr` — Config du QR Visiteurs (URL de l'app web, rôles, modèle) ; admin uniquement
+- *(le formulaire visiteur est servi hors IPC par l'app web autonome publique `web-visiteurs/` — `index.php` / `api.php`)*
 
 ### Pattern handler IPC (main process)
 
@@ -1490,4 +1527,4 @@ Suivre cet ordre pour une livraison incrémentale et testable :
 
 ---
 
-*Dernière mise à jour : Juin 2026 — Afrikimmo-app v1.0 (nouveau module RH & Paie complet, conforme Côte d'Ivoire : personnel & contrats, bulletins de paie CNPS/ITS/CMU/FDFP avec 3 modèles éditables et export Excel/PDF, congés & absences, pointage ; rôle dédié RH ; modèles de contrats éditables)*
+*Dernière mise à jour : 29 juin 2026 — Afrikimmo-app v1.0.1 (module RH & Paie complet, conforme Côte d'Ivoire : personnel & contrats, bulletins de paie CNPS/ITS/CMU/FDFP avec 3 modèles éditables et export Excel/PDF, congés & absences, pointage ; rôle dédié RH ; modèles de contrats éditables ; rattachement d'un membre du personnel à un compte utilisateur de l'application ; CRM (« Activités & CRM ») : pièces jointes d'activité et vue détail d'activité ; pointage du personnel par QR Code via une application web autonome PHP déposable sur le serveur local (arrivée/départ, modèles de QR avec logo) ; module Gestion des visiteurs avec objets de visite paramétrables et enregistrement par QR Code via app web publique ; build Windows signé v1.0.1)*

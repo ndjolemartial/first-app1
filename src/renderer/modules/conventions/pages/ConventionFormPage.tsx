@@ -1087,7 +1087,9 @@ export default function ConventionFormPage() {
       const orderedPrior = (data.priorTerrainIds ?? [])
         .map((tid) => allT.find((t) => Number(t.id) === Number(tid)))
         .filter(Boolean);
-      const enumPrior = lotsEnumeration(orderedPrior);
+      // Lots antérieurs : superficie totale seule si les références manquent
+      // (pas de mention « références précisées plus tard »).
+      const enumPrior = lotsEnumeration(orderedPrior, { omitPendingRefNote: true });
       const lotNamePrior = (orderedPrior[0] as any)?.lotissement?.nom ?? '';
       payload.lotsAnterieursSouscrits = enumPrior && lotNamePrior
         ? `${enumPrior} (${lotNamePrior})`

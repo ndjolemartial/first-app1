@@ -86,3 +86,18 @@ export function referrerName(referrer: any): string {
   if (!referrer) return '—';
   return referrer.companyName || formatPersonName(referrer);
 }
+
+/**
+ * Totaux d'un ensemble de commissions : nombre de lignes, somme des assiettes
+ * et somme des montants. Utilisé pour la ligne de total des exports/impressions.
+ */
+export function commissionTotals(rows: any[]): { count: number; base: number; amount: number } {
+  return (rows ?? []).reduce(
+    (acc, c) => ({
+      count: acc.count + 1,
+      base: acc.base + (Number(c.baseAmount) || 0),
+      amount: acc.amount + (Number(c.amount) || 0),
+    }),
+    { count: 0, base: 0, amount: 0 },
+  );
+}

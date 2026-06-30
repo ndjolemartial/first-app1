@@ -33,6 +33,14 @@ function clientVisibilityWhere(session: { userId: number }): any {
 
 const SLIDESHOW_SETTING_KEY = 'dashboard.slideshow';
 const SLIDESHOW_ROLES_SETTING_KEY = 'dashboard.slideshow.allowedRoles';
+const ATT_QR_ENABLED_KEY = 'attendance.qr.enabled';
+const ATT_QR_BASEURL_KEY = 'attendance.qr.baseUrl';
+const ATT_QR_ROLES_KEY = 'attendance.qr.allowedRoles';
+const ATT_QR_MODEL_KEY = 'attendance.qr.model';
+const VIS_QR_ENABLED_KEY = 'visitors.qr.enabled';
+const VIS_QR_BASEURL_KEY = 'visitors.qr.baseUrl';
+const VIS_QR_ROLES_KEY = 'visitors.qr.allowedRoles';
+const VIS_QR_MODEL_KEY = 'visitors.qr.model';
 
 interface SlideshowItem {
   type: 'image' | 'video';
@@ -126,12 +134,44 @@ export function registerDashboardIPC(): void {
         })
         .catch(() => DEFAULT_SLIDESHOW);
 
-      const [prospectsCount, privileged, restricted, slideshowItems, slideshowRoles] = await Promise.all([
+      // Pointage par QR Code — exposé au tableau de bord des rôles autorisés.
+      const attendanceQrPromise = db.appSetting
+        .findMany({ where: { key: { in: [ATT_QR_ENABLED_KEY, ATT_QR_BASEURL_KEY, ATT_QR_ROLES_KEY, ATT_QR_MODEL_KEY] } } })
+        .then((rows) => {
+          const map = new Map(rows.map((r) => [r.key, r.value]));
+          if (map.get(ATT_QR_ENABLED_KEY) !== 'true') return null;
+          const url = (map.get(ATT_QR_BASEURL_KEY) ?? '').trim();
+          if (!url) return null;
+          let roles: string[] = [];
+          try { const p = JSON.parse(map.get(ATT_QR_ROLES_KEY) ?? '[]'); if (Array.isArray(p)) roles = p; } catch { /* noop */ }
+          const model = ['1', '2', '3'].includes(map.get(ATT_QR_MODEL_KEY) ?? '') ? map.get(ATT_QR_MODEL_KEY)! : '1';
+          return roles.includes(session.role) ? { url, model } : null;
+        })
+        .catch(() => null);
+
+      // QR Visiteurs — exposé au tableau de bord des rôles autorisés.
+      const visitorQrPromise = db.appSetting
+        .findMany({ where: { key: { in: [VIS_QR_ENABLED_KEY, VIS_QR_BASEURL_KEY, VIS_QR_ROLES_KEY, VIS_QR_MODEL_KEY] } } })
+        .then((rows) => {
+          const map = new Map(rows.map((r) => [r.key, r.value]));
+          if (map.get(VIS_QR_ENABLED_KEY) !== 'true') return null;
+          const url = (map.get(VIS_QR_BASEURL_KEY) ?? '').trim();
+          if (!url) return null;
+          let roles: string[] = [];
+          try { const p = JSON.parse(map.get(VIS_QR_ROLES_KEY) ?? '[]'); if (Array.isArray(p)) roles = p; } catch { /* noop */ }
+          const model = ['1', '2', '3'].includes(map.get(VIS_QR_MODEL_KEY) ?? '') ? map.get(VIS_QR_MODEL_KEY)! : '1';
+          return roles.includes(session.role) ? { url, model } : null;
+        })
+        .catch(() => null);
+
+      const [prospectsCount, privileged, restricted, slideshowItems, slideshowRoles, attendanceQr, visitorQr] = await Promise.all([
         prospectsCountPromise,
         privilegedPromises,
         restrictedPromises,
         slideshowItemsPromise,
         slideshowRolesPromise,
+        attendanceQrPromise,
+        visitorQrPromise,
       ]);
 
       // Slideshow visible uniquement si le rôle de l'utilisateur figure dans
@@ -156,6 +196,8 @@ export function registerDashboardIPC(): void {
             programmes: programmesCount,
           },
           slideshow,
+          attendanceQr,
+          visitorQr,
         },
       };
     } catch (error: any) {

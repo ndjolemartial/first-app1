@@ -26,7 +26,11 @@ const STATUS_OPTIONS = [
 ];
 const DOW = ['Dim', 'Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam'];
 
-interface Row { date: string; dow: number; status: string; hoursWorked: string; overtimeHours: string }
+interface Row { date: string; dow: number; status: string; hoursWorked: string; overtimeHours: string; arrival: string; departure: string }
+
+/** Heure 'HH:MM' à partir d'un horodatage ISO, ou '—'. */
+const hhmm = (v?: string | null): string =>
+  v ? new Date(v).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }) : '—';
 
 const iso = (y: number, m: number, d: number) =>
   `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
@@ -60,11 +64,17 @@ export default function AttendancePage() {
       const date = iso(year, month, d);
       const dow = new Date(year, month - 1, d).getDay();
       const ex = existing.get(date);
+      const weekend = dow === 0 || dow === 6;
+      // Par défaut (jour non pointé) : week-end → REPOS, jour ouvrable → ABSENT,
+      // toujours 0 h. Un jour pointé (arrivée/départ) possède déjà un enregistrement
+      // PRESENT avec ses heures calculées : on reprend alors ses valeurs.
       next.push({
         date, dow,
-        status: ex?.status ?? (dow === 0 || dow === 6 ? 'REPOS' : 'PRESENT'),
-        hoursWorked: ex ? String(Number(ex.hoursWorked)) : (dow === 0 || dow === 6 ? '0' : '8'),
+        status: ex?.status ?? (weekend ? 'REPOS' : 'ABSENT'),
+        hoursWorked: ex ? String(Number(ex.hoursWorked)) : '0',
         overtimeHours: ex ? String(Number(ex.overtimeHours)) : '0',
+        arrival: ex?.arrivalTime ?? '',
+        departure: ex?.departureTime ?? '',
       });
     }
     setRows(next);
@@ -129,6 +139,8 @@ export default function AttendancePage() {
               <tr>
                 <th className="px-4 py-2 text-left font-medium text-slate-600">Jour</th>
                 <th className="px-4 py-2 text-left font-medium text-slate-600">Statut</th>
+                <th className="px-4 py-2 text-left font-medium text-slate-600">Arrivée</th>
+                <th className="px-4 py-2 text-left font-medium text-slate-600">Départ</th>
                 <th className="px-4 py-2 text-left font-medium text-slate-600">Heures travaillées</th>
                 <th className="px-4 py-2 text-left font-medium text-slate-600">Heures sup.</th>
               </tr>
@@ -146,6 +158,8 @@ export default function AttendancePage() {
                         {STATUS_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
                       </select>
                     </td>
+                    <td className="px-4 py-1.5 font-mono text-slate-600">{hhmm(r.arrival)}</td>
+                    <td className="px-4 py-1.5 font-mono text-slate-600">{hhmm(r.departure)}</td>
                     <td className="px-4 py-1.5">
                       <input type="number" step="0.5" min="0" value={r.hoursWorked}
                         onChange={(e) => setRow(i, { hoursWorked: e.target.value })}

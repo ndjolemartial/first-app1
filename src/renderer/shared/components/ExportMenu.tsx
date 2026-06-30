@@ -21,8 +21,12 @@ interface ExportMenuProps<T = any> {
   fetchRows: () => Promise<T[]>;
   /** Résumé lisible du filtre appliqué (facultatif). */
   subtitle?: string;
-  /** Ligne de total / solde affichée en pied du tableau exporté (facultatif). */
-  totalRow?: (string | number)[];
+  /**
+   * Ligne de total / solde affichée en pied du tableau exporté (facultatif).
+   * Tableau fixe, ou fonction recevant les lignes effectivement exportées
+   * (pour calculer un total sur l'ensemble des données filtrées).
+   */
+  totalRow?: (string | number)[] | ((rows: T[]) => (string | number)[]);
 }
 
 /**
@@ -66,6 +70,7 @@ export default function ExportMenu<T>({
           return v === null || v === undefined ? '' : String(v);
         }),
       );
+      const resolvedTotal = typeof totalRow === 'function' ? totalRow(rows) : totalRow;
       const res = await window.electron.exporter.generate(token, {
         format,
         fileName,
@@ -73,7 +78,7 @@ export default function ExportMenu<T>({
         subtitle,
         headers,
         rows: matrix,
-        totalRow: totalRow?.map((c) => (c === null || c === undefined ? '' : String(c))),
+        totalRow: resolvedTotal?.map((c) => (c === null || c === undefined ? '' : String(c))),
       });
       if (!res.success) {
         toast.error(typeof res.error === 'string' ? res.error : "Erreur lors de l'export");

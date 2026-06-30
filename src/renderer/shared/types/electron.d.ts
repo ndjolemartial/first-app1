@@ -240,6 +240,18 @@ interface Window {
       delete: (token: string, id: number) => Promise<IpcResponse>;
       statusStats: (token: string, filters?: object) => Promise<IpcResponse<Record<string, number>>>;
     };
+    visitors: {
+      list: (token: string, filters?: object, page?: number, limit?: number) => Promise<IpcResponse<any[]>>;
+      getById: (token: string, id: number) => Promise<IpcResponse<any>>;
+      create: (token: string, payload: object) => Promise<IpcResponse<any>>;
+      update: (token: string, id: number, payload: object) => Promise<IpcResponse<any>>;
+      delete: (token: string, id: number) => Promise<IpcResponse>;
+      stats: (token: string) => Promise<IpcResponse<{ total: number; today: number; month: number }>>;
+      listObjects: (token: string, includeInactive?: boolean) => Promise<IpcResponse<any[]>>;
+      createObject: (token: string, label: string) => Promise<IpcResponse<any>>;
+      updateObject: (token: string, id: number, payload: object) => Promise<IpcResponse<any>>;
+      deleteObject: (token: string, id: number) => Promise<IpcResponse>;
+    };
     terrains: {
       list: (token: string, filters?: object, page?: number, limit?: number) => Promise<IpcResponse<any[]>>;
       getById: (token: string, id: number) => Promise<IpcResponse<any>>;
@@ -281,6 +293,7 @@ interface Window {
         list: (token: string, filters?: object, page?: number, limit?: number) => Promise<IpcResponse<any[]>>;
         stats: (token: string) => Promise<IpcResponse<Record<string, number>>>;
         getById: (token: string, id: number) => Promise<IpcResponse<any>>;
+        linkableUsers: (token: string, excludeEmployeeId?: number) => Promise<IpcResponse<any[]>>;
         create: (token: string, payload: object) => Promise<IpcResponse<any>>;
         update: (token: string, id: number, payload: object) => Promise<IpcResponse<any>>;
         delete: (token: string, id: number) => Promise<IpcResponse>;
@@ -543,6 +556,7 @@ interface Window {
       create: (token: string, payload: object) => Promise<IpcResponse<any>>;
       update: (token: string, id: number, payload: object) => Promise<IpcResponse<any>>;
       settle: (token: string, payload: object) => Promise<IpcResponse<any>>;
+      fundAccount: (token: string, payload: object) => Promise<IpcResponse<{ balance: number }>>;
       cancel: (token: string, id: number) => Promise<IpcResponse<any>>;
       remove: (token: string, id: number) => Promise<IpcResponse>;
     };
@@ -609,6 +623,8 @@ interface Window {
             caption?: string;
             durationMs?: number;
           }>;
+          attendanceQr: { url: string; model: string } | null;
+          visitorQr: { url: string; model: string } | null;
         }>
       >;
     };
@@ -662,6 +678,40 @@ interface Window {
         accounts: Array<{ id: number; name: string; type: string }>;
       }>>;
       updatePayrollAccount: (token: string, payload: { accountId: number | null }) => Promise<IpcResponse>;
+
+      // Pointage par QR Code (app web autonome)
+      getAttendanceQr: (token: string) => Promise<IpcResponse<{
+        enabled: boolean;
+        baseUrl: string;
+        allowedRoles: string[];
+        model: string;
+        expectedArrival: string;
+        expectedDeparture: string;
+        localIps: string[];
+      }>>;
+      updateAttendanceQr: (token: string, payload: {
+        enabled: boolean;
+        baseUrl: string;
+        allowedRoles: string[];
+        model: string;
+        expectedArrival: string;
+        expectedDeparture: string;
+      }) => Promise<IpcResponse>;
+
+      // QR Visiteurs (app web autonome)
+      getVisitorQr: (token: string) => Promise<IpcResponse<{
+        enabled: boolean;
+        baseUrl: string;
+        allowedRoles: string[];
+        model: string;
+        localIps: string[];
+      }>>;
+      updateVisitorQr: (token: string, payload: {
+        enabled: boolean;
+        baseUrl: string;
+        allowedRoles: string[];
+        model: string;
+      }) => Promise<IpcResponse>;
 
       // Email SMTP
       getEmail: (token: string) => Promise<IpcResponse<{

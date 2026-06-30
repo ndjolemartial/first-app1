@@ -216,6 +216,10 @@ export default function EmployeeDetailPage() {
             <Field label="Email" value={e.email} />
             <Field label="Adresse" value={[e.address, e.city].filter(Boolean).join(', ') || null} />
             <Field label="Date d'embauche" value={e.hireDate ? formatDate(e.hireDate) : null} />
+            <Field
+              label="Compte utilisateur lié"
+              value={e.user ? `${e.user.lastName ?? ''} ${e.user.firstName ?? ''}`.trim() + (e.user.role ? ` · ${e.user.role}` : '') : null}
+            />
           </dl>
         </Card>
 

@@ -11,10 +11,11 @@ import ConfirmDialog from '../../../shared/components/ui/ConfirmDialog';
 import { SkeletonTable } from '../../../shared/components/ui/Skeleton';
 import { useAuthStore } from '../../../shared/stores/auth.store';
 import { formatCurrency, formatDate } from '../../../shared/utils/format';
-import { Plus, Banknote, Pencil, XCircle, Trash2 } from 'lucide-react';
+import { Plus, Banknote, Pencil, XCircle, Trash2, AlertTriangle, Wallet } from 'lucide-react';
 import {
   useExpenses, useExpenseStats, useExpenseAccounts, useSettleExpense, useCancelExpense, useRemoveExpense,
 } from '../hooks/useExpenses';
+import FundAccountModal from '../../../shared/components/FundAccountModal';
 
 const STATUS_LABEL: Record<string, string> = { PREVUE: 'Prévue', REGLEE: 'Réglée', ANNULEE: 'Annulée' };
 const PAYMENT_OPTIONS = [
@@ -44,6 +45,7 @@ function SettleModal({ expense, onClose }: { expense: any; onClose: () => void }
   const [method, setMethod] = useState('VIREMENT');
   const [account, setAccount] = useState('');
   const [ref, setRef] = useState('');
+  const [funding, setFunding] = useState(false);
 
   useEffect(() => {
     if (account || accounts.length === 0) return;
@@ -52,13 +54,21 @@ function SettleModal({ expense, onClose }: { expense: any; onClose: () => void }
   }, [accounts, defaultAccountId, account]);
 
   const options = accounts.map((a) => ({ value: String(a.id), label: a.name }));
+  const selectedAccount = accounts.find((a) => String(a.id) === account) ?? null;
+  const balance = selectedAccount ? Number(selectedAccount.balance ?? 0) : null;
+  const settleAmount = Number(amount) || 0;
+  // Solde insuffisant : le compte sélectionné ne couvre pas le montant à régler.
+  // Le règlement est bloqué tant que le compte n'est pas approvisionné à hauteur
+  // du montant (solde ≥ montant requis).
+  const insufficient = selectedAccount != null && balance != null && settleAmount > 0 && balance < settleAmount;
 
   return (
+    <>
     <Modal open onClose={onClose} title={`Régler ${expense.reference}`} size="sm"
       footer={
         <>
           <Button variant="secondary" onClick={onClose}>Annuler</Button>
-          <Button loading={settle.isPending} disabled={!account || !date || !(Number(amount) > 0)}
+          <Button loading={settle.isPending} disabled={!account || !date || !(Number(amount) > 0) || insufficient}
             onClick={async () => {
               const r = await settle.mutateAsync({
                 id: expense.id,
@@ -78,11 +88,40 @@ function SettleModal({ expense, onClose }: { expense: any; onClose: () => void }
         <Input label="Montant (FCFA)" type="number" step="1000" min="0" value={amount} onChange={(e) => setAmount(e.target.value)} />
         <Input label="Date de règlement" type="date" value={date} onChange={(e) => setDate(e.target.value)} />
         <Select label="Compte débité" options={options} value={account} onChange={(e) => setAccount(e.target.value)} />
+        {selectedAccount && (
+          <p className="-mt-1 text-xs text-slate-500">
+            Solde du compte :{' '}
+            <span className={`font-semibold ${insufficient ? 'text-red-600' : 'text-slate-700'}`}>
+              {formatCurrency(balance ?? 0)}
+            </span>
+          </p>
+        )}
+        {insufficient && (
+          <div className="rounded-lg border border-red-200 bg-red-50 p-3">
+            <div className="flex items-start gap-2">
+              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-red-600" />
+              <div className="flex-1">
+                <p className="text-sm font-medium text-red-700">Solde insuffisant</p>
+                <p className="mt-0.5 text-xs text-red-600">
+                  Le solde de ce compte ({formatCurrency(balance ?? 0)}) ne couvre pas le montant à régler ({formatCurrency(settleAmount)}). Approvisionnez-le pour pouvoir régler cette charge.
+                </p>
+                <Button size="sm" variant="secondary" className="mt-2" icon={<Wallet className="h-4 w-4" />}
+                  onClick={() => setFunding(true)}>
+                  Approvisionner le compte
+                </Button>
+              </div>
+            </div>
+          </div>
+        )}
         <Select label="Mode de paiement" options={PAYMENT_OPTIONS} value={method} onChange={(e) => setMethod(e.target.value)} />
         <Input label="Référence du règlement (facultatif)" value={ref} onChange={(e) => setRef(e.target.value)} />
         <p className="text-xs text-slate-500">Une opération de sortie sera enregistrée en comptabilité sur le compte choisi.</p>
       </div>
     </Modal>
+    {funding && selectedAccount && (
+      <FundAccountModal account={selectedAccount} onClose={() => setFunding(false)} />
+    )}
+    </>
   );
 }
 

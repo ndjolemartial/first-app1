@@ -227,6 +227,19 @@ const lotissements = {
     delete: (token, id) => api.invoke('lotissements:delete', { token, id }),
     statusStats: (token, filters) => api.invoke('lotissements:statusStats', { token, filters }),
 };
+// Gestion des visiteurs
+const visitors = {
+    list: (token, filters, page, limit) => api.invoke('visitors:list', { token, filters, page, limit }),
+    getById: (token, id) => api.invoke('visitors:getById', { token, id }),
+    create: (token, payload) => api.invoke('visitors:create', { token, payload }),
+    update: (token, id, payload) => api.invoke('visitors:update', { token, id, payload }),
+    delete: (token, id) => api.invoke('visitors:delete', { token, id }),
+    stats: (token) => api.invoke('visitors:stats', { token }),
+    listObjects: (token, includeInactive) => api.invoke('visitors:listObjects', { token, includeInactive }),
+    createObject: (token, label) => api.invoke('visitors:createObject', { token, label }),
+    updateObject: (token, id, payload) => api.invoke('visitors:updateObject', { token, id, payload }),
+    deleteObject: (token, id) => api.invoke('visitors:deleteObject', { token, id }),
+};
 // Terrains
 const terrains = {
     list: (token, filters, page, limit) => api.invoke('terrains:list', { token, filters, page, limit }),
@@ -269,6 +282,7 @@ const hr = {
         list: (token, filters, page, limit) => api.invoke('hr:employees:list', { token, filters, page, limit }),
         stats: (token) => api.invoke('hr:employees:stats', { token }),
         getById: (token, id) => api.invoke('hr:employees:getById', { token, id }),
+        linkableUsers: (token, excludeEmployeeId) => api.invoke('hr:employees:linkableUsers', { token, excludeEmployeeId }),
         create: (token, payload) => api.invoke('hr:employees:create', { token, payload }),
         update: (token, id, payload) => api.invoke('hr:employees:update', { token, id, payload }),
         delete: (token, id) => api.invoke('hr:employees:delete', { token, id }),
@@ -387,6 +401,7 @@ const expenses = {
     create: (token, payload) => api.invoke('expenses:create', { token, payload }),
     update: (token, id, payload) => api.invoke('expenses:update', { token, id, payload }),
     settle: (token, payload) => api.invoke('expenses:settle', { token, payload }),
+    fundAccount: (token, payload) => api.invoke('expenses:fundAccount', { token, payload }),
     cancel: (token, id) => api.invoke('expenses:cancel', { token, id }),
     remove: (token, id) => api.invoke('expenses:remove', { token, id }),
 };
@@ -467,6 +482,10 @@ const settings = {
     updateStorage: (token, payload) => api.invoke('settings:updateStorage', { token, payload }),
     getPayrollAccount: (token) => api.invoke('settings:getPayrollAccount', { token }),
     updatePayrollAccount: (token, payload) => api.invoke('settings:updatePayrollAccount', { token, payload }),
+    getAttendanceQr: (token) => api.invoke('settings:getAttendanceQr', { token }),
+    updateAttendanceQr: (token, payload) => api.invoke('settings:updateAttendanceQr', { token, payload }),
+    getVisitorQr: (token) => api.invoke('settings:getVisitorQr', { token }),
+    updateVisitorQr: (token, payload) => api.invoke('settings:updateVisitorQr', { token, payload }),
     getEmail: (token) => api.invoke('settings:getEmail', { token }),
     updateEmail: (token, payload) => api.invoke('settings:updateEmail', { token, payload }),
     testEmail: (token, to) => api.invoke('settings:testEmail', { token, to }),
@@ -531,4 +550,4 @@ const documents = {
     /** Résout le chemin disque d'un fichier sélectionné/déposé (Electron webUtils). */
     pathForFile: (file) => electron_1.webUtils.getPathForFile(file),
 };
-electron_1.contextBridge.exposeInMainWorld('electron', { auth, users, prospects, clients, owners, properties, conventions, conventionTemplates, attestationTemplates, attestations, quotes, quoteTemplates, catalog, accounting, bilan, communication, crm, archiving, documents, documentExport, lotissements, terrains, programmes, projects, hr, geo, countries, commissions, expenses, analytics, exporter, invoiceTemplates, listExportTemplates, treasury, budget, dashboard, settings, reminders, config });
+electron_1.contextBridge.exposeInMainWorld('electron', { auth, users, prospects, clients, owners, properties, conventions, conventionTemplates, attestationTemplates, attestations, quotes, quoteTemplates, catalog, accounting, bilan, communication, crm, archiving, documents, documentExport, lotissements, terrains, programmes, projects, hr, visitors, geo, countries, commissions, expenses, analytics, exporter, invoiceTemplates, listExportTemplates, treasury, budget, dashboard, settings, reminders, config });

@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -24,7 +24,18 @@ import { useSelectableUsers } from '../../users/hooks/useUsers';
 import { useAuthStore } from '../../../shared/stores/auth.store';
 import { formatPersonName } from '../../../shared/utils/format';
 import { makeEntitySearch } from '../../../shared/utils/entitySearch';
-import { Save } from 'lucide-react';
+import { toast } from '../../../shared/components/ui/Toast';
+import { Save, Paperclip, FileText, X } from 'lucide-react';
+
+/** Formate une taille en octets de façon lisible. */
+function formatFileSize(bytes?: number): string {
+  if (!bytes) return '';
+  if (bytes < 1024) return `${bytes} o`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} Ko`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} Mo`;
+}
+
+const ATTACH_ACCEPT = '.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,image/*,video/*,audio/*';
 
 /**
  * Rôles ayant une vue complète sur les clients (lister tous les clients).
@@ -111,6 +122,39 @@ export default function ActivityFormPage() {
   const currentRole = useAuthStore((s) => s.user?.role);
   const currentUserId = useAuthStore((s) => s.user?.id);
   const token = useAuthStore((s) => s.token)!;
+
+  // Pièces jointes : fichiers à téléverser (accessible à tous les rôles pouvant
+  // créer une activité, soit tous sauf READONLY) + pièces déjà jointes (édition).
+  const [files, setFiles] = useState<File[]>([]);
+  const [dragOver, setDragOver] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const existingAttachments: any[] = (isEdit && res?.data?.attachments) || [];
+
+  const addFiles = (list: FileList | null) => {
+    if (!list || !list.length) return;
+    setFiles((prev) => [...prev, ...Array.from(list)]);
+  };
+
+  /** Téléverse les fichiers sélectionnés et les rattache à l'activité créée/éditée. */
+  const uploadAttachments = async (activityId: number): Promise<boolean> => {
+    if (!files.length) return true;
+    const payload = {
+      crmActivityId: activityId,
+      files: files.map((f) => ({
+        sourcePath: window.electron.documents.pathForFile(f),
+        originalName: f.name,
+        mimeType: f.type || 'application/octet-stream',
+        size: f.size,
+      })),
+    };
+    const r: any = await window.electron.documents.import(token, payload);
+    if (!r?.success) {
+      toast.error(`Pièces jointes : ${String(r?.error ?? 'échec du téléversement')}`);
+      return false;
+    }
+    toast.success(`${r.data?.length ?? files.length} pièce(s) jointe(s) ajoutée(s)`);
+    return true;
+  };
   // Liste filtrée côté serveur (utilisateurs actifs + rôles autorisés selon le rôle connecté).
   const { data: usersRes } = useSelectableUsers();
   const { data: clientsRes } = useClients({}, 1, 500);
@@ -339,13 +383,19 @@ export default function ActivityFormPage() {
     let r;
     if (isEdit) r = await update.mutateAsync({ id: Number(id), payload });
     else r = await create.mutateAsync(payload);
-    if (r.success) navigate('/crm');
+    if (!r.success) {
+      toast.error(typeof r.error === 'string' ? r.error : "Échec de l'enregistrement de l'activité");
+      return;
+    }
+    const activityId = isEdit ? Number(id) : r.data?.id;
+    if (activityId) await uploadAttachments(activityId);
+    navigate('/crm');
   };
 
   return (
     <PageLayout
       title={isEdit ? "Modifier l'activité" : 'Nouvelle activité'}
-      breadcrumbs={[{ label: 'CRM', to: '/crm' }, { label: isEdit ? 'Modifier' : 'Nouvelle' }]}
+      breadcrumbs={[{ label: 'Activités & CRM', to: '/crm' }, { label: isEdit ? 'Modifier' : 'Nouvelle' }]}
     >
       <form onSubmit={handleSubmit(onSubmit)} className="space-y-6 max-w-2xl mx-auto">
         <Card>
@@ -389,6 +439,77 @@ export default function ActivityFormPage() {
               <FormSearchSelect control={control} name="documentId" label="Archive" options={archiveOptions} />
             )}
           </div>
+        </Card>
+
+        <Card>
+          <h3 className="text-base font-semibold text-slate-800 mb-1">Pièces jointes</h3>
+          <p className="text-xs text-slate-400 mb-4">
+            Joignez des documents à cette activité (PDF, Word, Excel, images, audio, vidéo). Ils sont archivés dans la GED et rattachés à l'activité.
+          </p>
+
+          {existingAttachments.length > 0 && (
+            <ul className="mb-4 space-y-1">
+              {existingAttachments.map((doc: any) => (
+                <li key={doc.id} className="flex items-center justify-between rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm">
+                  <span className="flex items-center gap-2 min-w-0">
+                    <FileText className="h-4 w-4 shrink-0 text-slate-400" />
+                    <span className="truncate text-slate-700">{doc.name}</span>
+                    {doc.numeroArchive && <span className="shrink-0 text-xs font-mono text-slate-400">{doc.numeroArchive}</span>}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => window.electron.documents.open(token, doc.id)}
+                    className="shrink-0 text-xs font-medium text-blue-600 hover:underline"
+                  >
+                    Ouvrir
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+
+          <div
+            onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+            onDragLeave={() => setDragOver(false)}
+            onDrop={(e) => { e.preventDefault(); setDragOver(false); addFiles(e.dataTransfer.files); }}
+            onClick={() => fileInputRef.current?.click()}
+            className={`flex cursor-pointer flex-col items-center justify-center gap-1 rounded-lg border-2 border-dashed px-4 py-6 text-center transition-colors ${
+              dragOver ? 'border-blue-400 bg-blue-50' : 'border-slate-300 hover:border-slate-400'
+            }`}
+          >
+            <Paperclip className="h-5 w-5 text-slate-400" />
+            <p className="text-sm text-slate-600">Glissez-déposez des fichiers ou cliquez pour parcourir</p>
+            <input
+              ref={fileInputRef}
+              type="file"
+              multiple
+              accept={ATTACH_ACCEPT}
+              className="hidden"
+              onChange={(e) => { addFiles(e.target.files); e.target.value = ''; }}
+            />
+          </div>
+
+          {files.length > 0 && (
+            <ul className="mt-3 space-y-1">
+              {files.map((f, i) => (
+                <li key={`${f.name}-${i}`} className="flex items-center justify-between rounded-md border border-slate-200 px-3 py-2 text-sm">
+                  <span className="flex items-center gap-2 min-w-0">
+                    <FileText className="h-4 w-4 shrink-0 text-slate-400" />
+                    <span className="truncate text-slate-700">{f.name}</span>
+                    <span className="shrink-0 text-xs text-slate-400">{formatFileSize(f.size)}</span>
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setFiles((prev) => prev.filter((_, idx) => idx !== i))}
+                    className="shrink-0 rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-red-500"
+                    aria-label="Retirer"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
         </Card>
 
         <div className="flex justify-end gap-3 pb-8">

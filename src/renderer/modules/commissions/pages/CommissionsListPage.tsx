@@ -13,6 +13,7 @@ import {
   transactionLabel,
   BENEFICIARY_TYPE_LABEL,
   beneficiaryName,
+  commissionTotals,
 } from '../utils/commissions.utils';
 import { formatCurrency } from '../../../shared/utils/format';
 import ExportMenu, { ExportColumn } from '../../../shared/components/ExportMenu';
@@ -58,6 +59,23 @@ const EXPORT_COLUMNS: ExportColumn[] = [
   { header: 'Montant',           cell: (c) => formatCurrency(Number(c.amount)) },
   { header: 'Statut',            cell: (c) => COMMISSION_STATUS_LABEL[c.status] ?? c.status },
 ];
+
+/**
+ * Ligne de total du tableau exporté/imprimé : nombre de lignes, somme des
+ * assiettes (colonne 6) et somme des montants (colonne 8). Les autres colonnes
+ * restent vides. L'ordre suit EXPORT_COLUMNS (9 colonnes).
+ */
+function buildTotalRow(rows: any[]): string[] {
+  const t = commissionTotals(rows);
+  return [
+    `TOTAL (${t.count} ligne${t.count > 1 ? 's' : ''})`,
+    '', '', '', '',
+    formatCurrency(t.base),
+    '',
+    formatCurrency(t.amount),
+    '',
+  ];
+}
 
 export default function CommissionsListPage() {
   const navigate = useNavigate();
@@ -115,6 +133,7 @@ export default function CommissionsListPage() {
         subtitle: filterSummary,
         headers: EXPORT_COLUMNS.map((c) => c.header),
         rows: matrix,
+        totalRow: buildTotalRow(rows),
       });
       if (!pr.success) toast.error(typeof pr.error === 'string' ? pr.error : "Erreur lors de l'impression");
     } catch (e: any) {
@@ -135,6 +154,7 @@ export default function CommissionsListPage() {
             title="Liste des commissions"
             subtitle={filterSummary}
             columns={EXPORT_COLUMNS}
+            totalRow={buildTotalRow}
             fetchRows={async () => {
               const r = await window.electron.commissions.list(token, filters, 1, 100000);
               return r.success ? r.data ?? [] : [];

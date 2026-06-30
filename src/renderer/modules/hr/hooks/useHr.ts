@@ -22,6 +22,13 @@ export function useEmployee(id: number) {
   });
 }
 
+export function useLinkableUsers(excludeEmployeeId?: number) {
+  return useQuery({
+    queryKey: ['hr-linkable-users', excludeEmployeeId ?? 0],
+    queryFn: () => ipc().employees.linkableUsers(token(), excludeEmployeeId),
+  });
+}
+
 export function useEmployeesStats() {
   return useQuery({
     queryKey: ['employees', 'stats'],

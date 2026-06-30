@@ -85,6 +85,7 @@ model User {
   leaveDecisions         LeaveRequest[]         @relation("LeaveDecidedBy")
   forecastExpensesCreated ForecastExpense[]     @relation("ForecastExpenseCreatedBy")
   forecastExpensesSettled ForecastExpense[]     @relation("ForecastExpenseSettledBy")
+  visitorsCreated         Visitor[]             @relation("VisitorCreatedBy")
 }
 
 enum UserRole {
@@ -1294,7 +1295,9 @@ model CrmActivity {
   installment SaleInstallment?     @relation(fields: [installmentId], references: [id])
   project     Project?             @relation(fields: [projectId], references: [id])
   quote       Quote?               @relation(fields: [quoteId], references: [id])
-  document    Document?            @relation(fields: [documentId], references: [id])
+  document    Document?            @relation("ActivityLinkedDocument", fields: [documentId], references: [id])
+  // Pièces jointes téléversées pour cette activité (0..n documents GED).
+  attachments Document[]           @relation("ActivityAttachments")
 }
 
 enum ActivityType {
@@ -1460,6 +1463,7 @@ model Document {
   attestationId  Int?
   quoteId        Int?
   treasuryOperationId Int?    // Opération de trésorerie rattachée
+  crmActivityId  Int?         // Activité CRM dont ce document est une pièce jointe
   uploadedAt     DateTime     @default(now())
   updatedAt      DateTime     @updatedAt
   deletedAt      DateTime?
@@ -1483,9 +1487,10 @@ model Document {
   documentCategory DocumentCategory?    @relation(fields: [categoryId], references: [id])
   folder           DocumentFolder?      @relation(fields: [folderId], references: [id])
   uploadedBy       User?                @relation("DocumentUploadedBy", fields: [uploadedById], references: [id])
+  crmActivity      CrmActivity?         @relation("ActivityAttachments", fields: [crmActivityId], references: [id])
   tags             DocumentTag[]
   auditLogs        DocumentAuditLog[]
-  activities       CrmActivity[]
+  activities       CrmActivity[]        @relation("ActivityLinkedDocument")
 }
 
 // Catégorie documentaire — auto-référencée pour les sous-catégories.
@@ -2449,6 +2454,8 @@ model AttendanceRecord {
   status        AttendanceStatus @default(PRESENT)
   hoursWorked   Decimal          @default(0) @db.Decimal(5, 2)
   overtimeHours Decimal          @default(0) @db.Decimal(5, 2)
+  arrivalTime   DateTime?        // Heure de pointage d'arrivée (scan QR)
+  departureTime DateTime?        // Heure de pointage de départ (scan QR)
   notes         String?
   createdAt     DateTime         @default(now())
   updatedAt     DateTime         @updatedAt
@@ -2466,4 +2473,42 @@ enum AttendanceStatus {
   REPOS
   FERIE
   MALADIE
+}
+
+// ── GESTION DES VISITEURS ─────────────────────────────────────
+model Visitor {
+  id          Int           @id @default(autoincrement())
+  uuid        String        @unique @default(cuid())
+  firstName   String        // Prénoms
+  lastName    String        // Nom
+  company     String?       // Entreprise
+  phone       String?       // Contacts
+  email       String?       // Adresse mail
+  objet       String        // Objet de visite
+  details     String?       @db.Text
+  visitedAt   DateTime      @default(now())  // Jour et heure de visite (auto)
+  source      VisitorSource @default(QR)     // QR (auto-enregistré) ou INTERNE (saisi par l'accueil)
+  createdById Int?          // Utilisateur ayant saisi (si source INTERNE)
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+  deletedAt   DateTime?
+
+  createdBy   User?         @relation("VisitorCreatedBy", fields: [createdById], references: [id])
+
+  @@index([visitedAt])
+}
+
+enum VisitorSource {
+  QR
+  INTERNE
+}
+
+// Objets de visite — liste paramétrable (gérée depuis le module Visiteurs).
+model VisitObject {
+  id        Int       @id @default(autoincrement())
+  label     String    @unique
+  isActive  Boolean   @default(true)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
 }

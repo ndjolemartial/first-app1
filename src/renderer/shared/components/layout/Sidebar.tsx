@@ -5,7 +5,7 @@ import {
   LayoutDashboard, Users, UserSearch, UserCheck, Home, Building2,
   FileText, Calculator, MessageSquare, CalendarClock, Archive, Settings,
   Map, Landmark, Percent, Wallet, Building, PiggyBank, Briefcase, FileSpreadsheet, UserCog, ReceiptText, CalendarDays, Clock,
-  BarChart3, ChevronDown,
+  BarChart3, ChevronDown, UserPlus,
 } from 'lucide-react';
 import { useAuthStore } from '../../stores/auth.store';
 
@@ -45,7 +45,7 @@ const navItems: NavEntry[] = [
   { label: 'Budgets', to: '/budgets', icon: <PiggyBank className="h-5 w-5" />, roles: ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ACCOUNTANT', 'READONLY'] },
   { label: 'Charges prévisionnelles', to: '/expenses', icon: <ReceiptText className="h-5 w-5" />, roles: ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ACCOUNTANT', 'ASSISTANTE_DIRECTION'] },
   { label: 'Communication', to: '/communication', icon: <MessageSquare className="h-5 w-5" /> },
-  { label: 'CRM', to: '/crm', icon: <CalendarClock className="h-5 w-5" /> },
+  { label: 'Activités & CRM', to: '/crm', icon: <CalendarClock className="h-5 w-5" /> },
   { label: 'Archivage', to: '/archiving', icon: <Archive className="h-5 w-5" /> },
   { label: 'Projets', to: '/projects', icon: <Briefcase className="h-5 w-5" />, roles: ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ACCOUNTANT', 'ASSISTANTE_DIRECTION', 'AGENT_TECHNIQUE'] },
   {
@@ -59,6 +59,7 @@ const navItems: NavEntry[] = [
       { label: 'Pointage', to: '/hr/attendance', icon: <Clock className="h-5 w-5" /> },
     ],
   },
+  { label: 'Gestion des visiteurs', to: '/visitors', icon: <UserPlus className="h-5 w-5" />, roles: ['SUPER_ADMIN', 'ADMIN', 'ASSISTANTE_DIRECTION'] },
   { label: 'Analyses décisionnelles', to: '/analytics', icon: <BarChart3 className="h-5 w-5" />, roles: ['SUPER_ADMIN', 'ADMIN'] },
   { label: 'Paramètres', to: '/settings', icon: <Settings className="h-5 w-5" />, roles: ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ACCOUNTANT'] },
 ];

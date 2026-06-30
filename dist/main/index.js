@@ -33,6 +33,7 @@ const terrains_ipc_1 = require("./ipc/terrains.ipc");
 const programmes_ipc_1 = require("./ipc/programmes.ipc");
 const projects_ipc_1 = require("./ipc/projects.ipc");
 const hr_ipc_1 = require("./ipc/hr.ipc");
+const visitors_ipc_1 = require("./ipc/visitors.ipc");
 const geo_ipc_1 = require("./ipc/geo.ipc");
 const countries_ipc_1 = require("./ipc/countries.ipc");
 const commissions_ipc_1 = require("./ipc/commissions.ipc");
@@ -125,6 +126,7 @@ function registerIPC() {
     (0, programmes_ipc_1.registerProgrammesIPC)();
     (0, projects_ipc_1.registerProjectsIPC)();
     (0, hr_ipc_1.registerHrIPC)();
+    (0, visitors_ipc_1.registerVisitorsIPC)();
     (0, geo_ipc_1.registerGeoIPC)();
     (0, countries_ipc_1.registerCountriesIPC)();
     (0, commissions_ipc_1.registerCommissionsIPC)();

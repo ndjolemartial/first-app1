@@ -28,6 +28,7 @@ import { registerTerrainsIPC } from './ipc/terrains.ipc';
 import { registerProgrammesIPC } from './ipc/programmes.ipc';
 import { registerProjectsIPC } from './ipc/projects.ipc';
 import { registerHrIPC } from './ipc/hr.ipc';
+import { registerVisitorsIPC } from './ipc/visitors.ipc';
 import { registerGeoIPC } from './ipc/geo.ipc';
 import { registerCountriesIPC } from './ipc/countries.ipc';
 import { registerCommissionsIPC } from './ipc/commissions.ipc';
@@ -126,6 +127,7 @@ function registerIPC(): void {
   registerProgrammesIPC();
   registerProjectsIPC();
   registerHrIPC();
+  registerVisitorsIPC();
   registerGeoIPC();
   registerCountriesIPC();
   registerCommissionsIPC();

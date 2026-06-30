@@ -364,7 +364,9 @@ export function resolveConventionVariables(
     'convention.nombreTerrains': String(terrains.length),
     'convention.nombreTerrains.enLettres': numL(terrains.length),
     'convention.lotsSouscrits': lotsEnumeration(terrains),
-    'convention.lotsAnterieursSouscrits': lotsEnumeration(priorTerrains),
+    // Lots ANTÉRIEURS : sans la mention « références précisées plus tard » —
+    // seule la superficie totale est retenue lorsque les références manquent.
+    'convention.lotsAnterieursSouscrits': lotsEnumeration(priorTerrains, { omitPendingRefNote: true }),
     // Lotissement antérieur — pris sur le premier terrain ANTÉRIEUR rattaché
     // (champ « Terrains antérieurs rattachés » du formulaire de convention).
     // Les terrains antérieurs partagent le même lotissement (contrainte métier).

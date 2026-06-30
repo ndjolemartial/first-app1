@@ -116,6 +116,72 @@ export function useUpdatePayrollAccount() {
   });
 }
 
+// ── Pointage par QR Code ─────────────────────────────────────────────────────
+
+export function useAttendanceQrSettings() {
+  const token = useAuthStore((s) => s.token)!;
+  return useQuery({
+    queryKey: ['settings', 'attendanceQr'],
+    queryFn:  () => ipc().getAttendanceQr(token),
+    enabled:  !!token,
+  });
+}
+
+interface AttendanceQrPayload {
+  enabled: boolean;
+  baseUrl: string;
+  allowedRoles: string[];
+  model: string;
+  expectedArrival: string;
+  expectedDeparture: string;
+}
+
+export function useUpdateAttendanceQr() {
+  const token = useAuthStore((s) => s.token)!;
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: AttendanceQrPayload) => ipc().updateAttendanceQr(token, payload),
+    onSuccess:  (res) => {
+      if (res.success) {
+        qc.invalidateQueries({ queryKey: ['settings', 'attendanceQr'] });
+        qc.invalidateQueries({ queryKey: ['dashboard'] });
+        toast.success('Pointage QR enregistré');
+      } else toast.error(String(res.error));
+    },
+  });
+}
+
+interface VisitorQrPayload {
+  enabled: boolean;
+  baseUrl: string;
+  allowedRoles: string[];
+  model: string;
+}
+
+export function useVisitorQrSettings() {
+  const token = useAuthStore((s) => s.token)!;
+  return useQuery({
+    queryKey: ['settings', 'visitorQr'],
+    queryFn:  () => ipc().getVisitorQr(token),
+    enabled:  !!token,
+  });
+}
+
+export function useUpdateVisitorQr() {
+  const token = useAuthStore((s) => s.token)!;
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: VisitorQrPayload) => ipc().updateVisitorQr(token, payload),
+    onSuccess:  (res) => {
+      if (res.success) {
+        qc.invalidateQueries({ queryKey: ['settings', 'visitorQr'] });
+        qc.invalidateQueries({ queryKey: ['dashboard'] });
+        toast.success('QR Visiteurs enregistré');
+      } else toast.error(String(res.error));
+    },
+  });
+}
+
 // ── Email ───────────────────────────────────────────────────────────────────
 
 export function useEmailSettings() {
