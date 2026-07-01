@@ -200,6 +200,9 @@ async function setSettings(entries) {
 exports.SettingsKeys = {
     // Entreprise
     companyName: 'company.name',
+    companyDenomination: 'company.denomination',
+    companyLegalRepEmployeeId: 'company.legalRepEmployeeId', // employé représentant légal
+    hrReglementInterieurDocId: 'hr.reglementInterieur.documentId', // document GED ciblé (règlement intérieur)
     companySlogan: 'company.slogan',
     companyLogo: 'company.logoPath', // chemin relatif dans STORAGE_PATH
     companyRegistre: 'company.registreCommerce',

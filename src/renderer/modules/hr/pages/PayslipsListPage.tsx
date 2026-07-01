@@ -38,7 +38,10 @@ const EXPORT_COLUMNS: ExportColumn[] = [
   { header: 'Statut', cell: (p: any) => PAYSLIP_STATUS_LABEL[p.status] ?? p.status },
 ];
 
-const WRITE_ROLES = new Set(['SUPER_ADMIN', 'ADMIN', 'RH']);
+// Écriture opérationnelle (bulletins) : admins/RH + MANAGER & ASSISTANTE_DIRECTION.
+const WRITE_ROLES = new Set(['SUPER_ADMIN', 'ADMIN', 'RH', 'MANAGER', 'ASSISTANTE_DIRECTION']);
+// Configuration (modèles de bulletins, paramètres de paie) : admins et RH uniquement.
+const CONFIG_ROLES = new Set(['SUPER_ADMIN', 'ADMIN', 'RH']);
 const now = new Date();
 const YEAR_OPTIONS = Array.from({ length: 6 }, (_, i) => {
   const y = now.getFullYear() - i;
@@ -116,6 +119,7 @@ export default function PayslipsListPage() {
   const token = useAuthStore((s) => s.token)!;
   const role = useAuthStore((s) => s.user?.role) ?? '';
   const canWrite = WRITE_ROLES.has(role);
+  const canConfig = CONFIG_ROLES.has(role);
 
   const [page, setPage] = useState(1);
   const [year, setYear] = useState(String(now.getFullYear()));
@@ -149,12 +153,12 @@ export default function PayslipsListPage() {
               return r.success ? r.data ?? [] : [];
             }}
           />
-          {canWrite && (
+          {canConfig && (
             <Button variant="secondary" icon={<FileText className="h-4 w-4" />} onClick={() => navigate('/hr/templates')}>
-              Modèles
+              Modèles de bulletins
             </Button>
           )}
-          {canWrite && (
+          {canConfig && (
             <Button variant="secondary" icon={<Settings className="h-4 w-4" />} onClick={() => navigate('/hr/payroll-settings')}>
               Paramètres
             </Button>

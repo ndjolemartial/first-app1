@@ -47,7 +47,7 @@ import { registerRemindersIPC } from './ipc/reminders.ipc';
 import { seedDefaultRemindersConfig, scheduleReminders } from './services/reminders.service';
 import { seedDefaultAttestationTemplate } from './services/attestation-templates.service';
 import { seedDefaultQuoteTemplate } from './services/quote-templates.service';
-import { seedDefaultContractTemplates, seedDefaultPayslipTemplates } from './services/hr-templates.service';
+import { seedDefaultContractTemplates, seedDefaultPayslipTemplates, seedDefaultEssaiCategories } from './services/hr-templates.service';
 import { seedDefaultLeaveTypes } from './services/leave.service';
 
 // Distinction dev/prod basée sur l'empaquetage Electron (plus fiable que
@@ -198,6 +198,7 @@ app.whenReady().then(async () => {
   // Modèles RH : contrats (un par type) + bulletins de paie (3 modèles).
   seedDefaultContractTemplates()
     .then(() => seedDefaultPayslipTemplates())
+    .then(() => seedDefaultEssaiCategories())
     .catch((e) => logger.error(`HR templates bootstrap failed: ${e.message}`));
   seedDefaultLeaveTypes()
     .catch((e) => logger.error(`Leave types bootstrap failed: ${e.message}`));

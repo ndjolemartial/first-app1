@@ -441,7 +441,14 @@ const hr = {
     update: (token: string, id: number, payload: object) =>
       api.invoke('hr:contracts:update', { token, id, payload }),
     delete: (token: string, id: number) => api.invoke('hr:contracts:delete', { token, id }),
-    print: (token: string, id: number) => api.invoke('hr:contracts:print', { token, id }),
+    getRenderData: (token: string, id: number) => api.invoke('hr:contracts:getRenderData', { token, id }),
+  },
+  signedContracts: {
+    list: (token: string, employeeId: number) => api.invoke('hr:signedContracts:list', { token, employeeId }),
+    upload: (token: string, payload: object) => api.invoke('hr:signedContracts:upload', { token, payload }),
+    delete: (token: string, id: number) => api.invoke('hr:signedContracts:delete', { token, id }),
+    fileData: (token: string, id: number) => api.invoke('hr:signedContracts:fileData', { token, id }),
+    open: (token: string, id: number) => api.invoke('hr:signedContracts:open', { token, id }),
   },
   payslips: {
     list: (token: string, filters?: object, page?: number, limit?: number) =>
@@ -467,6 +474,42 @@ const hr = {
     update: (token: string, id: number, payload: object) =>
       api.invoke('hr:contractTemplates:update', { token, id, payload }),
     delete: (token: string, id: number) => api.invoke('hr:contractTemplates:delete', { token, id }),
+  },
+  essaiCategories: {
+    list: (token: string, includeInactive?: boolean) => api.invoke('hr:essaiCategories:list', { token, includeInactive }),
+    create: (token: string, payload: object) => api.invoke('hr:essaiCategories:create', { token, payload }),
+    update: (token: string, id: number, payload: object) =>
+      api.invoke('hr:essaiCategories:update', { token, id, payload }),
+    delete: (token: string, id: number) => api.invoke('hr:essaiCategories:delete', { token, id }),
+  },
+  contractFunctions: {
+    list: (token: string, includeInactive?: boolean) => api.invoke('hr:contractFunctions:list', { token, includeInactive }),
+    create: (token: string, payload: object) => api.invoke('hr:contractFunctions:create', { token, payload }),
+    update: (token: string, id: number, payload: object) =>
+      api.invoke('hr:contractFunctions:update', { token, id, payload }),
+    delete: (token: string, id: number) => api.invoke('hr:contractFunctions:delete', { token, id }),
+  },
+  jobDescriptionTemplates: {
+    list: (token: string) => api.invoke('hr:jobDescriptionTemplates:list', { token }),
+    create: (token: string, payload: object) => api.invoke('hr:jobDescriptionTemplates:create', { token, payload }),
+    update: (token: string, id: number, payload: object) =>
+      api.invoke('hr:jobDescriptionTemplates:update', { token, id, payload }),
+    delete: (token: string, id: number) => api.invoke('hr:jobDescriptionTemplates:delete', { token, id }),
+  },
+  // Espace self-service : mon propre contenu RH & Paie (lecture seule).
+  me: {
+    overview: (token: string) => api.invoke('hr:me:overview', { token }),
+    payslips: (token: string) => api.invoke('hr:me:payslips', { token }),
+    payslip: (token: string, id: number) => api.invoke('hr:me:payslip', { token, id }),
+    payslipPrint: (token: string, id: number) => api.invoke('hr:me:payslipPrint', { token, id }),
+    attendance: (token: string, year: number, month: number) => api.invoke('hr:me:attendance', { token, year, month }),
+    leaveRequests: (token: string) => api.invoke('hr:me:leaveRequests', { token }),
+    contractRenderData: (token: string, id: number) => api.invoke('hr:me:contractRenderData', { token, id }),
+    reglementInterieur: (token: string) => api.invoke('hr:me:reglementInterieur', { token }),
+    reglementInterieurPrint: (token: string) => api.invoke('hr:me:reglementInterieurPrint', { token }),
+    signedContracts: (token: string) => api.invoke('hr:me:signedContracts', { token }),
+    signedContractFile: (token: string, id: number) => api.invoke('hr:me:signedContractFile', { token, id }),
+    signedContractOpen: (token: string, id: number) => api.invoke('hr:me:signedContractOpen', { token, id }),
   },
   payslipTemplates: {
     list: (token: string) => api.invoke('hr:payslipTemplates:list', { token }),
@@ -706,6 +749,9 @@ const settings = {
   getCompany: (token: string) => api.invoke('settings:getCompany', { token }),
   updateCompany: (token: string, payload: object) =>
     api.invoke('settings:updateCompany', { token, payload }),
+  getReglementInterieur: (token: string) => api.invoke('settings:getReglementInterieur', { token }),
+  setReglementInterieur: (token: string, documentId: number | null) =>
+    api.invoke('settings:setReglementInterieur', { token, documentId }),
   uploadLogo: (token: string, payload: object) =>
     api.invoke('settings:uploadLogo', { token, payload }),
   deleteLogo: (token: string) => api.invoke('settings:deleteLogo', { token }),

@@ -18,7 +18,10 @@ import {
   type Employee,
 } from '../types/hr.types';
 
-const WRITE_ROLES = new Set(['SUPER_ADMIN', 'ADMIN', 'RH']);
+// Écriture opérationnelle (personnel) : admins/RH + MANAGER & ASSISTANTE_DIRECTION.
+const WRITE_ROLES = new Set(['SUPER_ADMIN', 'ADMIN', 'RH', 'MANAGER', 'ASSISTANTE_DIRECTION']);
+// Configuration (modèles de contrats) : admins et RH uniquement.
+const CONFIG_ROLES = new Set(['SUPER_ADMIN', 'ADMIN', 'RH']);
 
 const STATUS_FILTER_OPTIONS = [{ value: '', label: 'Tous les statuts' }, ...EMPLOYEE_STATUS_OPTIONS];
 
@@ -26,6 +29,7 @@ export default function EmployeesListPage() {
   const navigate = useNavigate();
   const role = useAuthStore((s) => s.user?.role) ?? '';
   const canWrite = WRITE_ROLES.has(role);
+  const canConfig = CONFIG_ROLES.has(role);
 
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState('');
@@ -48,9 +52,11 @@ export default function EmployeesListPage() {
       actions={
         canWrite && (
           <div className="flex gap-2">
-            <Button variant="secondary" icon={<FileText className="h-4 w-4" />} onClick={() => navigate('/hr/templates')}>
-              Modèles
-            </Button>
+            {canConfig && (
+              <Button variant="secondary" icon={<FileText className="h-4 w-4" />} onClick={() => navigate('/settings?tab=contractTemplates')}>
+                Modèles de contrats
+              </Button>
+            )}
             <Button icon={<PlusCircle className="h-4 w-4" />} onClick={() => navigate('/hr/employees/new')}>
               Nouvel employé
             </Button>

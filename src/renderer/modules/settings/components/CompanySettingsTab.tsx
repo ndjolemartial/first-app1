@@ -4,14 +4,18 @@ import { Save, Upload, ImagePlus, Trash2 } from 'lucide-react';
 import Button from '../../../shared/components/ui/Button';
 import Card from '../../../shared/components/ui/Card';
 import Input from '../../../shared/components/ui/Input';
+import Select from '../../../shared/components/ui/Select';
 import Textarea from '../../../shared/components/ui/Textarea';
 import ConfirmDialog from '../../../shared/components/ui/ConfirmDialog';
 import {
   useCompanySettings, useUpdateCompany, useUploadLogo, useLogoData, useDeleteLogo,
 } from '../hooks/useSettings';
+import { useEmployees } from '../../hr/hooks/useHr';
 
 interface FormData {
   name: string;
+  denomination: string;
+  legalRepEmployeeId: string;
   slogan: string;
   registreCommerce: string;
   compteContribuable: string;
@@ -27,6 +31,15 @@ const MAX_LOGO_MB = 5;
 
 export default function CompanySettingsTab() {
   const { data: companyRes, isLoading } = useCompanySettings();
+  const { data: empRes } = useEmployees({}, 1, 1000);
+  const employees: any[] = empRes?.data ?? [];
+  const empOptions = [
+    { value: '', label: '— Aucun —' },
+    ...employees.map((e) => ({
+      value: String(e.id),
+      label: `${e.lastName ?? ''} ${e.firstName ?? ''}`.trim() + (e.matricule ? ` (${e.matricule})` : ''),
+    })),
+  ];
   const { data: logoRes } = useLogoData();
   const update = useUpdateCompany();
   const uploadLogo = useUploadLogo();
@@ -37,7 +50,7 @@ export default function CompanySettingsTab() {
 
   const { register, handleSubmit, reset, formState: { isSubmitting } } = useForm<FormData>({
     defaultValues: {
-      name: '', slogan: '', registreCommerce: '', compteContribuable: '',
+      name: '', denomination: '', legalRepEmployeeId: '', slogan: '', registreCommerce: '', compteContribuable: '',
       phoneFixed: '', phoneMobile1: '', phoneMobile2: '', website: '', address: '',
     },
   });
@@ -46,6 +59,8 @@ export default function CompanySettingsTab() {
     if (companyRes?.success && companyRes.data) {
       reset({
         name:               companyRes.data.name ?? '',
+        denomination:       companyRes.data.denomination ?? '',
+        legalRepEmployeeId: companyRes.data.legalRepEmployeeId ?? '',
         slogan:             companyRes.data.slogan ?? '',
         registreCommerce:   companyRes.data.registreCommerce ?? '',
         compteContribuable: companyRes.data.compteContribuable ?? '',
@@ -146,8 +161,21 @@ export default function CompanySettingsTab() {
           <div>
             <h3 className="font-semibold text-slate-700 mb-4">Identité</h3>
             <div className="space-y-4">
-              <Input label="Nom de l'entreprise" {...register('name')} />
+              <div className="grid grid-cols-2 gap-4">
+                <Input label="Nom de l'entreprise (Sigle)" {...register('name')} />
+                <Input label="Dénomination sociale de l'entreprise" {...register('denomination')} />
+              </div>
               <Input label="Slogan" {...register('slogan')} />
+              <div>
+                <Select
+                  label="Représentant légal de l'entreprise"
+                  options={empOptions}
+                  {...register('legalRepEmployeeId')}
+                />
+                <p className="text-xs text-slate-500 mt-1">
+                  Membre du personnel signataire au nom de l'entreprise (utilisé dans les contrats de travail).
+                </p>
+              </div>
               <div className="grid grid-cols-2 gap-4">
                 <Input label="N° registre de commerce" {...register('registreCommerce')} />
                 <Input label="N° compte contribuable" {...register('compteContribuable')} />

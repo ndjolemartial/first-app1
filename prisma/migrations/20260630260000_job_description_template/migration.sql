@@ -1,0 +1,26 @@
+-- Modèle éditable de « fiche de poste » (mêmes zones que ContractTemplate),
+-- rattaché à un contrat à la génération.
+CREATE TABLE `JobDescriptionTemplate` (
+  `id` INTEGER NOT NULL AUTO_INCREMENT,
+  `uuid` VARCHAR(191) NOT NULL,
+  `name` VARCHAR(191) NOT NULL,
+  `header` LONGTEXT NULL,
+  `headerWidth` INTEGER NOT NULL DEFAULT 100,
+  `headerHeight` INTEGER NOT NULL DEFAULT 140,
+  `body` LONGTEXT NOT NULL,
+  `footer` LONGTEXT NULL,
+  `footerWidth` INTEGER NOT NULL DEFAULT 100,
+  `footerHeight` INTEGER NOT NULL DEFAULT 140,
+  `footerBgColor` VARCHAR(20) NULL,
+  `endOfDocument` LONGTEXT NULL,
+  `endOfDocumentWidth` INTEGER NOT NULL DEFAULT 100,
+  `endOfDocumentHeight` INTEGER NOT NULL DEFAULT 140,
+  `endOfDocumentBgColor` VARCHAR(20) NULL,
+  `isDefault` BOOLEAN NOT NULL DEFAULT false,
+  `isActive` BOOLEAN NOT NULL DEFAULT true,
+  `createdAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+  `updatedAt` DATETIME(3) NOT NULL,
+  `deletedAt` DATETIME(3) NULL,
+  UNIQUE INDEX `JobDescriptionTemplate_uuid_key`(`uuid`),
+  PRIMARY KEY (`id`)
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;

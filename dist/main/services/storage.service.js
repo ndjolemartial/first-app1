@@ -8,6 +8,7 @@ exports.storageRoot = storageRoot;
 exports.resolveStoragePath = resolveStoragePath;
 exports.importGedFile = importGedFile;
 exports.writeGedFile = writeGedFile;
+exports.writeEmployeeSignedContract = writeEmployeeSignedContract;
 exports.removeStorageFile = removeStorageFile;
 exports.readStorageFile = readStorageFile;
 exports.writeLogoFile = writeLogoFile;
@@ -82,6 +83,19 @@ function writeGedFile(buffer, numeroArchive, originalName) {
     const fileName = `${numeroArchive}${ext}`;
     fs_1.default.writeFileSync(path_1.default.join(dir, fileName), buffer);
     return { relativePath: ['ged', year, fileName].join('/'), size: buffer.length };
+}
+/**
+ * Écrit un contrat signé téléversé dans `<root>/employees/<id>/signed-contracts/`.
+ * Retourne le chemin relatif (stocké en base) et la taille.
+ */
+function writeEmployeeSignedContract(employeeId, buffer, originalName) {
+    const dir = path_1.default.join(storageRoot(), 'employees', String(employeeId), 'signed-contracts');
+    fs_1.default.mkdirSync(dir, { recursive: true });
+    const safe = originalName.replace(/[\\/:*?"<>|]/g, '_').replace(/\s+/g, ' ').trim() || 'contrat';
+    const fileName = `${Date.now()}-${safe}`;
+    const abs = path_1.default.join(dir, fileName);
+    fs_1.default.writeFileSync(abs, buffer);
+    return { relativePath: path_1.default.relative(storageRoot(), abs), size: buffer.length };
 }
 /** Supprime physiquement un fichier du stockage (silencieux si absent). */
 function removeStorageFile(relativePath) {

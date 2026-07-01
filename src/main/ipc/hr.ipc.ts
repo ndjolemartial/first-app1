@@ -1,21 +1,23 @@
-import { ipcMain } from 'electron';
+import { ipcMain, shell } from 'electron';
+import fs from 'fs';
 import { getDb } from '../services/db.service';
-import { getSession, checkRole } from '../services/auth.service';
+import { getSession } from '../services/auth.service';
 import logger from '../utils/logger';
 import { z } from 'zod';
 import { htmlToPdf, openPrintPreview } from '../services/pdf.service';
-import { loadContractCompany, renderContractHtml } from '../services/contract-template.service';
+import { loadContractCompany } from '../services/contract-template.service';
 import {
   computePayroll, computePrimeAnciennete, getPayrollRates, setPayrollRates,
   loadPayslipCompany, renderPayslipHtml, loadPayslipLogo, computePayslipTotals, type PayrollRates,
 } from '../services/payroll.service';
 import {
-  resolveContractTemplateBody, resolvePayslipTemplate,
+  resolvePayslipTemplate,
 } from '../services/hr-templates.service';
 import { workingDays, computeLeaveBalance, computePayslipLeaveCounters } from '../services/leave.service';
 import { attendanceMonthSummary } from '../services/attendance.service';
 import { recordTreasuryOperation, computeBalances } from '../services/treasury.service';
 import { getSetting, SettingsKeys } from '../services/settings.service';
+import { readStorageFile, writeEmployeeSignedContract, removeStorageFile, resolveStoragePath } from '../services/storage.service';
 
 /**
  * Module RH / Paie — Phase 1 : gestion du personnel et des contrats de travail.
@@ -26,16 +28,90 @@ import { getSetting, SettingsKeys } from '../services/settings.service';
  * delete (`deletedAt`).
  */
 
-const HR_WRITE_ROLES = ['SUPER_ADMIN', 'ADMIN', 'RH'];
-const HR_READ_ROLES = [...HR_WRITE_ROLES];
+// Rôles pleinement habilités sur le module RH (personnel, paie, configuration).
+const HR_ADMIN_ROLES = ['SUPER_ADMIN', 'ADMIN', 'RH'];
+// Rôles à accès RESTREINT : MANAGER et ASSISTANTE_DIRECTION accèdent au module
+// mais uniquement pour les employés dont le contrat en cours n'est PAS un CDI
+// (dès qu'un employé passe en CDI, il leur est masqué). Ils ne peuvent pas
+// enregistrer le pointage ni modifier la configuration (modèles, taux…).
+const HR_SCOPED_ROLES = ['MANAGER', 'ASSISTANTE_DIRECTION'];
+// Écritures « administratives » (configuration : modèles, taux, catégories… et
+// enregistrement du pointage) — réservées aux admins / RH.
+const HR_WRITE_ROLES = [...HR_ADMIN_ROLES];
+// Écritures opérationnelles (personnel, contrats, bulletins, congés) : admins +
+// rôles restreints (ces derniers filtrés aux employés non-CDI).
+const HR_OPERATIONAL_ROLES = [...HR_ADMIN_ROLES, ...HR_SCOPED_ROLES];
+// Lecture : admins + rôles restreints (filtrés aux employés non-CDI).
+const HR_READ_ROLES = [...HR_ADMIN_ROLES, ...HR_SCOPED_ROLES];
+
+/**
+ * Contrôle de rôle EXACT pour le module RH (n'applique pas les équivalences de
+ * `checkRole`, afin que ACCOUNTANT — équivalent MANAGER — n'obtienne PAS l'accès
+ * RH accordé à MANAGER / ASSISTANTE_DIRECTION).
+ */
+function checkHrRole(session: { role: string }, allowed: string[]): void {
+  if (!allowed.includes(session.role)) throw new Error('Permission insuffisante');
+}
+
+const isScopedHr = (role: string): boolean => HR_SCOPED_ROLES.includes(role);
 
 const ser = <T>(v: T): T => JSON.parse(JSON.stringify(v));
+
+/**
+ * Identifiants des employés MASQUÉS aux rôles restreints : ceux dont le
+ * « contrat en cours » est un CDI. Contrat en cours = contrat ACTIF le plus
+ * récent (à défaut, le plus récent par date de début). Les employés sans
+ * contrat restent accessibles (non-CDI par défaut).
+ */
+async function hrExcludedEmployeeIds(db: ReturnType<typeof getDb>): Promise<number[]> {
+  const contracts = await db.employmentContract.findMany({
+    where: { deletedAt: null },
+    select: { employeeId: true, type: true, status: true, startDate: true },
+  });
+  const byEmp = new Map<number, Array<{ type: string; status: string; startDate: Date }>>();
+  for (const c of contracts) {
+    const list = byEmp.get(c.employeeId) ?? [];
+    list.push({ type: c.type as string, status: c.status as string, startDate: c.startDate as Date });
+    byEmp.set(c.employeeId, list);
+  }
+  const excluded: number[] = [];
+  for (const [empId, list] of byEmp) {
+    const actifs = list.filter((c) => c.status === 'ACTIF');
+    const pool = actifs.length ? actifs : list;
+    pool.sort((a, b) => new Date(b.startDate).getTime() - new Date(a.startDate).getTime());
+    if (pool[0]?.type === 'CDI') excluded.push(empId);
+  }
+  return excluded;
+}
+
+/** Vérifie qu'un rôle restreint peut accéder à cet employé (non-CDI). */
+async function assertEmployeeAccessible(session: { role: string }, db: ReturnType<typeof getDb>, employeeId: number | null | undefined): Promise<void> {
+  if (!isScopedHr(session.role) || employeeId == null) return;
+  const excluded = await hrExcludedEmployeeIds(db);
+  if (excluded.includes(Number(employeeId))) {
+    throw new Error('Accès restreint : cet employé est en CDI.');
+  }
+}
+
+/** Fragment `where` restreignant aux employés accessibles (par champ id d'employé). */
+async function hrScopeWhere(session: { role: string }, db: ReturnType<typeof getDb>, field: 'id' | 'employeeId'): Promise<Record<string, any>> {
+  if (!isScopedHr(session.role)) return {};
+  const excluded = await hrExcludedEmployeeIds(db);
+  return excluded.length ? { [field]: { notIn: excluded } } : {};
+}
+
+/** Identifiant de l'employé lié au compte connecté (self-service), ou null. */
+async function getMyEmployeeId(session: { userId?: number | null }, db: ReturnType<typeof getDb>): Promise<number | null> {
+  if (session.userId == null) return null;
+  const emp = await db.employee.findFirst({ where: { userId: session.userId, deletedAt: null }, select: { id: true } });
+  return emp?.id ?? null;
+}
 
 const CIVILITE = ['MONSIEUR', 'MADAME', 'MADEMOISELLE'] as const;
 const MARITAL = ['CELIBATAIRE', 'MARIEE', 'CONCUBINAGE', 'DIVORCE', 'VEUF'] as const;
 const SEXE = ['MASCULIN', 'FEMININ'] as const;
 const EMPLOYEE_STATUS = ['ACTIF', 'SUSPENDU', 'CONGE', 'SORTI'] as const;
-const CONTRACT_TYPE = ['CDI', 'CDD', 'STAGE', 'INTERIM', 'CONSULTANT', 'APPRENTISSAGE'] as const;
+const CONTRACT_TYPE = ['CDI', 'CDD', 'STAGE', 'INTERIM', 'CONSULTANT', 'APPRENTISSAGE', 'ESSAI', 'AVENANT_CDD', 'RENOUVELLEMENT_ESSAI'] as const;
 const CONTRACT_STATUS = ['BROUILLON', 'ACTIF', 'SUSPENDU', 'TERMINE', 'ROMPU'] as const;
 
 const emptyToNull = (v: unknown) => (v === '' ? null : v);
@@ -90,9 +166,16 @@ const contractSchema = z.object({
   grossSalary: z.preprocess(emptyToNull, z.coerce.number().nonnegative().nullable().optional()),
   its: z.preprocess(emptyToNull, z.coerce.number().nonnegative().nullable().optional()),
   cnps: z.preprocess(emptyToNull, z.coerce.number().nonnegative().nullable().optional()),
+  cmu: z.preprocess(emptyToNull, z.coerce.number().nonnegative().nullable().optional()),
   totalDeductions: z.preprocess(emptyToNull, z.coerce.number().nonnegative().nullable().optional()),
   transportAllowance: z.preprocess(emptyToNull, z.coerce.number().nonnegative().nullable().optional()),
   netSalary: z.preprocess(emptyToNull, z.coerce.number().nonnegative().nullable().optional()),
+  // Avenant CDD : contrat CDD initial amendé (requis pour le type AVENANT_CDD).
+  parentContractId: z.preprocess(emptyToNull, z.coerce.number().int().positive().nullable().optional()),
+  // Autorité responsable : employé signataire/responsable au titre du contrat.
+  responsibleAuthorityId: z.preprocess(emptyToNull, z.coerce.number().int().positive().nullable().optional()),
+  // Fonction de l'employé (référentiel paramétrable).
+  functionId: z.preprocess(emptyToNull, z.coerce.number().int().positive().nullable().optional()),
   notes: z.string().optional().nullable(),
 });
 
@@ -138,7 +221,7 @@ export function registerHrIPC(): void {
     try {
       const session = getSession(token);
       if (!session) return { success: false, error: 'Session expirée' };
-      checkRole(session, HR_READ_ROLES);
+      checkHrRole(session, HR_READ_ROLES);
       const db = getDb();
       const where: any = { deletedAt: null };
       if (filters.search) {
@@ -153,6 +236,8 @@ export function registerHrIPC(): void {
       }
       if (filters.status) where.status = filters.status;
       if (filters.departement) where.departement = { contains: String(filters.departement) };
+      // Rôles restreints : uniquement les employés dont le contrat en cours n'est pas un CDI.
+      Object.assign(where, await hrScopeWhere(session, db, 'id'));
       const [data, total] = await db.$transaction([
         db.employee.findMany({
           where,
@@ -180,11 +265,11 @@ export function registerHrIPC(): void {
     try {
       const session = getSession(token);
       if (!session) return { success: false, error: 'Session expirée' };
-      checkRole(session, HR_READ_ROLES);
+      checkHrRole(session, HR_READ_ROLES);
       const db = getDb();
       const rows = await db.employee.groupBy({
         by: ['status'],
-        where: { deletedAt: null },
+        where: { deletedAt: null, ...(await hrScopeWhere(session, db, 'id')) },
         _count: { _all: true },
       });
       const stats: Record<string, number> = {};
@@ -200,7 +285,7 @@ export function registerHrIPC(): void {
     try {
       const session = getSession(token);
       if (!session) return { success: false, error: 'Session expirée' };
-      checkRole(session, HR_READ_ROLES);
+      checkHrRole(session, HR_READ_ROLES);
       const db = getDb();
       const employee = await db.employee.findFirst({
         where: { id, deletedAt: null },
@@ -210,6 +295,7 @@ export function registerHrIPC(): void {
         },
       });
       if (!employee) return { success: false, error: 'Employé introuvable' };
+      await assertEmployeeAccessible(session, db, id);
       return ser({ success: true, data: employee });
     } catch (error: any) {
       logger.error('hr:employees:getById error', error.message);
@@ -227,7 +313,7 @@ export function registerHrIPC(): void {
     try {
       const session = getSession(token);
       if (!session) return { success: false, error: 'Session expirée' };
-      checkRole(session, HR_READ_ROLES);
+      checkHrRole(session, HR_READ_ROLES);
       const db = getDb();
       // « Lié » s'entend au sens de la contrainte d'unicité userId (tout employé,
       // y compris archivé) : on n'expose donc que les comptes sans employé, plus
@@ -250,7 +336,7 @@ export function registerHrIPC(): void {
     try {
       const session = getSession(token);
       if (!session) return { success: false, error: 'Session expirée' };
-      checkRole(session, HR_WRITE_ROLES);
+      checkHrRole(session, HR_OPERATIONAL_ROLES);
       const parsed = employeeSchema.safeParse(payload);
       if (!parsed.success) {
         const msg = parsed.error.issues.map((i) => `${i.path.join('.') || 'champ'} : ${i.message}`).join(' ; ');
@@ -292,13 +378,14 @@ export function registerHrIPC(): void {
     try {
       const session = getSession(token);
       if (!session) return { success: false, error: 'Session expirée' };
-      checkRole(session, HR_WRITE_ROLES);
+      checkHrRole(session, HR_OPERATIONAL_ROLES);
       const parsed = employeeSchema.partial().safeParse(payload);
       if (!parsed.success) {
         const msg = parsed.error.issues.map((i) => `${i.path.join('.') || 'champ'} : ${i.message}`).join(' ; ');
         return { success: false, error: msg };
       }
       const db = getDb();
+      await assertEmployeeAccessible(session, db, id);
       const data: any = { ...parsed.data };
       if ('email' in data) data.email = normEmail(data.email);
       // Matricule modifiable : on ignore une valeur vide ; sinon unicité contrôlée.
@@ -330,8 +417,9 @@ export function registerHrIPC(): void {
     try {
       const session = getSession(token);
       if (!session) return { success: false, error: 'Session expirée' };
-      checkRole(session, HR_WRITE_ROLES);
+      checkHrRole(session, HR_OPERATIONAL_ROLES);
       const db = getDb();
+      await assertEmployeeAccessible(session, db, id);
       await db.employee.update({ where: { id }, data: { deletedAt: new Date() } });
       logger.info(`Employé archivé (soft delete) : id=${id}`);
       return { success: true };
@@ -343,24 +431,103 @@ export function registerHrIPC(): void {
 
   /* ─── Contrats de travail ───────────────────────────────────── */
 
+  /**
+   * Valide un avenant CDD : rattachement obligatoire à un contrat CDD existant
+   * du même employé, date de fin requise, et **délai cumulé ≤ 2 ans** — la date
+   * de fin de l'avenant ne doit pas dépasser 2 ans après le début du CDD initial.
+   * Retourne un message d'erreur, ou `null` si l'avenant est valide.
+   */
+  async function validateAvenantCdd(
+    db: ReturnType<typeof getDb>,
+    args: { employeeId: number; parentContractId?: number | null; endDate?: Date | null; selfId?: number },
+  ): Promise<string | null> {
+    if (!args.parentContractId) return 'Un avenant CDD doit être rattaché à un contrat CDD existant.';
+    if (args.selfId && args.parentContractId === args.selfId) return 'Un avenant ne peut être rattaché à lui-même.';
+    if (!args.endDate) return 'Une date de fin est requise pour un avenant CDD.';
+    const parent = await db.employmentContract.findFirst({
+      where: { id: args.parentContractId, deletedAt: null },
+    });
+    if (!parent) return 'Contrat CDD initial introuvable.';
+    if (parent.type !== 'CDD') return 'Le contrat à amender doit être un CDD.';
+    if (parent.employeeId !== args.employeeId) return "Le contrat CDD initial n'appartient pas à cet employé.";
+    // Délai cumulé : la fin de l'avenant ne doit pas dépasser 2 ans après le
+    // début du CDD initial (gère naturellement plusieurs avenants successifs).
+    const maxEnd = new Date(parent.startDate);
+    maxEnd.setFullYear(maxEnd.getFullYear() + 2);
+    if (args.endDate.getTime() > maxEnd.getTime()) {
+      return `Le délai cumulé du CDD et de ses avenants ne peut excéder 2 ans (date de fin maximale : ${maxEnd.toLocaleDateString('fr-FR')}).`;
+    }
+    return null;
+  }
+
+  const DAY_MS = 86_400_000;
+  const durationDays = (start: Date, end: Date) => Math.round((end.getTime() - start.getTime()) / DAY_MS);
+
+  /**
+   * Valide une lettre de renouvellement d'essai : rattachement obligatoire à un
+   * contrat ESSAI existant du même employé, dates requises, et **durée égale à
+   * celle de l'essai initial** (renouvellement à l'identique).
+   * Retourne un message d'erreur, ou `null` si valide.
+   */
+  async function validateRenouvellementEssai(
+    db: ReturnType<typeof getDb>,
+    args: { employeeId: number; parentContractId?: number | null; startDate?: Date | null; endDate?: Date | null; selfId?: number },
+  ): Promise<string | null> {
+    if (!args.parentContractId) return "Une lettre de renouvellement d'essai doit être rattachée à un contrat ESSAI existant.";
+    if (args.selfId && args.parentContractId === args.selfId) return 'Un renouvellement ne peut être rattaché à lui-même.';
+    if (!args.startDate || !args.endDate) return 'Les dates de début et de fin sont requises pour un renouvellement d\'essai.';
+    const parent = await db.employmentContract.findFirst({
+      where: { id: args.parentContractId, deletedAt: null },
+    });
+    if (!parent) return 'Contrat ESSAI initial introuvable.';
+    if (parent.type !== 'ESSAI') return 'Le contrat à renouveler doit être un contrat ESSAI.';
+    if (parent.employeeId !== args.employeeId) return "Le contrat ESSAI initial n'appartient pas à cet employé.";
+    // La durée de l'essai initial est portée par sa fin de période d'essai
+    // (repli sur la date de fin pour les enregistrements antérieurs).
+    const parentEnd = parent.trialEndDate ?? parent.endDate;
+    if (!parentEnd) return "L'essai initial n'a pas de fin de période d'essai : impossible de déterminer sa durée.";
+    const initialDuration = durationDays(parent.startDate, parentEnd);
+    const renewalDuration = durationDays(args.startDate, args.endDate);
+    // Tolérance d'un jour (bornes incluses/exclues selon la saisie).
+    if (Math.abs(renewalDuration - initialDuration) > 1) {
+      return `La lettre de renouvellement doit avoir la même durée que l'essai initial (${initialDuration} jour(s)).`;
+    }
+    return null;
+  }
+
   ipcMain.handle('hr:contracts:create', async (_event, { token, payload }: any) => {
     try {
       const session = getSession(token);
       if (!session) return { success: false, error: 'Session expirée' };
-      checkRole(session, HR_WRITE_ROLES);
+      checkHrRole(session, HR_OPERATIONAL_ROLES);
       const parsed = contractSchema.safeParse(payload);
       if (!parsed.success) {
         const msg = parsed.error.issues.map((i) => `${i.path.join('.') || 'champ'} : ${i.message}`).join(' ; ');
         return { success: false, error: msg };
       }
       const d = parsed.data;
-      // Un CDD / STAGE / INTERIM doit avoir une date de fin.
-      if (['CDD', 'STAGE', 'INTERIM'].includes(d.type) && !d.endDate) {
-        return { success: false, error: 'Une date de fin est requise pour un contrat à durée déterminée.' };
-      }
       const db = getDb();
       const employee = await db.employee.findFirst({ where: { id: d.employeeId, deletedAt: null } });
       if (!employee) return { success: false, error: 'Employé introuvable' };
+      await assertEmployeeAccessible(session, db, d.employeeId);
+      if (d.type === 'AVENANT_CDD') {
+        const err = await validateAvenantCdd(db, {
+          employeeId: d.employeeId, parentContractId: d.parentContractId, endDate: d.endDate ?? null,
+        });
+        if (err) return { success: false, error: err };
+      } else if (d.type === 'RENOUVELLEMENT_ESSAI') {
+        const err = await validateRenouvellementEssai(db, {
+          employeeId: d.employeeId, parentContractId: d.parentContractId,
+          startDate: d.startDate ?? null, endDate: d.endDate ?? null,
+        });
+        if (err) return { success: false, error: err };
+      } else {
+        // Seuls l'avenant CDD et le renouvellement d'essai portent un parent.
+        d.parentContractId = null;
+        if (['CDD', 'STAGE', 'INTERIM'].includes(d.type) && !d.endDate) {
+          return { success: false, error: 'Une date de fin est requise pour un contrat à durée déterminée.' };
+        }
+      }
       const reference = await nextContractReference(db);
       const contract = await db.employmentContract.create({
         data: { ...d, reference } as any,
@@ -377,15 +544,37 @@ export function registerHrIPC(): void {
     try {
       const session = getSession(token);
       if (!session) return { success: false, error: 'Session expirée' };
-      checkRole(session, HR_WRITE_ROLES);
+      checkHrRole(session, HR_OPERATIONAL_ROLES);
       const parsed = contractSchema.partial().safeParse(payload);
       if (!parsed.success) {
         const msg = parsed.error.issues.map((i) => `${i.path.join('.') || 'champ'} : ${i.message}`).join(' ; ');
         return { success: false, error: msg };
       }
       const db = getDb();
+      const existing = await db.employmentContract.findFirst({ where: { id, deletedAt: null } });
+      if (!existing) return { success: false, error: 'Contrat introuvable' };
+      await assertEmployeeAccessible(session, db, existing.employeeId);
       const data: any = { ...parsed.data };
       delete data.employeeId; // le rattachement ne change pas après création
+      const effType = data.type ?? existing.type;
+      if (effType === 'AVENANT_CDD') {
+        const parentContractId = data.parentContractId !== undefined ? data.parentContractId : existing.parentContractId;
+        const endDate = data.endDate !== undefined ? data.endDate : existing.endDate;
+        const err = await validateAvenantCdd(db, {
+          employeeId: existing.employeeId, parentContractId, endDate, selfId: id,
+        });
+        if (err) return { success: false, error: err };
+      } else if (effType === 'RENOUVELLEMENT_ESSAI') {
+        const parentContractId = data.parentContractId !== undefined ? data.parentContractId : existing.parentContractId;
+        const startDate = data.startDate !== undefined ? data.startDate : existing.startDate;
+        const endDate = data.endDate !== undefined ? data.endDate : existing.endDate;
+        const err = await validateRenouvellementEssai(db, {
+          employeeId: existing.employeeId, parentContractId, startDate, endDate, selfId: id,
+        });
+        if (err) return { success: false, error: err };
+      } else {
+        data.parentContractId = null;
+      }
       const contract = await db.employmentContract.update({ where: { id }, data });
       logger.info(`Contrat mis à jour : id=${id}`);
       return ser({ success: true, data: contract });
@@ -399,8 +588,10 @@ export function registerHrIPC(): void {
     try {
       const session = getSession(token);
       if (!session) return { success: false, error: 'Session expirée' };
-      checkRole(session, HR_WRITE_ROLES);
+      checkHrRole(session, HR_OPERATIONAL_ROLES);
       const db = getDb();
+      const existing = await db.employmentContract.findFirst({ where: { id, deletedAt: null }, select: { employeeId: true } });
+      if (existing) await assertEmployeeAccessible(session, db, existing.employeeId);
       await db.employmentContract.update({ where: { id }, data: { deletedAt: new Date() } });
       logger.info(`Contrat archivé (soft delete) : id=${id}`);
       return { success: true };
@@ -410,28 +601,25 @@ export function registerHrIPC(): void {
     }
   });
 
-  // Aperçu / impression d'un contrat : génère le PDF à partir du modèle ivoirien
-  // correspondant au type de contrat, puis ouvre le visualiseur intégré.
-  ipcMain.handle('hr:contracts:print', async (_event, { token, id }: any) => {
+  // Données de rendu d'un contrat (contrat + employé + entreprise). Le document
+  // est ensuite assemblé et exporté côté renderer (zones + modèle éditable),
+  // comme pour les conventions.
+  ipcMain.handle('hr:contracts:getRenderData', async (_event, { token, id }: any) => {
     try {
       const session = getSession(token);
       if (!session) return { success: false, error: 'Session expirée' };
-      checkRole(session, HR_READ_ROLES);
+      checkHrRole(session, HR_READ_ROLES);
       const db = getDb();
       const contract = await db.employmentContract.findFirst({
         where: { id, deletedAt: null },
-        include: { employee: true },
+        include: { employee: true, parentContract: true, responsibleAuthority: true, fonction: true },
       });
       if (!contract || !contract.employee) return { success: false, error: 'Contrat introuvable' };
+      await assertEmployeeAccessible(session, db, contract.employeeId);
       const company = await loadContractCompany();
-      const body = await resolveContractTemplateBody(contract.type);
-      const html = renderContractHtml(contract, contract.employee, company, body);
-      const pdf = await htmlToPdf(html, { landscape: false });
-      await openPrintPreview(pdf, `Contrat ${contract.reference}`);
-      logger.info(`Aperçu impression contrat : ${contract.reference}`);
-      return { success: true, data: { previewing: true } };
+      return ser({ success: true, data: { contract, employee: contract.employee, company } });
     } catch (error: any) {
-      logger.error('hr:contracts:print error', error.message);
+      logger.error('hr:contracts:getRenderData error', error.message);
       return { success: false, error: error.message };
     }
   });
@@ -465,13 +653,16 @@ export function registerHrIPC(): void {
     try {
       const session = getSession(token);
       if (!session) return { success: false, error: 'Session expirée' };
-      checkRole(session, HR_READ_ROLES);
+      checkHrRole(session, HR_READ_ROLES);
       const db = getDb();
       const where: any = { deletedAt: null };
       if (filters.employeeId) where.employeeId = Number(filters.employeeId);
       if (filters.status) where.status = filters.status;
       if (filters.periodYear) where.periodYear = Number(filters.periodYear);
       if (filters.periodMonth) where.periodMonth = Number(filters.periodMonth);
+      // Rôles restreints : uniquement les bulletins des employés non-CDI.
+      const scope = await hrScopeWhere(session, db, 'employeeId');
+      if (scope.employeeId) (where.AND ??= []).push({ employeeId: scope.employeeId });
       const [data, total] = await db.$transaction([
         db.payslip.findMany({
           where,
@@ -493,7 +684,7 @@ export function registerHrIPC(): void {
     try {
       const session = getSession(token);
       if (!session) return { success: false, error: 'Session expirée' };
-      checkRole(session, HR_READ_ROLES);
+      checkHrRole(session, HR_READ_ROLES);
       const db = getDb();
       const payslip = await db.payslip.findFirst({
         where: { id, deletedAt: null },
@@ -509,6 +700,7 @@ export function registerHrIPC(): void {
         },
       });
       if (!payslip) return { success: false, error: 'Bulletin introuvable' };
+      await assertEmployeeAccessible(session, db, payslip.employeeId);
       return ser({ success: true, data: payslip });
     } catch (error: any) {
       logger.error('hr:payslips:getById error', error.message);
@@ -520,7 +712,7 @@ export function registerHrIPC(): void {
     try {
       const session = getSession(token);
       if (!session) return { success: false, error: 'Session expirée' };
-      checkRole(session, HR_WRITE_ROLES);
+      checkHrRole(session, HR_OPERATIONAL_ROLES);
       const parsed = generateSchema.safeParse(payload);
       if (!parsed.success) {
         const msg = parsed.error.issues.map((i) => `${i.path.join('.') || 'champ'} : ${i.message}`).join(' ; ');
@@ -528,6 +720,7 @@ export function registerHrIPC(): void {
       }
       const d = parsed.data;
       const db = getDb();
+      await assertEmployeeAccessible(session, db, d.employeeId);
       // Un seul bulletin par employé et par période. L'index unique
       // (employeeId, periodYear, periodMonth) ne tient pas compte du soft delete :
       // on recherche donc aussi les bulletins archivés afin de les réutiliser
@@ -642,7 +835,7 @@ export function registerHrIPC(): void {
     try {
       const session = getSession(token);
       if (!session) return { success: false, error: 'Session expirée' };
-      checkRole(session, HR_WRITE_ROLES);
+      checkHrRole(session, HR_OPERATIONAL_ROLES);
       const parsed = payslipEditSchema.safeParse(payload);
       if (!parsed.success) {
         return { success: false, error: parsed.error.issues.map((i) => i.message).join(' ; ') };
@@ -651,6 +844,7 @@ export function registerHrIPC(): void {
       const db = getDb();
       const payslip = await db.payslip.findFirst({ where: { id, deletedAt: null } });
       if (!payslip) return { success: false, error: 'Bulletin introuvable' };
+      await assertEmployeeAccessible(session, db, payslip.employeeId);
       if (payslip.status !== 'BROUILLON') {
         return { success: false, error: 'Seul un bulletin en brouillon peut être modifié.' };
       }
@@ -816,7 +1010,7 @@ export function registerHrIPC(): void {
     try {
       const session = getSession(token);
       if (!session) return { success: false, error: 'Session expirée' };
-      checkRole(session, HR_READ_ROLES);
+      checkHrRole(session, HR_READ_ROLES);
       const db = getDb();
       const accounts = await db.bankAccount.findMany({
         where: { deletedAt: null, isActive: true, linkedUserId: null },
@@ -840,7 +1034,7 @@ export function registerHrIPC(): void {
     try {
       const session = getSession(token);
       if (!session) return { success: false, error: 'Session expirée' };
-      checkRole(session, HR_WRITE_ROLES);
+      checkHrRole(session, HR_OPERATIONAL_ROLES);
       if (!['BROUILLON', 'VALIDE', 'PAYE', 'ANNULE'].includes(status)) {
         return { success: false, error: 'Statut invalide' };
       }
@@ -853,6 +1047,7 @@ export function registerHrIPC(): void {
         include: { employee: { select: { firstName: true, lastName: true } } },
       });
       if (!current) return { success: false, error: 'Bulletin introuvable' };
+      await assertEmployeeAccessible(session, db, current.employeeId);
 
       const data: any = { status };
       if (status === 'PAYE') {
@@ -888,7 +1083,7 @@ export function registerHrIPC(): void {
     try {
       const session = getSession(token);
       if (!session) return { success: false, error: 'Session expirée' };
-      checkRole(session, HR_WRITE_ROLES);
+      checkHrRole(session, HR_OPERATIONAL_ROLES);
       if (paymentMethod && !PAYMENT_METHODS.includes(paymentMethod)) {
         return { success: false, error: 'Mode de paiement invalide' };
       }
@@ -898,6 +1093,7 @@ export function registerHrIPC(): void {
         include: { employee: { select: { firstName: true, lastName: true } } },
       });
       if (!payslip) return { success: false, error: 'Bulletin introuvable' };
+      await assertEmployeeAccessible(session, db, payslip.employeeId);
       if (payslip.status !== 'PAYE') {
         return { success: false, error: "Seul un bulletin payé peut voir ses informations de paiement modifiées." };
       }
@@ -931,8 +1127,10 @@ export function registerHrIPC(): void {
     try {
       const session = getSession(token);
       if (!session) return { success: false, error: 'Session expirée' };
-      checkRole(session, HR_WRITE_ROLES);
+      checkHrRole(session, HR_OPERATIONAL_ROLES);
       const db = getDb();
+      const current = await db.payslip.findFirst({ where: { id, deletedAt: null }, select: { employeeId: true } });
+      if (current) await assertEmployeeAccessible(session, db, current.employeeId);
       await db.payslip.update({ where: { id }, data: { deletedAt: new Date() } });
       logger.info(`Bulletin archivé (soft delete) : id=${id}`);
       return { success: true };
@@ -946,13 +1144,14 @@ export function registerHrIPC(): void {
     try {
       const session = getSession(token);
       if (!session) return { success: false, error: 'Session expirée' };
-      checkRole(session, HR_READ_ROLES);
+      checkHrRole(session, HR_READ_ROLES);
       const db = getDb();
       const payslip = await db.payslip.findFirst({
         where: { id, deletedAt: null },
         include: { employee: true, contract: { select: { poste: true, categorie: true, startDate: true } }, lines: { orderBy: { order: 'asc' } } },
       });
       if (!payslip || !payslip.employee) return { success: false, error: 'Bulletin introuvable' };
+      await assertEmployeeAccessible(session, db, payslip.employeeId);
       const company = await loadPayslipCompany();
       const template = await resolvePayslipTemplate();
       const logo = await loadPayslipLogo();
@@ -975,7 +1174,7 @@ export function registerHrIPC(): void {
     try {
       const session = getSession(token);
       if (!session) return { success: false, error: 'Session expirée' };
-      checkRole(session, HR_READ_ROLES);
+      checkHrRole(session, HR_READ_ROLES);
       const rates = await getPayrollRates(getDb());
       return { success: true, data: rates };
     } catch (error: any) {
@@ -988,7 +1187,7 @@ export function registerHrIPC(): void {
     try {
       const session = getSession(token);
       if (!session) return { success: false, error: 'Session expirée' };
-      checkRole(session, HR_WRITE_ROLES);
+      checkHrRole(session, HR_WRITE_ROLES);
       await setPayrollRates(rates as PayrollRates, getDb());
       logger.info('Taux de paie mis à jour');
       return { success: true };
@@ -1000,10 +1199,27 @@ export function registerHrIPC(): void {
 
   /* ─── Modèles de contrats de travail ────────────────────────── */
 
+  const bgColor = z.preprocess(
+    (v) => (v === '' || v === null ? null : v),
+    z.string().regex(/^(transparent|#[0-9a-fA-F]{6})$/, 'Couleur invalide').nullable().optional(),
+  );
   const contractTplSchema = z.object({
     name: z.string().min(1, 'Nom requis'),
     type: z.enum(CONTRACT_TYPE),
-    body: z.string().min(1, 'Contenu requis'),
+    // En-tête monobloc (texte/image) — image insérée → 100 % de la largeur.
+    header:       z.string().optional(),
+    headerWidth:  z.number().int().min(20).max(100).default(100),
+    headerHeight: z.number().int().min(40).max(800).default(140),
+    // Corps possiblement vide si tout est en zones.
+    body: z.string().default(''),
+    footer:       z.string().optional(),
+    footerWidth:  z.number().int().min(20).max(100).default(100),
+    footerHeight: z.number().int().min(40).max(800).default(140),
+    footerBgColor: bgColor,
+    endOfDocument:       z.string().optional(),
+    endOfDocumentWidth:  z.number().int().min(20).max(100).default(100),
+    endOfDocumentHeight: z.number().int().min(40).max(800).default(140),
+    endOfDocumentBgColor: bgColor,
     isDefault: z.boolean().optional(),
     isActive: z.boolean().optional(),
   });
@@ -1012,7 +1228,9 @@ export function registerHrIPC(): void {
     try {
       const session = getSession(token);
       if (!session) return { success: false, error: 'Session expirée' };
-      checkRole(session, HR_READ_ROLES);
+      // Lecture ouverte à tout utilisateur authentifié : les modèles ne sont
+      // que des mises en page (utilisées aussi par l'espace self-service pour
+      // afficher son propre contrat). Aucune donnée personnelle.
       const data = await getDb().contractTemplate.findMany({
         where: { deletedAt: null },
         orderBy: [{ type: 'asc' }, { isDefault: 'desc' }, { id: 'asc' }],
@@ -1028,7 +1246,7 @@ export function registerHrIPC(): void {
     try {
       const session = getSession(token);
       if (!session) return { success: false, error: 'Session expirée' };
-      checkRole(session, HR_WRITE_ROLES);
+      checkHrRole(session, HR_WRITE_ROLES);
       const parsed = contractTplSchema.safeParse(payload);
       if (!parsed.success) return { success: false, error: parsed.error.issues.map((i) => i.message).join(' ; ') };
       const db = getDb();
@@ -1047,7 +1265,7 @@ export function registerHrIPC(): void {
     try {
       const session = getSession(token);
       if (!session) return { success: false, error: 'Session expirée' };
-      checkRole(session, HR_WRITE_ROLES);
+      checkHrRole(session, HR_WRITE_ROLES);
       const parsed = contractTplSchema.partial().safeParse(payload);
       if (!parsed.success) return { success: false, error: parsed.error.issues.map((i) => i.message).join(' ; ') };
       const db = getDb();
@@ -1067,11 +1285,230 @@ export function registerHrIPC(): void {
     try {
       const session = getSession(token);
       if (!session) return { success: false, error: 'Session expirée' };
-      checkRole(session, HR_WRITE_ROLES);
+      checkHrRole(session, HR_WRITE_ROLES);
       await getDb().contractTemplate.update({ where: { id }, data: { deletedAt: new Date() } });
       return { success: true };
     } catch (error: any) {
       logger.error('hr:contractTemplates:delete error', error.message);
+      return { success: false, error: error.message };
+    }
+  });
+
+  /* ─── Catégories socio-professionnelles & délais d'essai ─────── */
+
+  const essaiCategorySchema = z.object({
+    label: z.string().min(1, 'Libellé requis'),
+    durationValue: z.coerce.number().int().positive('Durée invalide'),
+    durationUnit: z.enum(['JOURS', 'MOIS']).default('MOIS'),
+    isActive: z.boolean().optional(),
+  });
+
+  ipcMain.handle('hr:essaiCategories:list', async (_event, { token, includeInactive }: any) => {
+    try {
+      const session = getSession(token);
+      if (!session) return { success: false, error: 'Session expirée' };
+      checkHrRole(session, HR_READ_ROLES);
+      const where: any = { deletedAt: null };
+      if (!includeInactive) where.isActive = true;
+      const data = await getDb().essaiCategory.findMany({ where, orderBy: { label: 'asc' } });
+      return ser({ success: true, data });
+    } catch (error: any) {
+      logger.error('hr:essaiCategories:list error', error.message);
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle('hr:essaiCategories:create', async (_event, { token, payload }: any) => {
+    try {
+      const session = getSession(token);
+      if (!session) return { success: false, error: 'Session expirée' };
+      checkHrRole(session, HR_WRITE_ROLES);
+      const parsed = essaiCategorySchema.safeParse(payload);
+      if (!parsed.success) return { success: false, error: parsed.error.issues.map((i) => i.message).join(' ; ') };
+      const data = await getDb().essaiCategory.create({ data: parsed.data });
+      return ser({ success: true, data });
+    } catch (error: any) {
+      if (error.code === 'P2002') return { success: false, error: 'Cette catégorie existe déjà' };
+      logger.error('hr:essaiCategories:create error', error.message);
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle('hr:essaiCategories:update', async (_event, { token, id, payload }: any) => {
+    try {
+      const session = getSession(token);
+      if (!session) return { success: false, error: 'Session expirée' };
+      checkHrRole(session, HR_WRITE_ROLES);
+      const parsed = essaiCategorySchema.partial().safeParse(payload);
+      if (!parsed.success) return { success: false, error: parsed.error.issues.map((i) => i.message).join(' ; ') };
+      const data = await getDb().essaiCategory.update({ where: { id }, data: parsed.data });
+      return ser({ success: true, data });
+    } catch (error: any) {
+      if (error.code === 'P2002') return { success: false, error: 'Cette catégorie existe déjà' };
+      logger.error('hr:essaiCategories:update error', error.message);
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle('hr:essaiCategories:delete', async (_event, { token, id }: any) => {
+    try {
+      const session = getSession(token);
+      if (!session) return { success: false, error: 'Session expirée' };
+      checkHrRole(session, HR_WRITE_ROLES);
+      await getDb().essaiCategory.update({ where: { id }, data: { deletedAt: new Date(), isActive: false } });
+      return { success: true };
+    } catch (error: any) {
+      logger.error('hr:essaiCategories:delete error', error.message);
+      return { success: false, error: error.message };
+    }
+  });
+
+  /* ─── Fonctions de l'employé (référentiel) ──────────────────── */
+
+  const contractFunctionSchema = z.object({
+    titre: z.string().min(1, 'Titre requis'),
+    contenu: z.string().optional().default(''),
+    isActive: z.boolean().optional(),
+  });
+
+  ipcMain.handle('hr:contractFunctions:list', async (_event, { token, includeInactive }: any) => {
+    try {
+      const session = getSession(token);
+      if (!session) return { success: false, error: 'Session expirée' };
+      checkHrRole(session, HR_READ_ROLES);
+      const where: any = { deletedAt: null };
+      if (!includeInactive) where.isActive = true;
+      const data = await getDb().contractFunction.findMany({ where, orderBy: { titre: 'asc' } });
+      return ser({ success: true, data });
+    } catch (error: any) {
+      logger.error('hr:contractFunctions:list error', error.message);
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle('hr:contractFunctions:create', async (_event, { token, payload }: any) => {
+    try {
+      const session = getSession(token);
+      if (!session) return { success: false, error: 'Session expirée' };
+      checkHrRole(session, HR_WRITE_ROLES);
+      const parsed = contractFunctionSchema.safeParse(payload);
+      if (!parsed.success) return { success: false, error: parsed.error.issues.map((i) => i.message).join(' ; ') };
+      const data = await getDb().contractFunction.create({ data: parsed.data });
+      return ser({ success: true, data });
+    } catch (error: any) {
+      logger.error('hr:contractFunctions:create error', error.message);
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle('hr:contractFunctions:update', async (_event, { token, id, payload }: any) => {
+    try {
+      const session = getSession(token);
+      if (!session) return { success: false, error: 'Session expirée' };
+      checkHrRole(session, HR_WRITE_ROLES);
+      const parsed = contractFunctionSchema.partial().safeParse(payload);
+      if (!parsed.success) return { success: false, error: parsed.error.issues.map((i) => i.message).join(' ; ') };
+      const data = await getDb().contractFunction.update({ where: { id }, data: parsed.data });
+      return ser({ success: true, data });
+    } catch (error: any) {
+      logger.error('hr:contractFunctions:update error', error.message);
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle('hr:contractFunctions:delete', async (_event, { token, id }: any) => {
+    try {
+      const session = getSession(token);
+      if (!session) return { success: false, error: 'Session expirée' };
+      checkHrRole(session, HR_WRITE_ROLES);
+      await getDb().contractFunction.update({ where: { id }, data: { deletedAt: new Date(), isActive: false } });
+      return { success: true };
+    } catch (error: any) {
+      logger.error('hr:contractFunctions:delete error', error.message);
+      return { success: false, error: error.message };
+    }
+  });
+
+  /* ─── Modèles de fiche de poste ─────────────────────────────── */
+
+  const jobDescTplSchema = z.object({
+    name: z.string().min(1, 'Nom requis'),
+    header:       z.string().optional(),
+    headerWidth:  z.number().int().min(20).max(100).default(100),
+    headerHeight: z.number().int().min(40).max(800).default(140),
+    body: z.string().default(''),
+    footer:       z.string().optional(),
+    footerWidth:  z.number().int().min(20).max(100).default(100),
+    footerHeight: z.number().int().min(40).max(800).default(140),
+    footerBgColor: bgColor,
+    endOfDocument:       z.string().optional(),
+    endOfDocumentWidth:  z.number().int().min(20).max(100).default(100),
+    endOfDocumentHeight: z.number().int().min(40).max(800).default(140),
+    endOfDocumentBgColor: bgColor,
+    isDefault: z.boolean().optional(),
+    isActive: z.boolean().optional(),
+  });
+
+  ipcMain.handle('hr:jobDescriptionTemplates:list', async (_event, { token }: any) => {
+    try {
+      const session = getSession(token);
+      if (!session) return { success: false, error: 'Session expirée' };
+      // Lecture ouverte à tout utilisateur authentifié (mise en page uniquement ;
+      // réutilisée par l'espace self-service pour la fiche de poste personnelle).
+      const data = await getDb().jobDescriptionTemplate.findMany({
+        where: { deletedAt: null },
+        orderBy: [{ isDefault: 'desc' }, { name: 'asc' }],
+      });
+      return ser({ success: true, data });
+    } catch (error: any) {
+      logger.error('hr:jobDescriptionTemplates:list error', error.message);
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle('hr:jobDescriptionTemplates:create', async (_event, { token, payload }: any) => {
+    try {
+      const session = getSession(token);
+      if (!session) return { success: false, error: 'Session expirée' };
+      checkHrRole(session, HR_WRITE_ROLES);
+      const parsed = jobDescTplSchema.safeParse(payload);
+      if (!parsed.success) return { success: false, error: parsed.error.issues.map((i) => i.message).join(' ; ') };
+      const db = getDb();
+      if (parsed.data.isDefault) await db.jobDescriptionTemplate.updateMany({ where: { deletedAt: null }, data: { isDefault: false } });
+      const data = await db.jobDescriptionTemplate.create({ data: parsed.data });
+      return ser({ success: true, data });
+    } catch (error: any) {
+      logger.error('hr:jobDescriptionTemplates:create error', error.message);
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle('hr:jobDescriptionTemplates:update', async (_event, { token, id, payload }: any) => {
+    try {
+      const session = getSession(token);
+      if (!session) return { success: false, error: 'Session expirée' };
+      checkHrRole(session, HR_WRITE_ROLES);
+      const parsed = jobDescTplSchema.partial().safeParse(payload);
+      if (!parsed.success) return { success: false, error: parsed.error.issues.map((i) => i.message).join(' ; ') };
+      const db = getDb();
+      if (parsed.data.isDefault) await db.jobDescriptionTemplate.updateMany({ where: { deletedAt: null, id: { not: id } }, data: { isDefault: false } });
+      const data = await db.jobDescriptionTemplate.update({ where: { id }, data: parsed.data });
+      return ser({ success: true, data });
+    } catch (error: any) {
+      logger.error('hr:jobDescriptionTemplates:update error', error.message);
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle('hr:jobDescriptionTemplates:delete', async (_event, { token, id }: any) => {
+    try {
+      const session = getSession(token);
+      if (!session) return { success: false, error: 'Session expirée' };
+      checkHrRole(session, HR_WRITE_ROLES);
+      await getDb().jobDescriptionTemplate.update({ where: { id }, data: { deletedAt: new Date() } });
+      return { success: true };
+    } catch (error: any) {
+      logger.error('hr:jobDescriptionTemplates:delete error', error.message);
       return { success: false, error: error.message };
     }
   });
@@ -1092,7 +1529,7 @@ export function registerHrIPC(): void {
     try {
       const session = getSession(token);
       if (!session) return { success: false, error: 'Session expirée' };
-      checkRole(session, HR_READ_ROLES);
+      checkHrRole(session, HR_READ_ROLES);
       const data = await getDb().payslipTemplate.findMany({ orderBy: { id: 'asc' } });
       return ser({ success: true, data });
     } catch (error: any) {
@@ -1105,7 +1542,7 @@ export function registerHrIPC(): void {
     try {
       const session = getSession(token);
       if (!session) return { success: false, error: 'Session expirée' };
-      checkRole(session, HR_WRITE_ROLES);
+      checkHrRole(session, HR_WRITE_ROLES);
       const parsed = payslipTplSchema.safeParse(payload);
       if (!parsed.success) return { success: false, error: parsed.error.issues.map((i) => i.message).join(' ; ') };
       const db = getDb();
@@ -1146,7 +1583,7 @@ export function registerHrIPC(): void {
     try {
       const session = getSession(token);
       if (!session) return { success: false, error: 'Session expirée' };
-      checkRole(session, HR_READ_ROLES);
+      checkHrRole(session, HR_READ_ROLES);
       const data = await getDb().leaveType.findMany({ where: { isActive: true }, orderBy: { name: 'asc' } });
       return ser({ success: true, data });
     } catch (error: any) {
@@ -1159,7 +1596,8 @@ export function registerHrIPC(): void {
     try {
       const session = getSession(token);
       if (!session) return { success: false, error: 'Session expirée' };
-      checkRole(session, HR_READ_ROLES);
+      checkHrRole(session, HR_READ_ROLES);
+      await assertEmployeeAccessible(session, getDb(), Number(employeeId));
       const balance = await computeLeaveBalance(Number(employeeId));
       return { success: true, data: balance };
     } catch (error: any) {
@@ -1172,12 +1610,15 @@ export function registerHrIPC(): void {
     try {
       const session = getSession(token);
       if (!session) return { success: false, error: 'Session expirée' };
-      checkRole(session, HR_READ_ROLES);
+      checkHrRole(session, HR_READ_ROLES);
       const db = getDb();
       const where: any = { deletedAt: null };
       if (filters.employeeId) where.employeeId = Number(filters.employeeId);
       if (filters.status) where.status = filters.status;
       if (filters.typeId) where.typeId = Number(filters.typeId);
+      // Rôles restreints : uniquement les demandes des employés non-CDI.
+      const scope = await hrScopeWhere(session, db, 'employeeId');
+      if (scope.employeeId) (where.AND ??= []).push({ employeeId: scope.employeeId });
       const [data, total] = await db.$transaction([
         db.leaveRequest.findMany({
           where,
@@ -1202,7 +1643,7 @@ export function registerHrIPC(): void {
     try {
       const session = getSession(token);
       if (!session) return { success: false, error: 'Session expirée' };
-      checkRole(session, HR_WRITE_ROLES);
+      checkHrRole(session, HR_OPERATIONAL_ROLES);
       const parsed = leaveRequestSchema.safeParse(payload);
       if (!parsed.success) {
         const msg = parsed.error.issues.map((i) => `${i.path.join('.') || 'champ'} : ${i.message}`).join(' ; ');
@@ -1211,6 +1652,7 @@ export function registerHrIPC(): void {
       const d = parsed.data;
       if (d.endDate < d.startDate) return { success: false, error: 'La date de fin doit être postérieure à la date de début.' };
       const db = getDb();
+      await assertEmployeeAccessible(session, db, d.employeeId);
       const days = d.days != null && d.days > 0 ? d.days : workingDays(d.startDate, d.endDate);
       if (!(days > 0)) return { success: false, error: 'Le nombre de jours doit être supérieur à 0.' };
       const reference = await nextLeaveReference(db);
@@ -1233,11 +1675,13 @@ export function registerHrIPC(): void {
     try {
       const session = getSession(token);
       if (!session) return { success: false, error: 'Session expirée' };
-      checkRole(session, HR_WRITE_ROLES);
+      checkHrRole(session, HR_OPERATIONAL_ROLES);
       if (!['APPROUVE', 'REFUSE', 'ANNULE', 'EN_ATTENTE'].includes(status)) {
         return { success: false, error: 'Statut invalide' };
       }
       const db = getDb();
+      const reqRow = await db.leaveRequest.findFirst({ where: { id, deletedAt: null }, select: { employeeId: true } });
+      if (reqRow) await assertEmployeeAccessible(session, db, reqRow.employeeId);
       const decided = status === 'APPROUVE' || status === 'REFUSE';
       const data = await db.leaveRequest.update({
         where: { id },
@@ -1260,8 +1704,11 @@ export function registerHrIPC(): void {
     try {
       const session = getSession(token);
       if (!session) return { success: false, error: 'Session expirée' };
-      checkRole(session, HR_WRITE_ROLES);
-      await getDb().leaveRequest.update({ where: { id }, data: { deletedAt: new Date() } });
+      checkHrRole(session, HR_OPERATIONAL_ROLES);
+      const db = getDb();
+      const reqRow = await db.leaveRequest.findFirst({ where: { id, deletedAt: null }, select: { employeeId: true } });
+      if (reqRow) await assertEmployeeAccessible(session, db, reqRow.employeeId);
+      await db.leaveRequest.update({ where: { id }, data: { deletedAt: new Date() } });
       return { success: true };
     } catch (error: any) {
       logger.error('hr:leaveRequests:delete error', error.message);
@@ -1284,8 +1731,9 @@ export function registerHrIPC(): void {
     try {
       const session = getSession(token);
       if (!session) return { success: false, error: 'Session expirée' };
-      checkRole(session, HR_READ_ROLES);
+      checkHrRole(session, HR_READ_ROLES);
       const db = getDb();
+      await assertEmployeeAccessible(session, db, Number(employeeId));
       const start = new Date(Number(year), Number(month) - 1, 1);
       const end = new Date(Number(year), Number(month), 1);
       const data = await db.attendanceRecord.findMany({
@@ -1303,7 +1751,8 @@ export function registerHrIPC(): void {
     try {
       const session = getSession(token);
       if (!session) return { success: false, error: 'Session expirée' };
-      checkRole(session, HR_READ_ROLES);
+      checkHrRole(session, HR_READ_ROLES);
+      await assertEmployeeAccessible(session, getDb(), Number(employeeId));
       const data = await attendanceMonthSummary(Number(employeeId), Number(year), Number(month));
       return { success: true, data };
     } catch (error: any) {
@@ -1316,7 +1765,7 @@ export function registerHrIPC(): void {
     try {
       const session = getSession(token);
       if (!session) return { success: false, error: 'Session expirée' };
-      checkRole(session, HR_WRITE_ROLES);
+      checkHrRole(session, HR_WRITE_ROLES);
       if (!Array.isArray(records)) return { success: false, error: 'Données invalides' };
       const db = getDb();
       let saved = 0;
@@ -1342,6 +1791,395 @@ export function registerHrIPC(): void {
       return { success: true, data: { saved } };
     } catch (error: any) {
       logger.error('hr:attendance:bulkUpsert error', error.message);
+      return { success: false, error: error.message };
+    }
+  });
+
+  /* ─── Self-service : « Mon espace RH & Paie » (lecture seule) ────
+   * Accessible à TOUT utilisateur authentifié ; strictement limité à l'employé
+   * lié à son compte (Employee.userId). Aucune écriture.
+   */
+
+  ipcMain.handle('hr:me:overview', async (_event, { token }: any) => {
+    try {
+      const session = getSession(token);
+      if (!session) return { success: false, error: 'Session expirée' };
+      const db = getDb();
+      const employee = await db.employee.findFirst({
+        where: { userId: session.userId, deletedAt: null },
+        include: {
+          contracts: {
+            where: { deletedAt: null },
+            orderBy: { startDate: 'desc' },
+            include: { fonction: true },
+          },
+        },
+      });
+      if (!employee) return ser({ success: true, data: { employee: null, leaveBalance: null } });
+      let leaveBalance: any = null;
+      try { leaveBalance = await computeLeaveBalance(employee.id); } catch { /* solde indisponible */ }
+      return ser({ success: true, data: { employee, leaveBalance } });
+    } catch (error: any) {
+      logger.error('hr:me:overview error', error.message);
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle('hr:me:payslips', async (_event, { token }: any) => {
+    try {
+      const session = getSession(token);
+      if (!session) return { success: false, error: 'Session expirée' };
+      const db = getDb();
+      const myId = await getMyEmployeeId(session, db);
+      if (!myId) return ser({ success: true, data: [] });
+      const data = await db.payslip.findMany({
+        where: { employeeId: myId, deletedAt: null },
+        orderBy: [{ periodYear: 'desc' }, { periodMonth: 'desc' }, { reference: 'desc' }],
+      });
+      return ser({ success: true, data });
+    } catch (error: any) {
+      logger.error('hr:me:payslips error', error.message);
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle('hr:me:payslip', async (_event, { token, id }: any) => {
+    try {
+      const session = getSession(token);
+      if (!session) return { success: false, error: 'Session expirée' };
+      const db = getDb();
+      const myId = await getMyEmployeeId(session, db);
+      const payslip = await db.payslip.findFirst({
+        where: { id, deletedAt: null },
+        include: {
+          employee: true,
+          contract: { select: { id: true, reference: true, poste: true, categorie: true, startDate: true } },
+          lines: { orderBy: { order: 'asc' } },
+        },
+      });
+      if (!payslip || !myId || payslip.employeeId !== myId) return { success: false, error: 'Bulletin introuvable' };
+      return ser({ success: true, data: payslip });
+    } catch (error: any) {
+      logger.error('hr:me:payslip error', error.message);
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle('hr:me:payslipPrint', async (_event, { token, id }: any) => {
+    try {
+      const session = getSession(token);
+      if (!session) return { success: false, error: 'Session expirée' };
+      const db = getDb();
+      const myId = await getMyEmployeeId(session, db);
+      const payslip = await db.payslip.findFirst({
+        where: { id, deletedAt: null },
+        include: { employee: true, contract: { select: { poste: true, categorie: true, startDate: true } }, lines: { orderBy: { order: 'asc' } } },
+      });
+      if (!payslip || !payslip.employee || !myId || payslip.employeeId !== myId) return { success: false, error: 'Bulletin introuvable' };
+      const company = await loadPayslipCompany();
+      const template = await resolvePayslipTemplate();
+      const logo = await loadPayslipLogo();
+      const counters = await computePayslipLeaveCounters(payslip.employeeId, payslip.periodYear);
+      const totals = await computePayslipTotals(payslip);
+      const html = renderPayslipHtml(payslip, payslip.employee, company, template ?? undefined, logo, counters, totals);
+      const pdf = await htmlToPdf(html, { landscape: false });
+      await openPrintPreview(pdf, `Bulletin ${payslip.reference}`);
+      return { success: true, data: { previewing: true } };
+    } catch (error: any) {
+      logger.error('hr:me:payslipPrint error', error.message);
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle('hr:me:attendance', async (_event, { token, year, month }: any) => {
+    try {
+      const session = getSession(token);
+      if (!session) return { success: false, error: 'Session expirée' };
+      const db = getDb();
+      const myId = await getMyEmployeeId(session, db);
+      if (!myId) return ser({ success: true, data: [] });
+      const start = new Date(Number(year), Number(month) - 1, 1);
+      const end = new Date(Number(year), Number(month), 1);
+      const data = await db.attendanceRecord.findMany({
+        where: { employeeId: myId, date: { gte: start, lt: end } },
+        orderBy: { date: 'asc' },
+      });
+      return ser({ success: true, data });
+    } catch (error: any) {
+      logger.error('hr:me:attendance error', error.message);
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle('hr:me:leaveRequests', async (_event, { token }: any) => {
+    try {
+      const session = getSession(token);
+      if (!session) return { success: false, error: 'Session expirée' };
+      const db = getDb();
+      const myId = await getMyEmployeeId(session, db);
+      if (!myId) return ser({ success: true, data: [] });
+      const data = await db.leaveRequest.findMany({
+        where: { employeeId: myId, deletedAt: null },
+        orderBy: { startDate: 'desc' },
+        include: { type: { select: { id: true, name: true, color: true, isPaid: true } } },
+      });
+      return ser({ success: true, data });
+    } catch (error: any) {
+      logger.error('hr:me:leaveRequests error', error.message);
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle('hr:me:contractRenderData', async (_event, { token, id }: any) => {
+    try {
+      const session = getSession(token);
+      if (!session) return { success: false, error: 'Session expirée' };
+      const db = getDb();
+      const myId = await getMyEmployeeId(session, db);
+      const contract = await db.employmentContract.findFirst({
+        where: { id, deletedAt: null },
+        include: { employee: true, parentContract: true, responsibleAuthority: true, fonction: true },
+      });
+      if (!contract || !contract.employee || !myId || contract.employeeId !== myId) return { success: false, error: 'Contrat introuvable' };
+      const company = await loadContractCompany();
+      return ser({ success: true, data: { contract, employee: contract.employee, company } });
+    } catch (error: any) {
+      logger.error('hr:me:contractRenderData error', error.message);
+      return { success: false, error: error.message };
+    }
+  });
+
+  /**
+   * Règlement intérieur : document GED ciblé par l'admin (Paramètres). Renvoyé
+   * à tout utilisateur authentifié pour consultation / impression (lecture seule).
+   */
+  ipcMain.handle('hr:me:reglementInterieur', async (_event, { token }: any) => {
+    try {
+      const session = getSession(token);
+      if (!session) return { success: false, error: 'Session expirée' };
+      const raw = await getSetting(SettingsKeys.hrReglementInterieurDocId);
+      const id = raw ? Number(raw) : null;
+      if (!id) return { success: true, data: { configured: false } };
+      const doc = await getDb().document.findFirst({
+        where: { id, deletedAt: null },
+        select: { name: true, type: true, size: true, path: true },
+      });
+      if (!doc) return { success: true, data: { configured: false } };
+      const MAX = 40 * 1024 * 1024;
+      if (doc.size > MAX) return { success: true, data: { configured: true, tooLarge: true, name: doc.name, mimeType: doc.type } };
+      const buf = readStorageFile(doc.path);
+      if (!buf) return { success: false, error: 'Fichier introuvable sur le disque' };
+      return { success: true, data: { configured: true, name: doc.name, mimeType: doc.type, base64: buf.toString('base64') } };
+    } catch (error: any) {
+      logger.error('hr:me:reglementInterieur error', error.message);
+      return { success: false, error: error.message };
+    }
+  });
+
+  /**
+   * Impression du règlement intérieur via la fenêtre d'aperçu intégrée (même
+   * mécanisme fiable que les bulletins / contrats). PDF imprimé tel quel ; image
+   * enveloppée dans un PDF ; autres formats non imprimables directement.
+   */
+  ipcMain.handle('hr:me:reglementInterieurPrint', async (_event, { token }: any) => {
+    try {
+      const session = getSession(token);
+      if (!session) return { success: false, error: 'Session expirée' };
+      const raw = await getSetting(SettingsKeys.hrReglementInterieurDocId);
+      const id = raw ? Number(raw) : null;
+      if (!id) return { success: false, error: 'Aucun règlement intérieur défini.' };
+      const doc = await getDb().document.findFirst({
+        where: { id, deletedAt: null },
+        select: { name: true, type: true, path: true },
+      });
+      if (!doc) return { success: false, error: 'Document introuvable' };
+      const buf = readStorageFile(doc.path);
+      if (!buf) return { success: false, error: 'Fichier introuvable sur le disque' };
+      let pdf: Buffer;
+      if (doc.type === 'application/pdf') {
+        pdf = buf;
+      } else if ((doc.type ?? '').startsWith('image/')) {
+        const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><style>*{margin:0}img{max-width:100%;display:block;margin:0 auto}</style></head><body><img src="data:${doc.type};base64,${buf.toString('base64')}"></body></html>`;
+        pdf = await htmlToPdf(html, { landscape: false });
+      } else {
+        return { success: false, error: 'Ce format ne peut pas être imprimé directement. Téléchargez le fichier.' };
+      }
+      await openPrintPreview(pdf, doc.name || 'Règlement intérieur');
+      return { success: true, data: { previewing: true } };
+    } catch (error: any) {
+      logger.error('hr:me:reglementInterieurPrint error', error.message);
+      return { success: false, error: error.message };
+    }
+  });
+
+  /* ─── Contrats signés (fichiers téléversés par employé) ────────── */
+
+  const SIGNED_MAX = 40 * 1024 * 1024;
+  const signedUploadSchema = z.object({
+    employeeId: z.coerce.number().int().positive(),
+    name: z.string().min(1),
+    type: z.string().min(1),
+    size: z.number().int().positive(),
+    dataBase64: z.string().min(1),
+  });
+
+  ipcMain.handle('hr:signedContracts:list', async (_event, { token, employeeId }: any) => {
+    try {
+      const session = getSession(token);
+      if (!session) return { success: false, error: 'Session expirée' };
+      checkHrRole(session, HR_READ_ROLES);
+      const db = getDb();
+      await assertEmployeeAccessible(session, db, Number(employeeId));
+      const data = await db.employeeSignedContract.findMany({
+        where: { employeeId: Number(employeeId), deletedAt: null },
+        orderBy: { uploadedAt: 'desc' },
+        select: { id: true, name: true, type: true, size: true, uploadedAt: true },
+      });
+      return ser({ success: true, data });
+    } catch (error: any) {
+      logger.error('hr:signedContracts:list error', error.message);
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle('hr:signedContracts:upload', async (_event, { token, payload }: any) => {
+    try {
+      const session = getSession(token);
+      if (!session) return { success: false, error: 'Session expirée' };
+      checkHrRole(session, HR_OPERATIONAL_ROLES);
+      const parsed = signedUploadSchema.safeParse(payload);
+      if (!parsed.success) return { success: false, error: parsed.error.issues.map((i) => i.message).join(' ; ') };
+      const d = parsed.data;
+      if (d.size > SIGNED_MAX) return { success: false, error: `Fichier trop volumineux (max ${Math.round(SIGNED_MAX / 1024 / 1024)} Mo).` };
+      const db = getDb();
+      await assertEmployeeAccessible(session, db, d.employeeId);
+      const emp = await db.employee.findFirst({ where: { id: d.employeeId, deletedAt: null }, select: { id: true } });
+      if (!emp) return { success: false, error: 'Employé introuvable' };
+      const buf = Buffer.from(d.dataBase64, 'base64');
+      if (buf.length === 0) return { success: false, error: 'Fichier vide ou invalide' };
+      const { relativePath, size } = writeEmployeeSignedContract(d.employeeId, buf, d.name);
+      const data = await db.employeeSignedContract.create({
+        data: { employeeId: d.employeeId, name: d.name, type: d.type, path: relativePath, size, uploadedById: session.userId ?? null },
+        select: { id: true, name: true, type: true, size: true, uploadedAt: true },
+      });
+      logger.info(`Contrat signé téléversé : ${d.name} (employé ${d.employeeId})`);
+      return ser({ success: true, data });
+    } catch (error: any) {
+      logger.error('hr:signedContracts:upload error', error.message);
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle('hr:signedContracts:delete', async (_event, { token, id }: any) => {
+    try {
+      const session = getSession(token);
+      if (!session) return { success: false, error: 'Session expirée' };
+      checkHrRole(session, HR_OPERATIONAL_ROLES);
+      const db = getDb();
+      const rec = await db.employeeSignedContract.findFirst({ where: { id, deletedAt: null } });
+      if (!rec) return { success: false, error: 'Contrat signé introuvable' };
+      await assertEmployeeAccessible(session, db, rec.employeeId);
+      removeStorageFile(rec.path);
+      await db.employeeSignedContract.update({ where: { id }, data: { deletedAt: new Date() } });
+      return { success: true };
+    } catch (error: any) {
+      logger.error('hr:signedContracts:delete error', error.message);
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle('hr:signedContracts:fileData', async (_event, { token, id }: any) => {
+    try {
+      const session = getSession(token);
+      if (!session) return { success: false, error: 'Session expirée' };
+      checkHrRole(session, HR_READ_ROLES);
+      const db = getDb();
+      const rec = await db.employeeSignedContract.findFirst({ where: { id, deletedAt: null } });
+      if (!rec) return { success: false, error: 'Contrat signé introuvable' };
+      await assertEmployeeAccessible(session, db, rec.employeeId);
+      if (rec.size > SIGNED_MAX) return { success: true, data: { tooLarge: true, name: rec.name, mimeType: rec.type } };
+      const buf = readStorageFile(rec.path);
+      if (!buf) return { success: false, error: 'Fichier introuvable sur le disque' };
+      return { success: true, data: { name: rec.name, mimeType: rec.type, base64: buf.toString('base64') } };
+    } catch (error: any) {
+      logger.error('hr:signedContracts:fileData error', error.message);
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle('hr:signedContracts:open', async (_event, { token, id }: any) => {
+    try {
+      const session = getSession(token);
+      if (!session) return { success: false, error: 'Session expirée' };
+      checkHrRole(session, HR_READ_ROLES);
+      const db = getDb();
+      const rec = await db.employeeSignedContract.findFirst({ where: { id, deletedAt: null } });
+      if (!rec) return { success: false, error: 'Contrat signé introuvable' };
+      await assertEmployeeAccessible(session, db, rec.employeeId);
+      const abs = resolveStoragePath(rec.path);
+      if (!fs.existsSync(abs)) return { success: false, error: 'Fichier introuvable sur le disque' };
+      const err = await shell.openPath(abs);
+      if (err) return { success: false, error: err };
+      return { success: true };
+    } catch (error: any) {
+      logger.error('hr:signedContracts:open error', error.message);
+      return { success: false, error: error.message };
+    }
+  });
+
+  // Self-service : mes contrats signés (lecture seule).
+  ipcMain.handle('hr:me:signedContracts', async (_event, { token }: any) => {
+    try {
+      const session = getSession(token);
+      if (!session) return { success: false, error: 'Session expirée' };
+      const db = getDb();
+      const myId = await getMyEmployeeId(session, db);
+      if (!myId) return ser({ success: true, data: [] });
+      const data = await db.employeeSignedContract.findMany({
+        where: { employeeId: myId, deletedAt: null },
+        orderBy: { uploadedAt: 'desc' },
+        select: { id: true, name: true, type: true, size: true, uploadedAt: true },
+      });
+      return ser({ success: true, data });
+    } catch (error: any) {
+      logger.error('hr:me:signedContracts error', error.message);
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle('hr:me:signedContractFile', async (_event, { token, id }: any) => {
+    try {
+      const session = getSession(token);
+      if (!session) return { success: false, error: 'Session expirée' };
+      const db = getDb();
+      const myId = await getMyEmployeeId(session, db);
+      const rec = await db.employeeSignedContract.findFirst({ where: { id, deletedAt: null } });
+      if (!rec || !myId || rec.employeeId !== myId) return { success: false, error: 'Contrat signé introuvable' };
+      if (rec.size > SIGNED_MAX) return { success: true, data: { tooLarge: true, name: rec.name, mimeType: rec.type } };
+      const buf = readStorageFile(rec.path);
+      if (!buf) return { success: false, error: 'Fichier introuvable sur le disque' };
+      return { success: true, data: { name: rec.name, mimeType: rec.type, base64: buf.toString('base64') } };
+    } catch (error: any) {
+      logger.error('hr:me:signedContractFile error', error.message);
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle('hr:me:signedContractOpen', async (_event, { token, id }: any) => {
+    try {
+      const session = getSession(token);
+      if (!session) return { success: false, error: 'Session expirée' };
+      const db = getDb();
+      const myId = await getMyEmployeeId(session, db);
+      const rec = await db.employeeSignedContract.findFirst({ where: { id, deletedAt: null } });
+      if (!rec || !myId || rec.employeeId !== myId) return { success: false, error: 'Contrat signé introuvable' };
+      const abs = resolveStoragePath(rec.path);
+      if (!fs.existsSync(abs)) return { success: false, error: 'Fichier introuvable sur le disque' };
+      const err = await shell.openPath(abs);
+      if (err) return { success: false, error: err };
+      return { success: true };
+    } catch (error: any) {
+      logger.error('hr:me:signedContractOpen error', error.message);
       return { success: false, error: error.message };
     }
   });

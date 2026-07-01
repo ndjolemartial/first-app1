@@ -7,27 +7,29 @@ import Select from '../../../shared/components/ui/Select';
 import { SkeletonTable } from '../../../shared/components/ui/Skeleton';
 import EmptyState from '../../../shared/components/ui/EmptyState';
 import { useAuthStore } from '../../../shared/stores/auth.store';
-import { useConvention } from '../hooks/useConventions';
-import { useConventionTemplates } from '../hooks/useConventionTemplates';
+import { useContractRenderData, useMyContractRenderData, useContractTemplates } from '../hooks/useHr';
 import { useCountries } from '../../../shared/hooks/useCountries';
-import { mergeTemplate } from '../utils/conventionTemplate';
-import { footerTextColor, isTransparentFooter, resolveFooterBg } from '../utils/footerColor';
+import { mergeContractTemplate } from '../utils/contractTemplate';
+import { footerTextColor, isTransparentFooter, resolveFooterBg } from '../../conventions/utils/footerColor';
 import {
   pxToMm, buildHeaderTemplate, buildFooterTemplate, buildEndOfDocumentHtml,
   buildHeaderDocxHtml, buildFooterDocxHtml,
 } from '../../../shared/utils/documentZones';
 import { Printer, FileText, FileType2 } from 'lucide-react';
 
-export default function ConventionDocumentPage() {
+export default function ContractDocumentPage({ selfMode = false }: { selfMode?: boolean }) {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const { data: conventionRes, isLoading } = useConvention(Number(id));
-  const { data: templatesRes } = useConventionTemplates();
+  const cid = Number(id);
+  // En self-service, on lit via l'IPC restreint à son propre contrat.
+  const adminQ = useContractRenderData(selfMode ? 0 : cid);
+  const selfQ = useMyContractRenderData(selfMode ? cid : 0);
+  const renderRes = selfMode ? selfQ.data : adminQ.data;
+  const isLoading = selfMode ? selfQ.isLoading : adminQ.isLoading;
+  const { data: templatesRes } = useContractTemplates();
   const { data: countriesRes } = useCountries();
   const [templateId, setTemplateId] = useState<number | null>(null);
 
-  // Code ISO → nom complet (« CI » → « Côte d'Ivoire »), pour que les
-  // variables `{{*.pays}}` des modèles affichent le nom du pays.
   const countriesMap = useMemo<Record<string, string>>(() => {
     const list = (countriesRes?.data ?? []) as Array<{ isoCode: string; name: string }>;
     const map: Record<string, string> = {};
@@ -37,28 +39,24 @@ export default function ConventionDocumentPage() {
 
   if (isLoading) return <div className="p-8"><SkeletonTable rows={6} /></div>;
 
-  const convention = conventionRes?.data;
-  if (!convention) return <div className="p-8 text-slate-500">Convention introuvable.</div>;
+  const data = renderRes?.data;
+  const contract = data?.contract;
+  const employee = data?.employee;
+  const company = data?.company;
+  if (!contract || !employee) return <div className="p-8 text-slate-500">Contrat introuvable.</div>;
 
-  // On n'affiche que le modèle par défaut correspondant exactement au type et
-  // à la nature (avenant ou souscription) de la convention en cours.
-  const templates: any[] = (templatesRes?.data ?? []).filter((t: any) => {
-    if (t.type !== convention.type) return false;
-    if (!t.isDefault) return false;
-    if (convention.type === 'AVENANT' && convention.amendmentType) {
-      if (t.amendmentType !== convention.amendmentType) return false;
-    }
-    if (convention.type === 'SOUSCRIPTION' && convention.souscriptionType) {
-      if (t.souscriptionType !== convention.souscriptionType) return false;
-    }
-    return true;
-  });
+  // Modèles correspondant au type du contrat ; le modèle par défaut en premier.
+  const templates: any[] = (templatesRes?.data ?? [])
+    .filter((t: any) => t.type === contract.type)
+    .sort((a: any, b: any) => Number(b.isDefault) - Number(a.isDefault));
   const selected = templates.find((t) => t.id === templateId) ?? templates[0];
 
-  const mergedHeader = mergeTemplate(selected?.header, convention, countriesMap);
-  const mergedBody = mergeTemplate(selected?.body, convention, countriesMap);
-  const mergedFooter = mergeTemplate(selected?.footer, convention, countriesMap);
-  const mergedEndOfDocument = mergeTemplate(selected?.endOfDocument, convention, countriesMap);
+  const merge = (html: string | null | undefined) =>
+    mergeContractTemplate(html, contract, employee, company, countriesMap);
+  const mergedHeader = merge(selected?.header);
+  const mergedBody = merge(selected?.body);
+  const mergedFooter = merge(selected?.footer);
+  const mergedEndOfDocument = merge(selected?.endOfDocument);
 
   const headerWidth = selected?.headerWidth ?? 100;
   const headerHeight = selected?.headerHeight ?? 140;
@@ -69,8 +67,6 @@ export default function ConventionDocumentPage() {
   const endOfDocumentHeight = selected?.endOfDocumentHeight ?? 140;
   const endOfDocumentBgColor: string | null = selected?.endOfDocumentBgColor ?? null;
 
-  // Le corps du document est rendu sans en-tête / pied de page : ceux-ci sont
-  // injectés par Chromium dans les marges de chaque page via les templates.
   const headerMm = pxToMm(headerHeight);
   const footerMm = pxToMm(footerHeight);
   const endOfDocBlock = buildEndOfDocumentHtml(
@@ -80,28 +76,16 @@ export default function ConventionDocumentPage() {
   const headerTemplate = buildHeaderTemplate(mergedHeader, headerWidth, headerMm);
   const footerTemplate = buildFooterTemplate(mergedFooter, footerWidth, footerMm, footerBgColor);
 
-  // Nom de fichier exporté : référence + nom du client. Pour un particulier on
-  // privilégie « NOM Prénom », pour une entreprise la raison sociale. Les
-  // caractères interdits par Windows (\ / : * ? " < > |) sont remplacés.
   const sanitizeFileName = (s: string) => s.replace(/[\\/:*?"<>|]/g, '').replace(/\s+/g, ' ').trim();
-  const clientLabel = convention.client?.type === 'INDIVIDUEL'
-    ? `${convention.client?.lastName ?? ''} ${convention.client?.firstName ?? ''}`
-    : (convention.client?.entreprise ?? '');
-  const sanitizedClient = sanitizeFileName(clientLabel);
-  const exportFileName = sanitizedClient
-    ? `${convention.reference}-${sanitizedClient}`
-    : convention.reference;
+  const employeeLabel = `${employee.lastName ?? ''} ${employee.firstName ?? ''}`;
+  const sanitized = sanitizeFileName(employeeLabel);
+  const exportFileName = sanitized ? `${contract.reference}-${sanitized}` : contract.reference;
 
   const handleExportPdf = async () => {
     const token = useAuthStore.getState().token;
     if (!token) return;
     await window.electron.documentExport.exportDocumentPdf(token, {
-      fileName: exportFileName,
-      bodyHtml: documentBodyHtml,
-      headerTemplate,
-      footerTemplate,
-      headerMm,
-      footerMm,
+      fileName: exportFileName, bodyHtml: documentBodyHtml, headerTemplate, footerTemplate, headerMm, footerMm,
     });
   };
 
@@ -109,20 +93,13 @@ export default function ConventionDocumentPage() {
     const token = useAuthStore.getState().token;
     if (!token) return;
     await window.electron.documentExport.printDocument(token, {
-      fileName: exportFileName,
-      bodyHtml: documentBodyHtml,
-      headerTemplate,
-      footerTemplate,
-      headerMm,
-      footerMm,
+      fileName: exportFileName, bodyHtml: documentBodyHtml, headerTemplate, footerTemplate, headerMm, footerMm,
     });
   };
 
   const handleExportDocx = async () => {
     const token = useAuthStore.getState().token;
     if (!token) return;
-    // Word ne supporte pas les templates PDF (style, flex, pageNumber) :
-    // on utilise des templates simplifiés (HTML basique).
     await window.electron.documentExport.exportDocumentDocx(token, {
       fileName: exportFileName,
       bodyHtml: documentBodyHtml,
@@ -135,12 +112,14 @@ export default function ConventionDocumentPage() {
 
   return (
     <PageLayout
-      title={`Document — ${convention.reference}`}
-      breadcrumbs={[
-        { label: 'Conventions', to: '/conventions' },
-        { label: convention.reference, to: `/conventions/${id}` },
-        { label: 'Document' },
-      ]}
+      title={`Document — ${contract.reference}`}
+      breadcrumbs={selfMode
+        ? [{ label: 'Mon espace RH', to: '/my-hr' }, { label: 'Contrat' }]
+        : [
+            { label: 'RH & Paie' },
+            { label: employeeLabel.trim(), to: `/hr/employees/${employee.id}` },
+            { label: 'Contrat' },
+          ]}
       actions={
         selected && (
           <div className="flex gap-2">
@@ -159,16 +138,18 @@ export default function ConventionDocumentPage() {
     >
       {templates.length === 0 ? (
         <EmptyState
-          title="Aucun modèle par défaut pour cette convention"
-          description="Définissez un modèle par défaut correspondant au type (et à la nature) de cette convention pour générer le document."
-          action={{ label: 'Créer un modèle', onClick: () => navigate('/conventions/templates/new') }}
+          title="Aucun modèle pour ce type de contrat"
+          description={selfMode
+            ? "Aucun modèle de contrat n'est disponible. Contactez le service RH."
+            : 'Créez un modèle de contrat de travail correspondant au type de ce contrat pour générer le document.'}
+          action={selfMode ? undefined : { label: 'Créer un modèle', onClick: () => navigate('/hr/contracts/templates/new') }}
         />
       ) : (
         <div className="space-y-4">
           <Card className="flex flex-wrap items-end gap-3">
             <div className="w-72">
               <Select
-                label="Modèle de convention"
+                label="Modèle de contrat"
                 options={templates.map((t) => ({
                   value: String(t.id),
                   label: t.isDefault ? `${t.name} (par défaut)` : t.name,
@@ -178,13 +159,10 @@ export default function ConventionDocumentPage() {
               />
             </div>
             <p className="text-xs text-slate-500 pb-2">
-              Les variables dynamiques sont remplacées par les données de la convention.
+              Les variables dynamiques sont remplacées par les données de l'employé et du contrat.
             </p>
           </Card>
 
-          {/* Aperçu du document — `[&_.afk-hdr-preview_img]` force aussi
-              les images de l'en-tête à 100 % de la largeur du bloc dans
-              l'aperçu (cohérence avec le rendu PDF). */}
           <div className="bg-slate-100 rounded-lg p-6 overflow-x-auto">
             <div className="bg-white shadow-md mx-auto p-12 text-sm text-slate-800 leading-relaxed
               [&_h1]:text-xl [&_h1]:font-bold [&_h1]:my-2

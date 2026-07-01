@@ -85,6 +85,24 @@ export function writeGedFile(
   return { relativePath: ['ged', year, fileName].join('/'), size: buffer.length };
 }
 
+/**
+ * Écrit un contrat signé téléversé dans `<root>/employees/<id>/signed-contracts/`.
+ * Retourne le chemin relatif (stocké en base) et la taille.
+ */
+export function writeEmployeeSignedContract(
+  employeeId: number,
+  buffer: Buffer,
+  originalName: string,
+): { relativePath: string; size: number } {
+  const dir = path.join(storageRoot(), 'employees', String(employeeId), 'signed-contracts');
+  fs.mkdirSync(dir, { recursive: true });
+  const safe = originalName.replace(/[\\/:*?"<>|]/g, '_').replace(/\s+/g, ' ').trim() || 'contrat';
+  const fileName = `${Date.now()}-${safe}`;
+  const abs = path.join(dir, fileName);
+  fs.writeFileSync(abs, buffer);
+  return { relativePath: path.relative(storageRoot(), abs), size: buffer.length };
+}
+
 /** Supprime physiquement un fichier du stockage (silencieux si absent). */
 export function removeStorageFile(relativePath: string): void {
   try {

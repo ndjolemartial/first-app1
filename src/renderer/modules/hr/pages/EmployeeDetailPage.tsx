@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { useNavigate, useParams } from 'react-router-dom';
 import PageLayout from '../../../shared/components/layout/PageLayout';
@@ -12,10 +12,12 @@ import ConfirmDialog from '../../../shared/components/ui/ConfirmDialog';
 import { SkeletonTable } from '../../../shared/components/ui/Skeleton';
 import { useAuthStore } from '../../../shared/stores/auth.store';
 import { formatDate, formatCurrency } from '../../../shared/utils/format';
-import { Edit, PlusCircle, FileText, Trash2, Printer } from 'lucide-react';
+import { Edit, PlusCircle, FileText, Trash2, Printer, ClipboardList, Upload, ExternalLink } from 'lucide-react';
+import { toast } from '../../../shared/components/ui/Toast';
 import {
-  useEmployee, useCreateContract, useUpdateContract, useDeleteContract, useDeleteEmployee,
-  usePrintContract,
+  useEmployee, useEmployees, useCreateContract, useUpdateContract, useDeleteContract, useDeleteEmployee,
+  useEssaiCategories, useContractFunctions,
+  useSignedContracts, useUploadSignedContract, useDeleteSignedContract,
 } from '../hooks/useHr';
 import {
   EMPLOYEE_STATUS_LABEL, EMPLOYEE_STATUS_VARIANT,
@@ -24,7 +26,9 @@ import {
   type EmploymentContract,
 } from '../types/hr.types';
 
-const WRITE_ROLES = new Set(['SUPER_ADMIN', 'ADMIN', 'RH']);
+// Écriture opérationnelle : admins/RH + MANAGER & ASSISTANTE_DIRECTION (ces
+// derniers restreints côté IPC aux employés dont le contrat en cours n'est pas CDI).
+const WRITE_ROLES = new Set(['SUPER_ADMIN', 'ADMIN', 'RH', 'MANAGER', 'ASSISTANTE_DIRECTION']);
 const toDateInput = (v?: string | null) => (v ? String(v).slice(0, 10) : '');
 
 function Field({ label, value }: { label: string; value?: React.ReactNode }) {
@@ -41,18 +45,21 @@ interface ContractForm {
   startDate: string; endDate: string; trialEndDate: string;
   weeklyHours: string; baseSalary: string; notes: string;
   sursalaire: string; primeAnciennete: string; grossSalary: string;
-  its: string; cnps: string; totalDeductions: string; transportAllowance: string; netSalary: string;
+  its: string; cnps: string; cmu: string; totalDeductions: string; transportAllowance: string; netSalary: string;
+  parentContractId: string;
+  responsibleAuthorityId: string;
+  functionId: string;
 }
 
 const numOrEmpty = (v: unknown) => (v == null ? '' : String(v));
 
 function ContractModal({
-  employeeId, contract, onClose,
-}: { employeeId: number; contract: EmploymentContract | null; onClose: () => void }) {
+  employeeId, contract, contracts, onClose,
+}: { employeeId: number; contract: EmploymentContract | null; contracts: EmploymentContract[]; onClose: () => void }) {
   const create = useCreateContract();
   const update = useUpdateContract(employeeId);
   const isEdit = !!contract;
-  const { register, handleSubmit, watch, formState: { isSubmitting } } = useForm<ContractForm>({
+  const { register, handleSubmit, watch, setValue, formState: { isSubmitting } } = useForm<ContractForm>({
     defaultValues: {
       type: contract?.type ?? 'CDI',
       status: contract?.status ?? 'ACTIF',
@@ -68,14 +75,101 @@ function ContractModal({
       grossSalary: numOrEmpty(contract?.grossSalary),
       its: numOrEmpty(contract?.its),
       cnps: numOrEmpty(contract?.cnps),
+      cmu: numOrEmpty(contract?.cmu),
       totalDeductions: numOrEmpty(contract?.totalDeductions),
       transportAllowance: numOrEmpty(contract?.transportAllowance),
       netSalary: numOrEmpty(contract?.netSalary),
+      parentContractId: contract?.parentContractId != null ? String(contract.parentContractId) : '',
+      responsibleAuthorityId: contract?.responsibleAuthorityId != null ? String(contract.responsibleAuthorityId) : '',
+      functionId: contract?.functionId != null ? String(contract.functionId) : '',
       notes: contract?.notes ?? '',
     },
   });
+
+  // Référentiel des fonctions de l'employé (titre + contenu en liste).
+  const { data: fnRes } = useContractFunctions();
+  const functions: any[] = fnRes?.data ?? [];
+  const functionOptions = [
+    { value: '', label: '— Aucune —' },
+    ...functions.map((f) => ({ value: String(f.id), label: f.titre })),
+  ];
+
+  // Tout le personnel (sélecteur « Autorité responsable »).
+  const { data: allEmpRes } = useEmployees({}, 1, 1000);
+  const allEmployees: any[] = allEmpRes?.data ?? [];
+  const authorityOptions = [
+    { value: '', label: '— Aucune —' },
+    ...allEmployees.map((e) => ({
+      value: String(e.id),
+      label: `${e.lastName ?? ''} ${e.firstName ?? ''}`.trim() + (e.poste ? ` — ${e.poste}` : ''),
+    })),
+  ];
   const type = watch('type');
-  const showRemuneration = type === 'CDI' || type === 'CDD';
+  const showRemuneration = ['CDI', 'CDD', 'AVENANT_CDD', 'ESSAI', 'RENOUVELLEMENT_ESSAI'].includes(type);
+  const isAvenant = type === 'AVENANT_CDD';
+  const isRenouvellement = type === 'RENOUVELLEMENT_ESSAI';
+  const isEssai = type === 'ESSAI';
+
+  // Catégories socio-professionnelles configurées (délais d'essai).
+  const { data: catsRes } = useEssaiCategories();
+  const categories: import('../types/hr.types').EssaiCategory[] = catsRes?.data ?? [];
+
+  // CDD amendables (avenant) / ESSAI renouvelables — hors le contrat en cours d'édition.
+  const parentOptions = (kind: 'CDD' | 'ESSAI') => contracts
+    .filter((c) => c.type === kind && c.id !== contract?.id)
+    .map((c) => ({
+      value: String(c.id),
+      label: `${c.reference} (${toDateInput(c.startDate)}${c.endDate ? ' → ' + toDateInput(c.endDate) : ''})`,
+    }));
+  const cddOptions = parentOptions('CDD');
+  const essaiOptions = parentOptions('ESSAI');
+
+  // ── Helpers de dates ───────────────────────────────────────────
+  const fmt = (d: Date) => (isNaN(d.getTime()) ? ''
+    : `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`);
+  const parse = (iso: string) => new Date(iso + 'T00:00:00');
+  const dayDiff = (a: string | Date, b: string | Date) =>
+    Math.round((new Date(b).getTime() - new Date(a).getTime()) / 86_400_000);
+
+  /**
+   * ESSAI : déduit la **fin de période d'essai** (trialEndDate) depuis la
+   * catégorie choisie et la date de début. La date de fin (CDD/stage) n'est pas
+   * utilisée pour un essai.
+   */
+  const autofillEssaiEnd = (catLabel: string, startStr: string) => {
+    if (!startStr) return;
+    const cat = categories.find((c) => c.label === catLabel && c.isActive);
+    if (!cat) return;
+    const d = parse(startStr);
+    if (cat.durationUnit === 'MOIS') d.setMonth(d.getMonth() + cat.durationValue);
+    else d.setDate(d.getDate() + cat.durationValue);
+    setValue('trialEndDate', fmt(d));
+  };
+
+  /** Fin effective d'un essai : la fin de période d'essai, à défaut la date de fin. */
+  const essaiEnd = (c?: EmploymentContract | null) =>
+    (c?.trialEndDate || c?.endDate) ?? null;
+
+  /** RENOUVELLEMENT_ESSAI : date de fin = début + durée de l'essai initial (verrouillée). */
+  const autofillRenewalEnd = (parentId: string, startStr: string) => {
+    const parent = contracts.find((c) => String(c.id) === parentId);
+    const pEnd = essaiEnd(parent);
+    if (!parent || !pEnd || !startStr) return;
+    const dur = dayDiff(parent.startDate, pEnd);
+    setValue('endDate', fmt(new Date(parse(startStr).getTime() + dur * 86_400_000)));
+  };
+
+  /** Au choix de l'essai initial : pré-remplit le début (lendemain de la fin) puis la fin. */
+  const onPickRenewalParent = (parentId: string) => {
+    const parent = contracts.find((c) => String(c.id) === parentId);
+    const pEnd = essaiEnd(parent);
+    let startStr = watch('startDate');
+    if (pEnd && !startStr) {
+      startStr = fmt(new Date(new Date(pEnd).getTime() + 86_400_000));
+      setValue('startDate', startStr);
+    }
+    autofillRenewalEnd(parentId, startStr);
+  };
 
   const onSubmit = async (data: ContractForm) => {
     const num = (v: string) => (v === '' ? null : Number(v));
@@ -91,14 +185,32 @@ function ContractModal({
       grossSalary: num(data.grossSalary),
       its: num(data.its),
       cnps: num(data.cnps),
+      cmu: num(data.cmu),
       totalDeductions: num(data.totalDeductions),
       transportAllowance: num(data.transportAllowance),
       netSalary: num(data.netSalary),
+      parentContractId: (data.type === 'AVENANT_CDD' || data.type === 'RENOUVELLEMENT_ESSAI') ? num(data.parentContractId) : null,
+      responsibleAuthorityId: num(data.responsibleAuthorityId),
+      functionId: num(data.functionId),
     };
     const r = isEdit
       ? await update.mutateAsync({ id: contract!.id, payload })
       : await create.mutateAsync(payload);
     if (r.success) onClose();
+  };
+
+  const catReg = register('categorie');
+  const startReg = register('startDate');
+  const parentReg = register('parentContractId');
+  const itsReg = register('its');
+  const cnpsReg = register('cnps');
+  const cmuReg = register('cmu');
+
+  /** Total des retenues = ITS + CNPS salarié + CMU (auto, modifiable ensuite). */
+  const recomputeDeductions = (changed?: { its?: string; cnps?: string; cmu?: string }) => {
+    const n = (v: string) => Number(v) || 0;
+    const total = n(changed?.its ?? watch('its')) + n(changed?.cnps ?? watch('cnps')) + n(changed?.cmu ?? watch('cmu'));
+    setValue('totalDeductions', String(total));
   };
 
   return (
@@ -120,13 +232,88 @@ function ContractModal({
         <Select label="Type de contrat" options={CONTRACT_TYPE_OPTIONS} {...register('type')} />
         <Select label="Statut" options={CONTRACT_STATUS_OPTIONS} {...register('status')} />
         <Input label="Poste" {...register('poste')} />
-        <Input label="Catégorie / classification" {...register('categorie')} />
-        <Input label="Date de début" type="date" required {...register('startDate')} />
-        <Input label="Date de fin (CDD/stage)" type="date" {...register('endDate')} />
-        <Input label="Fin de période d'essai" type="date" {...register('trialEndDate')} />
+        <Input
+          label="Catégorie / classification" list="essai-cats" {...catReg}
+          onChange={(e) => { catReg.onChange(e); if (isEssai) autofillEssaiEnd(e.target.value, watch('startDate')); }}
+        />
+        <Input
+          label="Date de début" type="date" required {...startReg}
+          onChange={(e) => {
+            startReg.onChange(e);
+            if (isEssai) autofillEssaiEnd(watch('categorie'), e.target.value);
+            if (isRenouvellement) autofillRenewalEnd(watch('parentContractId'), e.target.value);
+          }}
+        />
+        {!isEssai && (
+          <Input
+            label={isRenouvellement ? 'Date de fin (calculée)' : 'Date de fin (CDD/stage)'}
+            type="date" readOnly={isRenouvellement} {...register('endDate')}
+          />
+        )}
+        <Input
+          label={isEssai ? "Fin de période d'essai (calculée selon la catégorie)" : "Fin de période d'essai"}
+          type="date" {...register('trialEndDate')}
+        />
         <Input label="Heures / semaine" type="number" step="0.5" min="0" {...register('weeklyHours')} />
         <Input label="Salaire de base mensuel (FCFA)" type="number" step="1000" min="0" required {...register('baseSalary')} />
+        <Select label="Autorité responsable" options={authorityOptions} {...register('responsibleAuthorityId')} />
+        <Select label="Fonction de l'employé" options={functionOptions} {...register('functionId')} />
       </div>
+      <datalist id="essai-cats">
+        {categories.map((c) => <option key={c.id} value={c.label} />)}
+      </datalist>
+      {(() => {
+        const fn = functions.find((f) => String(f.id) === watch('functionId'));
+        const items = String(fn?.contenu ?? '').split(/\r?\n/).map((s: string) => s.trim()).filter(Boolean);
+        if (!items.length) return null;
+        return (
+          <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50 p-3">
+            <p className="mb-1 text-xs font-medium text-slate-600">Contenu de la fonction</p>
+            <ul className="list-disc pl-5 text-sm text-slate-700 space-y-0.5">
+              {items.map((it: string, i: number) => <li key={i}>{it}</li>)}
+            </ul>
+          </div>
+        );
+      })()}
+
+      {isAvenant && (
+        <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 p-3">
+          <Select
+            label="Contrat CDD à amender *"
+            options={[{ value: '', label: '— Sélectionner le CDD initial —' }, ...cddOptions]}
+            {...register('parentContractId')}
+          />
+          {cddOptions.length === 0 && (
+            <p className="mt-1 text-xs text-amber-700">
+              Aucun contrat CDD enregistré pour cet employé : créez d'abord le CDD initial.
+            </p>
+          )}
+          <p className="mt-2 text-xs text-amber-700">
+            L'avenant prolonge le CDD initial via sa <strong>date de fin</strong>. Le délai cumulé
+            (CDD initial + avenants) ne peut excéder <strong>2 ans</strong> à compter du début du CDD.
+          </p>
+        </div>
+      )}
+
+      {isRenouvellement && (
+        <div className="mt-4 rounded-lg border border-indigo-200 bg-indigo-50 p-3">
+          <Select
+            label="Contrat ESSAI à renouveler *"
+            options={[{ value: '', label: "— Sélectionner l'essai initial —" }, ...essaiOptions]}
+            {...parentReg}
+            onChange={(e) => { parentReg.onChange(e); onPickRenewalParent(e.target.value); }}
+          />
+          {essaiOptions.length === 0 && (
+            <p className="mt-1 text-xs text-indigo-700">
+              Aucun contrat ESSAI enregistré pour cet employé : créez d'abord le contrat à l'essai.
+            </p>
+          )}
+          <p className="mt-2 text-xs text-indigo-700">
+            Le renouvellement a la <strong>même durée</strong> que l'essai initial : la date de début est
+            pré-remplie au lendemain de la fin de l'essai et la date de fin est <strong>calculée automatiquement</strong>.
+          </p>
+        </div>
+      )}
 
       {showRemuneration && (
         <div className="mt-4 rounded-lg border border-slate-200 p-3">
@@ -135,14 +322,19 @@ function ContractModal({
             <Input label="Sursalaire (FCFA)" type="number" step="1" min="0" {...register('sursalaire')} />
             <Input label="Prime d'ancienneté (FCFA)" type="number" step="1" min="0" {...register('primeAnciennete')} />
             <Input label="Salaire brut (FCFA)" type="number" step="1" min="0" {...register('grossSalary')} />
-            <Input label="ITS (FCFA)" type="number" step="1" min="0" {...register('its')} />
-            <Input label="CNPS (FCFA)" type="number" step="1" min="0" {...register('cnps')} />
+            <Input label="ITS (FCFA)" type="number" step="1" min="0" {...itsReg}
+              onChange={(e) => { itsReg.onChange(e); recomputeDeductions({ its: e.target.value }); }} />
+            <Input label="CNPS salarié (FCFA)" type="number" step="1" min="0" {...cnpsReg}
+              onChange={(e) => { cnpsReg.onChange(e); recomputeDeductions({ cnps: e.target.value }); }} />
+            <Input label="CMU salarié (FCFA)" type="number" step="1" min="0" {...cmuReg}
+              onChange={(e) => { cmuReg.onChange(e); recomputeDeductions({ cmu: e.target.value }); }} />
             <Input label="Total des retenues (FCFA)" type="number" step="1" min="0" {...register('totalDeductions')} />
             <Input label="Prime de transport (FCFA)" type="number" step="1" min="0" {...register('transportAllowance')} />
             <Input label="Salaire net à payer (FCFA)" type="number" step="1" min="0" {...register('netSalary')} />
           </div>
           <p className="mt-2 text-xs text-slate-400">
-            Salaire brut = salaire de base + sursalaire + prime d'ancienneté. Net à payer = brut − total des retenues + transport.
+            Salaire brut = salaire de base + sursalaire + prime d'ancienneté. Total des retenues = ITS + CNPS salarié + CMU
+            (calculé automatiquement, modifiable). Net à payer = brut − total des retenues + transport.
           </p>
         </div>
       )}
@@ -169,7 +361,6 @@ export default function EmployeeDetailPage() {
   const { data: res, isLoading } = useEmployee(employeeId);
   const deleteContract = useDeleteContract(employeeId);
   const deleteEmployee = useDeleteEmployee();
-  const printContract = usePrintContract();
 
   const [contractModal, setContractModal] = useState<{ open: boolean; contract: EmploymentContract | null }>({ open: false, contract: null });
   const [contractToDelete, setContractToDelete] = useState<EmploymentContract | null>(null);
@@ -284,9 +475,10 @@ export default function EmployeeDetailPage() {
                       {canWrite && (
                         <td className="py-2">
                           <div className="flex justify-end gap-1">
-                            <Button variant="ghost" size="sm" title="Aperçu / Imprimer" icon={<Printer className="h-4 w-4" />}
-                              loading={printContract.isPending && printContract.variables === c.id}
-                              onClick={() => printContract.mutate(c.id)} />
+                            <Button variant="ghost" size="sm" title="Document / Imprimer" icon={<Printer className="h-4 w-4" />}
+                              onClick={() => navigate(`/hr/contracts/${c.id}/document`)} />
+                            <Button variant="ghost" size="sm" title="Fiche de poste" icon={<ClipboardList className="h-4 w-4" />}
+                              onClick={() => navigate(`/hr/contracts/${c.id}/job-description`)} />
                             <Button variant="ghost" size="sm" icon={<Edit className="h-4 w-4" />}
                               onClick={() => setContractModal({ open: true, contract: c })} />
                             <Button variant="ghost" size="sm" icon={<Trash2 className="h-4 w-4" />}
@@ -301,6 +493,8 @@ export default function EmployeeDetailPage() {
             )}
           </Card>
 
+          <SignedContractsCard employeeId={employeeId} canWrite={canWrite} />
+
           {e.notes && (
             <Card>
               <h3 className="mb-2 text-sm font-semibold text-slate-800">Notes</h3>
@@ -314,6 +508,7 @@ export default function EmployeeDetailPage() {
         <ContractModal
           employeeId={employeeId}
           contract={contractModal.contract}
+          contracts={contracts}
           onClose={() => setContractModal({ open: false, contract: null })}
         />
       )}
@@ -346,5 +541,89 @@ export default function EmployeeDetailPage() {
         }}
       />
     </PageLayout>
+  );
+}
+
+/** Contrats signés : téléversement de fichiers signés rattachés à l'employé. */
+function SignedContractsCard({ employeeId, canWrite }: { employeeId: number; canWrite: boolean }) {
+  const { data: res, isLoading } = useSignedContracts(employeeId);
+  const upload = useUploadSignedContract(employeeId);
+  const del = useDeleteSignedContract(employeeId);
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [toDelete, setToDelete] = useState<any>(null);
+  const list: any[] = res?.data ?? [];
+
+  const onFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const dataBase64 = await new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve((reader.result as string).split(',')[1]);
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+    await upload.mutateAsync({
+      employeeId, name: file.name, type: file.type || 'application/octet-stream', size: file.size, dataBase64,
+    });
+    if (fileRef.current) fileRef.current.value = '';
+  };
+
+  const open = async (id: number) => {
+    const token = useAuthStore.getState().token;
+    if (!token) return;
+    const r = await window.electron.hr.signedContracts.open(token, id);
+    if (!r.success) toast.error(String(r.error));
+  };
+
+  return (
+    <Card>
+      <div className="mb-3 flex items-center justify-between">
+        <h3 className="text-sm font-semibold text-slate-800">Contrats signés</h3>
+        {canWrite && (
+          <>
+            <input ref={fileRef} type="file" className="hidden"
+              accept=".pdf,.jpg,.jpeg,.png,.webp,.doc,.docx" onChange={onFile} />
+            <Button size="sm" variant="secondary" icon={<Upload className="h-4 w-4" />}
+              loading={upload.isPending} onClick={() => fileRef.current?.click()}>
+              Téléverser
+            </Button>
+          </>
+        )}
+      </div>
+      {isLoading ? (
+        <SkeletonTable rows={2} />
+      ) : list.length === 0 ? (
+        <p className="text-sm text-slate-400">Aucun contrat signé téléversé.</p>
+      ) : (
+        <ul className="divide-y divide-slate-100">
+          {list.map((s) => (
+            <li key={s.id} className="flex items-center justify-between py-2">
+              <button className="flex min-w-0 items-center gap-2 text-left" onClick={() => open(s.id)}>
+                <FileText className="h-4 w-4 shrink-0 text-slate-400" />
+                <span className="truncate text-sm text-slate-800">{s.name}</span>
+                <span className="shrink-0 text-xs text-slate-400">{formatDate(s.uploadedAt)}</span>
+              </button>
+              <div className="flex shrink-0 gap-1">
+                <Button variant="ghost" size="sm" icon={<ExternalLink className="h-4 w-4" />} title="Ouvrir"
+                  onClick={() => open(s.id)} />
+                {canWrite && (
+                  <Button variant="ghost" size="sm" icon={<Trash2 className="h-4 w-4" />} title="Supprimer"
+                    onClick={() => setToDelete(s)} />
+                )}
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
+      <ConfirmDialog
+        open={!!toDelete}
+        title="Supprimer le contrat signé"
+        message={`Supprimer « ${toDelete?.name ?? ''} » ?`}
+        confirmLabel="Supprimer"
+        loading={del.isPending}
+        onClose={() => setToDelete(null)}
+        onConfirm={async () => { if (toDelete) { const r = await del.mutateAsync(toDelete.id); if (r.success) setToDelete(null); } }}
+      />
+    </Card>
   );
 }

@@ -16,6 +16,18 @@ export const QR_MODELS: Record<string, QrModel> = {
 const QR_MARGIN = 1;
 
 /**
+ * Normalise la valeur encodée en URL absolue : ajoute `http://` si le schéma est
+ * absent et supprime les espaces superflus. Sans schéma, de nombreux lecteurs de
+ * QR (appareils photo de certains téléphones) traitent le contenu comme du
+ * texte brut (« copier ») au lieu d'un lien cliquable.
+ */
+function toQrUrl(raw: string): string {
+  const v = (raw ?? '').trim();
+  if (!v) return '';
+  return /^https?:\/\//i.test(v) ? v : `http://${v}`;
+}
+
+/**
  * Met en forme le contour des trois motifs de repérage (« yeux ») d'un QR Code
  * (haut-gauche, haut-droite, bas-gauche) : contour carré ou circulaire, coloré.
  */
@@ -95,6 +107,8 @@ export default function QrCodeBox({
   const token = useAuthStore((s) => s.token);
   const [dataUrl, setDataUrl] = useState<string>('');
   const [logoSrc, setLogoSrc] = useState<string | null>(null);
+  // Valeur réellement encodée : URL absolue (schéma garanti) pour un lien cliquable.
+  const qrValue = toQrUrl(value);
 
   // Logo de l'entreprise (pour les modèles avec logo central).
   useEffect(() => {
@@ -111,13 +125,13 @@ export default function QrCodeBox({
   useEffect(() => {
     let cancelled = false;
     async function render() {
-      if (!value) { setDataUrl(''); return; }
+      if (!qrValue) { setDataUrl(''); return; }
       const m = QR_MODELS[model] ?? QR_MODELS['1'];
       try {
         const canvas = document.createElement('canvas');
         const ecLevel = m.logo ? 'H' : 'M';
         // Correction d'erreur élevée (H) quand un logo masque le centre.
-        await QRCode.toCanvas(canvas, value, {
+        await QRCode.toCanvas(canvas, qrValue, {
           width: size, margin: QR_MARGIN,
           errorCorrectionLevel: ecLevel,
           color: { dark: m.dark, light: m.light },
@@ -126,7 +140,7 @@ export default function QrCodeBox({
         if (m.eyeColor || m.pupilColor) {
           const ctx2 = canvas.getContext('2d');
           if (ctx2) {
-            const count = QRCode.create(value, { errorCorrectionLevel: ecLevel }).modules.size;
+            const count = QRCode.create(qrValue, { errorCorrectionLevel: ecLevel }).modules.size;
             const moduleSize = canvas.width / (count + QR_MARGIN * 2);
             styleEyes(ctx2, count, moduleSize, m);
           }
@@ -193,7 +207,7 @@ export default function QrCodeBox({
     }
     render();
     return () => { cancelled = true; };
-  }, [value, size, model, logoSrc, caption]);
+  }, [qrValue, size, model, logoSrc, caption]);
 
   const handleDownload = () => {
     if (!dataUrl) return;
@@ -211,12 +225,12 @@ export default function QrCodeBox({
       <style>body{font-family:system-ui,sans-serif;text-align:center;padding:32px;color:#0f172a}
       h1{font-size:20px;margin-bottom:4px}p{color:#475569;font-size:13px;margin-top:0}
       img{margin:24px auto;display:block}</style></head>
-      <body><h1>${printTitle}</h1><p>${value}</p><img src="${dataUrl}" width="320" />
+      <body><h1>${printTitle}</h1><p>${qrValue}</p><img src="${dataUrl}" width="320" />
       <script>window.onload=function(){window.print();}</script></body></html>`);
     w.document.close();
   };
 
-  if (!value) {
+  if (!qrValue) {
     return <p className="text-sm text-slate-400">Renseignez l'adresse du serveur pour générer le QR Code.</p>;
   }
 

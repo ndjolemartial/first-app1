@@ -92,6 +92,11 @@ import PayslipsListPage from './modules/hr/pages/PayslipsListPage';
 import PayslipDetailPage from './modules/hr/pages/PayslipDetailPage';
 import PayrollSettingsPage from './modules/hr/pages/PayrollSettingsPage';
 import HrTemplatesPage from './modules/hr/pages/HrTemplatesPage';
+import ContractTemplateFormPage from './modules/hr/pages/ContractTemplateFormPage';
+import ContractDocumentPage from './modules/hr/pages/ContractDocumentPage';
+import JobDescriptionTemplateFormPage from './modules/hr/pages/JobDescriptionTemplateFormPage';
+import JobDescriptionDocumentPage from './modules/hr/pages/JobDescriptionDocumentPage';
+import MyHrPage from './modules/hr/pages/MyHrPage';
 import LeaveRequestsPage from './modules/hr/pages/LeaveRequestsPage';
 import AttendancePage from './modules/hr/pages/AttendancePage';
 
@@ -163,6 +168,12 @@ export const router = createHashRouter([
           // Profil personnel (accessible à tout utilisateur connecté)
           { path: 'profile', element: <ProfilePage /> },
 
+          // Mon espace RH & Paie — self-service en lecture seule, accessible à
+          // tout utilisateur authentifié (limité côté IPC à son propre dossier).
+          { path: 'my-hr', element: <MyHrPage /> },
+          { path: 'my-hr/contracts/:id/document', element: <ContractDocumentPage selfMode /> },
+          { path: 'my-hr/contracts/:id/job-description', element: <JobDescriptionDocumentPage selfMode /> },
+
           // Users — ADMIN / SUPER_ADMIN (gestion complète) et AGENT_TECHNIQUE
           // (gestion limitée aux comptes AGENT / AGENT_TECHNIQUE / READONLY,
           // appliquée côté backend).
@@ -178,9 +189,10 @@ export const router = createHashRouter([
 
           // Paramètres applicatifs — admins (tous les onglets). MANAGER et
           // ACCOUNTANT y accèdent aussi mais ne voient que l'onglet « Catalogue
-          // prestations / produits » (filtrage par rôle dans SettingsPage).
+          // prestations / produits » ; RH ne voit que « Modèles de contrats de
+          // travail » (filtrage par rôle dans SettingsPage).
           {
-            element: <RoleGuard allowedRoles={['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ACCOUNTANT']} />,
+            element: <RoleGuard allowedRoles={['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ACCOUNTANT', 'RH']} />,
             children: [
               { path: 'settings', element: <SettingsPage /> },
             ],
@@ -350,9 +362,11 @@ export const router = createHashRouter([
             ],
           },
 
-          // RH & Paie — réservé au rôle dédié RH et aux administrateurs.
+          // RH & Paie — opérationnel : admins/RH + MANAGER & ASSISTANTE_DIRECTION
+          // (ces derniers filtrés côté IPC aux employés dont le contrat en cours
+          // n'est pas un CDI ; pointage en lecture seule).
           {
-            element: <RoleGuard allowedRoles={['SUPER_ADMIN', 'ADMIN', 'RH']} />,
+            element: <RoleGuard allowedRoles={['SUPER_ADMIN', 'ADMIN', 'RH', 'MANAGER', 'ASSISTANTE_DIRECTION']} />,
             children: [
               { path: 'hr/employees', element: <EmployeesListPage /> },
               { path: 'hr/employees/new', element: <EmployeeFormPage /> },
@@ -360,10 +374,23 @@ export const router = createHashRouter([
               { path: 'hr/employees/:id/edit', element: <EmployeeFormPage /> },
               { path: 'hr/payslips', element: <PayslipsListPage /> },
               { path: 'hr/payslips/:id', element: <PayslipDetailPage /> },
-              { path: 'hr/payroll-settings', element: <PayrollSettingsPage /> },
-              { path: 'hr/templates', element: <HrTemplatesPage /> },
+              { path: 'hr/contracts/:id/document', element: <ContractDocumentPage /> },
+              { path: 'hr/contracts/:id/job-description', element: <JobDescriptionDocumentPage /> },
               { path: 'hr/leave', element: <LeaveRequestsPage /> },
               { path: 'hr/attendance', element: <AttendancePage /> },
+            ],
+          },
+
+          // RH & Paie — configuration : réservé aux admins et au rôle RH.
+          {
+            element: <RoleGuard allowedRoles={['SUPER_ADMIN', 'ADMIN', 'RH']} />,
+            children: [
+              { path: 'hr/payroll-settings', element: <PayrollSettingsPage /> },
+              { path: 'hr/templates', element: <HrTemplatesPage /> },
+              { path: 'hr/contracts/templates/new', element: <ContractTemplateFormPage /> },
+              { path: 'hr/contracts/templates/:id/edit', element: <ContractTemplateFormPage /> },
+              { path: 'hr/job-descriptions/templates/new', element: <JobDescriptionTemplateFormPage /> },
+              { path: 'hr/job-descriptions/templates/:id/edit', element: <JobDescriptionTemplateFormPage /> },
             ],
           },
 

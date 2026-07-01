@@ -2221,10 +2221,30 @@ model Employee {
   deletedAt      DateTime?
 
   user          User?                @relation("UserEmployee", fields: [userId], references: [id])
-  contracts     EmploymentContract[]
+  contracts     EmploymentContract[] @relation("EmployeeContracts")
+  authorityContracts EmploymentContract[] @relation("ContractAuthority")
   payslips      Payslip[]
   leaveRequests LeaveRequest[]
   attendance    AttendanceRecord[]
+  signedContracts EmployeeSignedContract[]
+}
+
+// Contrats signés (fichiers téléversés) rattachés à un employé — consultables
+// par le personnel dans « Mon espace RH → Profil & Contrats » (lecture seule).
+model EmployeeSignedContract {
+  id           Int       @id @default(autoincrement())
+  employeeId   Int
+  name         String
+  type         String    // MIME
+  path         String    // chemin relatif dans le storage
+  size         Int
+  uploadedById Int?
+  uploadedAt   DateTime  @default(now())
+  deletedAt    DateTime?
+
+  employee     Employee  @relation(fields: [employeeId], references: [id])
+
+  @@index([employeeId])
 }
 
 enum EmployeeSexe {
@@ -2259,19 +2279,75 @@ model EmploymentContract {
   primeAnciennete    Decimal? @db.Decimal(15, 2)
   grossSalary        Decimal? @db.Decimal(15, 2) // salaire brut (base + sursalaire + prime d'ancienneté)
   its                Decimal? @db.Decimal(15, 2) // retenue ITS
-  cnps               Decimal? @db.Decimal(15, 2) // retenue CNPS
-  totalDeductions    Decimal? @db.Decimal(15, 2) // total des retenues
+  cnps               Decimal? @db.Decimal(15, 2) // retenue CNPS (part salariale)
+  cmu                Decimal? @db.Decimal(15, 2) // retenue CMU (part salariale)
+  totalDeductions    Decimal? @db.Decimal(15, 2) // total des retenues (ITS + CNPS + CMU)
   transportAllowance Decimal? @db.Decimal(15, 2) // prime de transport
   netSalary          Decimal? @db.Decimal(15, 2) // salaire net à payer
+  // Avenant CDD : rattachement au contrat CDD initial amendé (cumul ≤ 2 ans).
+  // Renseigné uniquement pour les contrats de type AVENANT_CDD.
+  parentContractId Int?
+  // Autorité responsable : employé signataire/responsable au titre du contrat
+  // (distinct du salarié titulaire). Optionnel.
+  responsibleAuthorityId Int?
+  // Fonction de l'employé (référentiel paramétrable : titre + contenu en liste).
+  functionId   Int?
   notes        String?        @db.Text
   createdAt    DateTime       @default(now())
   updatedAt    DateTime       @updatedAt
   deletedAt    DateTime?
 
-  employee Employee  @relation(fields: [employeeId], references: [id])
-  payslips Payslip[]
+  employee            Employee             @relation("EmployeeContracts", fields: [employeeId], references: [id])
+  responsibleAuthority Employee?           @relation("ContractAuthority", fields: [responsibleAuthorityId], references: [id])
+  parentContract      EmploymentContract?  @relation("ContractAmendments", fields: [parentContractId], references: [id])
+  amendments          EmploymentContract[] @relation("ContractAmendments")
+  fonction            ContractFunction?    @relation(fields: [functionId], references: [id])
+  payslips            Payslip[]
 
   @@index([employeeId])
+  @@index([parentContractId])
+  @@index([responsibleAuthorityId])
+  @@index([functionId])
+}
+
+// Modèle éditable de « fiche de poste » rattachée à un contrat. Mêmes zones
+// que ContractTemplate (en-tête / corps / fin du document / pied de page) ;
+// utilise les mêmes variables de contrat. Plusieurs modèles, un par défaut.
+model JobDescriptionTemplate {
+  id        Int     @id @default(autoincrement())
+  uuid      String  @unique @default(cuid())
+  name      String
+  header       String? @db.LongText
+  headerWidth  Int     @default(100)
+  headerHeight Int     @default(140)
+  body      String     @db.LongText
+  footer       String?   @db.LongText
+  footerWidth  Int       @default(100)
+  footerHeight Int       @default(140)
+  footerBgColor String?  @db.VarChar(20)
+  endOfDocument        String?  @db.LongText
+  endOfDocumentWidth   Int      @default(100)
+  endOfDocumentHeight  Int      @default(140)
+  endOfDocumentBgColor String?  @db.VarChar(20)
+  isDefault Boolean  @default(false)
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  deletedAt DateTime?
+}
+
+// Fonction de l'employé (référentiel paramétrable) : un titre et un contenu
+// (une ligne = un élément, affiché en liste à puces dans le contrat).
+model ContractFunction {
+  id        Int       @id @default(autoincrement())
+  titre     String
+  contenu   String    @db.Text
+  isActive  Boolean   @default(true)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  contracts EmploymentContract[]
 }
 
 enum ContractType {
@@ -2281,6 +2357,27 @@ enum ContractType {
   INTERIM
   CONSULTANT
   APPRENTISSAGE
+  ESSAI
+  AVENANT_CDD // Avenant de prolongation rattaché à un CDD (cumul ≤ 2 ans)
+  RENOUVELLEMENT_ESSAI // Lettre de renouvellement rattachée à un ESSAI (durée = essai initial)
+}
+
+// Catégorie socio-professionnelle et délai d'essai associé (paramétrable).
+// Sert de référence pour les contrats ESSAI (auto-remplissage de la durée).
+model EssaiCategory {
+  id            Int               @id @default(autoincrement())
+  label         String            @unique
+  durationValue Int               // valeur du délai d'essai
+  durationUnit  EssaiDurationUnit @default(MOIS)
+  isActive      Boolean           @default(true)
+  createdAt     DateTime          @default(now())
+  updatedAt     DateTime          @updatedAt
+  deletedAt     DateTime?
+}
+
+enum EssaiDurationUnit {
+  JOURS
+  MOIS
 }
 
 enum ContractStatus {
@@ -2362,12 +2459,31 @@ enum PayslipLineType {
 
 // Modèles éditables de contrats de travail (corps en HTML avec variables {{…}}).
 // Un modèle par défaut par type de contrat ; repli sur le modèle intégré si aucun.
+// Zones En-tête / Corps / Fin du document / Pied de page calquées sur
+// ConventionTemplate (rendu PDF avec en-tête/pied répétés sur chaque page).
 model ContractTemplate {
   id        Int          @id @default(autoincrement())
   uuid      String       @unique @default(cuid())
   name      String
   type      ContractType
+  // En-tête monobloc — texte et/ou image (image insérée → 100 % de la largeur
+  // du bloc, cf. CSS du rendu PDF). Largeur et hauteur configurables.
+  header       String? @db.LongText
+  headerWidth  Int     @default(100)
+  headerHeight Int     @default(140)
   body      String       @db.LongText
+  footer       String?   @db.LongText
+  footerWidth  Int       @default(100)
+  footerHeight Int       @default(140)
+  // Couleur de fond du pied de page (`#rrggbb` ou `transparent`). `NULL` ⇒
+  // valeur par défaut historique (`#dc2626`).
+  footerBgColor String?  @db.VarChar(20)
+  // Bloc « Fin du document » — inséré à la suite du corps (signatures, mentions
+  // finales…), une seule fois. Mêmes contrôles que le pied de page.
+  endOfDocument        String?  @db.LongText
+  endOfDocumentWidth   Int      @default(100)
+  endOfDocumentHeight  Int      @default(140)
+  endOfDocumentBgColor String?  @db.VarChar(20)
   isDefault Boolean      @default(false)
   isActive  Boolean      @default(true)
   createdAt DateTime     @default(now())

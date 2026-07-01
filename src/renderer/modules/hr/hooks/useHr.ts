@@ -114,12 +114,12 @@ export function useDeleteContract(employeeId: number) {
   });
 }
 
-export function usePrintContract() {
-  return useMutation({
-    mutationFn: (id: number) => ipc().contracts.print(token(), id),
-    onSuccess: (res) => {
-      if (!res.success) toast.error(String(res.error));
-    },
+/** Données de rendu d'un contrat (contrat + employé + entreprise). */
+export function useContractRenderData(id: number) {
+  return useQuery({
+    queryKey: ['contract-render', id],
+    queryFn: () => ipc().contracts.getRenderData(token(), id),
+    enabled: id > 0,
   });
 }
 
@@ -272,6 +272,102 @@ export function useDeleteContractTemplate() {
   });
 }
 
+/* ─── Catégories socio-professionnelles & délais d'essai ───────── */
+
+export function useEssaiCategories(includeInactive = false) {
+  return useQuery({
+    queryKey: ['essai-categories', includeInactive],
+    queryFn: () => ipc().essaiCategories.list(token(), includeInactive),
+  });
+}
+
+export function useSaveEssaiCategory() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, payload }: { id?: number; payload: object }) =>
+      id ? ipc().essaiCategories.update(token(), id, payload) : ipc().essaiCategories.create(token(), payload),
+    onSuccess: (res) => {
+      if (res.success) { qc.invalidateQueries({ queryKey: ['essai-categories'] }); toast.success('Catégorie enregistrée'); }
+      else toast.error(String(res.error));
+    },
+  });
+}
+
+export function useDeleteEssaiCategory() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: number) => ipc().essaiCategories.delete(token(), id),
+    onSuccess: (res) => {
+      if (res.success) { qc.invalidateQueries({ queryKey: ['essai-categories'] }); toast.success('Catégorie supprimée'); }
+      else toast.error(String(res.error));
+    },
+  });
+}
+
+/* ─── Fonctions de l'employé (référentiel) ────────────────────── */
+
+export function useContractFunctions(includeInactive = false) {
+  return useQuery({
+    queryKey: ['contract-functions', includeInactive],
+    queryFn: () => ipc().contractFunctions.list(token(), includeInactive),
+  });
+}
+
+export function useSaveContractFunction() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, payload }: { id?: number; payload: object }) =>
+      id ? ipc().contractFunctions.update(token(), id, payload) : ipc().contractFunctions.create(token(), payload),
+    onSuccess: (res) => {
+      if (res.success) { qc.invalidateQueries({ queryKey: ['contract-functions'] }); toast.success('Fonction enregistrée'); }
+      else toast.error(String(res.error));
+    },
+  });
+}
+
+export function useDeleteContractFunction() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: number) => ipc().contractFunctions.delete(token(), id),
+    onSuccess: (res) => {
+      if (res.success) { qc.invalidateQueries({ queryKey: ['contract-functions'] }); toast.success('Fonction supprimée'); }
+      else toast.error(String(res.error));
+    },
+  });
+}
+
+/* ─── Modèles de fiche de poste ────────────────────────────────── */
+
+export function useJobDescriptionTemplates() {
+  return useQuery({
+    queryKey: ['job-description-templates'],
+    queryFn: () => ipc().jobDescriptionTemplates.list(token()),
+  });
+}
+
+export function useSaveJobDescriptionTemplate() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, payload }: { id?: number; payload: object }) =>
+      id ? ipc().jobDescriptionTemplates.update(token(), id, payload) : ipc().jobDescriptionTemplates.create(token(), payload),
+    onSuccess: (res) => {
+      if (res.success) { qc.invalidateQueries({ queryKey: ['job-description-templates'] }); toast.success('Modèle de fiche de poste enregistré'); }
+      else toast.error(String(res.error));
+    },
+  });
+}
+
+export function useDeleteJobDescriptionTemplate() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: number) => ipc().jobDescriptionTemplates.delete(token(), id),
+    onSuccess: (res) => {
+      if (res.success) { qc.invalidateQueries({ queryKey: ['job-description-templates'] }); toast.success('Modèle supprimé'); }
+      else toast.error(String(res.error));
+    },
+  });
+}
+
 export function usePayslipTemplates() {
   return useQuery({
     queryKey: ['payslip-templates'],
@@ -381,4 +477,70 @@ export function useBulkUpsertAttendance() {
       } else toast.error(String(res.error));
     },
   });
+}
+
+/* ─── Self-service : « Mon espace RH & Paie » (lecture seule) ──── */
+
+export function useMyHrOverview() {
+  return useQuery({ queryKey: ['my-hr-overview'], queryFn: () => ipc().me.overview(token()) });
+}
+
+export function useMyPayslips() {
+  return useQuery({ queryKey: ['my-payslips'], queryFn: () => ipc().me.payslips(token()) });
+}
+
+export function useMyPayslip(id: number) {
+  return useQuery({ queryKey: ['my-payslip', id], queryFn: () => ipc().me.payslip(token(), id), enabled: id > 0 });
+}
+
+export function useMyAttendance(year: number, month: number) {
+  return useQuery({ queryKey: ['my-attendance', year, month], queryFn: () => ipc().me.attendance(token(), year, month) });
+}
+
+export function useMyLeaveRequests() {
+  return useQuery({ queryKey: ['my-leave'], queryFn: () => ipc().me.leaveRequests(token()) });
+}
+
+export function useMyContractRenderData(id: number) {
+  return useQuery({ queryKey: ['my-contract-render', id], queryFn: () => ipc().me.contractRenderData(token(), id), enabled: id > 0 });
+}
+
+export function useMyReglementInterieur() {
+  return useQuery({ queryKey: ['my-reglement'], queryFn: () => ipc().me.reglementInterieur(token()) });
+}
+
+/* ─── Contrats signés (fichiers téléversés) ───────────────────── */
+
+export function useSignedContracts(employeeId: number) {
+  return useQuery({
+    queryKey: ['signed-contracts', employeeId],
+    queryFn: () => ipc().signedContracts.list(token(), employeeId),
+    enabled: employeeId > 0,
+  });
+}
+
+export function useUploadSignedContract(employeeId: number) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: object) => ipc().signedContracts.upload(token(), payload),
+    onSuccess: (res) => {
+      if (res.success) { qc.invalidateQueries({ queryKey: ['signed-contracts', employeeId] }); toast.success('Contrat signé téléversé'); }
+      else toast.error(String(res.error));
+    },
+  });
+}
+
+export function useDeleteSignedContract(employeeId: number) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: number) => ipc().signedContracts.delete(token(), id),
+    onSuccess: (res) => {
+      if (res.success) { qc.invalidateQueries({ queryKey: ['signed-contracts', employeeId] }); toast.success('Contrat signé supprimé'); }
+      else toast.error(String(res.error));
+    },
+  });
+}
+
+export function useMySignedContracts() {
+  return useQuery({ queryKey: ['my-signed-contracts'], queryFn: () => ipc().me.signedContracts(token()) });
 }

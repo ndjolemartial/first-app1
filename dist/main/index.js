@@ -195,6 +195,7 @@ electron_1.app.whenReady().then(async () => {
     // Modèles RH : contrats (un par type) + bulletins de paie (3 modèles).
     (0, hr_templates_service_1.seedDefaultContractTemplates)()
         .then(() => (0, hr_templates_service_1.seedDefaultPayslipTemplates)())
+        .then(() => (0, hr_templates_service_1.seedDefaultEssaiCategories)())
         .catch((e) => logger_1.default.error(`HR templates bootstrap failed: ${e.message}`));
     (0, leave_service_1.seedDefaultLeaveTypes)()
         .catch((e) => logger_1.default.error(`Leave types bootstrap failed: ${e.message}`));

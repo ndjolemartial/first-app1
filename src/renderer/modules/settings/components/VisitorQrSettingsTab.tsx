@@ -16,6 +16,12 @@ function normalizeBaseUrl(raw: string): string {
 
 const isLoopback = (url: string) => /\/\/(localhost|127\.0\.0\.1)(:|\/|$)/i.test(url);
 
+/** Vrai si l'hôte de l'URL est une adresse IPv4 nue (sans nom d'hôte). */
+const isBareIpUrl = (url: string): boolean => {
+  try { return /^\d{1,3}(\.\d{1,3}){3}$/.test(new URL(url).hostname); }
+  catch { return false; }
+};
+
 const ROLE_OPTIONS: Array<{ value: string; label: string }> = [
   { value: 'SUPER_ADMIN',          label: 'Super administrateur' },
   { value: 'ADMIN',                label: 'Administrateur' },
@@ -107,6 +113,16 @@ export default function VisitorQrSettingsTab() {
           <p className="mt-1 rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-700">
             ⚠ <strong>localhost / 127.0.0.1</strong> ne fonctionne que sur le poste hébergeant le serveur web.
             Pour un scan depuis un téléphone, utilisez l'adresse réseau du serveur.
+          </p>
+        )}
+        {visitorUrl && isBareIpUrl(visitorUrl) && (
+          <p className="mt-1 rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-700">
+            ⚠ Certains téléphones (Tecno, Infinix…) <strong>n'ouvrent pas les adresses IP</strong> au scan : ils
+            affichent « Résultat de recherche » avec un bouton <em>Copier</em> au lieu d'un lien cliquable.
+            Pour un lien ouvrable sur tous les téléphones, faites pointer le QR vers un <strong>nom d'hôte</strong>
+            (ex. <span className="font-mono">http://visiteurs.lan/visiteurs/</span>) via une entrée DNS locale
+            (routeur) ou le fichier <span className="font-mono">hosts</span>, vers {' '}
+            <span className="font-mono">{(() => { try { return new URL(visitorUrl).host; } catch { return 'cette adresse'; } })()}</span>.
           </p>
         )}
         {localIps.length > 0 && (

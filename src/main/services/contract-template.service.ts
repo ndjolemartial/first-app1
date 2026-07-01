@@ -1,46 +1,72 @@
 import { getSettings, SettingsKeys } from './settings.service';
+import { getDb } from './db.service';
 
 /**
- * Modèles de contrats de travail adaptés au contexte ivoirien (Loi n°2015-532
- * portant Code du travail, affiliation CNPS). Un modèle par type de contrat.
- * Le rendu fusionne les variables {{...}} puis enveloppe le corps dans un
- * document A4 imprimable (en-tête entreprise, parties, signatures).
+ * Contenu par défaut des modèles de contrats de travail (contexte ivoirien :
+ * Loi n°2015-532 portant Code du travail, affiliation CNPS). Un modèle par
+ * défaut par type de contrat.
+ *
+ * Le rendu (fusion des variables {{…}}, assemblage des zones En-tête / Corps /
+ * Fin du document / Pied de page et génération du PDF) est effectué côté
+ * `renderer` — comme pour les conventions — via `documentExport` et les
+ * utilitaires `modules/hr/utils/contractTemplate.ts`. Ce service ne fournit
+ * plus que le contenu de seed des modèles par défaut.
  */
+
+interface ContractLegalRep {
+  civilite: string;
+  firstName: string;
+  lastName: string;
+  poste: string;
+}
 
 interface ContractCompany {
   name: string;
+  denomination: string;
   registre: string;
   contribuable: string;
   address: string;
   phone: string;
+  legalRep: ContractLegalRep | null;
 }
 
 export async function loadContractCompany(): Promise<ContractCompany> {
   const map = await getSettings([
     SettingsKeys.companyName,
+    SettingsKeys.companyDenomination,
+    SettingsKeys.companyLegalRepEmployeeId,
     SettingsKeys.companyRegistre,
     SettingsKeys.companyContribuable,
     SettingsKeys.companyAddress,
     SettingsKeys.companyPhoneFixed,
   ]);
+  // Représentant légal : employé sélectionné dans les paramètres entreprise.
+  let legalRep: ContractLegalRep | null = null;
+  const repId = Number(map[SettingsKeys.companyLegalRepEmployeeId]);
+  if (Number.isInteger(repId) && repId > 0) {
+    const emp = await getDb().employee.findFirst({
+      where: { id: repId, deletedAt: null },
+      select: { civilite: true, firstName: true, lastName: true, poste: true },
+    });
+    if (emp) {
+      legalRep = {
+        civilite: emp.civilite ?? '',
+        firstName: emp.firstName ?? '',
+        lastName: emp.lastName ?? '',
+        poste: emp.poste ?? '',
+      };
+    }
+  }
   return {
     name: map[SettingsKeys.companyName] ?? 'AFRIKIMMO',
+    denomination: map[SettingsKeys.companyDenomination] ?? '',
     registre: map[SettingsKeys.companyRegistre] ?? '',
     contribuable: map[SettingsKeys.companyContribuable] ?? '',
     address: map[SettingsKeys.companyAddress] ?? '',
     phone: map[SettingsKeys.companyPhoneFixed] ?? '',
+    legalRep,
   };
 }
-
-const fmtDate = (d: unknown) => (d ? new Date(d as any).toLocaleDateString('fr-FR') : '………………');
-const fmtMoney = (n: unknown) =>
-  n != null && n !== ''
-    ? `${new Intl.NumberFormat('fr-FR').format(Math.round(Number(n)))} FCFA`
-    : '………………';
-
-const CIVILITE_LABEL: Record<string, string> = {
-  MONSIEUR: 'Monsieur', MADAME: 'Madame', MADEMOISELLE: 'Mademoiselle',
-};
 
 const CONTRACT_TYPE_LABEL: Record<string, string> = {
   CDI: 'Contrat à Durée Indéterminée',
@@ -49,57 +75,18 @@ const CONTRACT_TYPE_LABEL: Record<string, string> = {
   INTERIM: "Contrat de Travail Temporaire (Intérim)",
   CONSULTANT: 'Contrat de Prestation / Consultance',
   APPRENTISSAGE: "Contrat d'Apprentissage",
+  ESSAI: "Contrat à l'Essai",
+  AVENANT_CDD: 'Avenant à un Contrat à Durée Déterminée',
+  RENOUVELLEMENT_ESSAI: "Lettre de Renouvellement de la Période d'Essai",
 };
-
-/** Construit la table des variables substituables d'un contrat. */
-function buildVariables(contract: any, employee: any, company: ContractCompany): Record<string, string> {
-  const nom = `${employee.lastName ?? ''} ${employee.firstName ?? ''}`.trim();
-  const civ = employee.civilite ? CIVILITE_LABEL[employee.civilite] ?? '' : '';
-  return {
-    'entreprise.nom': company.name,
-    'entreprise.rccm': company.registre || '………………',
-    'entreprise.contribuable': company.contribuable || '………………',
-    'entreprise.adresse': company.address || '………………',
-    'entreprise.telephone': company.phone || '………………',
-    'employe.civilite': civ,
-    'employe.nomComplet': nom || '………………',
-    'employe.nom': employee.lastName ?? '………………',
-    'employe.prenoms': employee.firstName ?? '………………',
-    'employe.dateNaissance': fmtDate(employee.birthDate),
-    'employe.lieuNaissance': employee.birthPlace || '………………',
-    'employe.nationalite': employee.nationality || '………………',
-    'employe.adresse': [employee.address, employee.city].filter(Boolean).join(', ') || '………………',
-    'employe.pieceIdentite': employee.idNumber || '………………',
-    'employe.cnps': employee.cnpsNumber || '………………',
-    'employe.matricule': employee.matricule ?? '',
-    'contrat.reference': contract.reference ?? '',
-    'contrat.typeLibelle': CONTRACT_TYPE_LABEL[contract.type] ?? contract.type,
-    'contrat.poste': contract.poste || '………………',
-    'contrat.categorie': contract.categorie || '………………',
-    'contrat.dateDebut': fmtDate(contract.startDate),
-    'contrat.dateFin': fmtDate(contract.endDate),
-    'contrat.finEssai': fmtDate(contract.trialEndDate),
-    'contrat.heuresHebdo': contract.weeklyHours != null ? String(contract.weeklyHours) : '40',
-    'contrat.salaireBase': fmtMoney(contract.baseSalary),
-    'contrat.sursalaire': fmtMoney(contract.sursalaire),
-    'contrat.primeAnciennete': fmtMoney(contract.primeAnciennete),
-    'contrat.salaireBrut': fmtMoney(contract.grossSalary),
-    'contrat.its': fmtMoney(contract.its),
-    'contrat.cnps': fmtMoney(contract.cnps),
-    'contrat.totalRetenues': fmtMoney(contract.totalDeductions),
-    'contrat.transport': fmtMoney(contract.transportAllowance),
-    'contrat.salaireNet': fmtMoney(contract.netSalary),
-    'lieu': employee.city || 'Abidjan',
-    'date.aujourdhui': fmtDate(new Date()),
-  };
-}
 
 const art = (n: string, html: string) =>
   `<p class="art"><strong>${n}</strong></p><p>${html}</p>`;
 
 /**
- * Clauses spécifiques à chaque type de contrat. Le préambule, l'identification
- * des parties et les signatures sont communs (cf. renderContractHtml).
+ * Clauses (articles) spécifiques à chaque type de contrat. Le papier à
+ * en-tête, le préambule des parties et le bloc de signature sont fournis par
+ * les fragments de zones ci-dessous (CONTRACT_HEADER_HTML / PARTIES / SIGN).
  */
 const TEMPLATES: Record<string, string> = {
   CDI:
@@ -171,105 +158,96 @@ const TEMPLATES: Record<string, string> = {
       `L'apprenti perçoit une allocation mensuelle de <strong>{{contrat.salaireBase}}</strong>.`) +
     art('Article 4 — Obligations',
       `L'apprenti s'engage à suivre la formation avec assiduité et à respecter le règlement intérieur. L'employeur s'engage à assurer la formation et l'encadrement nécessaires.`),
+
+  ESSAI:
+    art('Article 1 — Engagement à l\'essai',
+      `{{entreprise.nom}} engage {{employe.civilite}} {{employe.nomComplet}} en qualité de <strong>{{contrat.poste}}</strong> (catégorie {{contrat.categorie}}) dans le cadre d'un contrat à l'essai, conformément à la Loi n°2015-532 portant Code du travail de la République de Côte d'Ivoire.`) +
+    art('Article 2 — Durée de l\'essai',
+      `La période d'essai débute le <strong>{{contrat.dateDebut}}</strong> et expire le <strong>{{contrat.finEssai}}</strong>, conformément au délai applicable à la catégorie socio-professionnelle du salarié. Elle a pour objet de permettre à l'employeur d'apprécier les compétences du salarié et à ce dernier d'évaluer si les fonctions lui conviennent.`) +
+    art('Article 3 — Fonctions',
+      `Le salarié exercera les fonctions de {{contrat.poste}} et toute tâche connexe relevant de sa qualification. Il s'engage à respecter le règlement intérieur et les consignes de l'employeur.`) +
+    art('Article 4 — Durée du travail',
+      `La durée hebdomadaire de travail est fixée à <strong>{{contrat.heuresHebdo}} heures</strong>, répartie selon l'horaire en vigueur dans l'entreprise.`) +
+    art('Article 5 — Rémunération',
+      `Pendant la période d'essai, le salarié percevra un salaire de base mensuel brut de <strong>{{contrat.salaireBase}}</strong>, sous déduction des cotisations sociales (CNPS) et fiscales (ITS) légales.`) +
+    art('Article 6 — Sécurité sociale',
+      `Le salarié est affilié à la Caisse Nationale de Prévoyance Sociale (CNPS). Numéro CNPS : {{employe.cnps}}.`) +
+    art('Article 7 — Rupture pendant l\'essai',
+      `Durant la période d'essai, chacune des parties peut rompre le contrat sans préavis ni indemnité, conformément à la réglementation en vigueur. À l'issue de l'essai jugé concluant, la relation de travail se poursuit dans les conditions convenues entre les parties.`),
+
+  AVENANT_CDD:
+    art('Article 1 — Objet de l\'avenant',
+      `Le présent avenant a pour objet la prolongation du contrat de travail à durée déterminée n° <strong>{{contratParent.reference}}</strong>, conclu entre les parties et initialement prévu du <strong>{{contratParent.dateDebut}}</strong> au <strong>{{contratParent.dateFin}}</strong>.`) +
+    art('Article 2 — Prolongation du terme',
+      `Les parties conviennent de prolonger le contrat susvisé jusqu'au <strong>{{contrat.dateFin}}</strong>. Conformément à la Loi n°2015-532 portant Code du travail, la durée cumulée du contrat initial et de ses avenants successifs n'excède pas deux (2) ans.`) +
+    art('Article 3 — Maintien des autres clauses',
+      `Toutes les autres clauses et conditions du contrat de travail initial n° {{contratParent.reference}} non modifiées par le présent avenant demeurent inchangées et continuent de produire leurs effets.`) +
+    art('Article 4 — Rémunération',
+      `Pendant la période de prolongation, le salarié percevra un salaire de base mensuel brut de <strong>{{contrat.salaireBase}}</strong>, sous déduction des cotisations sociales (CNPS) et fiscales (ITS) légales.`),
+
+  RENOUVELLEMENT_ESSAI:
+    art('Article 1 — Objet',
+      `La présente lettre a pour objet le renouvellement de la période d'essai prévue par le contrat à l'essai n° <strong>{{contratParent.reference}}</strong>, conclu pour la période du <strong>{{contratParent.dateDebut}}</strong> au <strong>{{contratParent.dateFin}}</strong>.`) +
+    art('Article 2 — Durée du renouvellement',
+      `La période d'essai est renouvelée une seule fois, pour une durée <strong>égale à celle de l'essai initial</strong>, soit du <strong>{{contrat.dateDebut}}</strong> au <strong>{{contrat.dateFin}}</strong>, conformément à la Loi n°2015-532 portant Code du travail et au délai applicable à la catégorie socio-professionnelle du salarié.`) +
+    art('Article 3 — Conditions',
+      `Durant cette période de renouvellement, chacune des parties peut rompre le contrat sans préavis ni indemnité, conformément à la réglementation en vigueur. Toutes les autres conditions du contrat à l'essai initial demeurent inchangées.`) +
+    art('Article 4 — Confirmation',
+      `À l'issue du renouvellement jugé concluant, la relation de travail se poursuit dans les conditions convenues entre les parties.`),
 };
 
-/** Corps (articles) par défaut, exposés pour le seeding des modèles éditables. */
-export const CONTRACT_TEMPLATE_DEFS: { type: string; name: string; body: string }[] =
-  Object.keys(TEMPLATES).map((type) => ({
-    type,
-    name: `${CONTRACT_TYPE_LABEL[type] ?? type} (modèle par défaut)`,
-    body: TEMPLATES[type],
-  }));
-
-const esc = (v: unknown) =>
-  String(v ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-
-/** Substitue les variables {{token}} (les valeurs sont échappées). */
-function merge(html: string, vars: Record<string, string>): string {
-  return html.replace(/\{\{\s*([\w.]+)\s*\}\}/g, (_m, token) =>
-    Object.prototype.hasOwnProperty.call(vars, token) ? esc(vars[token]) : `{{${token}}}`,
-  );
-}
+/**
+ * Papier à en-tête entreprise (zone En-tête) — répété en haut de chaque page.
+ * Les coordonnées proviennent des variables {{entreprise.*}}.
+ */
+export const CONTRACT_HEADER_HTML =
+  '<div style="text-align:center;">' +
+    '<p style="font-size:16pt;font-weight:bold;color:#1E3A5F;margin:0;">{{entreprise.nom}}</p>' +
+    '<p style="font-size:9pt;color:#475569;margin:1pt 0 0;">{{entreprise.adresse}} — Tél : {{entreprise.telephone}}</p>' +
+    '<p style="font-size:9pt;color:#475569;margin:0;">RCCM : {{entreprise.rccm}} — Cpte contribuable : {{entreprise.contribuable}}</p>' +
+  '</div>';
 
 /**
- * Construit le document HTML imprimable d'un contrat de travail (A4 portrait).
- * `bodyOverride` : corps issu d'un modèle éditable en base ; à défaut, modèle
- * intégré correspondant au type de contrat.
+ * Titre, référence et préambule d'identification des parties (début du Corps).
+ * Le bloc CNPS n'apparaît que pour les contrats de travail
+ * ({{#si contrat.estContratTravail}}).
  */
-export function renderContractHtml(
-  contract: any,
-  employee: any,
-  company: ContractCompany,
-  bodyOverride?: string | null,
-): string {
-  const vars = buildVariables(contract, employee, company);
-  const typeLabel = CONTRACT_TYPE_LABEL[contract.type] ?? contract.type;
-  const isWorkContract = !['STAGE', 'CONSULTANT'].includes(contract.type);
-  const employerLabel = "Pour l'Employeur";
-  const employeeLabel = contract.type === 'STAGE' ? 'Le Stagiaire'
-    : contract.type === 'CONSULTANT' ? 'Le Consultant'
-    : contract.type === 'APPRENTISSAGE' ? "L'Apprenti"
-    : 'Le Salarié';
-  const template = bodyOverride && bodyOverride.trim() ? bodyOverride : (TEMPLATES[contract.type] ?? TEMPLATES.CDI);
-  const body = merge(template, vars);
+export const CONTRACT_PARTIES_HTML =
+  '<h1 style="text-align:center;text-transform:uppercase;color:#1E3A5F;">{{contrat.typeLibelle}}</h1>' +
+  '<p style="text-align:center;color:#64748b;font-size:11px;">Référence : {{contrat.reference}}</p>' +
+  '<p><strong>ENTRE LES SOUSSIGNÉS :</strong></p>' +
+  '<p>{{entreprise.nom}}, immatriculée au RCCM sous le n° {{entreprise.rccm}}, dont le siège est à {{entreprise.adresse}}, ci-après dénommée « l\'Employeur »,</p>' +
+  '<p><strong>D\'UNE PART,</strong></p>' +
+  '<p>{{employe.civilite}} {{employe.nomComplet}}, né(e) le {{employe.dateNaissance}} à {{employe.lieuNaissance}}, de nationalité {{employe.nationalite}}, demeurant à {{employe.adresse}}, titulaire de la pièce d\'identité n° {{employe.pieceIdentite}}{{#si contrat.estContratTravail}}, immatriculé(e) à la CNPS sous le n° {{employe.cnps}}{{/si}}, ci-après dénommé(e) « {{contrat.signataireEmploye}} »,</p>' +
+  '<p><strong>D\'AUTRE PART,</strong></p>' +
+  '<p style="font-style:italic;">Il a été convenu et arrêté ce qui suit :</p>';
 
-  const companyLines = [
-    company.address && esc(company.address),
-    company.phone && `Tél : ${esc(company.phone)}`,
-    company.registre && `RCCM : ${esc(company.registre)}`,
-    company.contribuable && `Cpte contribuable : ${esc(company.contribuable)}`,
-  ].filter(Boolean);
+/**
+ * Lieu, date et bloc de signature (zone Fin du document) — inséré une seule
+ * fois à la suite du corps.
+ */
+export const CONTRACT_SIGN_HTML =
+  '<p style="margin-top:8px;">Fait à {{lieu}}, le {{date.aujourdhui}}, en deux (2) exemplaires originaux.</p>' +
+  '<table style="width:100%;margin-top:24px;border-collapse:collapse;"><tr>' +
+    '<td style="width:50%;text-align:center;vertical-align:top;"><p style="font-weight:bold;margin:0 0 56px;">Pour l\'Employeur</p><p style="border-top:1px solid #94a3b8;padding-top:4px;margin:0;font-size:11px;">{{entreprise.nom}}</p></td>' +
+    '<td style="width:50%;text-align:center;vertical-align:top;"><p style="font-weight:bold;margin:0 0 56px;">{{contrat.signataireEmploye}}</p><p style="border-top:1px solid #94a3b8;padding-top:4px;margin:0;font-size:11px;">{{employe.nomComplet}}</p></td>' +
+  '</tr></table>';
 
-  return `<!DOCTYPE html>
-<html lang="fr"><head><meta charset="utf-8"><style>
-  * { box-sizing: border-box; }
-  body { font-family: 'Segoe UI', Arial, sans-serif; color: #0f172a; margin: 0; font-size: 12.5px; line-height: 1.5; }
-  .head { text-align: center; border-bottom: 2px solid #1E3A5F; padding-bottom: 10px; }
-  .head .company { font-size: 18px; font-weight: bold; color: #1E3A5F; }
-  .head .lines { font-size: 11px; color: #475569; margin-top: 2px; }
-  h1 { text-align: center; font-size: 17px; color: #1E3A5F; margin: 22px 0 4px; text-transform: uppercase; }
-  .ref { text-align: center; font-size: 11px; color: #64748b; margin-bottom: 18px; }
-  .parties { margin: 14px 0; }
-  .parties p { margin: 4px 0; }
-  p { margin: 6px 0; text-align: justify; }
-  p.art { margin-top: 14px; color: #1E3A5F; }
-  .preambule { font-style: italic; color: #334155; }
-  .sign { margin-top: 40px; display: flex; justify-content: space-between; gap: 40px; }
-  .sign div { width: 45%; text-align: center; }
-  .sign .role { font-weight: bold; margin-bottom: 60px; }
-  .sign .line { border-top: 1px solid #94a3b8; padding-top: 4px; font-size: 11px; color: #64748b; }
-  .place { margin-top: 28px; font-size: 12px; }
-</style></head><body>
-  <div class="head">
-    <div class="company">${esc(company.name)}</div>
-    <div class="lines">${companyLines.join(' — ')}</div>
-  </div>
-
-  <h1>${esc(typeLabel)}</h1>
-  <div class="ref">Référence : ${esc(contract.reference ?? '')}</div>
-
-  <div class="parties">
-    <p><strong>ENTRE LES SOUSSIGNÉS :</strong></p>
-    <p>${esc(company.name)}, ${company.registre ? `immatriculée au RCCM sous le n° ${esc(company.registre)}, ` : ''}dont le siège est à ${esc(company.address || '………………')}, ci-après dénommée « l'Employeur »,</p>
-    <p><strong>D'UNE PART,</strong></p>
-    <p>${esc(vars['employe.civilite'])} ${esc(vars['employe.nomComplet'])}, né(e) le ${esc(vars['employe.dateNaissance'])} à ${esc(vars['employe.lieuNaissance'])}, de nationalité ${esc(vars['employe.nationalite'])}, demeurant à ${esc(vars['employe.adresse'])}, titulaire de la pièce d'identité n° ${esc(vars['employe.pieceIdentite'])}${isWorkContract ? `, immatriculé(e) à la CNPS sous le n° ${esc(vars['employe.cnps'])}` : ''}, ci-après dénommé(e) « ${employeeLabel} »,</p>
-    <p><strong>D'AUTRE PART,</strong></p>
-    <p class="preambule">Il a été convenu et arrêté ce qui suit :</p>
-  </div>
-
-  ${body}
-
-  <div class="place">Fait à ${esc(vars['lieu'])}, le ${esc(vars['date.aujourdhui'])}, en deux (2) exemplaires originaux.</div>
-
-  <div class="sign">
-    <div>
-      <div class="role">${employerLabel}</div>
-      <div class="line">${esc(company.name)}</div>
-    </div>
-    <div>
-      <div class="role">${employeeLabel}</div>
-      <div class="line">${esc(vars['employe.nomComplet'])}</div>
-    </div>
-  </div>
-</body></html>`;
-}
+/**
+ * Définitions de seed des modèles par défaut (un par type). Chaque modèle
+ * fournit ses zones En-tête / Corps / Fin du document ; le pied de page est
+ * laissé vide (le numéro de page est ajouté automatiquement au rendu).
+ */
+export const CONTRACT_TEMPLATE_DEFS: {
+  type: string;
+  name: string;
+  header: string;
+  body: string;
+  endOfDocument: string;
+}[] = Object.keys(TEMPLATES).map((type) => ({
+  type,
+  name: `${CONTRACT_TYPE_LABEL[type] ?? type} (modèle par défaut)`,
+  header: CONTRACT_HEADER_HTML,
+  body: CONTRACT_PARTIES_HTML + TEMPLATES[type],
+  endOfDocument: CONTRACT_SIGN_HTML,
+}));

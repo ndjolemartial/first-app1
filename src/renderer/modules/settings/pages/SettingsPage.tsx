@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useAuthStore } from '../../../shared/stores/auth.store';
-import { Building2, HardDrive, Database, Mail, MessageSquare, Images, FileText, FileSignature, Award, Briefcase, Tags, Landmark, IdCard, Layers, Bell, BookOpen, ChevronDown, ChevronRight, Inbox, Printer, MapPin, ShoppingBag, QrCode } from 'lucide-react';
+import { Building2, HardDrive, Database, Mail, MessageSquare, Images, FileText, FileSignature, Award, Briefcase, Tags, Landmark, IdCard, Layers, Bell, BookOpen, ChevronDown, ChevronRight, Inbox, Printer, MapPin, ShoppingBag, QrCode, Clock } from 'lucide-react';
 import PageLayout from '../../../shared/components/layout/PageLayout';
 import Card from '../../../shared/components/ui/Card';
 import { clsx } from 'clsx';
@@ -14,6 +14,9 @@ import SlideshowSettingsTab            from '../components/SlideshowSettingsTab'
 import InvoiceTemplatesSettingsTab     from '../components/InvoiceTemplatesSettingsTab';
 import ListExportTemplatesSettingsTab  from '../components/ListExportTemplatesSettingsTab';
 import ConventionTemplatesSettingsTab  from '../components/ConventionTemplatesSettingsTab';
+import ContractTemplatesSettingsTab   from '../components/ContractTemplatesSettingsTab';
+import EssaiCategoriesSettingsTab      from '../components/EssaiCategoriesSettingsTab';
+import ReglementInterieurSettingsTab   from '../components/ReglementInterieurSettingsTab';
 import AttestationTemplatesSettingsTab from '../components/AttestationTemplatesSettingsTab';
 import ProjectTypesSettingsTab         from '../components/ProjectTypesSettingsTab';
 import IdDocumentTypesSettingsTab      from '../components/IdDocumentTypesSettingsTab';
@@ -40,6 +43,9 @@ type TabKey =
   | 'invoiceTemplates'
   | 'listExportTemplates'
   | 'conventionTemplates'
+  | 'contractTemplates'
+  | 'essaiCategories'
+  | 'reglementInterieur'
   | 'attestationTemplates'
   | 'quoteTemplates'
   | 'projectTypes'
@@ -98,12 +104,15 @@ const TABS: TabDef[] = [
   { key: 'invoiceTemplates',     label: 'Modèles de factures',     icon: <FileText className="h-4 w-4" />,      group: 'printedTemplates' },
   { key: 'listExportTemplates',  label: 'Modèles export de listes', icon: <Printer className="h-4 w-4" />,      group: 'printedTemplates' },
   { key: 'conventionTemplates',  label: 'Modèles de conventions',  icon: <FileSignature className="h-4 w-4" />, group: 'printedTemplates' },
+  { key: 'contractTemplates',    label: 'Modèles de contrats de travail', icon: <Briefcase className="h-4 w-4" />, group: 'printedTemplates', roles: ['SUPER_ADMIN', 'ADMIN', 'RH'] },
   { key: 'attestationTemplates', label: "Modèles d'attestations",  icon: <Award className="h-4 w-4" />,         group: 'printedTemplates' },
   { key: 'quoteTemplates',       label: 'Modèles de devis',        icon: <FileText className="h-4 w-4" />,      group: 'printedTemplates' },
   { key: 'conditionsParticulieres', label: 'Informations particulières', icon: <FileSignature className="h-4 w-4" />, group: 'printedTemplates', roles: ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ACCOUNTANT'] },
   { key: 'projectTypes',         label: 'Types de projets',        icon: <Briefcase className="h-4 w-4" /> },
   { key: 'idDocumentTypes',      label: "Types de pièces d'identité", icon: <IdCard className="h-4 w-4" /> },
   { key: 'lotissementTitleTypes', label: 'Natures de titres de lotissement', icon: <Layers className="h-4 w-4" /> },
+  { key: 'essaiCategories',      label: "Délais d'essai (catégories)",  icon: <Clock className="h-4 w-4" />, roles: ['SUPER_ADMIN', 'ADMIN', 'RH'] },
+  { key: 'reglementInterieur',   label: 'Règlement intérieur',          icon: <BookOpen className="h-4 w-4" /> },
   { key: 'catalog',              label: 'Catalogue prestations / produits', icon: <ShoppingBag className="h-4 w-4" />, roles: ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ACCOUNTANT'] },
   // ── Groupe « Opérations bancaires » ─────────────────────────
   { key: 'treasuryAccounts',     label: "Comptes d'opérations",    icon: <Landmark className="h-4 w-4" />, group: 'treasury' },
@@ -271,6 +280,9 @@ export default function SettingsPage() {
           {active === 'invoiceTemplates'     && <InvoiceTemplatesSettingsTab />}
           {active === 'listExportTemplates'  && <ListExportTemplatesSettingsTab />}
           {active === 'conventionTemplates'  && <ConventionTemplatesSettingsTab />}
+          {active === 'contractTemplates'    && <ContractTemplatesSettingsTab />}
+          {active === 'essaiCategories'      && <EssaiCategoriesSettingsTab />}
+          {active === 'reglementInterieur'   && <ReglementInterieurSettingsTab />}
           {active === 'attestationTemplates' && <AttestationTemplatesSettingsTab />}
           {active === 'quoteTemplates'       && <QuoteTemplatesSettingsTab />}
           {active === 'projectTypes'         && <ProjectTypesSettingsTab />}

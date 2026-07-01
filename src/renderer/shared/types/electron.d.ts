@@ -302,7 +302,14 @@ interface Window {
         create: (token: string, payload: object) => Promise<IpcResponse<any>>;
         update: (token: string, id: number, payload: object) => Promise<IpcResponse<any>>;
         delete: (token: string, id: number) => Promise<IpcResponse>;
-        print: (token: string, id: number) => Promise<IpcResponse<{ previewing: boolean }>>;
+        getRenderData: (token: string, id: number) => Promise<IpcResponse<{ contract: any; employee: any; company: any }>>;
+      };
+      signedContracts: {
+        list: (token: string, employeeId: number) => Promise<IpcResponse<any[]>>;
+        upload: (token: string, payload: object) => Promise<IpcResponse<any>>;
+        delete: (token: string, id: number) => Promise<IpcResponse>;
+        fileData: (token: string, id: number) => Promise<IpcResponse<{ tooLarge?: boolean; name?: string; mimeType?: string; base64?: string }>>;
+        open: (token: string, id: number) => Promise<IpcResponse>;
       };
       payslips: {
         list: (token: string, filters?: object, page?: number, limit?: number) => Promise<IpcResponse<any[]>>;
@@ -324,6 +331,38 @@ interface Window {
         create: (token: string, payload: object) => Promise<IpcResponse<any>>;
         update: (token: string, id: number, payload: object) => Promise<IpcResponse<any>>;
         delete: (token: string, id: number) => Promise<IpcResponse>;
+      };
+      essaiCategories: {
+        list: (token: string, includeInactive?: boolean) => Promise<IpcResponse<any[]>>;
+        create: (token: string, payload: object) => Promise<IpcResponse<any>>;
+        update: (token: string, id: number, payload: object) => Promise<IpcResponse<any>>;
+        delete: (token: string, id: number) => Promise<IpcResponse>;
+      };
+      contractFunctions: {
+        list: (token: string, includeInactive?: boolean) => Promise<IpcResponse<any[]>>;
+        create: (token: string, payload: object) => Promise<IpcResponse<any>>;
+        update: (token: string, id: number, payload: object) => Promise<IpcResponse<any>>;
+        delete: (token: string, id: number) => Promise<IpcResponse>;
+      };
+      jobDescriptionTemplates: {
+        list: (token: string) => Promise<IpcResponse<any[]>>;
+        create: (token: string, payload: object) => Promise<IpcResponse<any>>;
+        update: (token: string, id: number, payload: object) => Promise<IpcResponse<any>>;
+        delete: (token: string, id: number) => Promise<IpcResponse>;
+      };
+      me: {
+        overview: (token: string) => Promise<IpcResponse<{ employee: any | null; leaveBalance: any | null }>>;
+        payslips: (token: string) => Promise<IpcResponse<any[]>>;
+        payslip: (token: string, id: number) => Promise<IpcResponse<any>>;
+        payslipPrint: (token: string, id: number) => Promise<IpcResponse<{ previewing: boolean }>>;
+        attendance: (token: string, year: number, month: number) => Promise<IpcResponse<any[]>>;
+        leaveRequests: (token: string) => Promise<IpcResponse<any[]>>;
+        contractRenderData: (token: string, id: number) => Promise<IpcResponse<{ contract: any; employee: any; company: any }>>;
+        reglementInterieur: (token: string) => Promise<IpcResponse<{ configured: boolean; tooLarge?: boolean; name?: string; mimeType?: string; base64?: string }>>;
+        reglementInterieurPrint: (token: string) => Promise<IpcResponse<{ previewing: boolean }>>;
+        signedContracts: (token: string) => Promise<IpcResponse<any[]>>;
+        signedContractFile: (token: string, id: number) => Promise<IpcResponse<{ tooLarge?: boolean; name?: string; mimeType?: string; base64?: string }>>;
+        signedContractOpen: (token: string, id: number) => Promise<IpcResponse>;
       };
       payslipTemplates: {
         list: (token: string) => Promise<IpcResponse<any[]>>;
@@ -648,6 +687,8 @@ interface Window {
       // Entreprise
       getCompany: (token: string) => Promise<IpcResponse<{
         name: string;
+        denomination: string;
+        legalRepEmployeeId: string;
         slogan: string;
         logoPath: string;
         registreCommerce: string;
@@ -659,6 +700,8 @@ interface Window {
         address: string;
       }>>;
       updateCompany: (token: string, payload: object) => Promise<IpcResponse>;
+      getReglementInterieur: (token: string) => Promise<IpcResponse<{ documentId: number | null; document: { id: number; name: string; type: string; numeroArchive?: string | null } | null }>>;
+      setReglementInterieur: (token: string, documentId: number | null) => Promise<IpcResponse>;
       uploadLogo: (token: string, payload: { fileName: string; fileType: string; fileSize: number; fileData: string }) =>
         Promise<IpcResponse<{ relativePath: string }>>;
       deleteLogo: (token: string) => Promise<IpcResponse>;

@@ -5,7 +5,7 @@ import {
   LayoutDashboard, Users, UserSearch, UserCheck, Home, Building2,
   FileText, Calculator, MessageSquare, CalendarClock, Archive, Settings,
   Map, Landmark, Percent, Wallet, Building, PiggyBank, Briefcase, FileSpreadsheet, UserCog, ReceiptText, CalendarDays, Clock,
-  BarChart3, ChevronDown, UserPlus,
+  BarChart3, ChevronDown, UserPlus, IdCard,
 } from 'lucide-react';
 import { useAuthStore } from '../../stores/auth.store';
 
@@ -51,7 +51,7 @@ const navItems: NavEntry[] = [
   {
     label: 'Gestion du personnel',
     icon: <UserCog className="h-5 w-5" />,
-    roles: ['SUPER_ADMIN', 'ADMIN', 'RH'],
+    roles: ['SUPER_ADMIN', 'ADMIN', 'RH', 'MANAGER', 'ASSISTANTE_DIRECTION'],
     children: [
       { label: 'RH & Paie', to: '/hr/employees', icon: <Users className="h-5 w-5" /> },
       { label: 'Bulletins de paie', to: '/hr/payslips', icon: <ReceiptText className="h-5 w-5" /> },
@@ -59,9 +59,11 @@ const navItems: NavEntry[] = [
       { label: 'Pointage', to: '/hr/attendance', icon: <Clock className="h-5 w-5" /> },
     ],
   },
+  // Self-service : accessible à tout utilisateur connecté (son propre dossier).
+  { label: 'Mon espace RH', to: '/my-hr', icon: <IdCard className="h-5 w-5" /> },
   { label: 'Gestion des visiteurs', to: '/visitors', icon: <UserPlus className="h-5 w-5" />, roles: ['SUPER_ADMIN', 'ADMIN', 'ASSISTANTE_DIRECTION'] },
   { label: 'Analyses décisionnelles', to: '/analytics', icon: <BarChart3 className="h-5 w-5" />, roles: ['SUPER_ADMIN', 'ADMIN'] },
-  { label: 'Paramètres', to: '/settings', icon: <Settings className="h-5 w-5" />, roles: ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ACCOUNTANT'] },
+  { label: 'Paramètres', to: '/settings', icon: <Settings className="h-5 w-5" />, roles: ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ACCOUNTANT', 'RH'] },
 ];
 
 /** Style commun aux liens de navigation (NavLink). */

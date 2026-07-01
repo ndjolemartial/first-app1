@@ -22,7 +22,9 @@ import {
   type LeaveRequest, type LeaveType, type Employee,
 } from '../types/hr.types';
 
-const WRITE_ROLES = new Set(['SUPER_ADMIN', 'ADMIN', 'RH']);
+// Gestion des congés : admins/RH + MANAGER & ASSISTANTE_DIRECTION (ces derniers
+// restreints côté IPC aux employés dont le contrat en cours n'est pas un CDI).
+const WRITE_ROLES = new Set(['SUPER_ADMIN', 'ADMIN', 'RH', 'MANAGER', 'ASSISTANTE_DIRECTION']);
 
 /** Jours ouvrés (lundi-vendredi) entre deux dates incluses — aperçu côté UI. */
 function workingDays(start: string, end: string): number {

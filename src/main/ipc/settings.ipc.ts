@@ -37,6 +37,8 @@ const ADMIN_ROLES = ['SUPER_ADMIN', 'ADMIN'];
 
 const companySchema = z.object({
   name:               z.string().optional(),
+  denomination:       z.string().optional(),
+  legalRepEmployeeId: z.string().optional(),
   slogan:             z.string().optional(),
   registreCommerce:   z.string().optional(),
   compteContribuable: z.string().optional(),
@@ -193,6 +195,8 @@ export function registerSettingsIPC(): void {
       // entreprise ne s'affichait que pour les comptes SUPER_ADMIN / ADMIN.
       const map = await getSettings([
         SettingsKeys.companyName,
+        SettingsKeys.companyDenomination,
+        SettingsKeys.companyLegalRepEmployeeId,
         SettingsKeys.companySlogan,
         SettingsKeys.companyLogo,
         SettingsKeys.companyRegistre,
@@ -207,6 +211,8 @@ export function registerSettingsIPC(): void {
         success: true,
         data: {
           name:               map[SettingsKeys.companyName] ?? '',
+          denomination:       map[SettingsKeys.companyDenomination] ?? '',
+          legalRepEmployeeId: map[SettingsKeys.companyLegalRepEmployeeId] ?? '',
           slogan:             map[SettingsKeys.companySlogan] ?? '',
           logoPath:           map[SettingsKeys.companyLogo] ?? '',
           registreCommerce:   map[SettingsKeys.companyRegistre] ?? '',
@@ -233,6 +239,8 @@ export function registerSettingsIPC(): void {
       if (!parsed.success) return { success: false, error: parsed.error.issues.map((i) => i.message).join(', ') };
       const entries: Array<{ key: string; value: string }> = [];
       if (parsed.data.name !== undefined)               entries.push({ key: SettingsKeys.companyName, value: parsed.data.name });
+      if (parsed.data.denomination !== undefined)       entries.push({ key: SettingsKeys.companyDenomination, value: parsed.data.denomination });
+      if (parsed.data.legalRepEmployeeId !== undefined) entries.push({ key: SettingsKeys.companyLegalRepEmployeeId, value: parsed.data.legalRepEmployeeId });
       if (parsed.data.slogan !== undefined)             entries.push({ key: SettingsKeys.companySlogan, value: parsed.data.slogan });
       if (parsed.data.registreCommerce !== undefined)   entries.push({ key: SettingsKeys.companyRegistre, value: parsed.data.registreCommerce });
       if (parsed.data.compteContribuable !== undefined) entries.push({ key: SettingsKeys.companyContribuable, value: parsed.data.compteContribuable });
@@ -246,6 +254,43 @@ export function registerSettingsIPC(): void {
       return { success: true };
     } catch (err: any) {
       logger.error('settings:updateCompany', err.message);
+      return { success: false, error: err.message };
+    }
+  });
+
+  // ── Règlement intérieur (document GED ciblé par l'admin) ─────────────────────
+  ipcMain.handle('settings:getReglementInterieur', async (_event, { token }: any) => {
+    try {
+      const session = getSession(token);
+      if (!session) return { success: false, error: 'Session expirée' };
+      checkRole(session, ADMIN_ROLES);
+      const raw = await getSetting(SettingsKeys.hrReglementInterieurDocId);
+      const id = raw ? Number(raw) : null;
+      let document: any = null;
+      if (id) {
+        document = await getDb().document.findFirst({
+          where: { id, deletedAt: null },
+          select: { id: true, name: true, type: true, numeroArchive: true },
+        });
+      }
+      return { success: true, data: { documentId: document ? id : null, document } };
+    } catch (err: any) {
+      logger.error('settings:getReglementInterieur', err.message);
+      return { success: false, error: err.message };
+    }
+  });
+
+  ipcMain.handle('settings:setReglementInterieur', async (_event, { token, documentId }: any) => {
+    try {
+      const session = getSession(token);
+      if (!session) return { success: false, error: 'Session expirée' };
+      checkRole(session, ADMIN_ROLES);
+      const value = documentId != null && documentId !== '' ? String(Number(documentId)) : '';
+      await setSettings([{ key: SettingsKeys.hrReglementInterieurDocId, value }]);
+      logger.info(`Règlement intérieur : document ${value || '(aucun)'}`);
+      return { success: true };
+    } catch (err: any) {
+      logger.error('settings:setReglementInterieur', err.message);
       return { success: false, error: err.message };
     }
   });

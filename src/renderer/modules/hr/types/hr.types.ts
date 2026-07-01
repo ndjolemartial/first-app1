@@ -53,9 +53,16 @@ export interface EmploymentContract {
   grossSalary?: number | string | null;
   its?: number | string | null;
   cnps?: number | string | null;
+  cmu?: number | string | null;
   totalDeductions?: number | string | null;
   transportAllowance?: number | string | null;
   netSalary?: number | string | null;
+  // Avenant CDD : contrat CDD initial rattaché.
+  parentContractId?: number | null;
+  // Autorité responsable : employé signataire/responsable au titre du contrat.
+  responsibleAuthorityId?: number | null;
+  // Fonction de l'employé (référentiel paramétrable).
+  functionId?: number | null;
   notes?: string | null;
 }
 
@@ -103,12 +110,24 @@ export const CONTRACT_TYPE_OPTIONS = [
   { value: 'INTERIM', label: 'Intérim' },
   { value: 'CONSULTANT', label: 'Consultant' },
   { value: 'APPRENTISSAGE', label: 'Apprentissage' },
+  { value: 'ESSAI', label: 'Essai' },
+  { value: 'AVENANT_CDD', label: 'Avenant CDD' },
+  { value: 'RENOUVELLEMENT_ESSAI', label: 'Lettre de renouvellement ESSAI' },
 ];
 
 export const CONTRACT_TYPE_LABEL: Record<string, string> = {
   CDI: 'CDI', CDD: 'CDD', STAGE: 'Stage', INTERIM: 'Intérim',
-  CONSULTANT: 'Consultant', APPRENTISSAGE: 'Apprentissage',
+  CONSULTANT: 'Consultant', APPRENTISSAGE: 'Apprentissage', ESSAI: 'Essai',
+  AVENANT_CDD: 'Avenant CDD', RENOUVELLEMENT_ESSAI: 'Lettre de renouvellement ESSAI',
 };
+
+export interface EssaiCategory {
+  id: number;
+  label: string;
+  durationValue: number;
+  durationUnit: 'JOURS' | 'MOIS';
+  isActive: boolean;
+}
 
 export const CONTRACT_STATUS_OPTIONS = [
   { value: 'BROUILLON', label: 'Brouillon' },
