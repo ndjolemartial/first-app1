@@ -94,6 +94,10 @@ const updateTemplateSchema = zod_1.z.object({
     footerHtml: zod_1.z.string().optional(),
     endOfDocument: zod_1.z.string().optional(),
     accentColor: zod_1.z.string().optional(),
+    sectionColor: zod_1.z.string().optional(),
+    tableHeaderColor: zod_1.z.string().optional(),
+    sectionTextColor: zod_1.z.string().optional(),
+    tableHeaderTextColor: zod_1.z.string().optional(),
 });
 /**
  * Enregistre les handlers IPC pour les modèles de facture.

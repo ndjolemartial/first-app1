@@ -77,7 +77,7 @@ const PAYMENT_METHODS = ['ESPECE', 'CHEQUE', 'TRANSFERT', 'VIREMENT', 'MOBILE_MO
 
 const accountSchema = z.object({
   name: z.string().min(1, 'Libellé requis'),
-  type: z.enum(['BANQUE', 'CAISSE', 'MOBILE_MONEY']),
+  type: z.enum(['BANQUE', 'CAISSE', 'CAISSE_CENTRALE', 'MOBILE_MONEY']),
   bankName: z.string().optional(),
   accountNumber: z.string().optional(),
   iban: z.string().optional(),

@@ -3,6 +3,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
+exports.seedUploadFilesCategory = seedUploadFilesCategory;
 exports.registerDocumentsIPC = registerDocumentsIPC;
 const electron_1 = require("electron");
 const path_1 = __importDefault(require("path"));
@@ -45,15 +46,15 @@ function typeGroupWhere(group) {
     }
 }
 // ── Dossiers : espace personnel & dossiers partagés ──────────────────────────
-// Rôles à accès TOTAL sur la GED (y compris les espaces personnels des admins).
-const FOLDER_FULL_ROLES = ['SUPER_ADMIN', 'ADMIN'];
+// Rôles à accès TOTAL sur la GED, y compris les espaces personnels des AUTRES
+// utilisateurs. Réservé au SUPER_ADMIN : aucun autre rôle (ADMIN inclus) ne peut
+// consulter l'espace personnel d'un autre utilisateur — chacun n'accède qu'au sien.
+const FOLDER_FULL_ROLES = ['SUPER_ADMIN'];
 function isFolderFull(role) {
     return FOLDER_FULL_ROLES.includes(role);
 }
-// Propriétaires « admin » : leurs espaces personnels ne sont accessibles qu'aux
-// rôles à accès TOTAL (ni MANAGER, ni COMPTABLE, ni ASSISTANTE_DIRECTION).
-const ADMIN_OWNER_ROLES = ['SUPER_ADMIN', 'ADMIN'];
-// Rôles habilités à gérer les dossiers partagés (création / liste d'accès).
+// Rôles habilités à gérer les dossiers partagés (création / liste d'accès) et à
+// consulter l'ensemble des dossiers PARTAGÉS (hors espaces personnels d'autrui).
 const FOLDER_PRIVILEGED_ROLES = ['SUPER_ADMIN', 'ADMIN', 'MANAGER'];
 function isFolderPrivileged(role) {
     return FOLDER_PRIVILEGED_ROLES.includes(role);
@@ -78,44 +79,43 @@ async function ensureHomeFolder(db, userId) {
         data: { name: HOME_FOLDER_NAME, kind: 'PERSONAL', ownerId: userId },
     });
 }
-// Exclut les espaces personnels appartenant à un admin (filtre Prisma réutilisable).
-const NOT_ADMIN_PERSONAL_FOLDER = {
-    NOT: { kind: 'PERSONAL', owner: { is: { role: { in: ADMIN_OWNER_ROLES } } } },
-};
 /** Filtre Prisma de visibilité des DOSSIERS pour la session ({} = tout voir). */
 function folderVisibilityWhere(session) {
     if (isFolderFull(session.role))
-        return {};
-    // MANAGER : tout, sauf les espaces personnels appartenant à un admin.
-    if (session.role === 'MANAGER')
-        return NOT_ADMIN_PERSONAL_FOLDER;
+        return {}; // SUPER_ADMIN : tout, y compris les espaces personnels d'autrui
     const or = [
+        // Uniquement SON PROPRE espace personnel / ses propres dossiers.
         { kind: 'PERSONAL', ownerId: session.userId },
-        { kind: 'SHARED', accesses: { some: { userId: session.userId } } },
         { ownerId: session.userId },
+        // Dossiers partagés qui lui sont explicitement ouverts.
+        { kind: 'SHARED', accesses: { some: { userId: session.userId } } },
     ];
+    // ADMIN / MANAGER : voient l'ensemble des dossiers partagés (mais jamais les
+    // espaces personnels des autres utilisateurs).
+    if (isFolderPrivileged(session.role))
+        or.push({ kind: 'SHARED' });
+    // Pool général (arborescence commune).
     if (canSeeGeneralGed(session.role))
-        or.unshift({ kind: 'GENERAL' });
+        or.push({ kind: 'GENERAL' });
     return { OR: or };
 }
 /**
  * Filtre Prisma de visibilité des DOCUMENTS selon leur dossier.
- * `null` = accès total (rôle à accès complet).
+ * `null` = accès total (SUPER_ADMIN).
  */
 function documentFolderVisibilityWhere(session) {
     if (isFolderFull(session.role))
         return null;
-    // MANAGER : tout, sauf les documents rangés dans l'espace personnel d'un admin.
-    if (session.role === 'MANAGER') {
-        return { NOT: { folder: { is: { kind: 'PERSONAL', owner: { is: { role: { in: ADMIN_OWNER_ROLES } } } } } } };
-    }
     const or = [
+        // Documents rangés dans son propre espace personnel / ses propres dossiers.
         { folder: { is: { kind: 'PERSONAL', ownerId: session.userId } } },
-        { folder: { is: { kind: 'SHARED', accesses: { some: { userId: session.userId } } } } },
         { folder: { is: { ownerId: session.userId } } },
+        { folder: { is: { kind: 'SHARED', accesses: { some: { userId: session.userId } } } } },
     ];
-    // Pool général (documents hors dossier + dossiers GENERAL) : réservé aux rôles
-    // disposant de l'accès complet à la GED.
+    // ADMIN / MANAGER : tous les dossiers partagés.
+    if (isFolderPrivileged(session.role))
+        or.push({ folder: { is: { kind: 'SHARED' } } });
+    // Pool général (documents hors dossier + dossiers GENERAL).
     if (canSeeGeneralGed(session.role)) {
         or.push({ folderId: null });
         or.push({ folder: { is: { kind: 'GENERAL' } } });
@@ -131,7 +131,6 @@ async function canWriteFolder(db, session, folderId) {
     const folder = await db.documentFolder.findUnique({
         where: { id: folderId },
         include: {
-            owner: { select: { role: true } },
             accesses: { where: { userId: session.userId }, select: { userId: true } },
         },
     });
@@ -139,14 +138,11 @@ async function canWriteFolder(db, session, folderId) {
         return false;
     if (folder.ownerId === session.userId)
         return true;
-    if (folder.kind === 'PERSONAL') {
-        // MANAGER accède aux espaces personnels, sauf ceux des admins.
-        if (session.role === 'MANAGER')
-            return !ADMIN_OWNER_ROLES.includes(folder.owner?.role ?? '');
+    // Espace personnel d'un autre utilisateur : SUPER_ADMIN uniquement (déjà court-circuité plus haut).
+    if (folder.kind === 'PERSONAL')
         return false;
-    }
     if (folder.kind === 'SHARED') {
-        if (session.role === 'MANAGER')
+        if (isFolderPrivileged(session.role))
             return true;
         return folder.accesses.length > 0;
     }
@@ -163,7 +159,6 @@ async function canReadDocumentFolder(db, session, folderId) {
     const folder = await db.documentFolder.findUnique({
         where: { id: folderId },
         include: {
-            owner: { select: { role: true } },
             accesses: { where: { userId: session.userId }, select: { userId: true } },
         },
     });
@@ -171,13 +166,11 @@ async function canReadDocumentFolder(db, session, folderId) {
         return true; // dossier supprimé : ne bloque pas l'accès au document
     if (folder.ownerId === session.userId)
         return true;
-    if (folder.kind === 'PERSONAL') {
-        if (session.role === 'MANAGER')
-            return !ADMIN_OWNER_ROLES.includes(folder.owner?.role ?? '');
+    // Espace personnel d'un autre utilisateur : SUPER_ADMIN uniquement.
+    if (folder.kind === 'PERSONAL')
         return false;
-    }
     if (folder.kind === 'SHARED') {
-        if (session.role === 'MANAGER')
+        if (isFolderPrivileged(session.role))
             return true;
         return folder.accesses.length > 0;
     }
@@ -204,6 +197,30 @@ async function logAudit(db, documentId, action, userId, detail) {
     catch (e) {
         logger_1.default.error('documentAuditLog error', e.message);
     }
+}
+/** Nom de la catégorie par défaut des fichiers importés sans catégorie choisie. */
+const UPLOAD_FILES_CATEGORY = 'UPLOAD FILES';
+/**
+ * Renvoie l'id de la catégorie par défaut « UPLOAD FILES », en la créant si
+ * elle n'existe pas encore. Sert à classer automatiquement les fichiers
+ * importés dans la GED sans choix de catégorie.
+ */
+async function ensureUploadFilesCategoryId(db) {
+    const existing = await db.documentCategory.findFirst({
+        where: { name: UPLOAD_FILES_CATEGORY, deletedAt: null },
+        select: { id: true },
+    });
+    if (existing)
+        return existing.id;
+    const created = await db.documentCategory.create({
+        data: { name: UPLOAD_FILES_CATEGORY, color: '#64748b' },
+        select: { id: true },
+    });
+    return created.id;
+}
+/** Seed au démarrage : garantit l'existence de la catégorie « UPLOAD FILES ». */
+async function seedUploadFilesCategory() {
+    await ensureUploadFilesCategoryId((0, db_service_1.getDb)());
 }
 /** Relations incluses dans les listes de documents GED. */
 const docInclude = {
@@ -518,6 +535,8 @@ function registerDocumentsIPC() {
             const where = { deletedAt: null };
             if (filters.categoryId)
                 where.categoryId = Number(filters.categoryId);
+            if (filters.uncategorized)
+                where.categoryId = null; // documents non classés
             if (filters.folderId)
                 where.folderId = Number(filters.folderId);
             if (filters.uploadedById)
@@ -653,6 +672,8 @@ function registerDocumentsIPC() {
             if (!(await canWriteFolder(db, session, targetFolderId))) {
                 return { success: false, error: "Vous n'avez pas le droit de déposer dans ce dossier" };
             }
+            // Sans catégorie choisie → catégorie par défaut « UPLOAD FILES » (créée si absente).
+            const effectiveCategoryId = d.categoryId ?? await ensureUploadFilesCategoryId(db);
             const created = [];
             for (const f of d.files) {
                 const numeroArchive = await nextNumeroArchive(db);
@@ -674,7 +695,7 @@ function registerDocumentsIPC() {
                         size: stored.size,
                         numeroArchive,
                         description: d.description,
-                        categoryId: d.categoryId ?? null,
+                        categoryId: effectiveCategoryId,
                         folderId: d.folderId ?? null,
                         uploadedById: session.userId,
                         clientId: d.clientId ?? null,
@@ -915,8 +936,8 @@ function registerDocumentsIPC() {
                 },
             });
             // Métadonnées d'affichage : accès (liste d'ids), home de l'utilisateur courant.
-            // Pour les rôles privilégiés qui voient tous les espaces personnels, le nom
-            // est suffixé du propriétaire afin de les distinguer.
+            // Seul le SUPER_ADMIN voit les espaces personnels des autres utilisateurs ;
+            // leur nom est alors suffixé du propriétaire afin de les distinguer.
             const enriched = data.map((f) => {
                 const isOwnHome = f.kind === 'PERSONAL' && f.ownerId === session.userId;
                 let name = f.name;

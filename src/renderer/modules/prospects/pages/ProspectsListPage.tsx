@@ -13,6 +13,7 @@ import { useProspects, useAssignableUsers, useAssignProspect } from '../hooks/us
 import { formatDate, formatCurrency } from '../../../shared/utils/format';
 import ExportMenu, { ExportColumn } from '../../../shared/components/ExportMenu';
 import { useAuthStore } from '../../../shared/stores/auth.store';
+import { canExportPrint } from '../../../shared/utils/exportPermissions';
 import { UserPlus, LayoutDashboard, Eye, Edit } from 'lucide-react';
 
 // Rôles habilités à affecter / désaffecter un prospect.
@@ -157,16 +158,18 @@ export default function ProspectsListPage() {
       breadcrumbs={[{ label: 'Prospects' }]}
       actions={
         <div className="flex gap-2">
-          <ExportMenu
-            fileName="prospects"
-            title="Liste des prospects"
-            subtitle={filterSummary}
-            columns={EXPORT_COLUMNS}
-            fetchRows={async () => {
-              const r = await window.electron.prospects.list(token, filters, 1, 100000);
-              return r.success ? r.data ?? [] : [];
-            }}
-          />
+          {canExportPrint(role) && (
+            <ExportMenu
+              fileName="prospects"
+              title="Liste des prospects"
+              subtitle={filterSummary}
+              columns={EXPORT_COLUMNS}
+              fetchRows={async () => {
+                const r = await window.electron.prospects.list(token, filters, 1, 100000);
+                return r.success ? r.data ?? [] : [];
+              }}
+            />
+          )}
           <Button
             variant="secondary"
             icon={<LayoutDashboard className="h-4 w-4" />}

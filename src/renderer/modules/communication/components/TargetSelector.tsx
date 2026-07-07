@@ -36,9 +36,13 @@ interface Props {
 
 type EntityKind = 'CLIENT' | 'OWNER' | 'CONVENTION' | 'PARTICULIER';
 
-// Onglets de ciblage par entité — réservés aux rôles privilégiés.
-const ENTITY_TABS: Array<{ kind: EntityKind; label: string; icon: any }> = [
-  { kind: 'CLIENT',     label: 'Client',       icon: User },
+// Onglet « Client » : visible par TOUS les rôles. Pour les rôles non privilégiés,
+// la liste des clients est restreinte côté IPC à ceux dont l'utilisateur est le
+// référent (clients:list → filtre de visibilité par assignedToId).
+const CLIENT_TAB: { kind: EntityKind; label: string; icon: any } = { kind: 'CLIENT', label: 'Client', icon: User };
+
+// Onglets de ciblage Propriétaire / Convention — réservés aux rôles privilégiés.
+const PRIVILEGED_ENTITY_TABS: Array<{ kind: EntityKind; label: string; icon: any }> = [
   { kind: 'OWNER',      label: 'Propriétaire', icon: Building2 },
   { kind: 'CONVENTION', label: 'Convention',   icon: FileText },
 ];
@@ -46,8 +50,8 @@ const ENTITY_TABS: Array<{ kind: EntityKind; label: string; icon: any }> = [
 // Onglet « Particulier » : saisie libre du destinataire, visible par TOUS les rôles.
 const PARTICULIER_TAB = { kind: 'PARTICULIER' as EntityKind, label: 'Particulier', icon: UserRound };
 
-// Rôles autorisés à cibler une entité (Client / Propriétaire / Convention).
-// Les autres rôles ne voient que l'onglet « Particulier ».
+// Rôles autorisés à cibler Propriétaire / Convention. Les autres rôles ne voient
+// que les onglets « Client » (liste restreinte à leurs référents) et « Particulier ».
 const ENTITY_TARGET_ROLES = ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ACCOUNTANT'];
 
 function clientLabel(c: any): string {
@@ -67,11 +71,13 @@ function conventionLabel(c: any): string {
 export default function TargetSelector({ channel, value, onChange, onParticulierChange }: Props) {
   const role = useAuthStore((s) => s.user?.role) ?? '';
   const canTargetEntities = ENTITY_TARGET_ROLES.includes(role);
-  // Onglets visibles : Client/Propriétaire/Convention (privilégiés) puis Particulier,
-  // ou uniquement Particulier pour les autres rôles.
-  const tabs = canTargetEntities ? [...ENTITY_TABS, PARTICULIER_TAB] : [PARTICULIER_TAB];
+  // Onglets visibles : Client (tous les rôles) + Propriétaire/Convention (privilégiés)
+  // + Particulier (tous). Les rôles non privilégiés voient donc Client + Particulier.
+  const tabs = canTargetEntities
+    ? [CLIENT_TAB, ...PRIVILEGED_ENTITY_TABS, PARTICULIER_TAB]
+    : [CLIENT_TAB, PARTICULIER_TAB];
 
-  const [kind, setKind] = useState<EntityKind>(canTargetEntities ? 'CLIENT' : 'PARTICULIER');
+  const [kind, setKind] = useState<EntityKind>('CLIENT');
   const [resolving, setResolving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const token = useAuthStore((s) => s.token);

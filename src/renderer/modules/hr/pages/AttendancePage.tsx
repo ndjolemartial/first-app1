@@ -40,7 +40,7 @@ export default function AttendancePage() {
   const role = useAuthStore((s) => s.user?.role) ?? '';
   const canWrite = WRITE_ROLES.has(role);
 
-  const { data: empRes } = useEmployees({ status: 'ACTIF' }, 1, 1000);
+  const { data: empRes } = useEmployees({ status: 'ACTIF', context: 'attendanceLeave' }, 1, 1000);
   const employees: Employee[] = empRes?.data ?? [];
 
   const [employeeId, setEmployeeId] = useState(0);

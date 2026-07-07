@@ -16,7 +16,21 @@ const zod_1 = require("zod");
  * secrétariat). Les visiteurs eux-mêmes s'enregistrent via l'application web
  * autonome (dossier `web-visiteurs/`) ; l'accueil peut aussi les saisir ici.
  */
-const VISITOR_ROLES = ['SUPER_ADMIN', 'ADMIN', 'ASSISTANTE_DIRECTION'];
+// Accès au module Gestion des visiteurs (liste, saisie, lecture des objets pour
+// le sélecteur du formulaire). MANAGER inclus.
+const VISITOR_ROLES = ['SUPER_ADMIN', 'ADMIN', 'ASSISTANTE_DIRECTION', 'MANAGER'];
+// Gestion (écriture) des « Objets de visite » — MANAGER exclu : il accède au
+// module visiteurs mais pas à la configuration des objets.
+const VISITOR_OBJECT_ROLES = ['SUPER_ADMIN', 'ADMIN', 'ASSISTANTE_DIRECTION'];
+/**
+ * Contrôle de rôle EXACT pour le module visiteurs (n'applique pas les
+ * équivalences de `checkRole`) : autoriser `MANAGER` explicitement sans faire
+ * entrer ACCOUNTANT (équivalent MANAGER). Aligné sur le RoleGuard (match exact).
+ */
+function checkVisitorRole(session, allowed) {
+    if (!allowed.includes(session.role))
+        throw new Error('Permission insuffisante');
+}
 const ser = (v) => JSON.parse(JSON.stringify(v));
 const emptyToUndef = (v) => (v === '' || v === null ? undefined : v);
 const visitorSchema = zod_1.z.object({
@@ -34,7 +48,7 @@ function registerVisitorsIPC() {
             const session = (0, auth_service_1.getSession)(token);
             if (!session)
                 return { success: false, error: 'Session expirée' };
-            (0, auth_service_1.checkRole)(session, VISITOR_ROLES);
+            checkVisitorRole(session, VISITOR_ROLES);
             const db = (0, db_service_1.getDb)();
             const where = { deletedAt: null };
             if (filters.search) {
@@ -78,7 +92,7 @@ function registerVisitorsIPC() {
             const session = (0, auth_service_1.getSession)(token);
             if (!session)
                 return { success: false, error: 'Session expirée' };
-            (0, auth_service_1.checkRole)(session, VISITOR_ROLES);
+            checkVisitorRole(session, VISITOR_ROLES);
             const db = (0, db_service_1.getDb)();
             const visitor = await db.visitor.findFirst({
                 where: { id, deletedAt: null },
@@ -98,7 +112,7 @@ function registerVisitorsIPC() {
             const session = (0, auth_service_1.getSession)(token);
             if (!session)
                 return { success: false, error: 'Session expirée' };
-            (0, auth_service_1.checkRole)(session, VISITOR_ROLES);
+            checkVisitorRole(session, VISITOR_ROLES);
             const parsed = visitorSchema.safeParse(payload);
             if (!parsed.success) {
                 const msg = parsed.error.issues.map((i) => `${i.path.join('.') || 'champ'} : ${i.message}`).join(' ; ');
@@ -122,7 +136,7 @@ function registerVisitorsIPC() {
             const session = (0, auth_service_1.getSession)(token);
             if (!session)
                 return { success: false, error: 'Session expirée' };
-            (0, auth_service_1.checkRole)(session, VISITOR_ROLES);
+            checkVisitorRole(session, VISITOR_ROLES);
             const parsed = visitorSchema.partial().safeParse(payload);
             if (!parsed.success) {
                 const msg = parsed.error.issues.map((i) => `${i.path.join('.') || 'champ'} : ${i.message}`).join(' ; ');
@@ -142,7 +156,7 @@ function registerVisitorsIPC() {
             const session = (0, auth_service_1.getSession)(token);
             if (!session)
                 return { success: false, error: 'Session expirée' };
-            (0, auth_service_1.checkRole)(session, VISITOR_ROLES);
+            checkVisitorRole(session, VISITOR_ROLES);
             const db = (0, db_service_1.getDb)();
             await db.visitor.update({ where: { id }, data: { deletedAt: new Date() } });
             logger_1.default.info(`Visiteur archivé (soft delete) : id=${id}`);
@@ -159,7 +173,7 @@ function registerVisitorsIPC() {
             const session = (0, auth_service_1.getSession)(token);
             if (!session)
                 return { success: false, error: 'Session expirée' };
-            (0, auth_service_1.checkRole)(session, VISITOR_ROLES);
+            checkVisitorRole(session, VISITOR_ROLES);
             const db = (0, db_service_1.getDb)();
             const data = await db.visitObject.findMany({
                 where: { deletedAt: null, ...(includeInactive ? {} : { isActive: true }) },
@@ -177,7 +191,7 @@ function registerVisitorsIPC() {
             const session = (0, auth_service_1.getSession)(token);
             if (!session)
                 return { success: false, error: 'Session expirée' };
-            (0, auth_service_1.checkRole)(session, VISITOR_ROLES);
+            checkVisitorRole(session, VISITOR_OBJECT_ROLES);
             const value = String(label ?? '').trim();
             if (!value)
                 return { success: false, error: 'Libellé requis' };
@@ -198,7 +212,7 @@ function registerVisitorsIPC() {
             const session = (0, auth_service_1.getSession)(token);
             if (!session)
                 return { success: false, error: 'Session expirée' };
-            (0, auth_service_1.checkRole)(session, VISITOR_ROLES);
+            checkVisitorRole(session, VISITOR_OBJECT_ROLES);
             const db = (0, db_service_1.getDb)();
             const data = {};
             if (payload?.label !== undefined) {
@@ -225,7 +239,7 @@ function registerVisitorsIPC() {
             const session = (0, auth_service_1.getSession)(token);
             if (!session)
                 return { success: false, error: 'Session expirée' };
-            (0, auth_service_1.checkRole)(session, VISITOR_ROLES);
+            checkVisitorRole(session, VISITOR_OBJECT_ROLES);
             const db = (0, db_service_1.getDb)();
             await db.visitObject.update({ where: { id }, data: { deletedAt: new Date(), isActive: false } });
             return { success: true };
@@ -240,7 +254,7 @@ function registerVisitorsIPC() {
             const session = (0, auth_service_1.getSession)(token);
             if (!session)
                 return { success: false, error: 'Session expirée' };
-            (0, auth_service_1.checkRole)(session, VISITOR_ROLES);
+            checkVisitorRole(session, VISITOR_ROLES);
             const db = (0, db_service_1.getDb)();
             const now = new Date();
             const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate());

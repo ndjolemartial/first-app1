@@ -7,6 +7,7 @@ import Select from '../../../shared/components/ui/Select';
 import { SkeletonTable } from '../../../shared/components/ui/Skeleton';
 import EmptyState from '../../../shared/components/ui/EmptyState';
 import { useAuthStore } from '../../../shared/stores/auth.store';
+import { canExportPrint } from '../../../shared/utils/exportPermissions';
 import { useAttestation } from '../hooks/useAttestations';
 import { useAttestationTemplates } from '../hooks/useAttestationTemplates';
 import { useCountries } from '../../../shared/hooks/useCountries';
@@ -132,6 +133,8 @@ export default function AttestationDocumentPage() {
   const { data: templatesRes } = useAttestationTemplates();
   const { data: countriesRes } = useCountries();
   const [templateId, setTemplateId] = useState<number | null>(null);
+  const role = useAuthStore((s) => s.user?.role) ?? '';
+  const canExport = canExportPrint(role);
 
   // Code ISO → nom complet (« CI » → « Côte d'Ivoire »), pour que les
   // variables `{{*.pays}}` des modèles affichent le nom du pays.
@@ -228,7 +231,7 @@ export default function AttestationDocumentPage() {
         { label: 'Document' },
       ]}
       actions={
-        selected && (
+        selected && canExport && (
           <div className="flex gap-2">
             <Button variant="secondary" icon={<FileType2 className="h-4 w-4" />} onClick={handleExportDocx}>
               Exporter Word

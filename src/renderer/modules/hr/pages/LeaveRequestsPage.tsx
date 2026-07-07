@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import PageLayout from '../../../shared/components/layout/PageLayout';
 import Button from '../../../shared/components/ui/Button';
@@ -10,12 +10,14 @@ import Modal from '../../../shared/components/ui/Modal';
 import Pagination from '../../../shared/components/ui/Pagination';
 import { SkeletonTable } from '../../../shared/components/ui/Skeleton';
 import EmptyState from '../../../shared/components/ui/EmptyState';
+import { toast } from '../../../shared/components/ui/Toast';
 import { useAuthStore } from '../../../shared/stores/auth.store';
 import { formatDate } from '../../../shared/utils/format';
-import { PlusCircle, Check, X, Trash2 } from 'lucide-react';
+import { PlusCircle, Check, X, Trash2, Printer, Paperclip, FileCheck2 } from 'lucide-react';
 import {
   useLeaveRequests, useLeaveTypes, useEmployees, useCreateLeaveRequest,
-  useDecideLeaveRequest, useDeleteLeaveRequest, useLeaveBalance,
+  useDecideLeaveRequest, useDeleteLeaveRequest, usePrintLeaveRequest,
+  useUploadLeaveSigned, useLeaveBalance,
 } from '../hooks/useHr';
 import {
   LEAVE_STATUS_LABEL, LEAVE_STATUS_VARIANT, LEAVE_STATUS_OPTIONS,
@@ -24,37 +26,50 @@ import {
 
 // Gestion des congés : admins/RH + MANAGER & ASSISTANTE_DIRECTION (ces derniers
 // restreints côté IPC aux employés dont le contrat en cours n'est pas un CDI).
-const WRITE_ROLES = new Set(['SUPER_ADMIN', 'ADMIN', 'RH', 'MANAGER', 'ASSISTANTE_DIRECTION']);
+const WRITE_ROLES = new Set(['SUPER_ADMIN', 'ADMIN', 'RH', 'ACCOUNTANT', 'MANAGER', 'ASSISTANTE_DIRECTION']);
 
-/** Jours ouvrés (lundi-vendredi) entre deux dates incluses — aperçu côté UI. */
-function workingDays(start: string, end: string): number {
-  if (!start || !end) return 0;
-  const s = new Date(start); const e = new Date(end);
-  if (e < s) return 0;
-  let count = 0;
+/**
+ * Date de fin (« Au ») calculée à partir d'une date de début et d'un nombre de
+ * jours ouvrés : renvoie la date du dernier jour ouvré couvert. Si le début
+ * tombe un week-end, le comptage démarre au premier jour ouvré suivant. Les
+ * demi-journées étendent la fin jusqu'au jour ouvré touché (arrondi au jour).
+ */
+function endDateFromWorkingDays(start: string, days: number): string {
+  if (!start || !days || days <= 0) return '';
+  const s = new Date(start);
+  if (isNaN(s.getTime())) return '';
+  const target = Math.ceil(days);
   const d = new Date(s.getFullYear(), s.getMonth(), s.getDate());
-  const last = new Date(e.getFullYear(), e.getMonth(), e.getDate());
-  while (d <= last) {
+  let counted = 0;
+  for (let i = 0; i < 3650; i += 1) {
     const day = d.getDay();
-    if (day !== 0 && day !== 6) count += 1;
+    if (day !== 0 && day !== 6) {
+      counted += 1;
+      if (counted >= target) break;
+    }
     d.setDate(d.getDate() + 1);
   }
-  return count;
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 }
 
 function RequestModal({ onClose }: { onClose: () => void }) {
   const create = useCreateLeaveRequest();
-  const { data: empRes } = useEmployees({}, 1, 1000);
+  // Sélecteur de la demande de congé : tous les employés actifs (aucune
+  // restriction de périmètre, y compris pour AD & MANAGER).
+  const { data: empRes } = useEmployees({ status: 'ACTIF', context: 'leaveRequest' }, 1, 1000);
   const { data: typeRes } = useLeaveTypes();
   const employees: Employee[] = empRes?.data ?? [];
   const types: LeaveType[] = typeRes?.data ?? [];
 
-  const { register, handleSubmit, watch, formState: { isSubmitting } } = useForm({
+  const { register, handleSubmit, watch, setValue, formState: { isSubmitting } } = useForm({
     defaultValues: { employeeId: '', typeId: '', startDate: '', endDate: '', days: '', reason: '' },
   });
   const empId = Number(watch('employeeId')) || 0;
-  const start = watch('startDate'); const end = watch('endDate');
-  const autoDays = useMemo(() => workingDays(start, end), [start, end]);
+  const start = watch('startDate'); const days = watch('days');
+  // « Au » calculé automatiquement à partir de « Du » et du nombre de jours ouvrés.
+  const autoEnd = useMemo(() => endDateFromWorkingDays(start, Number(days)), [start, days]);
+  useEffect(() => { setValue('endDate', autoEnd); }, [autoEnd, setValue]);
   const { data: balRes } = useLeaveBalance(empId);
   const balance = balRes?.data;
 
@@ -63,7 +78,7 @@ function RequestModal({ onClose }: { onClose: () => void }) {
     const payload = {
       employeeId: Number(d.employeeId), typeId: Number(d.typeId),
       startDate: d.startDate, endDate: d.endDate,
-      days: d.days ? Number(d.days) : autoDays,
+      days: Number(d.days) || 0,
       reason: d.reason || null,
     };
     const r = await create.mutateAsync(payload);
@@ -97,9 +112,10 @@ function RequestModal({ onClose }: { onClose: () => void }) {
         <Select label="Type" options={typeOptions} {...register('typeId', { required: true })} />
         <div />
         <Input label="Du" type="date" {...register('startDate', { required: true })} />
-        <Input label="Au" type="date" {...register('endDate', { required: true })} />
-        <Input label={`Nombre de jours (auto : ${autoDays} j ouvrés)`} type="number" step="0.5" min="0"
-          placeholder={String(autoDays)} {...register('days')} />
+        <Input label="Nombre de jours ouvrés" type="number" step="0.5" min="0"
+          placeholder="0" {...register('days', { required: true })} />
+        <Input label="Au (calculé automatiquement)" type="date" readOnly
+          {...register('endDate', { required: true })} />
         <div />
         <div className="sm:col-span-2">
           <label className="mb-1 block text-sm font-medium text-slate-700">Motif (optionnel)</label>
@@ -123,9 +139,41 @@ export default function LeaveRequestsPage() {
   const { data, isLoading } = useLeaveRequests(filters, page, 20);
   const decide = useDecideLeaveRequest();
   const del = useDeleteLeaveRequest();
+  const printReq = usePrintLeaveRequest();
+  const uploadSigned = useUploadLeaveSigned();
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [uploadTargetId, setUploadTargetId] = useState<number | null>(null);
 
   const requests: LeaveRequest[] = data?.data ?? [];
   const total: number = data?.total ?? 0;
+
+  /** Déclenche le sélecteur de fichier pour joindre la fiche signée d'une demande. */
+  const triggerUpload = (id: number) => { setUploadTargetId(id); fileRef.current?.click(); };
+
+  /** Lit le fichier scanné (base64) et le joint à la demande ciblée. */
+  const onSignedFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || uploadTargetId == null) { if (fileRef.current) fileRef.current.value = ''; return; }
+    const dataBase64 = await new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve((reader.result as string).split(',')[1]);
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+    await uploadSigned.mutateAsync({
+      id: uploadTargetId, name: file.name, type: file.type || 'application/octet-stream', size: file.size, dataBase64,
+    });
+    setUploadTargetId(null);
+    if (fileRef.current) fileRef.current.value = '';
+  };
+
+  /** Ouvre la fiche signée jointe dans l'application système. */
+  const openSigned = async (id: number) => {
+    const token = useAuthStore.getState().token;
+    if (!token) return;
+    const r = await window.electron.hr.leaveRequests.openSigned(token, id);
+    if (!r.success) toast.error(String(r.error));
+  };
 
   return (
     <PageLayout
@@ -183,6 +231,21 @@ export default function LeaveRequestsPage() {
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex justify-end gap-1">
+                        <Button variant="ghost" size="sm" title="Imprimer la fiche" icon={<Printer className="h-4 w-4" />}
+                          loading={printReq.isPending && printReq.variables === r.id}
+                          onClick={() => printReq.mutate(r.id)} />
+                        {r.status === 'APPROUVE' && (r as any).signedDocName && (
+                          <Button variant="ghost" size="sm" title={`Ouvrir la fiche signée (${(r as any).signedDocName})`}
+                            icon={<FileCheck2 className="h-4 w-4 text-green-600" />}
+                            onClick={() => openSigned(r.id)} />
+                        )}
+                        {canWrite && r.status === 'APPROUVE' && (
+                          <Button variant="ghost" size="sm"
+                            title={(r as any).signedDocName ? 'Remplacer la fiche signée' : 'Joindre la fiche signée (scan)'}
+                            icon={<Paperclip className="h-4 w-4" />}
+                            loading={uploadSigned.isPending && uploadTargetId === r.id}
+                            onClick={() => triggerUpload(r.id)} />
+                        )}
                         {canWrite && r.status === 'EN_ATTENTE' && (
                           <>
                             <Button variant="ghost" size="sm" title="Approuver" icon={<Check className="h-4 w-4 text-green-600" />}
@@ -207,6 +270,11 @@ export default function LeaveRequestsPage() {
       </Card>
 
       {showCreate && <RequestModal onClose={() => setShowCreate(false)} />}
+
+      {/* Sélecteur de fichier (scan de la fiche signée) — partagé par toutes les lignes. */}
+      <input ref={fileRef} type="file" className="hidden"
+        accept=".pdf,.png,.jpg,.jpeg,.webp,.tif,.tiff,image/*,application/pdf"
+        onChange={onSignedFile} />
     </PageLayout>
   );
 }

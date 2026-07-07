@@ -76,10 +76,22 @@ try {
     $arrival   = $type === 'arrival'   ? $now : ($rec['arrivalTime']   ?? null);
     $departure = $type === 'departure' ? $now : ($rec['departureTime'] ?? null);
 
+    // Heure d'arrivée limite (défaut 08:00) et heure de départ limite (défaut
+    // 17:00) prises en compte pour le calcul.
+    $expA = appSetting('attendance.expectedArrival',   $cfg['expectedArrival'])   ?: '08:00';
+    $expD = appSetting('attendance.expectedDeparture', $cfg['expectedDeparture']) ?: '17:00';
+
     // Heures travaillées si arrivée ET départ connus (différence positive).
+    //  - Arrivée AVANT 08:00 → comptée à 08:00 ; après → heure exacte d'arrivée.
+    //  - Départ APRÈS 17:00  → compté à 17:00 ; avant → heure exacte de départ.
+    //  - On retranche ensuite 1 h correspondant à la pause déjeuner.
     $hours = $rec ? (float)$rec['hoursWorked'] : 0;
     if ($arrival && $departure) {
-      $diff  = (strtotime($departure) - strtotime($arrival)) / 3600;
+      $arrLimitTs = strtotime(date('Y-m-d', strtotime($arrival))   . ' ' . $expA . ':00');
+      $depLimitTs = strtotime(date('Y-m-d', strtotime($departure)) . ' ' . $expD . ':00');
+      $arrForCalc = max(strtotime($arrival),   $arrLimitTs); // avant 08:00 → 08:00
+      $depForCalc = min(strtotime($departure), $depLimitTs); // après 17:00 → 17:00
+      $diff  = ($depForCalc - $arrForCalc) / 3600 - 1;       // −1 h de pause déjeuner
       $hours = $diff > 0 ? round($diff, 2) : 0;
     }
 
@@ -94,8 +106,7 @@ try {
     }
 
     // Avertissement de retard / départ anticipé (seuils AppSetting prioritaires).
-    $expA = appSetting('attendance.expectedArrival', $cfg['expectedArrival']) ?: '08:00';
-    $expD = appSetting('attendance.expectedDeparture', $cfg['expectedDeparture']) ?: '17:00';
+    // $expA / $expD sont déjà résolus plus haut pour le calcul des heures.
     $nowMin = (int)date('H') * 60 + (int)date('i');
     $warning = null;
     if ($type === 'arrival'   && $nowMin > hhmmToMin($expA)) $warning = "Arrivée en retard (après $expA).";

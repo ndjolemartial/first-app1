@@ -12,9 +12,11 @@ import ConfirmDialog from '../../../shared/components/ui/ConfirmDialog';
 import {
   useContractTemplates, useSaveContractTemplate, useDeleteContractTemplate,
   useContractFunctions, useSaveContractFunction, useDeleteContractFunction,
+  useContractObjectives, useSaveContractObjective, useDeleteContractObjective,
   useJobDescriptionTemplates, useSaveJobDescriptionTemplate, useDeleteJobDescriptionTemplate,
 } from '../../hr/hooks/useHr';
 import { CONTRACT_TYPE_LABEL } from '../../hr/types/hr.types';
+import { useAuthStore } from '../../../shared/stores/auth.store';
 import { formatDate } from '../../../shared/utils/format';
 import { Plus, Edit, Trash2, FileText, Copy, Save, X, ListChecks, ClipboardList } from 'lucide-react';
 
@@ -27,26 +29,46 @@ const TYPE_OPTIONS = [
  * Onglet « Modèles de contrats de travail » (Paramètres → Modèles d'imprimés).
  * Deux vues : les modèles éditables et le référentiel des fonctions de l'employé.
  */
-type SubView = 'templates' | 'functions' | 'fiches';
+type SubView = 'templates' | 'functions' | 'objectives' | 'fiches';
 
 export default function ContractTemplatesSettingsTab() {
   const [searchParams] = useSearchParams();
   const subParam = searchParams.get('sub');
-  const initial: SubView = subParam === 'fonctions' ? 'functions' : subParam === 'fiches' ? 'fiches' : 'templates';
+  const role = useAuthStore((s) => s.user?.role) ?? '';
+  // MANAGER n'accède qu'au référentiel « Objectifs assignés » ; la configuration
+  // des contrats (modèles, fonctions, fiches de poste) reste réservée admins/RH.
+  const canManageContractConfig = ['SUPER_ADMIN', 'ADMIN', 'RH', 'ACCOUNTANT'].includes(role);
+  const initial: SubView = !canManageContractConfig
+    ? 'objectives'
+    : subParam === 'fonctions' ? 'functions'
+    : subParam === 'objectifs' ? 'objectives'
+    : subParam === 'fiches' ? 'fiches'
+    : 'templates';
   const [view, setView] = useState<SubView>(initial);
+  // Sécurité UI : un rôle non-config ne peut voir que la vue Objectifs.
+  const effectiveView: SubView = canManageContractConfig ? view : 'objectives';
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap gap-2">
-        <Button variant={view === 'templates' ? 'primary' : 'secondary'} icon={<FileText className="h-4 w-4" />}
-          onClick={() => setView('templates')}>Modèles de contrats</Button>
-        <Button variant={view === 'functions' ? 'primary' : 'secondary'} icon={<ListChecks className="h-4 w-4" />}
-          onClick={() => setView('functions')}>Fonctions</Button>
-        <Button variant={view === 'fiches' ? 'primary' : 'secondary'} icon={<ClipboardList className="h-4 w-4" />}
-          onClick={() => setView('fiches')}>Fiches de poste</Button>
+        {canManageContractConfig && (
+          <>
+            <Button variant={effectiveView === 'templates' ? 'primary' : 'secondary'} icon={<FileText className="h-4 w-4" />}
+              onClick={() => setView('templates')}>Modèles de contrats</Button>
+            <Button variant={effectiveView === 'functions' ? 'primary' : 'secondary'} icon={<ListChecks className="h-4 w-4" />}
+              onClick={() => setView('functions')}>Fonctions</Button>
+          </>
+        )}
+        <Button variant={effectiveView === 'objectives' ? 'primary' : 'secondary'} icon={<ListChecks className="h-4 w-4" />}
+          onClick={() => setView('objectives')}>Objectifs assignés</Button>
+        {canManageContractConfig && (
+          <Button variant={effectiveView === 'fiches' ? 'primary' : 'secondary'} icon={<ClipboardList className="h-4 w-4" />}
+            onClick={() => setView('fiches')}>Fiches de poste</Button>
+        )}
       </div>
-      {view === 'templates' && <TemplatesView />}
-      {view === 'functions' && <FunctionsView />}
-      {view === 'fiches' && <FichesView />}
+      {effectiveView === 'templates' && <TemplatesView />}
+      {effectiveView === 'functions' && <FunctionsView />}
+      {effectiveView === 'objectives' && <ObjectivesView />}
+      {effectiveView === 'fiches' && <FichesView />}
     </div>
   );
 }
@@ -301,6 +323,133 @@ function FunctionsView() {
         open={!!toDelete}
         title="Supprimer la fonction"
         message={`Supprimer la fonction « ${toDelete?.titre ?? ''} » ?`}
+        onConfirm={handleDelete}
+        onClose={() => setToDelete(null)}
+      />
+    </div>
+  );
+}
+
+/**
+ * Vue : référentiel des « Objectifs assignés ». Même principe que les fonctions
+ * (titre + contenu en liste). Le contenu alimente la variable
+ * {{contrat.objectifs.contenu}} des contrats et fiches de poste.
+ */
+function ObjectivesView() {
+  const { data, isLoading } = useContractObjectives(true);
+  const save = useSaveContractObjective();
+  const del = useDeleteContractObjective();
+  const objectives: any[] = data?.data ?? [];
+
+  const [editing, setEditing] = useState<FnEditState | null>(null);
+  const [toDelete, setToDelete] = useState<any>(null);
+
+  const startNew = () => setEditing({ titre: '', contenu: '', isActive: true });
+  const startEdit = (o: any) => setEditing({ id: o.id, titre: o.titre, contenu: o.contenu ?? '', isActive: o.isActive });
+
+  const onSave = async () => {
+    if (!editing || !editing.titre.trim()) return;
+    const payload = { titre: editing.titre.trim(), contenu: editing.contenu, isActive: editing.isActive };
+    const r = await save.mutateAsync({ id: editing.id, payload });
+    if (r.success) setEditing(null);
+  };
+
+  const handleDelete = async () => {
+    if (toDelete) await del.mutateAsync(toDelete.id);
+    setToDelete(null);
+  };
+
+  const previewItems = (txt: string) => txt.split(/\r?\n/).map((s) => s.trim()).filter(Boolean);
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <p className="text-sm text-slate-500">
+          Objectifs sélectionnables sur un contrat. Le contenu (une ligne = un élément) s'affiche en liste à puces.
+        </p>
+        {!editing && <Button icon={<Plus className="h-4 w-4" />} onClick={startNew}>Nouveaux objectifs</Button>}
+      </div>
+
+      {editing && (
+        <Card className="space-y-3">
+          <h3 className="text-sm font-semibold text-slate-800">{editing.id ? 'Modifier les objectifs' : 'Nouveaux objectifs'}</h3>
+          <Input label="Titre *" value={editing.titre}
+            onChange={(e) => setEditing({ ...editing, titre: e.target.value })}
+            placeholder="Ex : Objectifs commerciaux, Objectifs de production…" />
+          <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
+            <Textarea
+              label="Contenu (une ligne = un élément de liste)"
+              rows={8}
+              value={editing.contenu}
+              onChange={(e) => setEditing({ ...editing, contenu: e.target.value })}
+              placeholder={'Atteindre 20 ventes par mois\nFidéliser le portefeuille client\nRespecter les délais de livraison'}
+            />
+            <div>
+              <p className="mb-1 text-sm font-medium text-slate-700">Aperçu</p>
+              <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 min-h-[8rem]">
+                {previewItems(editing.contenu).length ? (
+                  <ul className="list-disc pl-5 text-sm text-slate-700 space-y-0.5">
+                    {previewItems(editing.contenu).map((it, i) => <li key={i}>{it}</li>)}
+                  </ul>
+                ) : <p className="text-sm text-slate-400">La liste apparaîtra ici.</p>}
+              </div>
+            </div>
+          </div>
+          <label className="flex items-center gap-2 text-sm text-slate-700">
+            <input type="checkbox" checked={editing.isActive}
+              onChange={(e) => setEditing({ ...editing, isActive: e.target.checked })}
+              className="h-4 w-4 rounded border-slate-300 text-blue-600" />
+            Actifs
+          </label>
+          <div className="flex justify-end gap-2">
+            <Button variant="secondary" icon={<X className="h-4 w-4" />} onClick={() => setEditing(null)}>Annuler</Button>
+            <Button icon={<Save className="h-4 w-4" />} loading={save.isPending} onClick={onSave}>Enregistrer</Button>
+          </div>
+        </Card>
+      )}
+
+      <Card padding={false}>
+        {isLoading ? (
+          <div className="p-6"><SkeletonTable rows={5} /></div>
+        ) : objectives.length === 0 ? (
+          <EmptyState title="Aucun objectif"
+            description="Créez des objectifs (titre + contenu en liste) sélectionnables sur les contrats."
+            action={{ label: 'Nouveaux objectifs', onClick: startNew }} />
+        ) : (
+          <table className="w-full text-sm">
+            <thead className="bg-slate-50 border-b border-slate-200">
+              <tr>
+                <th className="text-left px-4 py-3 font-medium text-slate-600">Titre</th>
+                <th className="text-left px-4 py-3 font-medium text-slate-600">Éléments</th>
+                <th className="text-left px-4 py-3 font-medium text-slate-600">Statut</th>
+                <th className="text-right px-4 py-3 font-medium text-slate-600">Actions</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {objectives.map((o) => (
+                <tr key={o.id} className="hover:bg-slate-50 transition-colors">
+                  <td className="px-4 py-3 font-medium text-slate-900">{o.titre}</td>
+                  <td className="px-4 py-3 text-slate-500">{previewItems(o.contenu ?? '').length} élément(s)</td>
+                  <td className="px-4 py-3">
+                    {o.isActive ? <Badge variant="success">Actifs</Badge> : <Badge variant="default">Inactifs</Badge>}
+                  </td>
+                  <td className="px-4 py-3">
+                    <div className="flex justify-end gap-1">
+                      <Button variant="ghost" size="sm" icon={<Edit className="h-4 w-4" />} title="Modifier" onClick={() => startEdit(o)} />
+                      <Button variant="ghost" size="sm" icon={<Trash2 className="h-4 w-4" />} title="Supprimer" onClick={() => setToDelete(o)} />
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </Card>
+
+      <ConfirmDialog
+        open={!!toDelete}
+        title="Supprimer les objectifs"
+        message={`Supprimer « ${toDelete?.titre ?? ''} » ?`}
         onConfirm={handleDelete}
         onClose={() => setToDelete(null)}
       />

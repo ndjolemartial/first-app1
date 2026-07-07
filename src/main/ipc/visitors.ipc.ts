@@ -1,6 +1,6 @@
 import { ipcMain } from 'electron';
 import { getDb } from '../services/db.service';
-import { getSession, checkRole } from '../services/auth.service';
+import { getSession } from '../services/auth.service';
 import logger from '../utils/logger';
 import { z } from 'zod';
 
@@ -12,7 +12,22 @@ import { z } from 'zod';
  * autonome (dossier `web-visiteurs/`) ; l'accueil peut aussi les saisir ici.
  */
 
-const VISITOR_ROLES = ['SUPER_ADMIN', 'ADMIN', 'ASSISTANTE_DIRECTION'];
+// Accès au module Gestion des visiteurs (liste, saisie, lecture des objets pour
+// le sélecteur du formulaire). MANAGER inclus.
+const VISITOR_ROLES = ['SUPER_ADMIN', 'ADMIN', 'ASSISTANTE_DIRECTION', 'MANAGER'];
+
+// Gestion (écriture) des « Objets de visite » — MANAGER exclu : il accède au
+// module visiteurs mais pas à la configuration des objets.
+const VISITOR_OBJECT_ROLES = ['SUPER_ADMIN', 'ADMIN', 'ASSISTANTE_DIRECTION'];
+
+/**
+ * Contrôle de rôle EXACT pour le module visiteurs (n'applique pas les
+ * équivalences de `checkRole`) : autoriser `MANAGER` explicitement sans faire
+ * entrer ACCOUNTANT (équivalent MANAGER). Aligné sur le RoleGuard (match exact).
+ */
+function checkVisitorRole(session: { role: string }, allowed: string[]): void {
+  if (!allowed.includes(session.role)) throw new Error('Permission insuffisante');
+}
 
 const ser = <T>(v: T): T => JSON.parse(JSON.stringify(v));
 
@@ -33,7 +48,7 @@ export function registerVisitorsIPC(): void {
     try {
       const session = getSession(token);
       if (!session) return { success: false, error: 'Session expirée' };
-      checkRole(session, VISITOR_ROLES);
+      checkVisitorRole(session, VISITOR_ROLES);
       const db = getDb();
       const where: any = { deletedAt: null };
       if (filters.search) {
@@ -73,7 +88,7 @@ export function registerVisitorsIPC(): void {
     try {
       const session = getSession(token);
       if (!session) return { success: false, error: 'Session expirée' };
-      checkRole(session, VISITOR_ROLES);
+      checkVisitorRole(session, VISITOR_ROLES);
       const db = getDb();
       const visitor = await db.visitor.findFirst({
         where: { id, deletedAt: null },
@@ -91,7 +106,7 @@ export function registerVisitorsIPC(): void {
     try {
       const session = getSession(token);
       if (!session) return { success: false, error: 'Session expirée' };
-      checkRole(session, VISITOR_ROLES);
+      checkVisitorRole(session, VISITOR_ROLES);
       const parsed = visitorSchema.safeParse(payload);
       if (!parsed.success) {
         const msg = parsed.error.issues.map((i) => `${i.path.join('.') || 'champ'} : ${i.message}`).join(' ; ');
@@ -114,7 +129,7 @@ export function registerVisitorsIPC(): void {
     try {
       const session = getSession(token);
       if (!session) return { success: false, error: 'Session expirée' };
-      checkRole(session, VISITOR_ROLES);
+      checkVisitorRole(session, VISITOR_ROLES);
       const parsed = visitorSchema.partial().safeParse(payload);
       if (!parsed.success) {
         const msg = parsed.error.issues.map((i) => `${i.path.join('.') || 'champ'} : ${i.message}`).join(' ; ');
@@ -133,7 +148,7 @@ export function registerVisitorsIPC(): void {
     try {
       const session = getSession(token);
       if (!session) return { success: false, error: 'Session expirée' };
-      checkRole(session, VISITOR_ROLES);
+      checkVisitorRole(session, VISITOR_ROLES);
       const db = getDb();
       await db.visitor.update({ where: { id }, data: { deletedAt: new Date() } });
       logger.info(`Visiteur archivé (soft delete) : id=${id}`);
@@ -150,7 +165,7 @@ export function registerVisitorsIPC(): void {
     try {
       const session = getSession(token);
       if (!session) return { success: false, error: 'Session expirée' };
-      checkRole(session, VISITOR_ROLES);
+      checkVisitorRole(session, VISITOR_ROLES);
       const db = getDb();
       const data = await db.visitObject.findMany({
         where: { deletedAt: null, ...(includeInactive ? {} : { isActive: true }) },
@@ -167,7 +182,7 @@ export function registerVisitorsIPC(): void {
     try {
       const session = getSession(token);
       if (!session) return { success: false, error: 'Session expirée' };
-      checkRole(session, VISITOR_ROLES);
+      checkVisitorRole(session, VISITOR_OBJECT_ROLES);
       const value = String(label ?? '').trim();
       if (!value) return { success: false, error: 'Libellé requis' };
       const db = getDb();
@@ -185,7 +200,7 @@ export function registerVisitorsIPC(): void {
     try {
       const session = getSession(token);
       if (!session) return { success: false, error: 'Session expirée' };
-      checkRole(session, VISITOR_ROLES);
+      checkVisitorRole(session, VISITOR_OBJECT_ROLES);
       const db = getDb();
       const data: any = {};
       if (payload?.label !== undefined) {
@@ -208,7 +223,7 @@ export function registerVisitorsIPC(): void {
     try {
       const session = getSession(token);
       if (!session) return { success: false, error: 'Session expirée' };
-      checkRole(session, VISITOR_ROLES);
+      checkVisitorRole(session, VISITOR_OBJECT_ROLES);
       const db = getDb();
       await db.visitObject.update({ where: { id }, data: { deletedAt: new Date(), isActive: false } });
       return { success: true };
@@ -222,7 +237,7 @@ export function registerVisitorsIPC(): void {
     try {
       const session = getSession(token);
       if (!session) return { success: false, error: 'Session expirée' };
-      checkRole(session, VISITOR_ROLES);
+      checkVisitorRole(session, VISITOR_ROLES);
       const db = getDb();
       const now = new Date();
       const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate());

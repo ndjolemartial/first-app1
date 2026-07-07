@@ -19,6 +19,15 @@ import EntityDocumentsCard from '../../archiving/components/EntityDocumentsCard'
 /** Affectation client : AD est explicitement exclue (réduite au niveau AGENT sur ce module). */
 const ASSIGN_ROLES = new Set(['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ACCOUNTANT']);
 
+/**
+ * Rôles autorisés à agir sur le bloc « Documents » (archiver, ouvrir). Les
+ * autres rôles (AGENT, AGENT_TECHNIQUE, RH, READONLY) le consultent en lecture
+ * seule. Inclut ASSISTANTE_DIRECTION, contrairement à {@link ASSIGN_ROLES}.
+ */
+const DOCUMENT_ACTION_ROLES = new Set([
+  'SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ACCOUNTANT', 'ASSISTANTE_DIRECTION',
+]);
+
 const STATUS_OPTIONS = [
   { value: 'ACTIF', label: 'Actif' },
   { value: 'INACTIF', label: 'Inactif' },
@@ -339,6 +348,7 @@ export default function ClientDetailPage() {
           documents={(c.documents ?? []).filter((d: any) => d.category !== 'identité')}
           defaultLinks={{ clientId: Number(id) }}
           invalidateKey={['clients', Number(id)]}
+          canManage={DOCUMENT_ACTION_ROLES.has(role)}
         />
       </div>
 

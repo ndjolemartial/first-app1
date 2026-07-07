@@ -39,9 +39,9 @@ const EXPORT_COLUMNS: ExportColumn[] = [
 ];
 
 // Écriture opérationnelle (bulletins) : admins/RH + MANAGER & ASSISTANTE_DIRECTION.
-const WRITE_ROLES = new Set(['SUPER_ADMIN', 'ADMIN', 'RH', 'MANAGER', 'ASSISTANTE_DIRECTION']);
+const WRITE_ROLES = new Set(['SUPER_ADMIN', 'ADMIN', 'RH', 'ACCOUNTANT', 'MANAGER']);
 // Configuration (modèles de bulletins, paramètres de paie) : admins et RH uniquement.
-const CONFIG_ROLES = new Set(['SUPER_ADMIN', 'ADMIN', 'RH']);
+const CONFIG_ROLES = new Set(['SUPER_ADMIN', 'ADMIN', 'RH', 'ACCOUNTANT']);
 const now = new Date();
 const YEAR_OPTIONS = Array.from({ length: 6 }, (_, i) => {
   const y = now.getFullYear() - i;

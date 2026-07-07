@@ -44,7 +44,7 @@ async function loadPayslipLogo() {
 const DEFAULT_RATES = {
     cnpsEmployeeRate: 6.3,
     cnpsEmployerRetirementRate: 7.7,
-    cnpsFamilyRate: 5.0,
+    cnpsFamilyRate: 5.75,
     cnpsWorkAccidentRate: 3.0,
     cnpsCeiling: 3_375_000,
     cnpsFamilyCeiling: 70_000,
@@ -125,23 +125,30 @@ function ricfMonthlyForParts(ricf, parts) {
  * Taux de la prime d'ancienneté (convention interprofessionnelle CI) :
  * 2 % du salaire de base après 2 ans, +1 % par année supplémentaire, plafonné
  * à 25 %.
+ *
+ * L'ancienneté est figée à la date `asOf` — pour un bulletin, la **fin de la
+ * période de paie** (et non la date de génération), afin que le taux soit stable
+ * quel que soit le moment où le bulletin est généré/recalculé.
  */
-function seniorityRate(hireDate) {
+function seniorityRate(hireDate, asOf = new Date()) {
     if (!hireDate)
         return 0;
     const start = new Date(hireDate);
-    const now = new Date();
-    let years = now.getFullYear() - start.getFullYear();
-    const m = now.getMonth() - start.getMonth();
-    if (m < 0 || (m === 0 && now.getDate() < start.getDate()))
+    const ref = asOf instanceof Date ? asOf : new Date(asOf);
+    let years = ref.getFullYear() - start.getFullYear();
+    const m = ref.getMonth() - start.getMonth();
+    if (m < 0 || (m === 0 && ref.getDate() < start.getDate()))
         years -= 1;
     if (years < 2)
         return 0;
     return Math.min(years, 25);
 }
-/** Montant de la prime d'ancienneté = salaire de base × taux d'ancienneté. */
-function computePrimeAnciennete(baseSalary, hireDate) {
-    const rate = seniorityRate(hireDate);
+/**
+ * Montant de la prime d'ancienneté = salaire de base × taux d'ancienneté,
+ * l'ancienneté étant appréciée à la date `asOf` (fin de période de paie).
+ */
+function computePrimeAnciennete(baseSalary, hireDate, asOf) {
+    const rate = seniorityRate(hireDate, asOf);
     return { rate, amount: Math.round((baseSalary * rate) / 100) };
 }
 /** Calcule l'ensemble d'un bulletin de paie à partir des entrées et des taux. */
@@ -167,10 +174,7 @@ function computePayroll(input, rates) {
     const ricfMonthly = ricfMonthlyForParts(rates.ricf, input.igrParts ?? 1);
     const its = Math.max(0, itsBareme - ricfMonthly);
     const cmuEmployee = round(rates.cmuEmployee);
-    // Assurance maladie : base fixe (75 000 par défaut) quel que soit l'employé.
-    const insuranceBase = rates.insuranceBase ?? 75_000;
-    const insurance = round((insuranceBase * (rates.insuranceRate ?? 0)) / 100);
-    const totalDeductions = cnpsEmployee + its + cmuEmployee + insurance + otherDeductions;
+    const totalDeductions = cnpsEmployee + its + cmuEmployee + otherDeductions;
     const netSalary = totalGains - totalDeductions;
     // Charges patronales
     const familyBase = Math.min(grossTaxable, rates.cnpsFamilyCeiling);
@@ -201,8 +205,6 @@ function computePayroll(input, rates) {
     lines.push({ type: 'RETENUE', label: 'CNPS (retraite) — part salarié', base: cnpsBase, rate: rates.cnpsEmployeeRate, amount: cnpsEmployee, order: o++ });
     lines.push({ type: 'RETENUE', label: 'ITS salarié', base: grossTaxable, amount: its, order: o++ });
     lines.push({ type: 'RETENUE', label: 'CMU — part salarié', amount: cmuEmployee, order: o++ });
-    if (insurance > 0)
-        lines.push({ type: 'RETENUE', label: 'Assurance maladie', base: insuranceBase, rate: rates.insuranceRate, amount: insurance, order: o++ });
     if (otherDeductions > 0)
         lines.push({ type: 'RETENUE', label: 'Autres retenues', amount: otherDeductions, order: o++ });
     lines.push({ type: 'CHARGE_PATRONALE', label: 'CNPS (retraite) — part employeur', base: cnpsBase, rate: rates.cnpsEmployerRetirementRate, amount: cnpsEmployerRetirement, order: o++ });

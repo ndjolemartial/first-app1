@@ -44,10 +44,21 @@ async function computeDecaisse(db, start, end) {
     });
     return Number(agg._sum.amount ?? 0);
 }
-/** Entrées de trésorerie sur [start, end[. */
+/**
+ * Entrées de trésorerie sur [start, end[ comptabilisées en recettes.
+ *
+ * Les entrées sur les comptes « Caisse interne » (type `CAISSE_CENTRALE`) sont
+ * exclues : ce sont de simples déplacements de fonds internes à l'entreprise et
+ * non du chiffre d'affaires. (Leurs sorties gardent leur rôle normal de dépenses.)
+ */
 async function computeEntrees(db, start, end) {
     const agg = await db.treasuryOperation.aggregate({
-        where: { direction: 'ENTREE', deletedAt: null, operationDate: { gte: start, lt: end } },
+        where: {
+            direction: 'ENTREE',
+            deletedAt: null,
+            operationDate: { gte: start, lt: end },
+            bankAccount: { type: { not: 'CAISSE_CENTRALE' } },
+        },
         _sum: { amount: true },
     });
     return Number(agg._sum.amount ?? 0);

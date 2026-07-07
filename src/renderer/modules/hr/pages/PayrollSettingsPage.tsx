@@ -30,8 +30,6 @@ const NUM_FIELDS: { key: keyof Rates; label: string; suffix: string }[] = [
   { key: 'transportExemptCeiling', label: 'Plafond transport non imposable', suffix: 'FCFA' },
   { key: 'cmuEmployee', label: 'CMU — part salarié', suffix: 'FCFA' },
   { key: 'cmuEmployer', label: 'CMU — part employeur', suffix: 'FCFA' },
-  { key: 'insuranceRate', label: 'Assurance maladie', suffix: '%' },
-  { key: 'insuranceBase', label: 'Base assurance maladie', suffix: 'FCFA' },
   { key: 'itsEmployerRate', label: 'ITS patronale (employeur)', suffix: '%' },
   { key: 'fdfpApprenticeshipRate', label: 'FDFP taxe d\'apprentissage', suffix: '%' },
   { key: 'fdfpTrainingRate', label: 'FDFP formation continue', suffix: '%' },
@@ -107,6 +105,17 @@ export default function PayrollSettingsPage() {
       <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-800">
         Taux et barèmes de référence (Côte d'Ivoire) — à vérifier et ajuster selon la réglementation
         en vigueur avant exploitation.
+      </div>
+
+      <div className="mb-4 rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-slate-700">
+        <p className="mb-1 font-semibold text-blue-900">Prime d'ancienneté — règle de calcul appliquée (automatique)</p>
+        <ul className="ml-4 list-disc space-y-0.5">
+          <li>Ancienneté calculée depuis la <strong>date d'embauche</strong> de l'employé (années complètes).</li>
+          <li><strong>Moins de 2 ans</strong> d'ancienneté : <strong>aucune prime</strong> (0 %).</li>
+          <li><strong>À partir de 2 ans</strong> : taux = nombre d'années complètes — soit <strong>2 %</strong> à 2 ans, <strong>+1 %</strong> par année supplémentaire, <strong>plafonné à 25 %</strong>.</li>
+          <li>Montant de la prime = <strong>salaire de base × taux</strong>.</li>
+        </ul>
+        <p className="mt-1 text-xs text-slate-500">Référence : convention interprofessionnelle (Côte d'Ivoire). Ce calcul est automatique et non paramétrable ici.</p>
       </div>
 
       <Card className="mb-4">

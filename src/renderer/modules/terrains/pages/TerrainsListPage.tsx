@@ -16,6 +16,7 @@ import { formatDate, formatCurrency } from '../../../shared/utils/format';
 import ExportMenu, { ExportColumn } from '../../../shared/components/ExportMenu';
 import StatusRecap, { type StatusRecapItem } from '../../../shared/components/ui/StatusRecap';
 import { useAuthStore } from '../../../shared/stores/auth.store';
+import { canExportPrint } from '../../../shared/utils/exportPermissions';
 import { PlusCircle, Eye, Edit, Landmark, CheckCircle2, BookmarkCheck, BadgeCheck, Clock } from 'lucide-react';
 
 /** Rôles habilités à créer/modifier un terrain.
@@ -103,16 +104,18 @@ export default function TerrainsListPage() {
       breadcrumbs={[{ label: 'Terrains' }]}
       actions={
         <div className="flex gap-2">
-          <ExportMenu
-            fileName="terrains"
-            title="Liste des terrains"
-            subtitle={filterSummary}
-            columns={EXPORT_COLUMNS}
-            fetchRows={async () => {
-              const r = await window.electron.terrains.list(token, filters, 1, 100000);
-              return r.success ? r.data ?? [] : [];
-            }}
-          />
+          {canExportPrint(role) && (
+            <ExportMenu
+              fileName="terrains"
+              title="Liste des terrains"
+              subtitle={filterSummary}
+              columns={EXPORT_COLUMNS}
+              fetchRows={async () => {
+                const r = await window.electron.terrains.list(token, filters, 1, 100000);
+                return r.success ? r.data ?? [] : [];
+              }}
+            />
+          )}
           {canWrite && (
             <Button icon={<PlusCircle className="h-4 w-4" />} onClick={() => navigate('/terrains/new')}>
               Nouveau terrain

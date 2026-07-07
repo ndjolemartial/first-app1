@@ -69,7 +69,7 @@ const PAYMENT_METHODS = ['ESPECE', 'CHEQUE', 'TRANSFERT', 'VIREMENT', 'MOBILE_MO
 /* ─── Schémas de validation Zod ────────────────────────────────────── */
 const accountSchema = zod_1.z.object({
     name: zod_1.z.string().min(1, 'Libellé requis'),
-    type: zod_1.z.enum(['BANQUE', 'CAISSE', 'MOBILE_MONEY']),
+    type: zod_1.z.enum(['BANQUE', 'CAISSE', 'CAISSE_CENTRALE', 'MOBILE_MONEY']),
     bankName: zod_1.z.string().optional(),
     accountNumber: zod_1.z.string().optional(),
     iban: zod_1.z.string().optional(),

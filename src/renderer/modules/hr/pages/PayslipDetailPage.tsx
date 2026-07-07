@@ -19,7 +19,7 @@ import {
   PAYMENT_METHOD_OPTIONS, type PayslipLine,
 } from '../types/hr.types';
 
-const WRITE_ROLES = new Set(['SUPER_ADMIN', 'ADMIN', 'RH']);
+const WRITE_ROLES = new Set(['SUPER_ADMIN', 'ADMIN', 'RH', 'ACCOUNTANT']);
 
 function LineTable({ title, lines }: { title: string; lines: PayslipLine[] }) {
   if (lines.length === 0) return null;

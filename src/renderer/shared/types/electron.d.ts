@@ -344,6 +344,15 @@ interface Window {
         update: (token: string, id: number, payload: object) => Promise<IpcResponse<any>>;
         delete: (token: string, id: number) => Promise<IpcResponse>;
       };
+      contractObjectives: {
+        list: (token: string, includeInactive?: boolean) => Promise<IpcResponse<any[]>>;
+        create: (token: string, payload: object) => Promise<IpcResponse<any>>;
+        update: (token: string, id: number, payload: object) => Promise<IpcResponse<any>>;
+        delete: (token: string, id: number) => Promise<IpcResponse>;
+      };
+      commissionActivities: {
+        list: (token: string) => Promise<IpcResponse<Array<{ key: string; label: string; defaultRate: number }>>>;
+      };
       jobDescriptionTemplates: {
         list: (token: string) => Promise<IpcResponse<any[]>>;
         create: (token: string, payload: object) => Promise<IpcResponse<any>>;
@@ -363,6 +372,7 @@ interface Window {
         signedContracts: (token: string) => Promise<IpcResponse<any[]>>;
         signedContractFile: (token: string, id: number) => Promise<IpcResponse<{ tooLarge?: boolean; name?: string; mimeType?: string; base64?: string }>>;
         signedContractOpen: (token: string, id: number) => Promise<IpcResponse>;
+        signedContractPrint: (token: string, id: number) => Promise<IpcResponse<{ previewing: boolean }>>;
       };
       payslipTemplates: {
         list: (token: string) => Promise<IpcResponse<any[]>>;
@@ -379,6 +389,10 @@ interface Window {
         create: (token: string, payload: object) => Promise<IpcResponse<any>>;
         decide: (token: string, id: number, status: string, note?: string) => Promise<IpcResponse<any>>;
         delete: (token: string, id: number) => Promise<IpcResponse>;
+        print: (token: string, id: number) => Promise<IpcResponse>;
+        uploadSigned: (token: string, payload: object) => Promise<IpcResponse<any>>;
+        openSigned: (token: string, id: number) => Promise<IpcResponse>;
+        removeSigned: (token: string, id: number) => Promise<IpcResponse>;
       };
       attendance: {
         list: (token: string, employeeId: number, year: number, month: number) => Promise<IpcResponse<any[]>>;

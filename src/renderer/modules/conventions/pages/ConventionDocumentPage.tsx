@@ -7,6 +7,7 @@ import Select from '../../../shared/components/ui/Select';
 import { SkeletonTable } from '../../../shared/components/ui/Skeleton';
 import EmptyState from '../../../shared/components/ui/EmptyState';
 import { useAuthStore } from '../../../shared/stores/auth.store';
+import { canExportPrint } from '../../../shared/utils/exportPermissions';
 import { useConvention } from '../hooks/useConventions';
 import { useConventionTemplates } from '../hooks/useConventionTemplates';
 import { useCountries } from '../../../shared/hooks/useCountries';
@@ -25,6 +26,8 @@ export default function ConventionDocumentPage() {
   const { data: templatesRes } = useConventionTemplates();
   const { data: countriesRes } = useCountries();
   const [templateId, setTemplateId] = useState<number | null>(null);
+  const role = useAuthStore((s) => s.user?.role) ?? '';
+  const canExport = canExportPrint(role);
 
   // Code ISO → nom complet (« CI » → « Côte d'Ivoire »), pour que les
   // variables `{{*.pays}}` des modèles affichent le nom du pays.
@@ -142,7 +145,7 @@ export default function ConventionDocumentPage() {
         { label: 'Document' },
       ]}
       actions={
-        selected && (
+        selected && canExport && (
           <div className="flex gap-2">
             <Button variant="secondary" icon={<FileType2 className="h-4 w-4" />} onClick={handleExportDocx}>
               Exporter Word

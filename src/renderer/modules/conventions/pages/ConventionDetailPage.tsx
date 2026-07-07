@@ -8,6 +8,7 @@ import { SkeletonTable } from '../../../shared/components/ui/Skeleton';
 import ConfirmDialog from '../../../shared/components/ui/ConfirmDialog';
 import { useConvention, useDeleteConvention, useGenerateInstallments, useUpdateConvention } from '../hooks/useConventions';
 import { useAuthStore } from '../../../shared/stores/auth.store';
+import { canExportPrint } from '../../../shared/utils/exportPermissions';
 import { toast } from '../../../shared/components/ui/Toast';
 import { usePrintInvoice } from '../../accounting/hooks/useAccounting';
 import { formatDate, formatCurrency } from '../../../shared/utils/format';
@@ -153,9 +154,11 @@ export default function ConventionDetailPage() {
             )}
           </div>
           )}
-          <Button variant="secondary" icon={<Printer className="h-4 w-4" />} onClick={() => navigate(`/conventions/${id}/document`)}>
-            Générer le document
-          </Button>
+          {canExportPrint(role) && (
+            <Button variant="secondary" icon={<Printer className="h-4 w-4" />} onClick={() => navigate(`/conventions/${id}/document`)}>
+              Générer le document
+            </Button>
+          )}
           {canWrite && (
             <>
               <Button variant="secondary" icon={<Edit className="h-4 w-4" />} onClick={() => navigate(`/conventions/${id}/edit`)}>

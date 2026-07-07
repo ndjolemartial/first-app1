@@ -20,14 +20,25 @@ const READ_ROLES = [...WRITE_ROLES, 'ACCOUNTANT', 'READONLY'];
 // propres envois et aux messages adressés à un client qui leur est rattaché.
 const FULL_HISTORY_ROLES = ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ACCOUNTANT', 'ASSISTANTE_DIRECTION'];
 
+// Rôles qui peuvent cibler n'importe quel client. Les autres ne peuvent cibler
+// que leurs clients référents (aligné sur `hasFullView` / clients:list). Note :
+// ASSISTANTE_DIRECTION est volontairement exclue (restreinte à ses clients).
+const CLIENT_FULL_VIEW_ROLES = ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ACCOUNTANT'];
+
 const templateSchema = z.object({
   name: z.string().min(1),
   channel: z.enum(['EMAIL', 'SMS', 'WHATSAPP']),
   subject: z.string().optional(),
   body: z.string().min(1),
   variables: z.array(z.string()).optional(),
+  // Catégorie d'usage : AUTO (relances automatiques) ou MANUEL (envois manuels).
+  usageType: z.enum(['AUTO', 'MANUEL']).default('MANUEL'),
   isActive: z.boolean().default(true),
 });
+
+// Rôles voyant tous les modèles (auto + manuel). Les autres ne voient que les
+// modèles « manuel » dans l'envoi de message. Test de rôle exact (ASSISTANTE_DIRECTION exclue).
+const TEMPLATE_FULL_ACCESS_ROLES = ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ACCOUNTANT'];
 
 // Cibles entité optionnelles — passées par le formulaire d'envoi ciblé pour
 // stamper Communication.{clientId, ownerId, conventionId}. Quand l'envoi se
@@ -386,6 +397,8 @@ export function registerCommunicationIPC(): void {
       const db = getDb();
       const where: any = {};
       if (channel) where.channel = channel;
+      // Les rôles non privilégiés ne voient que les modèles « manuel ».
+      if (!TEMPLATE_FULL_ACCESS_ROLES.includes(session.role)) where.usageType = 'MANUEL';
       const data = await db.commTemplate.findMany({
         where,
         orderBy: { name: 'asc' },
@@ -427,6 +440,7 @@ export function registerCommunicationIPC(): void {
           subject: d.subject,
           body: d.body,
           variables: d.variables ? (d.variables as any) : undefined,
+          usageType: d.usageType,
           isActive: d.isActive,
         },
       });
@@ -854,9 +868,16 @@ export function registerCommunicationIPC(): void {
       if (entityType === 'CLIENT') {
         const c = await db.client.findUnique({
           where: { id: entityId },
-          select: { id: true, civilite: true, firstName: true, lastName: true, entreprise: true, type: true, email: true, phone: true, mobile: true, deletedAt: true },
+          select: { id: true, civilite: true, firstName: true, lastName: true, entreprise: true, type: true, email: true, phone: true, mobile: true, deletedAt: true, assignedToId: true, prospect: { select: { assignedToId: true } } },
         });
         if (!c || c.deletedAt) return { success: false, error: 'Client introuvable' };
+        // Visibilité restreinte : hors rôles à vue complète, on ne peut cibler
+        // qu'un client dont on est l'utilisateur référent (ou issu d'un prospect affecté).
+        if (!CLIENT_FULL_VIEW_ROLES.includes(session.role)) {
+          const visible =
+            c.assignedToId === session.userId || c.prospect?.assignedToId === session.userId;
+          if (!visible) return { success: false, error: 'Client inaccessible' };
+        }
         const to = pickRecipient(c);
         if (!to) return { success: false, error: `Le client n'a pas de ${channel === 'EMAIL' ? 'email' : 'numéro mobile/téléphone'} renseigné` };
         const label = c.type === 'ENTREPRISE' ? (c.entreprise ?? `Client #${c.id}`) : `${c.firstName ?? ''} ${c.lastName ?? ''}`.trim();

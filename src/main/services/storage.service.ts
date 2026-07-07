@@ -103,6 +103,21 @@ export function writeEmployeeSignedContract(
   return { relativePath: path.relative(storageRoot(), abs), size: buffer.length };
 }
 
+/** Écrit la fiche « Congés & Absence » signée jointe à une demande de congé. */
+export function writeLeaveSignedDocument(
+  requestId: number,
+  buffer: Buffer,
+  originalName: string,
+): { relativePath: string; size: number } {
+  const dir = path.join(storageRoot(), 'leave', String(requestId), 'signed');
+  fs.mkdirSync(dir, { recursive: true });
+  const safe = originalName.replace(/[\\/:*?"<>|]/g, '_').replace(/\s+/g, ' ').trim() || 'fiche-conge';
+  const fileName = `${Date.now()}-${safe}`;
+  const abs = path.join(dir, fileName);
+  fs.writeFileSync(abs, buffer);
+  return { relativePath: path.relative(storageRoot(), abs), size: buffer.length };
+}
+
 /** Supprime physiquement un fichier du stockage (silencieux si absent). */
 export function removeStorageFile(relativePath: string): void {
   try {

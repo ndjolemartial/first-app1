@@ -1,13 +1,16 @@
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import PageLayout from '../../../shared/components/layout/PageLayout';
 import Card from '../../../shared/components/ui/Card';
 import Badge from '../../../shared/components/ui/Badge';
+import Button from '../../../shared/components/ui/Button';
 import { SkeletonTable } from '../../../shared/components/ui/Skeleton';
 import { formatDate } from '../../../shared/utils/format';
 import ArchivingNav from '../components/ArchivingNav';
+import UncategorizedDocsModal from '../components/UncategorizedDocsModal';
 import { useGedDashboard } from '../hooks/useGed';
 import { formatBytes, mimeGroup } from '../utils/gedTree';
-import { Files, CalendarPlus, HardDrive, Archive, AlertTriangle, FileText } from 'lucide-react';
+import { Files, CalendarPlus, HardDrive, Archive, AlertTriangle, FileText, FolderInput } from 'lucide-react';
 
 const GROUP_LABEL: Record<string, string> = {
   PDF: 'PDF', IMAGE: 'Images', VIDEO: 'Vidéos', AUDIO: 'Audios', OFFICE: 'Bureautique', AUTRE: 'Autres',
@@ -18,6 +21,7 @@ export default function GedDashboardPage() {
   const { data: res, isLoading } = useGedDashboard();
   const d = res?.data;
   const failed = !isLoading && !d;
+  const [uncatOpen, setUncatOpen] = useState(false);
 
   return (
     <PageLayout
@@ -70,11 +74,21 @@ export default function GedDashboardPage() {
           {/* Alertes */}
           {d.uncategorized > 0 && (
             <Card className="border-l-4 border-amber-400">
-              <div className="flex items-center gap-3">
-                <AlertTriangle className="h-5 w-5 text-amber-500" />
-                <p className="text-sm text-slate-700">
-                  <span className="font-semibold">{d.uncategorized}</span> document(s) sans catégorie — pensez à les classer.
-                </p>
+              <div className="flex items-center justify-between gap-3">
+                <div className="flex items-center gap-3">
+                  <AlertTriangle className="h-5 w-5 shrink-0 text-amber-500" />
+                  <p className="text-sm text-slate-700">
+                    <span className="font-semibold">{d.uncategorized}</span> document(s) sans catégorie — pensez à les classer.
+                  </p>
+                </div>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  icon={<FolderInput className="h-4 w-4" />}
+                  onClick={() => setUncatOpen(true)}
+                >
+                  Visualiser et classer
+                </Button>
               </div>
             </Card>
           )}
@@ -143,6 +157,8 @@ export default function GedDashboardPage() {
           </Card>
         </div>
       )}
+
+      <UncategorizedDocsModal open={uncatOpen} onClose={() => setUncatOpen(false)} />
     </PageLayout>
   );
 }

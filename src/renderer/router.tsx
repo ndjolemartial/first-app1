@@ -328,14 +328,20 @@ export const router = createHashRouter([
           { path: 'terrains/:id', element: <TerrainDetailPage /> },
           { path: 'terrains/:id/edit', element: <TerrainFormPage /> },
 
-          // Gestion des visiteurs — SUPER_ADMIN, ADMIN, ASSISTANTE_DIRECTION (accueil).
+          // Gestion des visiteurs — SUPER_ADMIN, ADMIN, ASSISTANTE_DIRECTION (accueil) + MANAGER.
+          {
+            element: <RoleGuard allowedRoles={['SUPER_ADMIN', 'ADMIN', 'ASSISTANTE_DIRECTION', 'MANAGER']} />,
+            children: [
+              { path: 'visitors', element: <VisitorsListPage /> },
+              { path: 'visitors/new', element: <VisitorFormPage /> },
+              { path: 'visitors/:id/edit', element: <VisitorFormPage /> },
+            ],
+          },
+          // Objets de visite (configuration) — MANAGER exclu.
           {
             element: <RoleGuard allowedRoles={['SUPER_ADMIN', 'ADMIN', 'ASSISTANTE_DIRECTION']} />,
             children: [
-              { path: 'visitors', element: <VisitorsListPage /> },
               { path: 'visitors/objects', element: <VisitObjectsPage /> },
-              { path: 'visitors/new', element: <VisitorFormPage /> },
-              { path: 'visitors/:id/edit', element: <VisitorFormPage /> },
             ],
           },
 
@@ -362,11 +368,10 @@ export const router = createHashRouter([
             ],
           },
 
-          // RH & Paie — opérationnel : admins/RH + MANAGER & ASSISTANTE_DIRECTION
-          // (ces derniers filtrés côté IPC aux employés dont le contrat en cours
-          // n'est pas un CDI ; pointage en lecture seule).
+          // Personnel & Bulletins de paie — ASSISTANTE_DIRECTION EXCLUE.
+          // admins/RH + Comptable + MANAGER (ce dernier filtré côté IPC).
           {
-            element: <RoleGuard allowedRoles={['SUPER_ADMIN', 'ADMIN', 'RH', 'MANAGER', 'ASSISTANTE_DIRECTION']} />,
+            element: <RoleGuard allowedRoles={['SUPER_ADMIN', 'ADMIN', 'RH', 'ACCOUNTANT', 'MANAGER']} />,
             children: [
               { path: 'hr/employees', element: <EmployeesListPage /> },
               { path: 'hr/employees/new', element: <EmployeeFormPage /> },
@@ -376,14 +381,28 @@ export const router = createHashRouter([
               { path: 'hr/payslips/:id', element: <PayslipDetailPage /> },
               { path: 'hr/contracts/:id/document', element: <ContractDocumentPage /> },
               { path: 'hr/contracts/:id/job-description', element: <JobDescriptionDocumentPage /> },
+            ],
+          },
+
+          // Congés & absences — ASSISTANTE_DIRECTION conservée (accueil / secrétariat).
+          {
+            element: <RoleGuard allowedRoles={['SUPER_ADMIN', 'ADMIN', 'RH', 'ACCOUNTANT', 'MANAGER', 'ASSISTANTE_DIRECTION']} />,
+            children: [
               { path: 'hr/leave', element: <LeaveRequestsPage /> },
+            ],
+          },
+
+          // Pointage — Comptable EXCLU (accès RH complet sauf le pointage).
+          {
+            element: <RoleGuard allowedRoles={['SUPER_ADMIN', 'ADMIN', 'RH', 'MANAGER', 'ASSISTANTE_DIRECTION']} />,
+            children: [
               { path: 'hr/attendance', element: <AttendancePage /> },
             ],
           },
 
-          // RH & Paie — configuration : réservé aux admins et au rôle RH.
+          // RH & Paie — configuration : réservé aux admins, au rôle RH et au Comptable.
           {
-            element: <RoleGuard allowedRoles={['SUPER_ADMIN', 'ADMIN', 'RH']} />,
+            element: <RoleGuard allowedRoles={['SUPER_ADMIN', 'ADMIN', 'RH', 'ACCOUNTANT']} />,
             children: [
               { path: 'hr/payroll-settings', element: <PayrollSettingsPage /> },
               { path: 'hr/templates', element: <HrTemplatesPage /> },

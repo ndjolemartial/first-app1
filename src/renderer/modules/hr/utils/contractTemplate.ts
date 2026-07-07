@@ -65,6 +65,7 @@ export const CONTRACT_VARIABLE_GROUPS: VariableGroup[] = [
       { token: 'contrat.dateDebut', label: 'Date de début' },
       { token: 'contrat.dateFin', label: 'Date de fin' },
       { token: 'contrat.finEssai', label: "Fin de période d'essai" },
+      { token: 'contrat.duree', label: 'Durée du contrat (hors CDI)' },
       { token: 'contrat.heuresHebdo', label: 'Heures hebdomadaires' },
       { token: 'contrat.salaireBase', label: 'Salaire de base' },
       { token: 'contrat.salaireBase.enLettres', label: 'Salaire de base (en lettres)' },
@@ -85,6 +86,7 @@ export const CONTRACT_VARIABLE_GROUPS: VariableGroup[] = [
     // Variables non vides uniquement pour un avenant CDD (contrat initial rattaché).
     group: 'Avenant CDD / contrat initial',
     items: [
+      { token: 'contrat.numeroAvenant', label: "Numéro de l'avenant (CDD)" },
       { token: 'contratParent.reference', label: 'Référence du contrat initial (CDD / ESSAI)' },
       { token: 'contratParent.dateDebut', label: 'Date de début du contrat initial' },
       { token: 'contratParent.dateFin', label: 'Date de fin du contrat initial (ou fin d\'essai)' },
@@ -98,6 +100,21 @@ export const CONTRACT_VARIABLE_GROUPS: VariableGroup[] = [
     items: [
       { token: 'contrat.fonction.titre', label: 'Titre de la fonction' },
       { token: 'contrat.fonction.contenu', label: 'Contenu de la fonction (liste)' },
+    ],
+  },
+  {
+    // Objectifs assignés sélectionnés sur le contrat (titre + contenu en liste).
+    group: 'Objectifs assignés',
+    items: [
+      { token: 'contrat.objectifs.titre', label: 'Titre des objectifs assignés' },
+      { token: 'contrat.objectifs.contenu', label: 'Contenu des objectifs assignés (liste)' },
+    ],
+  },
+  {
+    // Commissions sur activité sélectionnées sur le contrat (libellé + taux).
+    group: 'Commissions sur activité',
+    items: [
+      { token: 'contrat.commissionsActivite', label: 'Commissions sur activité (liste : libellé + taux)' },
     ],
   },
   {
@@ -157,7 +174,37 @@ export function fonctionContenuToList(txt?: string | null): string {
   return '<ul>' + items.map((i) => `<li>${esc(i)}</li>`).join('') + '</ul>';
 }
 
+/**
+ * Rend les commissions sur activité d'un contrat en liste HTML à puces
+ * « Libellé — taux % ». Chaîne vide si aucune ligne.
+ */
+export function commissionsToList(list?: Array<{ label?: string; rate?: number | string }> | null): string {
+  const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  const rows = (Array.isArray(list) ? list : [])
+    .filter((c) => c && c.label != null && String(c.label).trim() !== '')
+    .map((c) => `<li>${esc(String(c.label))} — ${esc(String(c.rate ?? ''))} %</li>`);
+  if (!rows.length) return '';
+  return '<ul>' + rows.join('') + '</ul>';
+}
+
 /** Libellé du signataire employé selon le type de contrat. */
+/**
+ * Durée d'un contrat = différence entre la date de fin et la date de début,
+ * exprimée en mois si l'écart correspond à un nombre entier de mois, sinon en
+ * jours. Chaîne vide si les dates sont absentes/invalides.
+ */
+function contractDurationLabel(startVal?: string | Date | null, endVal?: string | Date | null): string {
+  if (!startVal || !endVal) return '';
+  const s = new Date(startVal);
+  const e = new Date(endVal);
+  if (isNaN(s.getTime()) || isNaN(e.getTime())) return '';
+  const months = (e.getUTCFullYear() - s.getUTCFullYear()) * 12 + (e.getUTCMonth() - s.getUTCMonth());
+  if (months > 0 && e.getUTCDate() === s.getUTCDate()) return `${months} mois`;
+  const days = Math.round((e.getTime() - s.getTime()) / 86_400_000);
+  if (days > 0) return `${days} jour${days > 1 ? 's' : ''}`;
+  return '';
+}
+
 function signataireLabel(type: string): string {
   switch (type) {
     case 'STAGE': return 'Le Stagiaire';
@@ -230,6 +277,9 @@ export function resolveContractVariables(
     'contrat.dateDebut': date(c.startDate),
     'contrat.dateFin': date(c.endDate),
     'contrat.finEssai': date(c.trialEndDate),
+    // Durée du contrat = fin − début (sauf CDI, à durée indéterminée). Pour un
+    // essai, on retient la fin de période d'essai à défaut de date de fin.
+    'contrat.duree': c.type === 'CDI' ? '' : contractDurationLabel(c.startDate, c.endDate ?? c.trialEndDate),
     'contrat.heuresHebdo': c.weeklyHours != null ? String(c.weeklyHours) : '40',
     'contrat.salaireBase': money(c.baseSalary),
     'contrat.salaireBase.enLettres': moneyL(c.baseSalary),
@@ -248,10 +298,17 @@ export function resolveContractVariables(
     // Fonction de l'employé : titre + contenu rendu en liste à puces.
     'contrat.fonction.titre': c.fonction?.titre ?? '',
     'contrat.fonction.contenu': fonctionContenuToList(c.fonction?.contenu),
+    // Objectifs assignés : titre + contenu rendu en liste à puces.
+    'contrat.objectifs.titre': c.objective?.titre ?? '',
+    'contrat.objectifs.contenu': fonctionContenuToList(c.objective?.contenu),
+    // Commissions sur activité : liste « libellé — taux % ».
+    'contrat.commissionsActivite': commissionsToList(c.activityCommissions),
     // Autorité responsable (employé sélectionné sur le contrat).
     'autorite.civilite': formatCivilite(c.responsibleAuthority?.civilite),
     'autorite.nomComplet': `${c.responsibleAuthority?.lastName ?? ''} ${c.responsibleAuthority?.firstName ?? ''}`.trim(),
     'autorite.fonction': c.responsibleAuthority?.poste ?? '',
+    // Numéro de l'avenant (rang parmi les avenants du CDD parent) — vide hors avenant CDD.
+    'contrat.numeroAvenant': c.avenantNumber != null ? String(c.avenantNumber) : '',
     // Contrat initial rattaché (avenant CDD / renouvellement d'essai) — vide sinon.
     'contratParent.reference': c.parentContract?.reference ?? '',
     'contratParent.dateDebut': date(c.parentContract?.startDate),

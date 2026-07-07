@@ -24,6 +24,7 @@ const schema = z.object({
   subject: z.string().optional(),
   body: z.string().min(1, 'Corps requis'),
   variables: z.string().optional(),
+  usageType: z.enum(['AUTO', 'MANUEL']).default('MANUEL'),
   isActive: z.boolean().default(true),
 });
 type FormData = z.infer<typeof schema>;
@@ -44,9 +45,14 @@ function TemplateForm({
     defaultValues: initial
       ? {
           ...initial,
+          // Coercer les null Prisma en '' : `subject` est null pour les modèles
+          // SMS/WhatsApp, or z.string().optional() rejette null → la validation
+          // échouerait en silence et aucune modification ne serait enregistrée.
+          subject: initial.subject ?? '',
+          usageType: initial.usageType ?? 'MANUEL',
           variables: Array.isArray(initial.variables) ? initial.variables.join(', ') : '',
         }
-      : { channel: 'EMAIL', isActive: true },
+      : { channel: 'EMAIL', usageType: 'MANUEL', isActive: true },
   });
   const channel = watch('channel');
 
@@ -109,6 +115,19 @@ function TemplateForm({
             <option value="WHATSAPP">WhatsApp</option>
           </select>
         </div>
+      </div>
+      <div>
+        <label className="block text-xs font-medium text-slate-700 mb-1">Type de modèle *</label>
+        <select
+          {...register('usageType')}
+          className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+        >
+          <option value="MANUEL">Type manuel — envois manuels</option>
+          <option value="AUTO">Type auto — relances automatiques</option>
+        </select>
+        <p className="text-xs text-slate-400 mt-1">
+          Les modèles « Type auto » ne sont proposés dans l'envoi manuel qu'aux rôles SUPER ADMIN, ADMIN, MANAGER et Comptable.
+        </p>
       </div>
       {channel === 'EMAIL' && (
         <div>
@@ -291,6 +310,9 @@ export default function CommTemplatesSettingsTab() {
                         : <MessageSquare className="h-4 w-4 text-green-500" />}
                       <span className="font-semibold text-slate-900">{t.name}</span>
                       <Badge variant={t.channel === 'EMAIL' ? 'info' : 'success'}>{t.channel}</Badge>
+                      <Badge variant={t.usageType === 'AUTO' ? 'warning' : 'default'}>
+                        {t.usageType === 'AUTO' ? 'Type auto' : 'Type manuel'}
+                      </Badge>
                       {!t.isActive && <Badge variant="default">Inactif</Badge>}
                     </div>
                     {t.subject && <p className="text-sm text-slate-500 mb-1">Sujet : {t.subject}</p>}

@@ -8,6 +8,7 @@ import { SkeletonTable } from '../../../shared/components/ui/Skeleton';
 import ConfirmDialog from '../../../shared/components/ui/ConfirmDialog';
 import { useAttestation, useDeleteAttestation } from '../hooks/useAttestations';
 import { useAuthStore } from '../../../shared/stores/auth.store';
+import { canExportPrint } from '../../../shared/utils/exportPermissions';
 import { ATTESTATION_TYPE_LABELS } from '../utils/attestationTemplate';
 import { formatDate, formatCurrency } from '../../../shared/utils/format';
 import { Edit, Trash2, FileText, User, MapPin, Link2 } from 'lucide-react';
@@ -59,10 +60,12 @@ export default function AttestationDetailPage() {
       ]}
       actions={
         <div className="flex gap-2">
-          <Button variant="secondary" icon={<FileText className="h-4 w-4" />}
-            onClick={() => navigate(`/conventions/attestations/${id}/document`)}>
-            Générer le document
-          </Button>
+          {canExportPrint(role) && (
+            <Button variant="secondary" icon={<FileText className="h-4 w-4" />}
+              onClick={() => navigate(`/conventions/attestations/${id}/document`)}>
+              Générer le document
+            </Button>
+          )}
           {canWrite && (
             <>
               <Button variant="secondary" icon={<Edit className="h-4 w-4" />}

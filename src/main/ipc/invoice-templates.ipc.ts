@@ -93,6 +93,10 @@ const updateTemplateSchema = z.object({
   footerHtml: z.string().optional(),
   endOfDocument: z.string().optional(),
   accentColor: z.string().optional(),
+  sectionColor: z.string().optional(),
+  tableHeaderColor: z.string().optional(),
+  sectionTextColor: z.string().optional(),
+  tableHeaderTextColor: z.string().optional(),
 });
 
 /**

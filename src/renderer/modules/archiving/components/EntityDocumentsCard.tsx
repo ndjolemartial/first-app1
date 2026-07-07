@@ -20,6 +20,12 @@ interface Props {
   invalidateKey: readonly unknown[];
   /** Titre personnalisé (par défaut « Documents »). */
   title?: string;
+  /**
+   * Affiche les boutons d'action (archiver un document, ouvrir la fiche, ouvrir
+   * avec l'application système). `true` par défaut. Mettre à `false` pour un
+   * accès en lecture seule (bloc consultable, sans action).
+   */
+  canManage?: boolean;
 }
 
 /**
@@ -32,6 +38,7 @@ export default function EntityDocumentsCard({
   defaultLinks,
   invalidateKey,
   title = 'Documents',
+  canManage = true,
 }: Props) {
   const navigate = useNavigate();
   const qc = useQueryClient();
@@ -44,14 +51,16 @@ export default function EntityDocumentsCard({
           <h3 className="font-semibold text-slate-700 flex items-center gap-2">
             <FileText className="h-4 w-4" /> {title} ({documents.length})
           </h3>
-          <Button
-            variant="secondary"
-            size="sm"
-            icon={<UploadCloud className="h-4 w-4" />}
-            onClick={() => setImportOpen(true)}
-          >
-            Archiver un document
-          </Button>
+          {canManage && (
+            <Button
+              variant="secondary"
+              size="sm"
+              icon={<UploadCloud className="h-4 w-4" />}
+              onClick={() => setImportOpen(true)}
+            >
+              Archiver un document
+            </Button>
+          )}
         </div>
         {documents.length === 0 ? (
           <p className="text-slate-400 text-sm">Aucun document rattaché.</p>
@@ -62,35 +71,43 @@ export default function EntityDocumentsCard({
               return (
                 <li key={d.id} className="py-2.5 flex items-center gap-3 text-sm">
                   <FileText className="h-4 w-4 shrink-0 text-slate-400" />
-                  <button
-                    className="flex-1 text-left font-medium text-slate-800 hover:text-blue-700 hover:underline truncate"
-                    onClick={() => navigate(`/archiving/ged/${d.id}`)}
-                    title="Voir la fiche du document"
-                  >
-                    {d.name}
-                  </button>
+                  {canManage ? (
+                    <button
+                      className="flex-1 text-left font-medium text-slate-800 hover:text-blue-700 hover:underline truncate"
+                      onClick={() => navigate(`/archiving/ged/${d.id}`)}
+                      title="Voir la fiche du document"
+                    >
+                      {d.name}
+                    </button>
+                  ) : (
+                    <span className="flex-1 text-left font-medium text-slate-800 truncate">
+                      {d.name}
+                    </span>
+                  )}
                   {d.numeroArchive && (
                     <span className="font-mono text-xs font-semibold text-blue-700">{d.numeroArchive}</span>
                   )}
                   <Badge variant="default">{g.label}</Badge>
                   <span className="text-xs text-slate-500 w-20 text-right">{formatBytes(d.size)}</span>
                   <span className="text-xs text-slate-500 w-24 text-right">{formatDate(d.uploadedAt)}</span>
-                  <div className="flex gap-1">
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      icon={<Eye className="h-4 w-4" />}
-                      onClick={() => navigate(`/archiving/ged/${d.id}`)}
-                      title="Ouvrir la fiche"
-                    />
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      icon={<ExternalLink className="h-4 w-4" />}
-                      onClick={() => openDocumentExternally(d.id)}
-                      title="Ouvrir avec l'application système"
-                    />
-                  </div>
+                  {canManage && (
+                    <div className="flex gap-1">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        icon={<Eye className="h-4 w-4" />}
+                        onClick={() => navigate(`/archiving/ged/${d.id}`)}
+                        title="Ouvrir la fiche"
+                      />
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        icon={<ExternalLink className="h-4 w-4" />}
+                        onClick={() => openDocumentExternally(d.id)}
+                        title="Ouvrir avec l'application système"
+                      />
+                    </div>
+                  )}
                 </li>
               );
             })}

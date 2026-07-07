@@ -79,6 +79,7 @@ export function useUpdateGedDocument() {
       if (res.success) {
         qc.invalidateQueries({ queryKey: ['ged-documents'] });
         qc.invalidateQueries({ queryKey: ['ged-document', id] });
+        qc.invalidateQueries({ queryKey: ['ged-dashboard'] });
         toast.success('Document mis à jour');
       } else toast.error(String(res.error));
     },

@@ -337,6 +337,9 @@ async function computePeriodTotals(db, start, end, scope, scopeId) {
     }
     // Recettes — partie 3 : opérations de trésorerie ENTREE purement manuelles
     // (non générées par un encaissement de facture, déjà comptées au-dessus).
+    // Les entrées sur les comptes « Caisse interne » (CAISSE_CENTRALE) sont exclues :
+    // simples déplacements de fonds internes, non du chiffre d'affaires. (Leurs
+    // sorties restent comptabilisées en dépenses ci-dessous.)
     const trEntrees = await db.treasuryOperation.findMany({
         where: {
             direction: 'ENTREE',
@@ -345,6 +348,7 @@ async function computePeriodTotals(db, start, end, scope, scopeId) {
             paymentId: null,
             installmentId: null,
             commissionId: null,
+            bankAccount: { type: { not: 'CAISSE_CENTRALE' } },
             ...trWhere,
         },
         select: { amount: true, category: { select: { label: true, accountingCode: true } }, label: true },

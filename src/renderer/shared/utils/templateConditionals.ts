@@ -110,13 +110,16 @@ export function evaluateConditionals(
 ): string {
   if (!html) return html;
   // Bloc avec comparaison : {{#si <var> <op> "<value>"}}…{{/si}}
-  // Les opérateurs à deux caractères (>=, <=) sont placés avant les variantes
-  // à un caractère pour être reconnus en priorité par l'alternance.
-  const compareRegex = /\{\{#si\s+([\w.]+)\s*(>=|<=|==|!=|>|<)\s*"([^"]*)"\s*\}\}([\s\S]*?)\{\{\/si\}\}/g;
-  let result = html.replace(compareRegex, (_m, variable, operator, expected, content) => {
+  // Les opérateurs `<` et `>` peuvent apparaître échappés (`&lt;`, `&gt;`) quand
+  // le bloc a été saisi dans l'éditeur (le HTML échappe ces caractères). Les
+  // variantes échappées et à deux caractères sont placées avant les autres pour
+  // être reconnues en priorité par l'alternance.
+  const compareRegex = /\{\{#si\s+([\w.]+)\s*(&gt;=|&lt;=|>=|<=|==|!=|&gt;|&lt;|>|<)\s*"([^"]*)"\s*\}\}([\s\S]*?)\{\{\/si\}\}/g;
+  let result = html.replace(compareRegex, (_m, variable, rawOperator, expected, content) => {
+    const operator = rawOperator.replace('&gt;', '>').replace('&lt;', '<') as ConditionOperator;
     const { trueText, falseText } = splitOnSinon(content);
     const actual = Object.prototype.hasOwnProperty.call(vars, variable) ? vars[variable] : '';
-    return compare(actual, operator as ConditionOperator, expected) ? trueText : falseText;
+    return compare(actual, operator, expected) ? trueText : falseText;
   });
   // Bloc « truthy » : {{#si <var>}}…{{/si}} ou {{#si !<var>}}…{{/si}}
   const truthyRegex = /\{\{#si\s+(!)?([\w.]+)\s*\}\}([\s\S]*?)\{\{\/si\}\}/g;

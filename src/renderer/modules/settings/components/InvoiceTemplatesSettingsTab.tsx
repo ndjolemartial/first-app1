@@ -76,12 +76,16 @@ function TemplateCard({ template }: { template: any }) {
   const [name, setName] = useState<string>(template.name);
   const [layout, setLayout] = useState<string>(template.layout);
   const [accentColor, setAccentColor] = useState<string>(template.accentColor);
+  const [sectionColor, setSectionColor] = useState<string>(template.sectionColor ?? '#d7dfe8');
+  const [tableHeaderColor, setTableHeaderColor] = useState<string>(template.tableHeaderColor ?? '#e2e8f0');
+  const [sectionTextColor, setSectionTextColor] = useState<string>(template.sectionTextColor ?? '#0f172a');
+  const [tableHeaderTextColor, setTableHeaderTextColor] = useState<string>(template.tableHeaderTextColor ?? '#0f172a');
   const [headerHtml, setHeaderHtml] = useState<string>(template.headerHtml ?? '');
   const [footerHtml, setFooterHtml] = useState<string>(template.footerHtml ?? '');
   const [endOfDocument, setEndOfDocument] = useState<string>(template.endOfDocument ?? '');
 
   const save = () =>
-    update.mutate({ id: template.id, payload: { name, layout, accentColor, headerHtml, footerHtml, endOfDocument } });
+    update.mutate({ id: template.id, payload: { name, layout, accentColor, sectionColor, tableHeaderColor, sectionTextColor, tableHeaderTextColor, headerHtml, footerHtml, endOfDocument } });
 
   return (
     <Card>
@@ -103,6 +107,44 @@ function TemplateCard({ template }: { template: any }) {
             type="color"
             value={accentColor}
             onChange={(e) => setAccentColor(e.target.value)}
+            className="h-9 w-16 rounded border border-slate-300 cursor-pointer bg-white p-0.5"
+          />
+        </div>
+        <div>
+          <label className="text-sm font-medium text-slate-700 block mb-1">Fond des bandeaux de titre</label>
+          <input
+            type="color"
+            value={sectionColor}
+            onChange={(e) => setSectionColor(e.target.value)}
+            className="h-9 w-16 rounded border border-slate-300 cursor-pointer bg-white p-0.5"
+          />
+          <p className="text-xs text-slate-400 mt-1">Titres de blocs (le trait latéral garde l'accent).</p>
+        </div>
+        <div>
+          <label className="text-sm font-medium text-slate-700 block mb-1">Texte des bandeaux de titre</label>
+          <input
+            type="color"
+            value={sectionTextColor}
+            onChange={(e) => setSectionTextColor(e.target.value)}
+            className="h-9 w-16 rounded border border-slate-300 cursor-pointer bg-white p-0.5"
+          />
+        </div>
+        <div>
+          <label className="text-sm font-medium text-slate-700 block mb-1">Fond des en-têtes de tableaux</label>
+          <input
+            type="color"
+            value={tableHeaderColor}
+            onChange={(e) => setTableHeaderColor(e.target.value)}
+            className="h-9 w-16 rounded border border-slate-300 cursor-pointer bg-white p-0.5"
+          />
+          <p className="text-xs text-slate-400 mt-1">Lignes d'en-tête des tableaux récapitulatifs.</p>
+        </div>
+        <div>
+          <label className="text-sm font-medium text-slate-700 block mb-1">Texte des en-têtes de tableaux</label>
+          <input
+            type="color"
+            value={tableHeaderTextColor}
+            onChange={(e) => setTableHeaderTextColor(e.target.value)}
             className="h-9 w-16 rounded border border-slate-300 cursor-pointer bg-white p-0.5"
           />
         </div>

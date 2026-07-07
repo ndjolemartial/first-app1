@@ -63,7 +63,25 @@ export interface EmploymentContract {
   responsibleAuthorityId?: number | null;
   // Fonction de l'employé (référentiel paramétrable).
   functionId?: number | null;
+  // Objectifs assignés (référentiel paramétrable).
+  objectiveId?: number | null;
+  // Commissions sur activité (instantané libellé + taux) pour ce contrat.
+  activityCommissions?: ActivityCommission[] | null;
   notes?: string | null;
+}
+
+/** Ligne de commission sur activité retenue pour un contrat (instantané). */
+export interface ActivityCommission {
+  key: string;
+  label: string;
+  rate: number;
+}
+
+/** Ligne du catalogue de commissions sur activité (avec taux par défaut). */
+export interface CommissionActivityOption {
+  key: string;
+  label: string;
+  defaultRate: number;
 }
 
 export const CIVILITE_OPTIONS = [

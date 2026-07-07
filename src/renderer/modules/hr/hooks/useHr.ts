@@ -313,6 +313,15 @@ export function useContractFunctions(includeInactive = false) {
   });
 }
 
+/* ─── Commissions sur activité (catalogue avec taux par défaut) ── */
+
+export function useCommissionActivities() {
+  return useQuery({
+    queryKey: ['commission-activities'],
+    queryFn: () => ipc().commissionActivities.list(token()),
+  });
+}
+
 export function useSaveContractFunction() {
   const qc = useQueryClient();
   return useMutation({
@@ -331,6 +340,38 @@ export function useDeleteContractFunction() {
     mutationFn: (id: number) => ipc().contractFunctions.delete(token(), id),
     onSuccess: (res) => {
       if (res.success) { qc.invalidateQueries({ queryKey: ['contract-functions'] }); toast.success('Fonction supprimée'); }
+      else toast.error(String(res.error));
+    },
+  });
+}
+
+/* ─── Objectifs assignés (référentiel) ────────────────────────── */
+
+export function useContractObjectives(includeInactive = false) {
+  return useQuery({
+    queryKey: ['contract-objectives', includeInactive],
+    queryFn: () => ipc().contractObjectives.list(token(), includeInactive),
+  });
+}
+
+export function useSaveContractObjective() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, payload }: { id?: number; payload: object }) =>
+      id ? ipc().contractObjectives.update(token(), id, payload) : ipc().contractObjectives.create(token(), payload),
+    onSuccess: (res) => {
+      if (res.success) { qc.invalidateQueries({ queryKey: ['contract-objectives'] }); toast.success('Objectifs enregistrés'); }
+      else toast.error(String(res.error));
+    },
+  });
+}
+
+export function useDeleteContractObjective() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: number) => ipc().contractObjectives.delete(token(), id),
+    onSuccess: (res) => {
+      if (res.success) { qc.invalidateQueries({ queryKey: ['contract-objectives'] }); toast.success('Objectifs supprimés'); }
       else toast.error(String(res.error));
     },
   });
@@ -442,6 +483,38 @@ export function useDeleteLeaveRequest() {
     mutationFn: (id: number) => ipc().leaveRequests.delete(token(), id),
     onSuccess: (res) => {
       if (res.success) { qc.invalidateQueries({ queryKey: ['leave-requests'] }); toast.success('Demande supprimée'); }
+      else toast.error(String(res.error));
+    },
+  });
+}
+
+/** Ouvre l'aperçu d'impression de la fiche « Congés & Absence » d'une demande. */
+export function usePrintLeaveRequest() {
+  return useMutation({
+    mutationFn: (id: number) => ipc().leaveRequests.print(token(), id),
+    onSuccess: (res) => { if (!res.success) toast.error(String(res.error)); },
+  });
+}
+
+/** Téléverse (scan) la fiche « Congés & Absence » signée d'une demande validée. */
+export function useUploadLeaveSigned() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: object) => ipc().leaveRequests.uploadSigned(token(), payload),
+    onSuccess: (res) => {
+      if (res.success) { qc.invalidateQueries({ queryKey: ['leave-requests'] }); toast.success('Fiche signée jointe'); }
+      else toast.error(String(res.error));
+    },
+  });
+}
+
+/** Retire la fiche signée jointe à une demande. */
+export function useRemoveLeaveSigned() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: number) => ipc().leaveRequests.removeSigned(token(), id),
+    onSuccess: (res) => {
+      if (res.success) { qc.invalidateQueries({ queryKey: ['leave-requests'] }); toast.success('Fiche signée retirée'); }
       else toast.error(String(res.error));
     },
   });

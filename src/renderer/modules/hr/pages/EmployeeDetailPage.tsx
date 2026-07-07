@@ -16,19 +16,19 @@ import { Edit, PlusCircle, FileText, Trash2, Printer, ClipboardList, Upload, Ext
 import { toast } from '../../../shared/components/ui/Toast';
 import {
   useEmployee, useEmployees, useCreateContract, useUpdateContract, useDeleteContract, useDeleteEmployee,
-  useEssaiCategories, useContractFunctions,
+  useEssaiCategories, useContractFunctions, useContractObjectives, useCommissionActivities,
   useSignedContracts, useUploadSignedContract, useDeleteSignedContract,
 } from '../hooks/useHr';
 import {
   EMPLOYEE_STATUS_LABEL, EMPLOYEE_STATUS_VARIANT,
   CONTRACT_TYPE_OPTIONS, CONTRACT_TYPE_LABEL,
   CONTRACT_STATUS_OPTIONS, CONTRACT_STATUS_LABEL, CONTRACT_STATUS_VARIANT,
-  type EmploymentContract,
+  type EmploymentContract, type ActivityCommission, type CommissionActivityOption,
 } from '../types/hr.types';
 
 // Écriture opérationnelle : admins/RH + MANAGER & ASSISTANTE_DIRECTION (ces
 // derniers restreints côté IPC aux employés dont le contrat en cours n'est pas CDI).
-const WRITE_ROLES = new Set(['SUPER_ADMIN', 'ADMIN', 'RH', 'MANAGER', 'ASSISTANTE_DIRECTION']);
+const WRITE_ROLES = new Set(['SUPER_ADMIN', 'ADMIN', 'RH', 'ACCOUNTANT', 'MANAGER']);
 const toDateInput = (v?: string | null) => (v ? String(v).slice(0, 10) : '');
 
 function Field({ label, value }: { label: string; value?: React.ReactNode }) {
@@ -49,6 +49,7 @@ interface ContractForm {
   parentContractId: string;
   responsibleAuthorityId: string;
   functionId: string;
+  objectiveId: string;
 }
 
 const numOrEmpty = (v: unknown) => (v == null ? '' : String(v));
@@ -82,6 +83,7 @@ function ContractModal({
       parentContractId: contract?.parentContractId != null ? String(contract.parentContractId) : '',
       responsibleAuthorityId: contract?.responsibleAuthorityId != null ? String(contract.responsibleAuthorityId) : '',
       functionId: contract?.functionId != null ? String(contract.functionId) : '',
+      objectiveId: contract?.objectiveId != null ? String(contract.objectiveId) : '',
       notes: contract?.notes ?? '',
     },
   });
@@ -94,6 +96,14 @@ function ContractModal({
     ...functions.map((f) => ({ value: String(f.id), label: f.titre })),
   ];
 
+  // Référentiel des objectifs assignés (titre + contenu en liste).
+  const { data: objRes } = useContractObjectives();
+  const objectives: any[] = objRes?.data ?? [];
+  const objectiveOptions = [
+    { value: '', label: '— Aucun —' },
+    ...objectives.map((o) => ({ value: String(o.id), label: o.titre })),
+  ];
+
   // Tout le personnel (sélecteur « Autorité responsable »).
   const { data: allEmpRes } = useEmployees({}, 1, 1000);
   const allEmployees: any[] = allEmpRes?.data ?? [];
@@ -104,6 +114,23 @@ function ContractModal({
       label: `${e.lastName ?? ''} ${e.firstName ?? ''}`.trim() + (e.poste ? ` — ${e.poste}` : ''),
     })),
   ];
+  // Commissions sur activité : catalogue (avec taux par défaut) + sélection courante.
+  const { data: commActRes } = useCommissionActivities();
+  const commissionCatalog: CommissionActivityOption[] = commActRes?.data ?? [];
+  const [activityCommissions, setActivityCommissions] = useState<ActivityCommission[]>(
+    Array.isArray(contract?.activityCommissions) ? contract!.activityCommissions! : [],
+  );
+  const isCommissionSelected = (key: string) => activityCommissions.some((c) => c.key === key);
+  const toggleCommission = (opt: CommissionActivityOption) => {
+    setActivityCommissions((prev) =>
+      prev.some((c) => c.key === opt.key)
+        ? prev.filter((c) => c.key !== opt.key)
+        : [...prev, { key: opt.key, label: opt.label, rate: opt.defaultRate }],
+    );
+  };
+  const setCommissionRate = (key: string, rate: number) =>
+    setActivityCommissions((prev) => prev.map((c) => (c.key === key ? { ...c, rate } : c)));
+
   const type = watch('type');
   const showRemuneration = ['CDI', 'CDD', 'AVENANT_CDD', 'ESSAI', 'RENOUVELLEMENT_ESSAI'].includes(type);
   const isAvenant = type === 'AVENANT_CDD';
@@ -192,6 +219,8 @@ function ContractModal({
       parentContractId: (data.type === 'AVENANT_CDD' || data.type === 'RENOUVELLEMENT_ESSAI') ? num(data.parentContractId) : null,
       responsibleAuthorityId: num(data.responsibleAuthorityId),
       functionId: num(data.functionId),
+      objectiveId: num(data.objectiveId),
+      activityCommissions,
     };
     const r = isEdit
       ? await update.mutateAsync({ id: contract!.id, payload })
@@ -258,6 +287,7 @@ function ContractModal({
         <Input label="Salaire de base mensuel (FCFA)" type="number" step="1000" min="0" required {...register('baseSalary')} />
         <Select label="Autorité responsable" options={authorityOptions} {...register('responsibleAuthorityId')} />
         <Select label="Fonction de l'employé" options={functionOptions} {...register('functionId')} />
+        <Select label="Objectifs assignés" options={objectiveOptions} {...register('objectiveId')} />
       </div>
       <datalist id="essai-cats">
         {categories.map((c) => <option key={c.id} value={c.label} />)}
@@ -275,6 +305,53 @@ function ContractModal({
           </div>
         );
       })()}
+      {(() => {
+        const obj = objectives.find((o) => String(o.id) === watch('objectiveId'));
+        const items = String(obj?.contenu ?? '').split(/\r?\n/).map((s: string) => s.trim()).filter(Boolean);
+        if (!items.length) return null;
+        return (
+          <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50 p-3">
+            <p className="mb-1 text-xs font-medium text-slate-600">Objectifs assignés</p>
+            <ul className="list-disc pl-5 text-sm text-slate-700 space-y-0.5">
+              {items.map((it: string, i: number) => <li key={i}>{it}</li>)}
+            </ul>
+          </div>
+        );
+      })()}
+
+      <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 p-3">
+        <p className="mb-1 text-xs font-medium text-slate-600">Commissions sur activité</p>
+        <p className="mb-2 text-xs text-slate-400">
+          Sélectionnez les activités ouvrant droit à commission pour ce contrat et ajustez les taux.
+        </p>
+        <div className="space-y-2">
+          {commissionCatalog.map((opt) => {
+            const selected = isCommissionSelected(opt.key);
+            const current = activityCommissions.find((c) => c.key === opt.key);
+            return (
+              <div key={opt.key} className="flex items-center gap-3">
+                <label className="flex min-w-0 flex-1 items-center gap-2 text-sm text-slate-700">
+                  <input type="checkbox" checked={selected} onChange={() => toggleCommission(opt)} className="rounded" />
+                  <span className="truncate">{opt.label}</span>
+                </label>
+                <div className="flex items-center gap-1">
+                  <input
+                    type="number" step="0.5" min="0" max="100"
+                    value={current ? String(current.rate) : String(opt.defaultRate)}
+                    disabled={!selected}
+                    onChange={(e) => setCommissionRate(opt.key, Number(e.target.value) || 0)}
+                    className="w-20 rounded border border-slate-200 px-2 py-1 text-right text-sm disabled:bg-slate-100 disabled:text-slate-400"
+                  />
+                  <span className="text-xs text-slate-500">%</span>
+                </div>
+              </div>
+            );
+          })}
+          {commissionCatalog.length === 0 && (
+            <p className="text-xs text-slate-400">Chargement du catalogue…</p>
+          )}
+        </div>
+      </div>
 
       {isAvenant && (
         <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 p-3">

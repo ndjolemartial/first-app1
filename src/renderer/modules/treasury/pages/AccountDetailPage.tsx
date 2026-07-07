@@ -19,7 +19,8 @@ import {
   categoryLabel,
 } from '../utils/treasury.utils';
 import { formatCurrency, formatDate } from '../../../shared/utils/format';
-import { Plus, Pencil, Trash2, Search, ArrowLeft } from 'lucide-react';
+import { Plus, Pencil, Trash2, Search, ArrowLeft, Paperclip } from 'lucide-react';
+import OperationDocumentsModal from '../components/OperationDocumentsModal';
 
 const SOURCE_OPTIONS = [
   { value: '', label: 'Toutes origines' },
@@ -49,6 +50,7 @@ export default function AccountDetailPage() {
 
   const [deleteAccountOpen, setDeleteAccountOpen] = useState(false);
   const [deleteOpTarget, setDeleteOpTarget] = useState<any>(null);
+  const [docsOpTarget, setDocsOpTarget] = useState<any>(null);
 
   const { data: accountRes, isLoading: accountLoading } = useTreasuryAccount(accountId);
   const account = accountRes?.data;
@@ -297,15 +299,22 @@ export default function AccountDetailPage() {
                         {op.direction === 'ENTREE' ? '+' : '−'} {formatCurrency(Number(op.amount))}
                       </td>
                       <td className="px-4 py-3">
-                        {canManage && op.source === 'MANUEL' && (
-                          <div className="flex justify-end">
+                        <div className="flex justify-end gap-1">
+                          <Button
+                            size="sm" variant="ghost"
+                            icon={<Paperclip className="h-4 w-4 text-slate-500" />}
+                            title="Pièces jointes"
+                            onClick={() => setDocsOpTarget(op)}
+                          />
+                          {canManage && op.source === 'MANUEL' && (
                             <Button
                               size="sm" variant="ghost"
                               icon={<Trash2 className="h-4 w-4 text-red-500" />}
+                              title="Supprimer"
                               onClick={() => { deleteOperation.reset(); setDeleteOpTarget(op); }}
                             />
-                          </div>
-                        )}
+                          )}
+                        </div>
                       </td>
                     </tr>
                   ))}
@@ -360,6 +369,12 @@ export default function AccountDetailPage() {
         }
         confirmLabel="Supprimer"
         loading={deleteOperation.isPending}
+      />
+
+      <OperationDocumentsModal
+        operation={docsOpTarget}
+        onClose={() => setDocsOpTarget(null)}
+        canManage={canManage}
       />
     </PageLayout>
   );

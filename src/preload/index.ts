@@ -489,6 +489,16 @@ const hr = {
       api.invoke('hr:contractFunctions:update', { token, id, payload }),
     delete: (token: string, id: number) => api.invoke('hr:contractFunctions:delete', { token, id }),
   },
+  contractObjectives: {
+    list: (token: string, includeInactive?: boolean) => api.invoke('hr:contractObjectives:list', { token, includeInactive }),
+    create: (token: string, payload: object) => api.invoke('hr:contractObjectives:create', { token, payload }),
+    update: (token: string, id: number, payload: object) =>
+      api.invoke('hr:contractObjectives:update', { token, id, payload }),
+    delete: (token: string, id: number) => api.invoke('hr:contractObjectives:delete', { token, id }),
+  },
+  commissionActivities: {
+    list: (token: string) => api.invoke('hr:commissionActivities:list', { token }),
+  },
   jobDescriptionTemplates: {
     list: (token: string) => api.invoke('hr:jobDescriptionTemplates:list', { token }),
     create: (token: string, payload: object) => api.invoke('hr:jobDescriptionTemplates:create', { token, payload }),
@@ -510,6 +520,7 @@ const hr = {
     signedContracts: (token: string) => api.invoke('hr:me:signedContracts', { token }),
     signedContractFile: (token: string, id: number) => api.invoke('hr:me:signedContractFile', { token, id }),
     signedContractOpen: (token: string, id: number) => api.invoke('hr:me:signedContractOpen', { token, id }),
+    signedContractPrint: (token: string, id: number) => api.invoke('hr:me:signedContractPrint', { token, id }),
   },
   payslipTemplates: {
     list: (token: string) => api.invoke('hr:payslipTemplates:list', { token }),
@@ -528,7 +539,11 @@ const hr = {
     create: (token: string, payload: object) => api.invoke('hr:leaveRequests:create', { token, payload }),
     decide: (token: string, id: number, status: string, note?: string) =>
       api.invoke('hr:leaveRequests:decide', { token, id, status, note }),
+    print: (token: string, id: number) => api.invoke('hr:leaveRequests:print', { token, id }),
     delete: (token: string, id: number) => api.invoke('hr:leaveRequests:delete', { token, id }),
+    uploadSigned: (token: string, payload: object) => api.invoke('hr:leaveRequests:uploadSigned', { token, payload }),
+    openSigned: (token: string, id: number) => api.invoke('hr:leaveRequests:openSigned', { token, id }),
+    removeSigned: (token: string, id: number) => api.invoke('hr:leaveRequests:removeSigned', { token, id }),
   },
   attendance: {
     list: (token: string, employeeId: number, year: number, month: number) =>

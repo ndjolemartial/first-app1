@@ -78,6 +78,12 @@ function createWindow() {
             // Autorise la lecture automatique avec son (slideshow vidéo du tableau de
             // bord) — sinon Chromium bloque play() sur une vidéo non mutée.
             autoplayPolicy: 'no-user-gesture-required',
+            // Empêche Chromium de throttler/geler les timers JS quand la fenêtre est
+            // en arrière-plan. Indispensable pour la déconnexion automatique après
+            // inactivité (cf. useIdleLogout) : sans cela, l'utilisateur qui bascule
+            // vers une autre application ne serait jamais déconnecté, le minuteur
+            // d'inactivité étant gelé pendant que la fenêtre est masquée.
+            backgroundThrottling: false,
         },
         titleBarStyle: 'default',
         show: false,
@@ -199,6 +205,9 @@ electron_1.app.whenReady().then(async () => {
         .catch((e) => logger_1.default.error(`HR templates bootstrap failed: ${e.message}`));
     (0, leave_service_1.seedDefaultLeaveTypes)()
         .catch((e) => logger_1.default.error(`Leave types bootstrap failed: ${e.message}`));
+    // Catégorie GED par défaut « UPLOAD FILES » (fichiers importés sans catégorie).
+    (0, documents_ipc_1.seedUploadFilesCategory)()
+        .catch((e) => logger_1.default.error(`Upload files category bootstrap failed: ${e.message}`));
     setupAppMenu();
     createWindow();
     logger_1.default.info('Application started');

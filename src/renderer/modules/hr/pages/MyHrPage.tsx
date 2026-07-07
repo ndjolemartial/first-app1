@@ -8,13 +8,14 @@ import Button from '../../../shared/components/ui/Button';
 import Select from '../../../shared/components/ui/Select';
 import { SkeletonTable } from '../../../shared/components/ui/Skeleton';
 import EmptyState from '../../../shared/components/ui/EmptyState';
+import Modal from '../../../shared/components/ui/Modal';
 import { useAuthStore } from '../../../shared/stores/auth.store';
 import {
   useMyHrOverview, useMyPayslips, useMyAttendance, useMyLeaveRequests, useMyReglementInterieur, useMySignedContracts,
 } from '../hooks/useHr';
 import { CONTRACT_TYPE_LABEL } from '../types/hr.types';
 import { formatDate, formatCurrency } from '../../../shared/utils/format';
-import { FileText, ClipboardList, Printer, IdCard, ReceiptText, CalendarDays, Clock, BookOpen, ExternalLink } from 'lucide-react';
+import { FileText, ClipboardList, Printer, IdCard, ReceiptText, CalendarDays, Clock, BookOpen, Eye } from 'lucide-react';
 
 type Tab = 'profil' | 'bulletins' | 'conges' | 'pointage' | 'reglement';
 
@@ -248,16 +249,12 @@ function ProfilTab({ employee }: { employee: any }) {
   );
 }
 
-/* ─── Contrats signés (lecture seule) ─────────────────────────── */
+/* ─── Contrats signés (lecture seule : visualiser + imprimer) ──── */
 function MySignedContractsCard() {
   const { data: res, isLoading } = useMySignedContracts();
   const list: any[] = res?.data ?? [];
-  const open = async (id: number) => {
-    const token = useAuthStore.getState().token;
-    if (!token) return;
-    const r = await window.electron.hr.me.signedContractOpen(token, id);
-    if (!r.success) toast.error(String(r.error));
-  };
+  const [viewing, setViewing] = useState<{ id: number; name: string } | null>(null);
+
   return (
     <Card>
       <h3 className="mb-3 text-sm font-semibold text-slate-800">Contrats signés</h3>
@@ -269,18 +266,90 @@ function MySignedContractsCard() {
         <ul className="divide-y divide-slate-100">
           {list.map((s) => (
             <li key={s.id} className="flex items-center justify-between py-2">
-              <button className="flex min-w-0 items-center gap-2 text-left" onClick={() => open(s.id)}>
+              <button className="flex min-w-0 items-center gap-2 text-left" onClick={() => setViewing(s)}>
                 <FileText className="h-4 w-4 shrink-0 text-slate-400" />
                 <span className="truncate text-sm text-slate-800">{s.name}</span>
                 <span className="shrink-0 text-xs text-slate-400">{formatDate(s.uploadedAt)}</span>
               </button>
-              <Button variant="ghost" size="sm" icon={<ExternalLink className="h-4 w-4" />} title="Ouvrir"
-                onClick={() => open(s.id)} />
+              <Button variant="ghost" size="sm" icon={<Eye className="h-4 w-4" />} title="Visualiser"
+                onClick={() => setViewing(s)} />
             </li>
           ))}
         </ul>
       )}
+      {viewing && <SignedContractViewer id={viewing.id} name={viewing.name} onClose={() => setViewing(null)} />}
     </Card>
+  );
+}
+
+/** Visualiseur (lecture seule) d'un contrat signé : aperçu + impression + téléchargement. */
+function SignedContractViewer({ id, name, onClose }: { id: number; name: string; onClose: () => void }) {
+  const [data, setData] = useState<{ mimeType?: string; base64?: string; tooLarge?: boolean } | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [printing, setPrinting] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const token = useAuthStore.getState().token;
+      if (!token) return;
+      setLoading(true);
+      try {
+        const r = await window.electron.hr.me.signedContractFile(token, id);
+        if (!cancelled) setData(r.success ? (r.data as any) : null);
+      } finally { if (!cancelled) setLoading(false); }
+    })();
+    return () => { cancelled = true; };
+  }, [id]);
+
+  const blobUrl = useMemo(() => {
+    if (!data?.base64 || !data.mimeType) return '';
+    try {
+      const bin = atob(data.base64);
+      const bytes = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+      return URL.createObjectURL(new Blob([bytes], { type: data.mimeType }));
+    } catch { return ''; }
+  }, [data?.base64, data?.mimeType]);
+  useEffect(() => () => { if (blobUrl) URL.revokeObjectURL(blobUrl); }, [blobUrl]);
+
+  const print = async () => {
+    const token = useAuthStore.getState().token;
+    if (!token) return;
+    setPrinting(true);
+    try { const r = await window.electron.hr.me.signedContractPrint(token, id); if (!r.success) toast.error(String(r.error)); }
+    finally { setPrinting(false); }
+  };
+  const download = () => {
+    if (!blobUrl) return;
+    const a = document.createElement('a'); a.href = blobUrl; a.download = name; a.click();
+  };
+
+  const isPdf = data?.mimeType === 'application/pdf';
+  const isImage = (data?.mimeType ?? '').startsWith('image/');
+
+  return (
+    <Modal open onClose={onClose} title={name} size="content" footer={
+      <>
+        {blobUrl && <Button variant="secondary" onClick={download}>Télécharger</Button>}
+        <Button icon={<Printer className="h-4 w-4" />} loading={printing} onClick={print}>Imprimer</Button>
+        <Button variant="secondary" onClick={onClose}>Fermer</Button>
+      </>
+    }>
+      {loading ? (
+        <SkeletonTable rows={8} />
+      ) : !data ? (
+        <p className="text-sm text-slate-500">Fichier indisponible.</p>
+      ) : data.tooLarge || !blobUrl ? (
+        <p className="text-sm text-slate-500">Aperçu indisponible {data.tooLarge ? '(fichier volumineux)' : ''}. Utilisez « Imprimer » ou « Télécharger ».</p>
+      ) : isPdf ? (
+        <iframe src={blobUrl} title={name} className="h-full w-full rounded-lg border border-slate-200 bg-white" style={{ minHeight: '70vh' }} />
+      ) : isImage ? (
+        <div className="text-center"><img src={blobUrl} alt={name} className="mx-auto max-w-full" /></div>
+      ) : (
+        <p className="text-sm text-slate-600">Ce format ne peut pas être prévisualisé. Utilisez « Télécharger » ou « Imprimer ».</p>
+      )}
+    </Modal>
   );
 }
 

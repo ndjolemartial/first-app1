@@ -1214,6 +1214,14 @@ model InvoiceTemplate {
   footerHtml  String?               @db.LongText  // Pied de page éditable (HTML)
   endOfDocument String?             @db.LongText  // Bloc « Fin du document » (HTML)
   accentColor String                @default("#1E3A5F")
+  // Couleur de fond des bandeaux de titre (récap versement). Le trait latéral
+  // gauche des titres garde l'accent.
+  sectionColor String               @default("#d7dfe8")
+  // Couleur de fond des en-têtes de tableaux de la facture (distincte des titres).
+  tableHeaderColor String           @default("#e2e8f0")
+  // Couleurs de TEXTE des bandeaux de titre et des en-têtes de tableaux.
+  sectionTextColor String           @default("#0f172a")
+  tableHeaderTextColor String       @default("#0f172a")
   isActive    Boolean               @default(true)
   createdAt   DateTime              @default(now())
   updatedAt   DateTime              @updatedAt
@@ -1364,12 +1372,20 @@ model CommTemplate {
   subject        String?
   body           String       @db.Text
   variables      Json?
+  // Catégorie d'usage : AUTO (relances automatiques) ou MANUEL (envois manuels).
+  // Les rôles non privilégiés ne voient que les modèles MANUEL dans l'envoi manuel.
+  usageType      CommTemplateUsage @default(MANUEL)
   isActive       Boolean      @default(true)
   createdAt      DateTime     @default(now())
   updatedAt      DateTime     @updatedAt
 
   communications Communication[]
   reminderRules  ReminderRule[]
+}
+
+enum CommTemplateUsage {
+  AUTO
+  MANUEL
 }
 
 // ── POLITIQUE DE RELANCE ──────────────────────────────────────
@@ -1887,6 +1903,7 @@ model BankAccountViewer {
 enum TreasuryAccountType {
   BANQUE
   CAISSE
+  CAISSE_CENTRALE
   MOBILE_MONEY
 }
 
@@ -2292,6 +2309,11 @@ model EmploymentContract {
   responsibleAuthorityId Int?
   // Fonction de l'employé (référentiel paramétrable : titre + contenu en liste).
   functionId   Int?
+  // Objectifs assignés (référentiel paramétrable : titre + contenu en liste).
+  objectiveId  Int?
+  // Commissions sur activité auxquelles l'employé a droit pour ce contrat.
+  // Instantané JSON : tableau de { key, label, rate } (rate = taux en %).
+  activityCommissions Json?
   notes        String?        @db.Text
   createdAt    DateTime       @default(now())
   updatedAt    DateTime       @updatedAt
@@ -2302,12 +2324,14 @@ model EmploymentContract {
   parentContract      EmploymentContract?  @relation("ContractAmendments", fields: [parentContractId], references: [id])
   amendments          EmploymentContract[] @relation("ContractAmendments")
   fonction            ContractFunction?    @relation(fields: [functionId], references: [id])
+  objective           ContractObjective?   @relation(fields: [objectiveId], references: [id])
   payslips            Payslip[]
 
   @@index([employeeId])
   @@index([parentContractId])
   @@index([responsibleAuthorityId])
   @@index([functionId])
+  @@index([objectiveId])
 }
 
 // Modèle éditable de « fiche de poste » rattachée à un contrat. Mêmes zones
@@ -2339,6 +2363,21 @@ model JobDescriptionTemplate {
 // Fonction de l'employé (référentiel paramétrable) : un titre et un contenu
 // (une ligne = un élément, affiché en liste à puces dans le contrat).
 model ContractFunction {
+  id        Int       @id @default(autoincrement())
+  titre     String
+  contenu   String    @db.Text
+  isActive  Boolean   @default(true)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  contracts EmploymentContract[]
+}
+
+// Référentiel « Objectifs assignés » (titre + contenu en liste). Même principe
+// que ContractFunction : sélectionnable sur un contrat, alimente les variables
+// {{contrat.objectifs.titre}} / {{contrat.objectifs.contenu}}.
+model ContractObjective {
   id        Int       @id @default(autoincrement())
   titre     String
   contenu   String    @db.Text
@@ -2542,6 +2581,12 @@ model LeaveRequest {
   decidedById  Int?
   decidedAt    DateTime?
   decisionNote String?
+  // Fiche « Congés & Absence » signée, scannée et jointe après validation.
+  signedDocPath String?
+  signedDocName String?
+  signedDocType String?
+  signedDocSize Int?
+  signedDocAt   DateTime?
   createdAt    DateTime    @default(now())
   updatedAt    DateTime    @updatedAt
   deletedAt    DateTime?

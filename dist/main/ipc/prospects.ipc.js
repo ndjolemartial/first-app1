@@ -45,31 +45,36 @@ async function nextClientReference(db) {
     const seq = last ? parseInt(last.reference.split('-')[2], 10) + 1 : 1;
     return `CLI-${year}-${String(seq).padStart(4, '0')}`;
 }
-/** Rôles disposant d'une vue globale sur les prospects (sans filtrage). */
-// Exception à l'équivalence ACCOUNTANT/MANAGER : ASSISTANTE_DIRECTION dispose
-// uniquement des droits d'un AGENT sur le module Prospects (lecture filtrée,
-// pas de conversion en client).
-const FULL_VIEW_ROLES = ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ACCOUNTANT'];
+/**
+ * Rôles disposant d'une vue globale sur les prospects (sans filtrage) : ils
+ * voient l'ensemble des prospects, y compris ceux sans affectation.
+ *
+ * Décision produit : SEULS SUPER_ADMIN, ADMIN et MANAGER ont cette vue globale.
+ * Tous les autres rôles (y compris ACCOUNTANT et ASSISTANTE_DIRECTION) ne voient
+ * QUE les prospects qui leur sont affectés. Test de rôle EXACT (pas d'équivalence
+ * ACCOUNTANT→MANAGER) — sinon les comptables hériteraient de la vue globale.
+ */
+const FULL_VIEW_ROLES = ['SUPER_ADMIN', 'ADMIN', 'MANAGER'];
 /** Vrai si l'utilisateur de la session voit l'ensemble des prospects. */
 function hasFullView(role) {
     return FULL_VIEW_ROLES.includes(role);
 }
 /**
  * Construit le filtre `where` de visibilité appliqué aux requêtes prospects :
- * — un manager / admin / super admin / comptable voit tout ;
- * — les autres rôles ne voient que les prospects qui leur sont affectés,
- *   ceux qu'ils ont créés ou ceux non alloués (`assignedToId IS NULL`).
+ * — SUPER_ADMIN / ADMIN / MANAGER voient tout (y compris les prospects sans
+ *   affectation) ;
+ * — tous les autres rôles (AGENT, ACCOUNTANT, ASSISTANTE_DIRECTION, READONLY…)
+ *   ne voient QUE les prospects qui leur sont ACTUELLEMENT affectés
+ *   (`assignedToId = userId`). L'accès suit l'affectation courante : comme leurs
+ *   propres créations leur sont auto-affectées, ils retrouvent les prospects
+ *   qu'ils enregistrent ; mais dès qu'un prospect est RÉ-AFFECTÉ à un autre
+ *   utilisateur, l'ancien affectataire (même s'il en est le créateur) en perd
+ *   l'accès — seuls le nouvel affectataire et les rôles à vue globale le voient.
  */
 function buildVisibilityWhere(session) {
     if (hasFullView(session.role))
         return {};
-    return {
-        OR: [
-            { assignedToId: session.userId },
-            { createdById: session.userId },
-            { assignedToId: null },
-        ],
-    };
+    return { assignedToId: session.userId };
 }
 // ── Schémas Zod ──────────────────────────────────────────────────────────────
 const SOURCES = [
@@ -130,7 +135,10 @@ function registerProspectsIPC() {
                 where.status = filters.status;
             if (filters.source)
                 where.source = filters.source;
-            if (filters.assignedToId !== undefined) {
+            // Le filtre par affectation (dont « Non alloués » = null) n'est appliqué
+            // que pour les rôles à vue globale ; les rôles restreints restent
+            // strictement limités à leurs propres prospects affectés.
+            if (hasFullView(session.role) && filters.assignedToId !== undefined) {
                 where.assignedToId = filters.assignedToId === null ? null : Number(filters.assignedToId);
             }
             if (filters.search) {
@@ -190,13 +198,11 @@ function registerProspectsIPC() {
             });
             if (!prospect)
                 return { success: false, error: 'Prospect introuvable' };
-            // Contrôle de visibilité fine pour les rôles restreints.
-            if (!hasFullView(session.role)) {
-                const visible = prospect.assignedToId === session.userId ||
-                    prospect.createdById === session.userId ||
-                    prospect.assignedToId === null;
-                if (!visible)
-                    return { success: false, error: 'Prospect inaccessible' };
+            // Contrôle de visibilité fine pour les rôles restreints : ils ne peuvent
+            // consulter que les prospects qui leur sont ACTUELLEMENT affectés (l'accès
+            // suit l'affectation courante — perdu dès qu'il est ré-affecté à autrui).
+            if (!hasFullView(session.role) && prospect.assignedToId !== session.userId) {
+                return { success: false, error: 'Prospect inaccessible' };
             }
             return { success: true, data: serialize(prospect) };
         }
@@ -223,9 +229,18 @@ function registerProspectsIPC() {
             data.reference = await nextReference(db);
             if (data.budget !== undefined)
                 data.budget = String(data.budget);
-            // Seuls les rôles d'assignation peuvent affecter un prospect dès la création.
-            if (!canAssign(session.role))
-                delete data.assignedToId;
+            // Affectation à la création :
+            // — SUPER_ADMIN / ADMIN / MANAGER : conservent le choix saisi (peut rester
+            //   vide → prospect sans affectation, visible uniquement par ces rôles) ;
+            // — tous les autres rôles : le prospect leur est AUTOMATIQUEMENT affecté
+            //   (ils ne peuvent ni créer de prospect non alloué, ni l'affecter à autrui).
+            if (canAssign(session.role)) {
+                if (data.assignedToId === undefined)
+                    data.assignedToId = null;
+            }
+            else {
+                data.assignedToId = session.userId;
+            }
             const prospect = await db.prospect.create({
                 data,
                 include: {

@@ -9,6 +9,7 @@ export const TREASURY_ADMIN_ROLES = ['SUPER_ADMIN', 'ADMIN'];
 export const ACCOUNT_TYPE_OPTIONS = [
   { value: 'BANQUE', label: 'Compte bancaire' },
   { value: 'CAISSE', label: 'Caisse espèces' },
+  { value: 'CAISSE_CENTRALE', label: 'Caisse interne' },
   { value: 'MOBILE_MONEY', label: 'Mobile Money' },
 ];
 
@@ -16,9 +17,10 @@ export const ACCOUNT_TYPE_LABEL: Record<string, string> = Object.fromEntries(
   ACCOUNT_TYPE_OPTIONS.map((o) => [o.value, o.label]),
 );
 
-export const ACCOUNT_TYPE_VARIANT: Record<string, 'info' | 'success' | 'purple'> = {
+export const ACCOUNT_TYPE_VARIANT: Record<string, 'info' | 'success' | 'purple' | 'warning'> = {
   BANQUE: 'info',
   CAISSE: 'success',
+  CAISSE_CENTRALE: 'warning',
   MOBILE_MONEY: 'purple',
 };
 

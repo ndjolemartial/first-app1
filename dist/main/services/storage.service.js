@@ -9,6 +9,7 @@ exports.resolveStoragePath = resolveStoragePath;
 exports.importGedFile = importGedFile;
 exports.writeGedFile = writeGedFile;
 exports.writeEmployeeSignedContract = writeEmployeeSignedContract;
+exports.writeLeaveSignedDocument = writeLeaveSignedDocument;
 exports.removeStorageFile = removeStorageFile;
 exports.readStorageFile = readStorageFile;
 exports.writeLogoFile = writeLogoFile;
@@ -92,6 +93,16 @@ function writeEmployeeSignedContract(employeeId, buffer, originalName) {
     const dir = path_1.default.join(storageRoot(), 'employees', String(employeeId), 'signed-contracts');
     fs_1.default.mkdirSync(dir, { recursive: true });
     const safe = originalName.replace(/[\\/:*?"<>|]/g, '_').replace(/\s+/g, ' ').trim() || 'contrat';
+    const fileName = `${Date.now()}-${safe}`;
+    const abs = path_1.default.join(dir, fileName);
+    fs_1.default.writeFileSync(abs, buffer);
+    return { relativePath: path_1.default.relative(storageRoot(), abs), size: buffer.length };
+}
+/** Écrit la fiche « Congés & Absence » signée jointe à une demande de congé. */
+function writeLeaveSignedDocument(requestId, buffer, originalName) {
+    const dir = path_1.default.join(storageRoot(), 'leave', String(requestId), 'signed');
+    fs_1.default.mkdirSync(dir, { recursive: true });
+    const safe = originalName.replace(/[\\/:*?"<>|]/g, '_').replace(/\s+/g, ' ').trim() || 'fiche-conge';
     const fileName = `${Date.now()}-${safe}`;
     const abs = path_1.default.join(dir, fileName);
     fs_1.default.writeFileSync(abs, buffer);

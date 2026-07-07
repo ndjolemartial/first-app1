@@ -51,17 +51,17 @@ const navItems: NavEntry[] = [
   {
     label: 'Gestion du personnel',
     icon: <UserCog className="h-5 w-5" />,
-    roles: ['SUPER_ADMIN', 'ADMIN', 'RH', 'MANAGER', 'ASSISTANTE_DIRECTION'],
+    roles: ['SUPER_ADMIN', 'ADMIN', 'RH', 'ACCOUNTANT', 'MANAGER', 'ASSISTANTE_DIRECTION'],
     children: [
-      { label: 'RH & Paie', to: '/hr/employees', icon: <Users className="h-5 w-5" /> },
-      { label: 'Bulletins de paie', to: '/hr/payslips', icon: <ReceiptText className="h-5 w-5" /> },
+      { label: 'RH & Paie', to: '/hr/employees', icon: <Users className="h-5 w-5" />, roles: ['SUPER_ADMIN', 'ADMIN', 'RH', 'ACCOUNTANT', 'MANAGER'] },
+      { label: 'Bulletins de paie', to: '/hr/payslips', icon: <ReceiptText className="h-5 w-5" />, roles: ['SUPER_ADMIN', 'ADMIN', 'RH', 'ACCOUNTANT', 'MANAGER'] },
       { label: 'Congés & absences', to: '/hr/leave', icon: <CalendarDays className="h-5 w-5" /> },
-      { label: 'Pointage', to: '/hr/attendance', icon: <Clock className="h-5 w-5" /> },
+      { label: 'Pointage', to: '/hr/attendance', icon: <Clock className="h-5 w-5" />, roles: ['SUPER_ADMIN', 'ADMIN', 'RH', 'MANAGER', 'ASSISTANTE_DIRECTION'] },
     ],
   },
   // Self-service : accessible à tout utilisateur connecté (son propre dossier).
   { label: 'Mon espace RH', to: '/my-hr', icon: <IdCard className="h-5 w-5" /> },
-  { label: 'Gestion des visiteurs', to: '/visitors', icon: <UserPlus className="h-5 w-5" />, roles: ['SUPER_ADMIN', 'ADMIN', 'ASSISTANTE_DIRECTION'] },
+  { label: 'Gestion des visiteurs', to: '/visitors', icon: <UserPlus className="h-5 w-5" />, roles: ['SUPER_ADMIN', 'ADMIN', 'ASSISTANTE_DIRECTION', 'MANAGER'] },
   { label: 'Analyses décisionnelles', to: '/analytics', icon: <BarChart3 className="h-5 w-5" />, roles: ['SUPER_ADMIN', 'ADMIN'] },
   { label: 'Paramètres', to: '/settings', icon: <Settings className="h-5 w-5" />, roles: ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ACCOUNTANT', 'RH'] },
 ];

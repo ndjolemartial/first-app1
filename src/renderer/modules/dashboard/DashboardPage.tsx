@@ -155,7 +155,7 @@ export default function DashboardPage() {
     <PageLayout title="Tableau de bord" breadcrumbs={[{ label: 'Accueil' }]}>
       <div className="mb-6">
         <h2 className="text-xl font-semibold text-slate-900">
-          Bonjour, {user?.firstName} 👋
+          Bonjour, {user?.nomCommercial?.trim() || user?.firstName} 👋
         </h2>
         <p className="text-slate-500 text-sm mt-1">Bienvenue sur Afrikimmo-App</p>
       </div>

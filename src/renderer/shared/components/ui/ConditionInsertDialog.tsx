@@ -60,7 +60,9 @@ export default function ConditionInsertDialog({
     }
   }, [open, variables]);
 
-  const canInsert = variable.trim() !== '' && trueText.trim() !== '';
+  // Une variable suffit pour insérer : le texte « si vrai » peut être complété
+  // ensuite directement dans l'éditeur (bloc {{#si …}}…{{/si}}).
+  const canInsert = variable.trim() !== '';
 
   const handleInsert = () => {
     if (!canInsert) return;
@@ -131,7 +133,7 @@ export default function ConditionInsertDialog({
 
         <div>
           <label className="block text-sm font-medium text-slate-700 mb-1">
-            Texte affiché si la condition est vraie *
+            Texte affiché si la condition est vraie
           </label>
           <textarea
             value={trueText}

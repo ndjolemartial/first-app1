@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import PageLayout from '../../../shared/components/layout/PageLayout';
 import Card from '../../../shared/components/ui/Card';
@@ -12,8 +13,9 @@ import {
 } from '../utils/treasury.utils';
 import { formatCurrency, formatDate } from '../../../shared/utils/format';
 import {
-  Wallet, ArrowDownCircle, ArrowUpCircle, Landmark, Banknote,
+  Wallet, ArrowDownCircle, ArrowUpCircle, Landmark, Banknote, Paperclip,
 } from 'lucide-react';
+import OperationDocumentsModal from '../components/OperationDocumentsModal';
 
 export default function TreasuryDashboardPage() {
   const navigate = useNavigate();
@@ -24,6 +26,7 @@ export default function TreasuryDashboardPage() {
 
   const { data: res, isLoading } = useTreasuryDashboard();
   const d = res?.data;
+  const [docsOpTarget, setDocsOpTarget] = useState<any>(null);
 
   return (
     <PageLayout
@@ -155,6 +158,7 @@ export default function TreasuryDashboardPage() {
                     <th className="text-left px-4 py-3 font-medium text-slate-600">Objet</th>
                     <th className="text-left px-4 py-3 font-medium text-slate-600">Origine</th>
                     <th className="text-right px-4 py-3 font-medium text-slate-600">Montant</th>
+                    <th className="px-4 py-3" />
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
@@ -169,6 +173,16 @@ export default function TreasuryDashboardPage() {
                         {op.direction === 'ENTREE' ? '+' : '−'} {formatCurrency(Number(op.amount))}
                         <span className="ml-1 text-xs text-slate-400">{DIRECTION_LABEL[op.direction]}</span>
                       </td>
+                      <td className="px-4 py-3">
+                        <div className="flex justify-end">
+                          <Button
+                            size="sm" variant="ghost"
+                            icon={<Paperclip className="h-4 w-4 text-slate-500" />}
+                            title="Pièces jointes"
+                            onClick={() => setDocsOpTarget(op)}
+                          />
+                        </div>
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -177,6 +191,12 @@ export default function TreasuryDashboardPage() {
           </Card>
         </>
       )}
+
+      <OperationDocumentsModal
+        operation={docsOpTarget}
+        onClose={() => setDocsOpTarget(null)}
+        canManage={canManage}
+      />
     </PageLayout>
   );
 }

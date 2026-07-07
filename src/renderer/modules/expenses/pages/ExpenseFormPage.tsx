@@ -86,7 +86,7 @@ export default function ExpenseFormPage() {
           <Input label="Libellé" placeholder="Ex: Loyer du bureau — mars 2026" {...register('label', { required: true })} />
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <Select label="Objet (sortie)" options={categoryOptions} {...register('categoryId', { required: true })} />
-            <Input label="Montant prévisionnel (FCFA)" type="number" step="1000" min="0" {...register('amount', { required: true })} />
+            <Input label="Montant prévisionnel (FCFA)" type="number" step="any" min="1" {...register('amount', { required: true })} />
             <Input label="Date prévue de règlement" type="date" {...register('dueDate', { required: true })} />
           </div>
           <div>

@@ -13,6 +13,7 @@ import { useClients } from '../hooks/useClients';
 import { formatDate } from '../../../shared/utils/format';
 import ExportMenu, { ExportColumn } from '../../../shared/components/ExportMenu';
 import { useAuthStore } from '../../../shared/stores/auth.store';
+import { canExportPrint } from '../../../shared/utils/exportPermissions';
 import { UserPlus, Eye, Edit } from 'lucide-react';
 
 /** Rôles habilités à créer un client (équivalents WRITE_ROLES côté IPC). */
@@ -60,6 +61,7 @@ export default function ClientsListPage() {
   const token = useAuthStore((s) => s.token)!;
   const role  = useAuthStore((s) => s.user?.role) ?? '';
   const canCreate = WRITE_ROLES.has(role);
+  const canExport = canExportPrint(role);
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState('');
   const [type, setType] = useState('');
@@ -82,16 +84,18 @@ export default function ClientsListPage() {
       breadcrumbs={[{ label: 'Clients' }]}
       actions={
         <div className="flex gap-2">
-          <ExportMenu
-            fileName="clients"
-            title="Liste des clients"
-            subtitle={filterSummary}
-            columns={EXPORT_COLUMNS}
-            fetchRows={async () => {
-              const r = await window.electron.clients.list(token, filters, 1, 100000);
-              return r.success ? r.data ?? [] : [];
-            }}
-          />
+          {canExport && (
+            <ExportMenu
+              fileName="clients"
+              title="Liste des clients"
+              subtitle={filterSummary}
+              columns={EXPORT_COLUMNS}
+              fetchRows={async () => {
+                const r = await window.electron.clients.list(token, filters, 1, 100000);
+                return r.success ? r.data ?? [] : [];
+              }}
+            />
+          )}
           {canCreate && (
             <Button icon={<UserPlus className="h-4 w-4" />} onClick={() => navigate('/clients/new')}>
               Nouveau client

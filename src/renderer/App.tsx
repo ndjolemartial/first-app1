@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Outlet, Navigate } from 'react-router-dom';
 import { useAuthStore } from './shared/stores/auth.store';
+import { useIdleLogout } from './shared/hooks/useIdleLogout';
 import ThemeProvider from './shared/theme/ThemeProvider';
 
 export default function App() {
@@ -8,6 +9,9 @@ export default function App() {
   const setAuth = useAuthStore((s) => s.setAuth);
   const clearAuth = useAuthStore((s) => s.clearAuth);
   const [checking, setChecking] = useState(true);
+
+  // Déconnexion automatique après 5 minutes d'inactivité.
+  useIdleLogout();
 
   // Les sessions sont conservées en mémoire dans le processus principal : elles
   // sont perdues à chaque redémarrage de l'application. Le jeton persisté côté

@@ -275,9 +275,14 @@ export default function RichTextEditor({
     editor.chain().focus().setImage({ src: dataUri }).run();
   };
 
-  /** Insère un bloc de condition `{{#si …}}…{{/si}}` produit par la modale. */
+  /**
+   * Insère un bloc de condition `{{#si …}}…{{/si}}` produit par la modale.
+   * Insertion en **texte littéral** (nœud text) et non en HTML : sinon les
+   * opérateurs `<` / `<=` (ou tout caractère `<` dans le texte) seraient
+   * interprétés comme du balisage et le bloc disparaîtrait silencieusement.
+   */
   const insertCondition = (snippet: string) => {
-    editor.chain().focus().insertContent(snippet).run();
+    editor.chain().focus().insertContent({ type: 'text', text: snippet }).run();
   };
 
   const onPickImage = (e: React.ChangeEvent<HTMLInputElement>) => {

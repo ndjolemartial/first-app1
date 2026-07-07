@@ -14,6 +14,7 @@ import { formatCurrency } from '../../../shared/utils/format';
 import ExportMenu, { ExportColumn } from '../../../shared/components/ExportMenu';
 import StatusRecap, { type StatusRecapItem } from '../../../shared/components/ui/StatusRecap';
 import { useAuthStore } from '../../../shared/stores/auth.store';
+import { canExportPrint } from '../../../shared/utils/exportPermissions';
 import { Plus, Eye, Edit, Building2, CheckCircle2, BookmarkCheck, Clock, BadgeCheck, KeyRound, Wrench, Ban } from 'lucide-react';
 
 /** Rôles habilités à créer/modifier un bien.
@@ -132,16 +133,18 @@ export default function PropertiesListPage() {
       breadcrumbs={[{ label: 'Biens' }]}
       actions={
         <div className="flex gap-2">
-          <ExportMenu
-            fileName="biens"
-            title="Liste des biens immobiliers"
-            subtitle={filterSummary}
-            columns={EXPORT_COLUMNS}
-            fetchRows={async () => {
-              const r = await window.electron.properties.list(token, filters, 1, 100000);
-              return r.success ? r.data ?? [] : [];
-            }}
-          />
+          {canExportPrint(role) && (
+            <ExportMenu
+              fileName="biens"
+              title="Liste des biens immobiliers"
+              subtitle={filterSummary}
+              columns={EXPORT_COLUMNS}
+              fetchRows={async () => {
+                const r = await window.electron.properties.list(token, filters, 1, 100000);
+                return r.success ? r.data ?? [] : [];
+              }}
+            />
+          )}
           {canWrite && (
             <Button icon={<Plus className="h-4 w-4" />} onClick={() => navigate('/properties/new')}>
               Nouveau bien

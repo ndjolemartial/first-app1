@@ -236,6 +236,12 @@ function buildInvoiceHtml(inv: any, tpl: any, company: CompanyEmitter | null = n
   const fmtDate = (d: unknown) => (d ? new Date(d as any).toLocaleDateString('fr-FR') : '—');
 
   const accent = (tpl?.accentColor as string) || '#1E3A5F';
+  // Couleurs de fond paramétrables par modèle : bandeaux de titre (le trait latéral
+  // gauche garde l'accent) et en-têtes de tableaux — deux couleurs distinctes.
+  const sectionBg = (tpl?.sectionColor as string) || '#d7dfe8';
+  const tableHeaderBg = (tpl?.tableHeaderColor as string) || '#e2e8f0';
+  const sectionFg = (tpl?.sectionTextColor as string) || '#0f172a';
+  const tableHeaderFg = (tpl?.tableHeaderTextColor as string) || '#0f172a';
   const layout = (tpl?.layout as string) || 'CLASSIQUE';
   const headerHtml = (tpl?.headerHtml as string) || '<p><strong style="font-size:18px">AFRIKIMMO</strong></p>';
   const footerHtml = (tpl?.footerHtml as string) || '';
@@ -267,6 +273,24 @@ function buildInvoiceHtml(inv: any, tpl: any, company: CompanyEmitter | null = n
   const paymentsRows = (inv.payments ?? [])
     .map((p: any) => `<tr><td>${fmtDate(p.paidAt)}</td><td>${esc(p.method)}</td><td>${esc(p.reference ?? '—')}</td><td class="num">${fmt(p.amount)}</td></tr>`)
     .join('');
+
+  // Récapitulatif du versement (paiement à l'origine de la facture, pouvant
+  // couvrir plusieurs échéances) : lignes des échéances couvertes et restantes.
+  const INSTALLMENT_STATUS_FR: Record<string, string> = {
+    PAYE: 'Payé', PARTIEL: 'Partiel', EN_ATTENTE: 'En attente',
+    A_REGLER: 'À régler', EN_RETARD: 'En retard', ANNULE: 'Annulé',
+  };
+  const v = inv.versement;
+  const coveredRows = v
+    ? v.covered.map((c: any) =>
+        `<tr><td>n°${c.number}</td><td>${fmtDate(c.dueDate)}</td><td class="num">${fmt(c.amount)}</td><td class="num">${fmt(c.applied)}</td><td class="num">${fmt(c.paidAmount)}</td><td>${esc(INSTALLMENT_STATUS_FR[c.status] ?? c.status)}</td></tr>`,
+      ).join('')
+    : '';
+  const remainingRows = v
+    ? v.remaining.map((r: any) =>
+        `<tr><td>n°${r.number}</td><td>${fmtDate(r.dueDate)}</td><td class="num">${fmt(r.amount)}</td><td class="num">${fmt(r.paidAmount)}</td><td class="num">${fmt(r.remaining)}</td></tr>`,
+      ).join('')
+    : '';
 
   return `<!DOCTYPE html>
 <html lang="fr"><head><meta charset="utf-8"><style>
@@ -302,7 +326,19 @@ function buildInvoiceHtml(inv: any, tpl: any, company: CompanyEmitter | null = n
   .totals .grand { font-weight: bold; font-size: 14px; color: ${accent}; padding-top: 6px; margin-top: 2px; }
   /* Le titre de section reste collé au bloc qui suit. */
   .sec { margin-top: 24px; font-size: 11px; text-transform: uppercase; color: #475569; break-after: avoid; page-break-after: avoid; }
-  .end-doc { margin-top: 28px; font-size: 11px; color: #0f172a; break-inside: avoid; page-break-inside: avoid; }
+  /* Titre de section mis en avant : bandeau gris clair, gras et bien lisible.
+     Marges et hauteur réduites (facture de versement compacte). */
+  .sec-hl { margin-top: 12px; margin-bottom: 5px; padding: 5px 12px; background: ${sectionBg};
+    border-left: 4px solid ${accent}; font-size: 12.5px; font-weight: bold; text-transform: uppercase;
+    letter-spacing: .3px; color: ${sectionFg}; break-after: avoid; page-break-after: avoid; }
+  /* En-têtes de tableaux des blocs récap : fond et texte configurables. */
+  table.items.hl thead th { background: ${tableHeaderBg}; color: ${tableHeaderFg}; }
+  /* Blocs récap versement compacts : espace bandeau↔tableau et hauteur de ligne réduits. */
+  table.items.hl { margin-top: 6px; }
+  table.items.hl th, table.items.hl td { padding-top: 3px; padding-bottom: 3px; }
+  /* Ligne « Souscription » unique en tête de la facture de versement. */
+  .souscription-line { margin-top: 12px; font-size: 13px; font-weight: bold; color: #0f172a; }
+  .end-doc { margin-top: 18px; font-size: 11px; color: #0f172a; break-inside: avoid; page-break-inside: avoid; }
   .foot { margin-top: 32px; padding-top: 10px; font-size: 11px; color: #475569; break-inside: avoid; page-break-inside: avoid; }
   ${invoiceLayoutCss(layout, accent)}
 </style></head><body>
@@ -326,6 +362,30 @@ function buildInvoiceHtml(inv: any, tpl: any, company: CompanyEmitter | null = n
       ${clientLines.map((l) => `<div>${esc(l)}</div>`).join('')}
     </div>
   </div>
+  ${inv.versement ? `
+  <div class="souscription-line">Souscription : ${esc(inv.convention?.lotsSouscrits || inv.detailsSouscription || '—')}</div>
+  <div class="sec-hl">Paiement — récapitulatif</div>
+  <div class="totals recap">
+    <div class="grand"><span>Montant total du versement</span><span>${fmt(inv.versement.total)}</span></div>
+    <div><span>Date</span><span>${fmtDate(inv.versement.date)}</span></div>
+    <div><span>Mode / référence</span><span>${esc(inv.versement.method)}${inv.versement.reference ? ' — ' + esc(inv.versement.reference) : ''}</span></div>
+  </div>
+  <div class="sec-hl">Échéances couvertes par ce versement</div>
+  <table class="items hl">
+    <thead><tr><th>Échéance</th><th>Date d'échéance</th><th class="num">Montant</th><th class="num">Réglé sur ce versement</th><th class="num">Cumul réglé</th><th>Statut</th></tr></thead>
+    <tbody>${coveredRows}</tbody>
+  </table>
+  ${inv.versement.remaining.length ? `
+  <div class="sec-hl">Échéances restantes</div>
+  <table class="items hl">
+    <thead><tr><th>Échéance</th><th>Date d'échéance</th><th class="num">Montant</th><th class="num">Déjà réglé</th><th class="num">Reste dû</th></tr></thead>
+    <tbody>${remainingRows}</tbody>
+  </table>
+  <div class="totals recap">
+    <div class="grand"><span>Solde total restant (${inv.versement.remaining.length} échéance(s))</span><span>${fmt(inv.versement.totalRemaining)}</span></div>
+  </div>`
+    : `<div class="totals recap"><div class="grand"><span>Solde total restant</span><span>${fmt(0)}</span></div></div>`}
+  ` : `
   <div class="meta">
     <div><span>Type</span>${esc(INVOICE_TYPE_LABEL[inv.type] ?? inv.type)}</div>
     <div><span>Date d'émission</span>${fmtDate(inv.issueDate)}</div>
@@ -362,6 +422,7 @@ function buildInvoiceHtml(inv: any, tpl: any, company: CompanyEmitter | null = n
     <div><span>Échéances réglées</span><span>${inv.installmentRecap.paidCount} / ${inv.installmentRecap.totalCount} — ${fmt(inv.installmentRecap.paidAmount)}</span></div>
     <div class="grand"><span>Solde des échéances restantes (${inv.installmentRecap.remainingCount})</span><span>${fmt(inv.installmentRecap.remainingAmount)}</span></div>
   </div>` : ''}
+  `}
   ${endOfDocument ? `<div class="end-doc">${endOfDocument}</div>` : ''}
   ${footerHtml ? `<div class="foot">${footerHtml}</div>` : ''}
 </body></html>`;
@@ -1035,6 +1096,8 @@ export function registerAccountingIPC(): void {
       // — Souscription héritée (sans convention) : toutes les échéances héritées
       //   de la même souscription = même client + même jeu de terrains.
       let installmentRecap: any = null;
+      let versement: any = null;
+      const round2 = (n: number) => Math.round(n * 100) / 100;
       const buildRecap = (active: any[]) => {
         if (active.length === 0) return null;
         const paid = active.filter((i) => i.status === 'PAYE');
@@ -1047,12 +1110,60 @@ export function registerAccountingIPC(): void {
           remainingAmount: remaining.reduce((s, i) => s + Number(i.amount), 0),
         };
       };
+
+      // Reconstitue le VERSEMENT à l'origine de la facture imprimée : son règlement
+      // le plus récent (même date + référence + mode) identifie l'ensemble des
+      // règlements du même versement répartis sur plusieurs échéances. On expose
+      // ainsi, sur un seul document : le montant total du versement, les échéances
+      // couvertes (partiellement/totalement) et les échéances restantes.
+      const anchor = (invoice.payments ?? []).slice(-1)[0];
+      const buildVersement = (active: any[]) => {
+        if (!anchor || invoice.type !== 'ECHEANCE_VENTE') return null;
+        const sameVersement = (p: any) =>
+          +new Date(p.paidAt) === +new Date(anchor.paidAt) &&
+          (p.reference ?? '') === (anchor.reference ?? '') &&
+          p.method === anchor.method;
+        const ordered = [...active].sort((a, b) => a.installmentNumber - b.installmentNumber);
+        const covered: any[] = [];
+        let total = 0;
+        for (const i of ordered) {
+          const applied = (i.invoice?.payments ?? [])
+            .filter(sameVersement)
+            .reduce((s: number, p: any) => s + Number(p.amount), 0);
+          if (applied > 0.001) {
+            covered.push({
+              number: i.installmentNumber, dueDate: i.dueDate, amount: Number(i.amount),
+              applied: round2(applied), paidAmount: Number(i.paidAmount), status: i.status,
+            });
+            total += applied;
+          }
+        }
+        if (covered.length === 0) return null;
+        const remaining = ordered
+          .filter((i) => i.status !== 'PAYE')
+          .map((i) => ({
+            number: i.installmentNumber, dueDate: i.dueDate, amount: Number(i.amount),
+            paidAmount: Number(i.paidAmount), remaining: round2(Number(i.amount) - Number(i.paidAmount)),
+            status: i.status,
+          }));
+        return {
+          date: anchor.paidAt, method: anchor.method, reference: anchor.reference,
+          total: round2(total), covered, remaining,
+          totalRemaining: round2(remaining.reduce((s, r) => s + r.remaining, 0)),
+        };
+      };
       // L'apport initial est facturé à l'ouverture : on y joint aussi l'échéancier
       // de la convention pour rappeler au client le solde des échéances restantes.
       const recapByConvention = invoice.type === 'ECHEANCE_VENTE' || invoice.type === 'APPORT_INITIAL';
       if (recapByConvention && invoice.conventionId) {
-        const insts = await db.saleInstallment.findMany({ where: { conventionId: invoice.conventionId } });
-        installmentRecap = buildRecap(insts.filter((i) => i.status !== 'ANNULE'));
+        const insts = await db.saleInstallment.findMany({
+          where: { conventionId: invoice.conventionId },
+          orderBy: { installmentNumber: 'asc' },
+          include: { invoice: { select: { payments: true } } },
+        });
+        const active = insts.filter((i) => i.status !== 'ANNULE');
+        installmentRecap = buildRecap(active);
+        versement = buildVersement(active);
       } else if (invoice.type === 'ECHEANCE_VENTE' && !invoice.conventionId) {
         // Clé de souscription héritée : jeu de terrains trié (liens multiples,
         // repli sur le terrain direct), identique à l'agrégation côté UI.
@@ -1061,7 +1172,10 @@ export function registerAccountingIPC(): void {
           if (ids.length === 0 && i.terrainId) ids.push(i.terrainId);
           return [...ids].sort((a: number, b: number) => a - b).join(',');
         };
-        const linksInclude = { terrainLinks: { select: { terrain: { select: { id: true } } } } } as const;
+        const linksInclude = {
+          terrainLinks: { select: { terrain: { select: { id: true } } } },
+          invoice: { select: { payments: true } },
+        } as const;
         // Échéance héritée rattachée à cette facture → identifie la souscription.
         const paidInst = await db.saleInstallment.findFirst({
           where: { invoiceId: invoice.id, conventionId: null },
@@ -1072,17 +1186,18 @@ export function registerAccountingIPC(): void {
           const key = terrainKey(paidInst);
           const all = await db.saleInstallment.findMany({
             where: { conventionId: null, clientId: cId },
+            orderBy: { installmentNumber: 'asc' },
             include: linksInclude,
           });
-          installmentRecap = buildRecap(
-            all.filter((i) => i.status !== 'ANNULE' && terrainKey(i) === key),
-          );
+          const active = all.filter((i) => i.status !== 'ANNULE' && terrainKey(i) === key);
+          installmentRecap = buildRecap(active);
+          versement = buildVersement(active);
         }
       }
 
       const template = await resolveInvoiceTemplate(db, invoice.type);
       const company = await loadCompanyEmitter();
-      const pdf = await htmlToPdf(buildInvoiceHtml({ ...invoice, installmentRecap }, template, company), { landscape: false });
+      const pdf = await htmlToPdf(buildInvoiceHtml({ ...invoice, installmentRecap, versement }, template, company), { landscape: false });
       // Aperçu avant impression : ouvre le visualiseur PDF intégré (impression
       // directe avec choix d'imprimante), sans imposer de téléchargement.
       await openPrintPreview(pdf, `Facture ${invoice.reference}`);
