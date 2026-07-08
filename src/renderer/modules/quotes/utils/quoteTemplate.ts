@@ -85,11 +85,17 @@ export function groupItemsByCategory(items: any[]): QuoteItemGroup[] {
 
 const TD = 'border:1px solid #cbd5e1;padding:4px 8px;';
 
-/** Une ligne d'article (tr) du tableau. */
-function itemRow(it: any): string {
+/** Vrai si au moins une ligne porte une unité renseignée. */
+export function hasItemUnits(items: any[]): boolean {
+  return (items ?? []).some((it) => (it.unit ?? '').trim() !== '');
+}
+
+/** Une ligne d'article (tr) du tableau. La colonne « Unité » n'est incluse que si `showUnit`. */
+function itemRow(it: any, showUnit: boolean): string {
   return '<tr>'
     + `<td style="${TD}">${esc(it.designation)}</td>`
     + `<td style="${TD}text-align:right;">${Number(it.quantity)}</td>`
+    + (showUnit ? `<td style="${TD}">${esc(it.unit ?? '')}</td>` : '')
     + `<td style="${TD}text-align:right;">${formatCurrency(Number(it.unitPrice))}</td>`
     + `<td style="${TD}text-align:right;">${formatCurrency(Number(it.total))}</td>`
     + '</tr>';
@@ -98,20 +104,25 @@ function itemRow(it: any): string {
 /**
  * Tableau HTML des lignes du devis. Si des catégories sont renseignées, les
  * lignes sont disposées par blocs (en-tête de catégorie + sous-total) ; sinon
- * la liste reste à plat.
+ * la liste reste à plat. La colonne « Unité » n'apparaît que si au moins une
+ * ligne porte une unité.
  */
 function buildItemsTable(items: any[]): string {
   if (!items?.length) return '';
+  const showUnit = hasItemUnits(items);
+  // Nombre total de colonnes et colonnes couvertes par le libellé « Sous-total ».
+  const colCount = showUnit ? 5 : 4;
+  const subLabelSpan = colCount - 1;
   const grouped = hasItemCategories(items);
   let body: string;
   if (!grouped) {
-    body = items.map(itemRow).join('');
+    body = items.map((it) => itemRow(it, showUnit)).join('');
   } else {
     body = groupItemsByCategory(items).map((g) => {
       const label = esc(g.category || 'AUTRES');
-      const header = `<tr><td colspan="4" style="${TD}background:#e2e8f0;font-weight:bold;">${label}</td></tr>`;
-      const rows = g.items.map(itemRow).join('');
-      const sub = `<tr><td colspan="3" style="${TD}text-align:right;font-style:italic;">Sous-total ${label}</td>`
+      const header = `<tr><td colspan="${colCount}" style="${TD}background:#e2e8f0;font-weight:bold;">${label}</td></tr>`;
+      const rows = g.items.map((it) => itemRow(it, showUnit)).join('');
+      const sub = `<tr><td colspan="${subLabelSpan}" style="${TD}text-align:right;font-style:italic;">Sous-total ${label}</td>`
         + `<td style="${TD}text-align:right;font-style:italic;">${formatCurrency(g.subtotal)}</td></tr>`;
       return header + rows + sub;
     }).join('');
@@ -121,6 +132,7 @@ function buildItemsTable(items: any[]): string {
     + '<thead><tr style="background:#f1f5f9;">'
     + `<th style="${TD}text-align:left;">Désignation</th>`
     + `<th style="${TD}text-align:right;">Qté</th>`
+    + (showUnit ? `<th style="${TD}text-align:left;">Unité</th>` : '')
     + `<th style="${TD}text-align:right;">Prix unitaire</th>`
     + `<th style="${TD}text-align:right;">Total</th>`
     + '</tr></thead>'

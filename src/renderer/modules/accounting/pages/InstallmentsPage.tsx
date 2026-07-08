@@ -473,31 +473,44 @@ export default function InstallmentsPage() {
   const soldeEligibleIds = (() => {
     const ids = new Set<number>();
     if (!canEmitLegacySolde) return ids;
-    // Reste dû cumulé par `${clientId}|${terrainId}`.
+    // Reste dû NET cumulé (peut être ≤ 0 : règlement intégral ou trop-perçu) —
+    // cohérent avec la garde serveur qui autorise dès que le solde est ≤ 0.
+    // Par terrain `${clientId}|${terrainId}` et, à part, par client pour les
+    // échéances SANS terrain rattaché.
     const balanceByKey = new Map<string, number>();
+    const noTerrainBalance = new Map<number, number>();
     for (const i of legacyData) {
       if (i.status === 'ANNULE') continue;
       const cId = i.clientId ?? i.client?.id;
       if (!cId) continue;
-      const remaining = Math.max(0, Number(i.amount) - Number(i.paidAmount ?? 0));
-      for (const tId of legacyTerrainIds(i)) {
-        const key = `${cId}|${tId}`;
-        balanceByKey.set(key, (balanceByKey.get(key) ?? 0) + remaining);
+      const remaining = Number(i.amount) - Number(i.paidAmount ?? 0);
+      const tIds = legacyTerrainIds(i);
+      if (tIds.length === 0) {
+        noTerrainBalance.set(cId, (noTerrainBalance.get(cId) ?? 0) + remaining);
+      } else {
+        for (const tId of tIds) {
+          const key = `${cId}|${tId}`;
+          balanceByKey.set(key, (balanceByKey.get(key) ?? 0) + remaining);
+        }
       }
     }
-    // Regroupement par souscription = client + jeu de terrains identique.
-    const groups = new Map<string, { cId: number; terrainIds: number[]; items: any[] }>();
+    // Regroupement par souscription = client + jeu de terrains, ou client seul
+    // (souscription héritée sans terrain rattaché).
+    const groups = new Map<string, { cId: number; terrainIds: number[]; items: any[]; noTerrain: boolean }>();
     for (const i of legacyData) {
       if (i.status === 'ANNULE') continue;
       const cId = i.clientId ?? i.client?.id;
+      if (!cId) continue;
       const tIds = legacyTerrainIds(i);
-      if (!cId || tIds.length === 0) continue;
-      const key = `${cId}|${[...tIds].sort((a, b) => a - b).join(',')}`;
-      if (!groups.has(key)) groups.set(key, { cId, terrainIds: tIds, items: [] });
+      const noTerrain = tIds.length === 0;
+      const key = noTerrain ? `${cId}|__no_terrain__` : `${cId}|${[...tIds].sort((a, b) => a - b).join(',')}`;
+      if (!groups.has(key)) groups.set(key, { cId, terrainIds: tIds, items: [], noTerrain });
       groups.get(key)!.items.push(i);
     }
     for (const g of groups.values()) {
-      const settled = g.terrainIds.every((t) => (balanceByKey.get(`${g.cId}|${t}`) ?? 0) <= 0.005);
+      const settled = g.noTerrain
+        ? (Math.round((noTerrainBalance.get(g.cId) ?? 0) * 100) / 100) <= 0.005
+        : g.terrainIds.every((t) => (balanceByKey.get(`${g.cId}|${t}`) ?? 0) <= 0.005);
       const hasPaid = g.items.some((i) => i.status === 'PAYE');
       if (settled && hasPaid) {
         const rep = g.items.reduce((a, b) => (b.installmentNumber > a.installmentNumber ? b : a));
@@ -511,9 +524,13 @@ export default function InstallmentsPage() {
   // mode hérité. Le solde est revérifié côté serveur à l'émission.
   const handleSolde = (inst: any) => {
     const cId = inst.clientId ?? inst.client?.id;
+    if (!cId) return;
+    // Terrain optionnel : la souscription héritée peut n'être rattachée à aucun terrain.
     const tId = legacyTerrainIds(inst)[0];
-    if (!cId || !tId) return;
-    navigate(`/conventions/attestations/new?legacy=1&type=SOLDE&clientId=${cId}&terrainId=${tId}`);
+    const url = tId
+      ? `/conventions/attestations/new?legacy=1&type=SOLDE&clientId=${cId}&terrainId=${tId}`
+      : `/conventions/attestations/new?legacy=1&type=SOLDE&clientId=${cId}`;
+    navigate(url);
   };
   // Options du filtre utilisateur : référents distincts présents dans les données.
   const legacyUserOptions = (() => {

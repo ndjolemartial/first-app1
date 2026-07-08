@@ -279,6 +279,8 @@ const employeeSchema = z.object({
   poste: z.string().optional().nullable(),
   departement: z.string().optional().nullable(),
   userId: z.preprocess(emptyToNull, z.coerce.number().int().positive().nullable().optional()),
+  // Responsable hiérarchique (évaluateur au titre de la gestion de la performance).
+  managerId: z.preprocess(emptyToNull, z.coerce.number().int().positive().nullable().optional()),
   status: z.enum(EMPLOYEE_STATUS).optional(),
   hireDate: z.preprocess(emptyToNull, z.coerce.date().nullable().optional()),
   exitDate: z.preprocess(emptyToNull, z.coerce.date().nullable().optional()),
@@ -1646,6 +1648,156 @@ export function registerHrIPC(): void {
     }
   });
 
+  /* ─── Postes / Fonctions (référentiel du champ « Poste ») ──────────────── */
+
+  // Liste des postes utilisée par le sélecteur « Poste » de la fiche employé.
+  // Lecture : rôles ayant accès au module RH. Écriture : rôles habilités à créer
+  // un employé (admins / RH / MANAGER) — création à la volée depuis le formulaire.
+  const jobPositionSchema = z.object({
+    label: z.string().min(1, 'Libellé requis'),
+    isActive: z.boolean().optional(),
+  });
+
+  ipcMain.handle('hr:jobPositions:list', async (_event, { token, includeInactive }: any) => {
+    try {
+      const session = getSession(token);
+      if (!session) return { success: false, error: 'Session expirée' };
+      checkHrRole(session, HR_READ_ROLES);
+      const where: any = { deletedAt: null };
+      if (!includeInactive) where.isActive = true;
+      const data = await getDb().jobPosition.findMany({ where, orderBy: { label: 'asc' } });
+      return ser({ success: true, data });
+    } catch (error: any) {
+      logger.error('hr:jobPositions:list error', error.message);
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle('hr:jobPositions:create', async (_event, { token, payload }: any) => {
+    try {
+      const session = getSession(token);
+      if (!session) return { success: false, error: 'Session expirée' };
+      checkHrRole(session, HR_STAFF_WRITE_ROLES);
+      const parsed = jobPositionSchema.safeParse(payload);
+      if (!parsed.success) return { success: false, error: parsed.error.issues.map((i) => i.message).join(' ; ') };
+      const label = parsed.data.label.trim();
+      // Réactive un poste homonyme précédemment supprimé plutôt que d'échouer sur l'unicité.
+      const existing = await getDb().jobPosition.findUnique({ where: { label } });
+      if (existing) {
+        const data = await getDb().jobPosition.update({ where: { id: existing.id }, data: { isActive: true, deletedAt: null } });
+        return ser({ success: true, data });
+      }
+      const data = await getDb().jobPosition.create({ data: { label, isActive: parsed.data.isActive ?? true } });
+      return ser({ success: true, data });
+    } catch (error: any) {
+      logger.error('hr:jobPositions:create error', error.message);
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle('hr:jobPositions:update', async (_event, { token, id, payload }: any) => {
+    try {
+      const session = getSession(token);
+      if (!session) return { success: false, error: 'Session expirée' };
+      checkHrRole(session, HR_STAFF_WRITE_ROLES);
+      const parsed = jobPositionSchema.partial().safeParse(payload);
+      if (!parsed.success) return { success: false, error: parsed.error.issues.map((i) => i.message).join(' ; ') };
+      const data: any = { ...parsed.data };
+      if (typeof data.label === 'string') data.label = data.label.trim();
+      const updated = await getDb().jobPosition.update({ where: { id }, data });
+      return ser({ success: true, data: updated });
+    } catch (error: any) {
+      logger.error('hr:jobPositions:update error', error.message);
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle('hr:jobPositions:delete', async (_event, { token, id }: any) => {
+    try {
+      const session = getSession(token);
+      if (!session) return { success: false, error: 'Session expirée' };
+      checkHrRole(session, HR_STAFF_WRITE_ROLES);
+      await getDb().jobPosition.update({ where: { id }, data: { deletedAt: new Date(), isActive: false } });
+      return { success: true };
+    } catch (error: any) {
+      logger.error('hr:jobPositions:delete error', error.message);
+      return { success: false, error: error.message };
+    }
+  });
+
+  /* ─── Départements / Services (référentiel du champ « Département ») ────── */
+
+  const departmentSchema = z.object({
+    label: z.string().min(1, 'Libellé requis'),
+    isActive: z.boolean().optional(),
+  });
+
+  ipcMain.handle('hr:departments:list', async (_event, { token, includeInactive }: any) => {
+    try {
+      const session = getSession(token);
+      if (!session) return { success: false, error: 'Session expirée' };
+      checkHrRole(session, HR_READ_ROLES);
+      const where: any = { deletedAt: null };
+      if (!includeInactive) where.isActive = true;
+      const data = await getDb().department.findMany({ where, orderBy: { label: 'asc' } });
+      return ser({ success: true, data });
+    } catch (error: any) {
+      logger.error('hr:departments:list error', error.message);
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle('hr:departments:create', async (_event, { token, payload }: any) => {
+    try {
+      const session = getSession(token);
+      if (!session) return { success: false, error: 'Session expirée' };
+      checkHrRole(session, HR_STAFF_WRITE_ROLES);
+      const parsed = departmentSchema.safeParse(payload);
+      if (!parsed.success) return { success: false, error: parsed.error.issues.map((i) => i.message).join(' ; ') };
+      const label = parsed.data.label.trim();
+      const existing = await getDb().department.findUnique({ where: { label } });
+      if (existing) {
+        const data = await getDb().department.update({ where: { id: existing.id }, data: { isActive: true, deletedAt: null } });
+        return ser({ success: true, data });
+      }
+      const data = await getDb().department.create({ data: { label, isActive: parsed.data.isActive ?? true } });
+      return ser({ success: true, data });
+    } catch (error: any) {
+      logger.error('hr:departments:create error', error.message);
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle('hr:departments:update', async (_event, { token, id, payload }: any) => {
+    try {
+      const session = getSession(token);
+      if (!session) return { success: false, error: 'Session expirée' };
+      checkHrRole(session, HR_STAFF_WRITE_ROLES);
+      const parsed = departmentSchema.partial().safeParse(payload);
+      if (!parsed.success) return { success: false, error: parsed.error.issues.map((i) => i.message).join(' ; ') };
+      const data: any = { ...parsed.data };
+      if (typeof data.label === 'string') data.label = data.label.trim();
+      const updated = await getDb().department.update({ where: { id }, data });
+      return ser({ success: true, data: updated });
+    } catch (error: any) {
+      logger.error('hr:departments:update error', error.message);
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle('hr:departments:delete', async (_event, { token, id }: any) => {
+    try {
+      const session = getSession(token);
+      if (!session) return { success: false, error: 'Session expirée' };
+      checkHrRole(session, HR_STAFF_WRITE_ROLES);
+      await getDb().department.update({ where: { id }, data: { deletedAt: new Date(), isActive: false } });
+      return { success: true };
+    } catch (error: any) {
+      logger.error('hr:departments:delete error', error.message);
+      return { success: false, error: error.message };
+    }
+  });
+
   /* ─── Objectifs assignés (référentiel — même principe que les fonctions) ── */
 
   // Écriture des objectifs assignés : admins/RH + MANAGER (contrairement aux
@@ -2603,4 +2755,43 @@ export function registerHrIPC(): void {
       return { success: false, error: error.message };
     }
   });
+}
+
+/**
+ * Amorce le référentiel des postes à partir des valeurs « poste » déjà saisies
+ * sur les fiches employés (idempotent). Permet au sélecteur « Poste » de proposer
+ * d'emblée les postes existants, sans écraser ni dupliquer.
+ */
+export async function seedJobPositionsFromEmployees(): Promise<void> {
+  const db = getDb();
+  const rows = await db.employee.findMany({
+    where: { deletedAt: null, poste: { not: null } },
+    select: { poste: true },
+    distinct: ['poste'],
+  });
+  for (const r of rows) {
+    const label = (r.poste ?? '').trim();
+    if (!label) continue;
+    const exists = await db.jobPosition.findUnique({ where: { label }, select: { id: true } });
+    if (!exists) await db.jobPosition.create({ data: { label } });
+  }
+}
+
+/**
+ * Amorce le référentiel des départements/services à partir des valeurs déjà
+ * saisies sur les fiches employés (idempotent).
+ */
+export async function seedDepartmentsFromEmployees(): Promise<void> {
+  const db = getDb();
+  const rows = await db.employee.findMany({
+    where: { deletedAt: null, departement: { not: null } },
+    select: { departement: true },
+    distinct: ['departement'],
+  });
+  for (const r of rows) {
+    const label = (r.departement ?? '').trim();
+    if (!label) continue;
+    const exists = await db.department.findUnique({ where: { label }, select: { id: true } });
+    if (!exists) await db.department.create({ data: { label } });
+  }
 }

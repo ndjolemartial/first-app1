@@ -11,6 +11,7 @@ import { FormSearchSelect } from '../../../shared/components/ui/SearchSelect';
 import Textarea from '../../../shared/components/ui/Textarea';
 import Card from '../../../shared/components/ui/Card';
 import { useActivity, useCreateActivity, useUpdateActivity } from '../hooks/useCrm';
+import { useMyManualObjectives } from '../../performance/hooks/usePerformance';
 import { useClients } from '../../clients/hooks/useClients';
 import { useProperties } from '../../properties/hooks/useProperties';
 import { useConventions } from '../../conventions/hooks/useConventions';
@@ -69,6 +70,8 @@ const schema = z.object({
   invoiceId: z.coerce.number().optional(),
   installmentId: z.coerce.number().optional(),
   documentId: z.coerce.number().optional(),
+  objectiveId: z.coerce.number().optional(),
+  objectiveRealized: z.coerce.number().optional(),
 });
 
 type FormData = z.infer<typeof schema>;
@@ -342,10 +345,25 @@ export default function ActivityFormPage() {
     }),
   ];
 
-  const { register, handleSubmit, reset, control, formState: { errors, isSubmitting } } = useForm<z.input<typeof schema>, any, FormData>({
+  const { register, handleSubmit, reset, control, watch, setValue, formState: { errors, isSubmitting } } = useForm<z.input<typeof schema>, any, FormData>({
     resolver: zodResolver(schema),
     defaultValues: { type: 'TASK', status: 'EN_ATTENTE' },
   });
+
+  // Objectifs manuels du collaborateur connecté — pour lier une tâche.
+  const watchedType = watch('type');
+  const watchedObjectiveId = Number(watch('objectiveId')) || 0;
+  const watchedRealized = Number(watch('objectiveRealized')) || 0;
+  const { data: objectivesRes } = useMyManualObjectives(watchedType === 'TASK');
+  const manualObjectives: any[] = objectivesRes?.success ? objectivesRes.data ?? [] : [];
+  const objectiveOptions = [
+    { value: '', label: '— Aucun —' },
+    ...manualObjectives.map((o: any) => ({ value: String(o.id), label: `${o.title} (cible ${Number(o.targetValue)} ${o.unit ?? ''})`.trim() })),
+  ];
+  const selectedObjective = manualObjectives.find((o: any) => o.id === watchedObjectiveId);
+  const objTarget = selectedObjective ? Number(selectedObjective.targetValue) : 0;
+  // Pourcentage réel (peut dépasser 100 %) ; la barre visuelle reste plafonnée à 100 %.
+  const objProgress = objTarget > 0 ? Math.round((watchedRealized / objTarget) * 100) : 0;
 
   useEffect(() => {
     if (isEdit && res?.data) {
@@ -367,6 +385,8 @@ export default function ActivityFormPage() {
         invoiceId: act.invoiceId ?? undefined,
         installmentId: act.installmentId ?? undefined,
         documentId: act.documentId ?? undefined,
+        objectiveId: act.objectiveId ?? undefined,
+        objectiveRealized: act.objectiveRealized != null ? Number(act.objectiveRealized) : undefined,
       });
     }
   }, [res, isEdit, reset]);
@@ -378,6 +398,19 @@ export default function ActivityFormPage() {
     // Retire les rattachements non renseignés (0 / vide).
     for (const field of ENTITY_FIELDS) {
       if (!payload[field]) delete payload[field];
+    }
+    // Lien objectif : réservé aux tâches ; sinon on n'envoie rien.
+    if (payload.type !== 'TASK' || !payload.objectiveId) {
+      delete payload.objectiveId;
+      delete payload.objectiveRealized;
+    } else {
+      payload.objectiveId = Number(payload.objectiveId);
+      payload.objectiveRealized = Number(payload.objectiveRealized) || 0;
+      // Garde-fou client : « Traité » impossible tant que l'objectif n'est pas atteint.
+      if (payload.status === 'TRAITE' && objTarget > 0 && payload.objectiveRealized < objTarget) {
+        toast.error('Cette tâche ne peut être « Traité » : l’objectif lié n’est pas atteint à 100 %.');
+        return;
+      }
     }
 
     let r;
@@ -414,6 +447,36 @@ export default function ActivityFormPage() {
             <Textarea label="Description" rows={3} {...register('description')} />
           </div>
         </Card>
+
+        {watchedType === 'TASK' && (
+          <Card>
+            <h3 className="text-base font-semibold text-slate-800 mb-1">Objectif lié (optionnel)</h3>
+            <p className="text-xs text-slate-400 mb-4">
+              Liez cette tâche à l'un de vos objectifs à Mesure « Manuelle ». La tâche ne pourra passer « Traité » qu'une fois l'objectif atteint à 100 %.
+            </p>
+            {manualObjectives.length === 0 ? (
+              <p className="text-sm text-slate-400">Aucun objectif à Mesure « Manuelle » ne vous est assigné.</p>
+            ) : (
+              <div className="grid grid-cols-2 gap-4">
+                <FormSearchSelect control={control} name="objectiveId" label="Objectif" options={objectiveOptions} />
+                {watchedObjectiveId > 0 && (
+                  <div>
+                    <Input label={`Quantité réalisée${selectedObjective?.unit ? ` (${selectedObjective.unit})` : ''}`} type="number" min="0" step="any" {...register('objectiveRealized')} />
+                    <div className="mt-2">
+                      <div className="flex items-center justify-between text-xs text-slate-500">
+                        <span>Objectif : {objTarget} {selectedObjective?.unit ?? ''}</span>
+                        <span className="tabular-nums">{objProgress}%</span>
+                      </div>
+                      <div className="mt-1 h-2 w-full rounded-full bg-slate-100">
+                        <div className={`h-2 rounded-full ${objProgress >= 100 ? 'bg-green-500' : 'bg-blue-500'}`} style={{ width: `${Math.min(100, objProgress)}%` }} />
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+          </Card>
+        )}
 
         <Card>
           <h3 className="text-base font-semibold text-slate-800 mb-1">Entité associée</h3>

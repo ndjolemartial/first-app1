@@ -7,7 +7,8 @@ import Select from '../../../shared/components/ui/Select';
 import SearchSelect from '../../../shared/components/ui/SearchSelect';
 import Textarea from '../../../shared/components/ui/Textarea';
 import Card from '../../../shared/components/ui/Card';
-import { useQuote, useCreateQuote, useUpdateQuote } from '../hooks/useQuotes';
+import { useQuote, useCreateQuote, useUpdateQuote, useQuoteUnits } from '../hooks/useQuotes';
+import QuoteUnitModal from '../components/QuoteUnitModal';
 import { useClients } from '../../clients/hooks/useClients';
 import { useProspects } from '../../prospects/hooks/useProspects';
 import { useTerrains } from '../../terrains/hooks/useTerrains';
@@ -34,7 +35,7 @@ const MODALITES_OPTIONS = [
   { value: 'SUR_PLUS_60_MOIS', label: 'Plus de 60 mois' },
 ];
 
-interface Line { designation: string; category: string; quantity: string; unitPrice: string; }
+interface Line { designation: string; category: string; quantity: string; unit: string; unitPrice: string; }
 
 function toDateInput(v?: string | Date | null): string {
   if (!v) return '';
@@ -116,9 +117,15 @@ export default function QuoteFormPage() {
   const [installmentCount, setInstallmentCount] = useState('');
   const [notes, setNotes] = useState('');
   const [conditions, setConditions] = useState('');
-  const [items, setItems] = useState<Line[]>([{ designation: '', category: '', quantity: '1', unitPrice: '0' }]);
+  const [items, setItems] = useState<Line[]>([{ designation: '', category: '', quantity: '1', unit: '', unitPrice: '0' }]);
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
+  const [unitModalOpen, setUnitModalOpen] = useState(false);
+  const { data: unitsRes } = useQuoteUnits();
+  const unitOptions = [
+    { value: '', label: '— Aucune —' },
+    ...((unitsRes?.success && unitsRes.data ? unitsRes.data : []).map((u: any) => ({ value: u.label, label: u.label }))),
+  ];
 
   useEffect(() => {
     if (searchParams.get('prospectId')) setRecipientType('PROSPECT');
@@ -148,8 +155,8 @@ export default function QuoteFormPage() {
       setNotes(q.notes ?? '');
       setConditions(q.conditions ?? '');
       setItems((q.items ?? []).length
-        ? q.items.map((it: any) => ({ designation: it.designation, category: it.category ?? '', quantity: String(Number(it.quantity)), unitPrice: String(Number(it.unitPrice)) }))
-        : [{ designation: '', category: '', quantity: '1', unitPrice: '0' }]);
+        ? q.items.map((it: any) => ({ designation: it.designation, category: it.category ?? '', quantity: String(Number(it.quantity)), unit: it.unit ?? '', unitPrice: String(Number(it.unitPrice)) }))
+        : [{ designation: '', category: '', quantity: '1', unit: '', unitPrice: '0' }]);
     }
   }, [res, isEdit]);
 
@@ -220,11 +227,11 @@ export default function QuoteFormPage() {
 
   const setLine = (idx: number, patch: Partial<Line>) =>
     setItems((prev) => prev.map((l, i) => (i === idx ? { ...l, ...patch } : l)));
-  const addLine = () => setItems((prev) => [...prev, { designation: '', category: '', quantity: '1', unitPrice: '0' }]);
+  const addLine = () => setItems((prev) => [...prev, { designation: '', category: '', quantity: '1', unit: '', unitPrice: '0' }]);
   const removeLine = (idx: number) => setItems((prev) => (prev.length > 1 ? prev.filter((_, i) => i !== idx) : prev));
   // Ajout depuis le catalogue : remplit la dernière ligne vide ou en ajoute une.
   const addFromCatalog = (it: CatalogPick) => setItems((prev) => {
-    const line = { designation: it.designation, category: it.category ?? '', quantity: '1', unitPrice: String(Math.round(it.unitPrice)) };
+    const line = { designation: it.designation, category: it.category ?? '', quantity: '1', unit: '', unitPrice: String(Math.round(it.unitPrice)) };
     const last = prev[prev.length - 1];
     if (last && !last.designation.trim() && (!last.unitPrice || Number(last.unitPrice) === 0)) {
       return prev.map((l, i) => (i === prev.length - 1 ? line : l));
@@ -260,7 +267,7 @@ export default function QuoteFormPage() {
       installmentCount: paymentModalites !== 'CASH' && installmentCount ? Number(installmentCount) : null,
       notes: notes || undefined,
       conditions: conditions || undefined,
-      items: validItems.map((i) => ({ designation: i.designation.trim(), category: i.category.trim() || null, quantity: Number(i.quantity) || 1, unitPrice: Number(i.unitPrice) || 0 })),
+      items: validItems.map((i) => ({ designation: i.designation.trim(), category: i.category.trim() || null, quantity: Number(i.quantity) || 1, unit: i.unit.trim() || null, unitPrice: Number(i.unitPrice) || 0 })),
     };
     const r = isEdit ? await update.mutateAsync({ id: Number(id), payload }) : await create.mutateAsync(payload);
     setSaving(false);
@@ -300,6 +307,7 @@ export default function QuoteFormPage() {
             <h3 className="text-base font-semibold text-slate-800">Lignes du devis</h3>
             <div className="flex items-end gap-2">
               <div className="w-72"><CatalogPicker onPick={addFromCatalog} placeholder="Ajouter depuis le catalogue…" /></div>
+              <Button size="sm" variant="secondary" icon={<Plus className="h-4 w-4" />} onClick={() => setUnitModalOpen(true)}>Gérer les unités</Button>
               <Button size="sm" variant="secondary" icon={<Plus className="h-4 w-4" />} onClick={addLine}>Ligne vide</Button>
             </div>
           </div>
@@ -309,6 +317,7 @@ export default function QuoteFormPage() {
                 <th className="text-left px-3 py-2 font-medium text-slate-600 w-44">Catégorie</th>
                 <th className="text-left px-3 py-2 font-medium text-slate-600">Désignation</th>
                 <th className="text-right px-3 py-2 font-medium text-slate-600 w-24">Qté</th>
+                <th className="text-left px-3 py-2 font-medium text-slate-600 w-36">Unité</th>
                 <th className="text-right px-3 py-2 font-medium text-slate-600 w-40">Prix unitaire</th>
                 <th className="text-right px-3 py-2 font-medium text-slate-600 w-40">Total</th>
                 <th className="w-10" />
@@ -328,6 +337,9 @@ export default function QuoteFormPage() {
                   <td className="px-2 py-2">
                     <input type="number" min="0" step="1" className="w-full px-2 py-1.5 border border-slate-200 rounded text-sm text-right"
                       value={line.quantity} onChange={(e) => setLine(idx, { quantity: e.target.value })} />
+                  </td>
+                  <td className="px-2 py-2">
+                    <SearchSelect options={unitOptions} value={line.unit} onChange={(v) => setLine(idx, { unit: v })} placeholder="(facultatif)" />
                   </td>
                   <td className="px-2 py-2">
                     <input type="number" min="0" step="1" className="w-full px-2 py-1.5 border border-slate-200 rounded text-sm text-right"
@@ -403,6 +415,8 @@ export default function QuoteFormPage() {
           </Button>
         </div>
       </div>
+
+      <QuoteUnitModal open={unitModalOpen} onClose={() => setUnitModalOpen(false)} />
     </PageLayout>
   );
 }

@@ -4,6 +4,8 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.registerHrIPC = registerHrIPC;
+exports.seedJobPositionsFromEmployees = seedJobPositionsFromEmployees;
+exports.seedDepartmentsFromEmployees = seedDepartmentsFromEmployees;
 const electron_1 = require("electron");
 const fs_1 = __importDefault(require("fs"));
 const db_service_1 = require("../services/db.service");
@@ -270,6 +272,8 @@ const employeeSchema = zod_1.z.object({
     poste: zod_1.z.string().optional().nullable(),
     departement: zod_1.z.string().optional().nullable(),
     userId: zod_1.z.preprocess(emptyToNull, zod_1.z.coerce.number().int().positive().nullable().optional()),
+    // Responsable hiérarchique (évaluateur au titre de la gestion de la performance).
+    managerId: zod_1.z.preprocess(emptyToNull, zod_1.z.coerce.number().int().positive().nullable().optional()),
     status: zod_1.z.enum(EMPLOYEE_STATUS).optional(),
     hireDate: zod_1.z.preprocess(emptyToNull, zod_1.z.coerce.date().nullable().optional()),
     exitDate: zod_1.z.preprocess(emptyToNull, zod_1.z.coerce.date().nullable().optional()),
@@ -1693,6 +1697,168 @@ function registerHrIPC() {
             return { success: false, error: error.message };
         }
     });
+    /* ─── Postes / Fonctions (référentiel du champ « Poste ») ──────────────── */
+    // Liste des postes utilisée par le sélecteur « Poste » de la fiche employé.
+    // Lecture : rôles ayant accès au module RH. Écriture : rôles habilités à créer
+    // un employé (admins / RH / MANAGER) — création à la volée depuis le formulaire.
+    const jobPositionSchema = zod_1.z.object({
+        label: zod_1.z.string().min(1, 'Libellé requis'),
+        isActive: zod_1.z.boolean().optional(),
+    });
+    electron_1.ipcMain.handle('hr:jobPositions:list', async (_event, { token, includeInactive }) => {
+        try {
+            const session = (0, auth_service_1.getSession)(token);
+            if (!session)
+                return { success: false, error: 'Session expirée' };
+            checkHrRole(session, HR_READ_ROLES);
+            const where = { deletedAt: null };
+            if (!includeInactive)
+                where.isActive = true;
+            const data = await (0, db_service_1.getDb)().jobPosition.findMany({ where, orderBy: { label: 'asc' } });
+            return ser({ success: true, data });
+        }
+        catch (error) {
+            logger_1.default.error('hr:jobPositions:list error', error.message);
+            return { success: false, error: error.message };
+        }
+    });
+    electron_1.ipcMain.handle('hr:jobPositions:create', async (_event, { token, payload }) => {
+        try {
+            const session = (0, auth_service_1.getSession)(token);
+            if (!session)
+                return { success: false, error: 'Session expirée' };
+            checkHrRole(session, HR_STAFF_WRITE_ROLES);
+            const parsed = jobPositionSchema.safeParse(payload);
+            if (!parsed.success)
+                return { success: false, error: parsed.error.issues.map((i) => i.message).join(' ; ') };
+            const label = parsed.data.label.trim();
+            // Réactive un poste homonyme précédemment supprimé plutôt que d'échouer sur l'unicité.
+            const existing = await (0, db_service_1.getDb)().jobPosition.findUnique({ where: { label } });
+            if (existing) {
+                const data = await (0, db_service_1.getDb)().jobPosition.update({ where: { id: existing.id }, data: { isActive: true, deletedAt: null } });
+                return ser({ success: true, data });
+            }
+            const data = await (0, db_service_1.getDb)().jobPosition.create({ data: { label, isActive: parsed.data.isActive ?? true } });
+            return ser({ success: true, data });
+        }
+        catch (error) {
+            logger_1.default.error('hr:jobPositions:create error', error.message);
+            return { success: false, error: error.message };
+        }
+    });
+    electron_1.ipcMain.handle('hr:jobPositions:update', async (_event, { token, id, payload }) => {
+        try {
+            const session = (0, auth_service_1.getSession)(token);
+            if (!session)
+                return { success: false, error: 'Session expirée' };
+            checkHrRole(session, HR_STAFF_WRITE_ROLES);
+            const parsed = jobPositionSchema.partial().safeParse(payload);
+            if (!parsed.success)
+                return { success: false, error: parsed.error.issues.map((i) => i.message).join(' ; ') };
+            const data = { ...parsed.data };
+            if (typeof data.label === 'string')
+                data.label = data.label.trim();
+            const updated = await (0, db_service_1.getDb)().jobPosition.update({ where: { id }, data });
+            return ser({ success: true, data: updated });
+        }
+        catch (error) {
+            logger_1.default.error('hr:jobPositions:update error', error.message);
+            return { success: false, error: error.message };
+        }
+    });
+    electron_1.ipcMain.handle('hr:jobPositions:delete', async (_event, { token, id }) => {
+        try {
+            const session = (0, auth_service_1.getSession)(token);
+            if (!session)
+                return { success: false, error: 'Session expirée' };
+            checkHrRole(session, HR_STAFF_WRITE_ROLES);
+            await (0, db_service_1.getDb)().jobPosition.update({ where: { id }, data: { deletedAt: new Date(), isActive: false } });
+            return { success: true };
+        }
+        catch (error) {
+            logger_1.default.error('hr:jobPositions:delete error', error.message);
+            return { success: false, error: error.message };
+        }
+    });
+    /* ─── Départements / Services (référentiel du champ « Département ») ────── */
+    const departmentSchema = zod_1.z.object({
+        label: zod_1.z.string().min(1, 'Libellé requis'),
+        isActive: zod_1.z.boolean().optional(),
+    });
+    electron_1.ipcMain.handle('hr:departments:list', async (_event, { token, includeInactive }) => {
+        try {
+            const session = (0, auth_service_1.getSession)(token);
+            if (!session)
+                return { success: false, error: 'Session expirée' };
+            checkHrRole(session, HR_READ_ROLES);
+            const where = { deletedAt: null };
+            if (!includeInactive)
+                where.isActive = true;
+            const data = await (0, db_service_1.getDb)().department.findMany({ where, orderBy: { label: 'asc' } });
+            return ser({ success: true, data });
+        }
+        catch (error) {
+            logger_1.default.error('hr:departments:list error', error.message);
+            return { success: false, error: error.message };
+        }
+    });
+    electron_1.ipcMain.handle('hr:departments:create', async (_event, { token, payload }) => {
+        try {
+            const session = (0, auth_service_1.getSession)(token);
+            if (!session)
+                return { success: false, error: 'Session expirée' };
+            checkHrRole(session, HR_STAFF_WRITE_ROLES);
+            const parsed = departmentSchema.safeParse(payload);
+            if (!parsed.success)
+                return { success: false, error: parsed.error.issues.map((i) => i.message).join(' ; ') };
+            const label = parsed.data.label.trim();
+            const existing = await (0, db_service_1.getDb)().department.findUnique({ where: { label } });
+            if (existing) {
+                const data = await (0, db_service_1.getDb)().department.update({ where: { id: existing.id }, data: { isActive: true, deletedAt: null } });
+                return ser({ success: true, data });
+            }
+            const data = await (0, db_service_1.getDb)().department.create({ data: { label, isActive: parsed.data.isActive ?? true } });
+            return ser({ success: true, data });
+        }
+        catch (error) {
+            logger_1.default.error('hr:departments:create error', error.message);
+            return { success: false, error: error.message };
+        }
+    });
+    electron_1.ipcMain.handle('hr:departments:update', async (_event, { token, id, payload }) => {
+        try {
+            const session = (0, auth_service_1.getSession)(token);
+            if (!session)
+                return { success: false, error: 'Session expirée' };
+            checkHrRole(session, HR_STAFF_WRITE_ROLES);
+            const parsed = departmentSchema.partial().safeParse(payload);
+            if (!parsed.success)
+                return { success: false, error: parsed.error.issues.map((i) => i.message).join(' ; ') };
+            const data = { ...parsed.data };
+            if (typeof data.label === 'string')
+                data.label = data.label.trim();
+            const updated = await (0, db_service_1.getDb)().department.update({ where: { id }, data });
+            return ser({ success: true, data: updated });
+        }
+        catch (error) {
+            logger_1.default.error('hr:departments:update error', error.message);
+            return { success: false, error: error.message };
+        }
+    });
+    electron_1.ipcMain.handle('hr:departments:delete', async (_event, { token, id }) => {
+        try {
+            const session = (0, auth_service_1.getSession)(token);
+            if (!session)
+                return { success: false, error: 'Session expirée' };
+            checkHrRole(session, HR_STAFF_WRITE_ROLES);
+            await (0, db_service_1.getDb)().department.update({ where: { id }, data: { deletedAt: new Date(), isActive: false } });
+            return { success: true };
+        }
+        catch (error) {
+            logger_1.default.error('hr:departments:delete error', error.message);
+            return { success: false, error: error.message };
+        }
+    });
     /* ─── Objectifs assignés (référentiel — même principe que les fonctions) ── */
     // Écriture des objectifs assignés : admins/RH + MANAGER (contrairement aux
     // autres configurations RH, réservées aux admins/RH). Test de rôle exact.
@@ -2743,4 +2909,45 @@ function registerHrIPC() {
             return { success: false, error: error.message };
         }
     });
+}
+/**
+ * Amorce le référentiel des postes à partir des valeurs « poste » déjà saisies
+ * sur les fiches employés (idempotent). Permet au sélecteur « Poste » de proposer
+ * d'emblée les postes existants, sans écraser ni dupliquer.
+ */
+async function seedJobPositionsFromEmployees() {
+    const db = (0, db_service_1.getDb)();
+    const rows = await db.employee.findMany({
+        where: { deletedAt: null, poste: { not: null } },
+        select: { poste: true },
+        distinct: ['poste'],
+    });
+    for (const r of rows) {
+        const label = (r.poste ?? '').trim();
+        if (!label)
+            continue;
+        const exists = await db.jobPosition.findUnique({ where: { label }, select: { id: true } });
+        if (!exists)
+            await db.jobPosition.create({ data: { label } });
+    }
+}
+/**
+ * Amorce le référentiel des départements/services à partir des valeurs déjà
+ * saisies sur les fiches employés (idempotent).
+ */
+async function seedDepartmentsFromEmployees() {
+    const db = (0, db_service_1.getDb)();
+    const rows = await db.employee.findMany({
+        where: { deletedAt: null, departement: { not: null } },
+        select: { departement: true },
+        distinct: ['departement'],
+    });
+    for (const r of rows) {
+        const label = (r.departement ?? '').trim();
+        if (!label)
+            continue;
+        const exists = await db.department.findUnique({ where: { label }, select: { id: true } });
+        if (!exists)
+            await db.department.create({ data: { label } });
+    }
 }

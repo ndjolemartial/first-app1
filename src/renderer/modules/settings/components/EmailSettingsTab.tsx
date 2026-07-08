@@ -7,6 +7,7 @@ import Input from '../../../shared/components/ui/Input';
 import RichTextEditor from '../../../shared/components/ui/RichTextEditor';
 import { useEmailSettings, useUpdateEmail, useTestEmail } from '../hooks/useSettings';
 import { useAuthStore } from '../../../shared/stores/auth.store';
+import { toast } from '../../../shared/components/ui/Toast';
 
 const SECRET_MASK = '••••••••';
 
@@ -132,6 +133,66 @@ export default function EmailSettingsTab() {
           </Button>
         </div>
       </Card>
+
+      <EmailTrackingCard />
     </div>
+  );
+}
+
+/**
+ * Configuration du suivi d'ouverture des emails. L'application injecte dans le
+ * corps HTML de chaque email un pixel 1×1 pointant vers `track.php` (déposé avec
+ * l'app web sur le serveur local). Quand le destinataire ouvre le message, le
+ * chargement du pixel horodate l'ouverture (`Communication.openedAt`), visible
+ * dans l'aperçu du message.
+ */
+function EmailTrackingCard() {
+  const token = useAuthStore((s) => s.token)!;
+  const [baseUrl, setBaseUrl] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    let alive = true;
+    window.electron.communication.getTracking(token).then((r) => {
+      if (alive && r.success) setBaseUrl(r.data?.baseUrl ?? '');
+      if (alive) setLoading(false);
+    });
+    return () => { alive = false; };
+  }, [token]);
+
+  const save = async () => {
+    setSaving(true);
+    const r = await window.electron.communication.updateTracking(token, baseUrl.trim());
+    setSaving(false);
+    if (r.success) toast.success('URL de suivi enregistrée');
+    else toast.error(typeof r.error === 'string' ? r.error : "Échec de l'enregistrement");
+  };
+
+  return (
+    <Card>
+      <h3 className="font-semibold text-slate-700 mb-2">Suivi d'ouverture des emails</h3>
+      <p className="text-sm text-slate-500 mb-3">
+        URL du script <code className="px-1 py-0.5 bg-slate-100 rounded font-mono">track.php</code> déposé
+        avec l'application web sur le serveur local (ex.{' '}
+        <code className="px-1 py-0.5 bg-slate-100 rounded font-mono">http://192.168.1.10/pointage/track.php</code>).
+        Laissez vide pour désactiver le suivi. Un pixel invisible est alors ajouté à chaque email pour
+        détecter sa remise et son ouverture.
+      </p>
+      <div className="flex gap-3 items-end">
+        <div className="flex-1">
+          <Input
+            label="URL de suivi d'ouverture"
+            placeholder="http://serveur/pointage/track.php"
+            value={baseUrl}
+            onChange={(e) => setBaseUrl(e.target.value)}
+            disabled={loading}
+          />
+        </div>
+        <Button icon={<Save className="h-4 w-4" />} loading={saving} onClick={save} disabled={loading}>
+          Enregistrer
+        </Button>
+      </div>
+    </Card>
   );
 }

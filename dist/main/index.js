@@ -33,6 +33,8 @@ const terrains_ipc_1 = require("./ipc/terrains.ipc");
 const programmes_ipc_1 = require("./ipc/programmes.ipc");
 const projects_ipc_1 = require("./ipc/projects.ipc");
 const hr_ipc_1 = require("./ipc/hr.ipc");
+const performance_ipc_1 = require("./ipc/performance.ipc");
+const performance_service_1 = require("./services/performance.service");
 const visitors_ipc_1 = require("./ipc/visitors.ipc");
 const geo_ipc_1 = require("./ipc/geo.ipc");
 const countries_ipc_1 = require("./ipc/countries.ipc");
@@ -132,6 +134,7 @@ function registerIPC() {
     (0, programmes_ipc_1.registerProgrammesIPC)();
     (0, projects_ipc_1.registerProjectsIPC)();
     (0, hr_ipc_1.registerHrIPC)();
+    (0, performance_ipc_1.registerPerformanceIPC)();
     (0, visitors_ipc_1.registerVisitorsIPC)();
     (0, geo_ipc_1.registerGeoIPC)();
     (0, countries_ipc_1.registerCountriesIPC)();
@@ -208,6 +211,15 @@ electron_1.app.whenReady().then(async () => {
     // Catégorie GED par défaut « UPLOAD FILES » (fichiers importés sans catégorie).
     (0, documents_ipc_1.seedUploadFilesCategory)()
         .catch((e) => logger_1.default.error(`Upload files category bootstrap failed: ${e.message}`));
+    // Catalogue de KPI de performance par défaut + unités (idempotent).
+    (0, performance_service_1.seedDefaultKpis)()
+        .then(() => (0, performance_service_1.seedKpiUnits)())
+        .catch((e) => logger_1.default.error(`Performance KPIs bootstrap failed: ${e.message}`));
+    // Référentiels postes & départements amorcés depuis les fiches employés.
+    (0, hr_ipc_1.seedJobPositionsFromEmployees)()
+        .catch((e) => logger_1.default.error(`Job positions bootstrap failed: ${e.message}`));
+    (0, hr_ipc_1.seedDepartmentsFromEmployees)()
+        .catch((e) => logger_1.default.error(`Departments bootstrap failed: ${e.message}`));
     setupAppMenu();
     createWindow();
     logger_1.default.info('Application started');

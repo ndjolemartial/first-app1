@@ -47,6 +47,7 @@ const itemSchema = z.object({
   designation: z.string().min(1, 'Désignation requise'),
   category: z.string().nullable().optional(),
   quantity: z.number().positive().default(1),
+  unit: z.string().nullable().optional(),
   unitPrice: z.number().min(0).default(0),
 });
 
@@ -316,6 +317,7 @@ export function registerQuotesIPC(): void {
               designation: it.designation,
               category: it.category?.trim() || null,
               quantity: String(it.quantity) as never,
+              unit: it.unit?.trim() || null,
               unitPrice: String(it.unitPrice) as never,
               total: String(lines[i].total) as never,
               order: i,
@@ -410,6 +412,7 @@ export function registerQuotesIPC(): void {
               designation: it.designation,
               category: it.category?.trim() || null,
               quantity: String(it.quantity) as never,
+              unit: it.unit?.trim() || null,
               unitPrice: String(it.unitPrice) as never,
               total: String(lines[i].total) as never,
               order: i,
@@ -626,6 +629,78 @@ export function registerQuotesIPC(): void {
       return { success: true, data: ser(result) };
     } catch (error: any) {
       logger.error('quotes:convert error', error.message);
+      return { success: false, error: error.message };
+    }
+  });
+
+  /* ─── Unités de mesure (référentiel partagé `KpiUnit`) ─────────────── */
+  // Réutilise le même référentiel d'unités que le module Performances, afin que
+  // la liste proposée sur les lignes de devis soit celle de « Nouvel objectif ».
+  const unitSchema = z.object({ label: z.string().min(1, 'Libellé requis'), isActive: z.boolean().optional() });
+
+  ipcMain.handle('quotes:listUnits', async (_event, { token, includeInactive }: any) => {
+    try {
+      const session = getSession(token);
+      if (!session) return { success: false, error: 'Session expirée' };
+      checkRole(session, READ_ROLES);
+      const where: any = { deletedAt: null };
+      if (!includeInactive) where.isActive = true;
+      const data = await getDb().kpiUnit.findMany({ where, orderBy: { label: 'asc' } });
+      return { success: true, data: ser(data) };
+    } catch (error: any) {
+      logger.error('quotes:listUnits error', error.message);
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle('quotes:createUnit', async (_event, { token, payload }: any) => {
+    try {
+      const session = getSession(token);
+      if (!session) return { success: false, error: 'Session expirée' };
+      checkRole(session, WRITE_ROLES);
+      const parsed = unitSchema.safeParse(payload);
+      if (!parsed.success) return { success: false, error: parsed.error.issues[0]?.message ?? 'Données invalides' };
+      const db = getDb();
+      const label = parsed.data.label.trim();
+      const existing = await db.kpiUnit.findUnique({ where: { label } });
+      if (existing) {
+        const data = await db.kpiUnit.update({ where: { id: existing.id }, data: { isActive: true, deletedAt: null } });
+        return { success: true, data: ser(data) };
+      }
+      const data = await db.kpiUnit.create({ data: { label, isActive: parsed.data.isActive ?? true } });
+      return { success: true, data: ser(data) };
+    } catch (error: any) {
+      logger.error('quotes:createUnit error', error.message);
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle('quotes:updateUnit', async (_event, { token, id, payload }: any) => {
+    try {
+      const session = getSession(token);
+      if (!session) return { success: false, error: 'Session expirée' };
+      checkRole(session, WRITE_ROLES);
+      const parsed = unitSchema.partial().safeParse(payload);
+      if (!parsed.success) return { success: false, error: parsed.error.issues[0]?.message ?? 'Données invalides' };
+      const data: any = { ...parsed.data };
+      if (typeof data.label === 'string') data.label = data.label.trim();
+      const updated = await getDb().kpiUnit.update({ where: { id: Number(id) }, data });
+      return { success: true, data: ser(updated) };
+    } catch (error: any) {
+      logger.error('quotes:updateUnit error', error.message);
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle('quotes:deleteUnit', async (_event, { token, id }: any) => {
+    try {
+      const session = getSession(token);
+      if (!session) return { success: false, error: 'Session expirée' };
+      checkRole(session, WRITE_ROLES);
+      await getDb().kpiUnit.update({ where: { id: Number(id) }, data: { deletedAt: new Date(), isActive: false } });
+      return { success: true };
+    } catch (error: any) {
+      logger.error('quotes:deleteUnit error', error.message);
       return { success: false, error: error.message };
     }
   });

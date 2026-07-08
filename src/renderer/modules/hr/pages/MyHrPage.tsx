@@ -15,9 +15,11 @@ import {
 } from '../hooks/useHr';
 import { CONTRACT_TYPE_LABEL } from '../types/hr.types';
 import { formatDate, formatCurrency } from '../../../shared/utils/format';
-import { FileText, ClipboardList, Printer, IdCard, ReceiptText, CalendarDays, Clock, BookOpen, Eye } from 'lucide-react';
+import { FileText, ClipboardList, Printer, IdCard, ReceiptText, CalendarDays, Clock, BookOpen, Eye, Trophy, Target, Check } from 'lucide-react';
+import { useMyPerformance, useMyRanking, useMySignEvaluation } from '../../performance/hooks/usePerformance';
+import { EVAL_STATUS_LABEL, EVAL_STATUS_VARIANT, OBJECTIVE_STATUS_LABEL, OBJECTIVE_STATUS_VARIANT, PERIOD_LABEL, type Evaluation, type Objective } from '../../performance/types/performance.types';
 
-type Tab = 'profil' | 'bulletins' | 'conges' | 'pointage' | 'reglement';
+type Tab = 'profil' | 'bulletins' | 'conges' | 'pointage' | 'performances' | 'reglement';
 
 const LEAVE_STATUS: Record<string, { label: string; variant: any }> = {
   EN_ATTENTE: { label: 'En attente', variant: 'warning' },
@@ -63,6 +65,7 @@ export default function MyHrPage() {
     { key: 'bulletins', label: 'Bulletins de paie', icon: <ReceiptText className="h-4 w-4" /> },
     { key: 'conges', label: 'Congés & absences', icon: <CalendarDays className="h-4 w-4" /> },
     { key: 'pointage', label: 'Pointage', icon: <Clock className="h-4 w-4" /> },
+    { key: 'performances', label: 'Performances', icon: <Trophy className="h-4 w-4" /> },
     { key: 'reglement', label: 'Règlement intérieur', icon: <BookOpen className="h-4 w-4" /> },
   ];
 
@@ -82,8 +85,85 @@ export default function MyHrPage() {
       {tab === 'bulletins' && <BulletinsTab />}
       {tab === 'conges' && <CongesTab balance={leaveBalance} />}
       {tab === 'pointage' && <PointageTab />}
+      {tab === 'performances' && <PerformancesTab />}
       {tab === 'reglement' && <ReglementTab />}
     </PageLayout>
+  );
+}
+
+/* ─── Mes performances (objectifs, évaluations à signer, classement) ─── */
+
+function PerformancesTab() {
+  const currentYear = new Date().getFullYear();
+  const { data: res, isLoading } = useMyPerformance(currentYear);
+  const { data: rankRes } = useMyRanking('MOIS');
+  const sign = useMySignEvaluation();
+
+  if (isLoading) return <Card><SkeletonTable rows={5} /></Card>;
+  const d = res?.success ? res.data : null;
+  const objectives: Objective[] = d?.objectives ?? [];
+  const evaluations: Evaluation[] = d?.evaluations ?? [];
+  const rank = rankRes?.success ? rankRes.data : null;
+
+  return (
+    <div className="space-y-4">
+      {rank?.entry && (
+        <Card className="flex items-center gap-3">
+          <div className="rounded-lg bg-amber-50 p-2 text-amber-600"><Trophy className="h-5 w-5" /></div>
+          <div>
+            <div className="text-sm text-slate-500">Mon classement — {PERIOD_LABEL[rank.period ? 'MOIS' : 'MOIS']} ({rank.period?.label})</div>
+            <div className="text-lg font-semibold text-slate-900">{rank.entry.rank}<sup>e</sup> / {rank.total} · score {Number(rank.entry.score).toFixed(1)}</div>
+          </div>
+        </Card>
+      )}
+
+      <Card padding={false}>
+        <div className="flex items-center gap-2 px-4 py-2 text-sm font-semibold text-slate-700 border-b border-slate-100"><Target className="h-4 w-4" /> Mes objectifs {currentYear}</div>
+        {objectives.length === 0 ? (
+          <div className="px-4 py-4 text-sm text-slate-400">Aucun objectif fixé pour cette année.</div>
+        ) : (
+          <table className="w-full text-sm">
+            <thead className="bg-slate-50 text-left text-xs uppercase text-slate-500"><tr><th className="px-4 py-2">Objectif</th><th className="px-4 py-2">Cycle</th><th className="px-4 py-2">Avancement</th><th className="px-4 py-2">Statut</th></tr></thead>
+            <tbody>
+              {objectives.map((o) => (
+                <tr key={o.id} className="border-t border-slate-100">
+                  <td className="px-4 py-2 text-slate-700">{o.title}{o.poste && <Badge variant="purple" className="ml-2">Poste</Badge>}</td>
+                  <td className="px-4 py-2 text-slate-600">{o.cycleType === 'TRIMESTRIEL' ? `T${o.quarter}` : 'Annuel'}</td>
+                  <td className="px-4 py-2 text-slate-600 tabular-nums">{o.progress}%</td>
+                  <td className="px-4 py-2"><Badge variant={OBJECTIVE_STATUS_VARIANT[o.status]}>{OBJECTIVE_STATUS_LABEL[o.status]}</Badge></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </Card>
+
+      <Card padding={false}>
+        <div className="flex items-center gap-2 px-4 py-2 text-sm font-semibold text-slate-700 border-b border-slate-100"><ClipboardList className="h-4 w-4" /> Mes évaluations</div>
+        {evaluations.length === 0 ? (
+          <div className="px-4 py-4 text-sm text-slate-400">Aucune évaluation.</div>
+        ) : (
+          <table className="w-full text-sm">
+            <thead className="bg-slate-50 text-left text-xs uppercase text-slate-500"><tr><th className="px-4 py-2">Référence</th><th className="px-4 py-2">Cycle</th><th className="px-4 py-2 text-right">Note</th><th className="px-4 py-2">Statut</th><th className="px-4 py-2 text-right">Action</th></tr></thead>
+            <tbody>
+              {evaluations.map((ev) => (
+                <tr key={ev.id} className="border-t border-slate-100">
+                  <td className="px-4 py-2 font-mono text-xs text-slate-600">{ev.reference}</td>
+                  <td className="px-4 py-2 text-slate-600">{ev.cycleType === 'TRIMESTRIEL' ? `T${ev.quarter} ${ev.year}` : `Année ${ev.year}`}</td>
+                  <td className="px-4 py-2 text-right font-semibold tabular-nums">{ev.globalScore != null ? Number(ev.globalScore).toFixed(1) : '—'}</td>
+                  <td className="px-4 py-2"><Badge variant={EVAL_STATUS_VARIANT[ev.status]}>{EVAL_STATUS_LABEL[ev.status]}</Badge></td>
+                  <td className="px-4 py-2 text-right">
+                    {ev.status === 'VALIDEE_RESPONSABLE'
+                      ? <Button size="sm" icon={<Check className="h-4 w-4" />} loading={sign.isPending} onClick={() => sign.mutate(ev.id)}>Signer</Button>
+                      : <span className="text-xs text-slate-400">—</span>}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </Card>
+    </div>
   );
 }
 

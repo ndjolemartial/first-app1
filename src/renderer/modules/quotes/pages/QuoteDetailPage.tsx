@@ -9,7 +9,7 @@ import ConfirmDialog from '../../../shared/components/ui/ConfirmDialog';
 import {
   useQuote, useSendQuote, useAcceptQuote, useRefuseQuote, useCancelQuote, useConvertQuote, useDeleteQuote,
 } from '../hooks/useQuotes';
-import { QUOTE_STATUS_LABELS, QUOTE_STATUS_VARIANT, QUOTE_TYPE_LABELS, groupItemsByCategory, hasItemCategories } from '../utils/quoteTemplate';
+import { QUOTE_STATUS_LABELS, QUOTE_STATUS_VARIANT, QUOTE_TYPE_LABELS, groupItemsByCategory, hasItemCategories, hasItemUnits } from '../utils/quoteTemplate';
 import { formatCurrency, formatDate, formatPersonName } from '../../../shared/utils/format';
 import { useAuthStore } from '../../../shared/stores/auth.store';
 import { Send, Check, X, Ban, Repeat, Pencil, Trash2, FileText } from 'lucide-react';
@@ -149,11 +149,13 @@ export default function QuoteDetailPage() {
         </Card>
 
         <Card className="!p-0 overflow-hidden">
+          {(() => { const showUnit = hasItemUnits(q.items ?? []); return (
           <table className="w-full text-sm">
             <thead className="bg-slate-50">
               <tr>
                 <th className="text-left px-4 py-2.5 font-medium text-slate-600">Désignation</th>
                 <th className="text-right px-4 py-2.5 font-medium text-slate-600">Qté</th>
+                {showUnit && <th className="text-left px-4 py-2.5 font-medium text-slate-600">Unité</th>}
                 <th className="text-right px-4 py-2.5 font-medium text-slate-600">Prix unitaire</th>
                 <th className="text-right px-4 py-2.5 font-medium text-slate-600">Total</th>
               </tr>
@@ -163,18 +165,19 @@ export default function QuoteDetailPage() {
                 ? groupItemsByCategory(q.items ?? []).map((g) => (
                     <Fragment key={g.category || '—'}>
                       <tr className="bg-slate-100/70">
-                        <td colSpan={4} className="px-4 py-2 font-semibold text-slate-700">{g.category || 'AUTRES'}</td>
+                        <td colSpan={showUnit ? 5 : 4} className="px-4 py-2 font-semibold text-slate-700">{g.category || 'AUTRES'}</td>
                       </tr>
                       {g.items.map((it: any) => (
                         <tr key={it.id}>
                           <td className="px-4 py-2.5 pl-8">{it.designation}</td>
                           <td className="px-4 py-2.5 text-right">{Number(it.quantity)}</td>
+                          {showUnit && <td className="px-4 py-2.5">{it.unit ?? ''}</td>}
                           <td className="px-4 py-2.5 text-right">{formatCurrency(Number(it.unitPrice))}</td>
                           <td className="px-4 py-2.5 text-right font-medium">{formatCurrency(Number(it.total))}</td>
                         </tr>
                       ))}
                       <tr className="text-slate-500 italic">
-                        <td colSpan={3} className="px-4 py-1.5 text-right">Sous-total {g.category || 'AUTRES'}</td>
+                        <td colSpan={showUnit ? 4 : 3} className="px-4 py-1.5 text-right">Sous-total {g.category || 'AUTRES'}</td>
                         <td className="px-4 py-1.5 text-right">{formatCurrency(g.subtotal)}</td>
                       </tr>
                     </Fragment>
@@ -183,12 +186,14 @@ export default function QuoteDetailPage() {
                     <tr key={it.id}>
                       <td className="px-4 py-2.5">{it.designation}</td>
                       <td className="px-4 py-2.5 text-right">{Number(it.quantity)}</td>
+                      {showUnit && <td className="px-4 py-2.5">{it.unit ?? ''}</td>}
                       <td className="px-4 py-2.5 text-right">{formatCurrency(Number(it.unitPrice))}</td>
                       <td className="px-4 py-2.5 text-right font-medium">{formatCurrency(Number(it.total))}</td>
                     </tr>
                   ))}
             </tbody>
           </table>
+          ); })()}
           <div className="flex flex-col items-end gap-1 p-4 border-t border-slate-200 text-sm">
             <div className="flex gap-8"><span className="text-slate-500">Sous-total</span><span className="w-40 text-right font-medium">{formatCurrency(Number(q.subtotal))}</span></div>
             {Number(q.discountAmount) > 0 && <div className="flex gap-8"><span className="text-slate-500">Remise{q.discountIsPercent ? ` (${Number(q.discountPercent) || 0} %)` : ''}</span><span className="w-40 text-right font-medium">- {formatCurrency(Number(q.discountAmount))}</span></div>}

@@ -97,6 +97,12 @@ import ContractDocumentPage from './modules/hr/pages/ContractDocumentPage';
 import JobDescriptionTemplateFormPage from './modules/hr/pages/JobDescriptionTemplateFormPage';
 import JobDescriptionDocumentPage from './modules/hr/pages/JobDescriptionDocumentPage';
 import MyHrPage from './modules/hr/pages/MyHrPage';
+import PerformanceDashboardPage from './modules/performance/pages/PerformanceDashboardPage';
+import ObjectivesListPage from './modules/performance/pages/ObjectivesListPage';
+import EvaluationsListPage from './modules/performance/pages/EvaluationsListPage';
+import EvaluationDetailPage from './modules/performance/pages/EvaluationDetailPage';
+import RankingsPage from './modules/performance/pages/RankingsPage';
+import PerformanceSettingsPage from './modules/performance/pages/PerformanceSettingsPage';
 import LeaveRequestsPage from './modules/hr/pages/LeaveRequestsPage';
 import AttendancePage from './modules/hr/pages/AttendancePage';
 
@@ -397,6 +403,31 @@ export const router = createHashRouter([
             element: <RoleGuard allowedRoles={['SUPER_ADMIN', 'ADMIN', 'RH', 'MANAGER', 'ASSISTANTE_DIRECTION']} />,
             children: [
               { path: 'hr/attendance', element: <AttendancePage /> },
+            ],
+          },
+
+          // Performance — gestion opérationnelle (objectifs, évaluations,
+          // classements) : admins, RH et MANAGER (ce dernier limité à son équipe
+          // côté IPC). Le tableau de bord est exclu pour le MANAGER (voir groupe
+          // ci-dessous).
+          {
+            element: <RoleGuard allowedRoles={['SUPER_ADMIN', 'ADMIN', 'RH', 'MANAGER']} />,
+            children: [
+              { path: 'performance/objectives', element: <ObjectivesListPage /> },
+              { path: 'performance/evaluations', element: <EvaluationsListPage /> },
+              { path: 'performance/evaluations/:id', element: <EvaluationDetailPage /> },
+              { path: 'performance/rankings', element: <RankingsPage /> },
+            ],
+          },
+
+          // Performance — tableau de bord & configuration : admins & RH
+          // uniquement (MANAGER exclu).
+          {
+            element: <RoleGuard allowedRoles={['SUPER_ADMIN', 'ADMIN', 'RH']} />,
+            children: [
+              { path: 'performance', element: <PerformanceDashboardPage /> },
+              { path: 'performance/dashboard', element: <PerformanceDashboardPage /> },
+              { path: 'performance/settings', element: <PerformanceSettingsPage /> },
             ],
           },
 

@@ -7,11 +7,13 @@ import { sendEmail } from '../services/email.service';
 import { sendSms } from '../services/sms.service';
 import { sendWhatsapp } from '../services/whatsapp.service';
 import { renderMessage, loadCompanyVariables } from '../services/templating.service';
-import { getSettings, SettingsKeys } from '../services/settings.service';
+import { getSettings, SettingsKeys, getSetting, setSetting } from '../services/settings.service';
 import logger from '../utils/logger';
 import { z } from 'zod';
 
 const WRITE_ROLES = ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'AGENT'];
+// Clé AppSetting : URL de base du pixel de suivi d'ouverture des emails.
+const COMM_TRACKING_KEY = 'communication.tracking.baseUrl';
 const READ_ROLES = [...WRITE_ROLES, 'ACCOUNTANT', 'READONLY'];
 
 // Rôles qui voient l'intégralité de l'historique de communication.
@@ -531,6 +533,35 @@ export function registerCommunicationIPC(): void {
     }
   });
 
+  // Configuration du suivi d'ouverture des emails (URL de base du pixel).
+  ipcMain.handle('communication:getTracking', async (_event, { token }: any) => {
+    try {
+      const session = getSession(token);
+      if (!session) return { success: false, error: 'Session expirée' };
+      checkRole(session, ['SUPER_ADMIN', 'ADMIN']);
+      const baseUrl = (await getSetting(COMM_TRACKING_KEY)) ?? '';
+      return { success: true, data: { baseUrl } };
+    } catch (error: any) {
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle('communication:updateTracking', async (_event, { token, baseUrl }: any) => {
+    try {
+      const session = getSession(token);
+      if (!session) return { success: false, error: 'Session expirée' };
+      checkRole(session, ['SUPER_ADMIN', 'ADMIN']);
+      const url = String(baseUrl ?? '').trim();
+      if (url && !/^https?:\/\//i.test(url)) {
+        return { success: false, error: "L'URL de suivi doit commencer par http:// ou https://" };
+      }
+      await setSetting(COMM_TRACKING_KEY, url);
+      return { success: true };
+    } catch (error: any) {
+      return { success: false, error: error.message };
+    }
+  });
+
   // ── Envoi Email ────────────────────────────────────────────────────────────
 
   ipcMain.handle('communication:sendEmail', async (_event, { token, payload }: any) => {
@@ -629,9 +660,15 @@ export function registerCommunicationIPC(): void {
         },
       });
 
+      // Pixel de suivi d'ouverture : injecté si une URL de suivi est configurée.
+      const trackBase = (await getSetting(COMM_TRACKING_KEY))?.trim() || '';
+      const trackingPixelUrl = trackBase
+        ? `${trackBase}${trackBase.includes('?') ? '&' : '?'}c=${comm.id}`
+        : undefined;
+
       // Envoi via Nodemailer (SMTP) — paramétré côté AppSetting.
       try {
-        await sendEmail({
+        const info = await sendEmail({
           to: d.to,
           subject: finalSubject,
           body: storedBody,
@@ -641,11 +678,14 @@ export function registerCommunicationIPC(): void {
           ...(mailAttachments ? { attachments: mailAttachments } : {}),
           ...(cc.list.length ? { cc: cc.list } : {}),
           ...(bcc.list.length ? { bcc: bcc.list } : {}),
+          ...(trackingPixelUrl ? { trackingPixelUrl } : {}),
           ...fromOverride,
         });
+        // « Remis » : le serveur SMTP a accepté le destinataire principal.
+        const delivered = info.accepted.some((a) => a.toLowerCase() === d.to.toLowerCase());
         await db.communication.update({
           where: { id: comm.id },
-          data: { status: 'ENVOYE', sentAt: new Date() },
+          data: { status: 'ENVOYE', sentAt: new Date(), deliveredAt: delivered ? new Date() : null },
         });
         logger.info(`Email sent to ${d.to}`);
         return { success: true, data: { ...comm, status: 'ENVOYE' } };

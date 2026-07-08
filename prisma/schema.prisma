@@ -1,5 +1,5 @@
 generator client {
-  provider = "prisma-client-js"
+  provider      = "prisma-client-js"
   // Moteurs de requête embarqués pour le packaging multi-plateformes.
   // « native » = OS de build courant ; les autres couvrent les cibles de
   // distribution. Adapter la cible Linux à la distro visée si besoin
@@ -15,77 +15,79 @@ datasource db {
 // ── UTILISATEURS ──────────────────────────────────────────────
 
 model User {
-  id          Int       @id @default(autoincrement())
-  uuid        String    @unique @default(cuid())
-  reference   String    @unique  // Ex: USR-2026-0001
-  matricule   String
-  firstName   String
-  lastName    String
-  email       String    @unique
-  login       String?   @unique
-  password    String
-  role        UserRole  @default(AGENT)
-  isActive    Boolean   @default(true)
-  avatar      String?
-  phone       String?
-  mobile      String?
-  fonction       String?
+  id                     Int                 @id @default(autoincrement())
+  uuid                   String              @unique @default(cuid())
+  reference              String              @unique // Ex: USR-2026-0001
+  matricule              String
+  firstName              String
+  lastName               String
+  email                  String              @unique
+  login                  String?             @unique
+  password               String
+  role                   UserRole            @default(AGENT)
+  isActive               Boolean             @default(true)
+  avatar                 String?
+  phone                  String?
+  mobile                 String?
+  fonction               String?
   // Nom commercial / d'usage affiché sur les documents (devis…) en tant
   // qu'émetteur. À défaut, on retombe sur « nom + prénom ».
-  nomCommercial  String?
+  nomCommercial          String?
   // Signature personnelle (HTML) ajoutée aux messages « personnels » (envoi en
   // tant que Particulier depuis le module Communication).
-  messageSignature String? @db.Text
-  idNumber       String?
-  civilite       CiviliteType?
-  statutConjugal StatutConjugalType?
-  hireDate       DateTime?
-  cnpsNumber     String?
-  residence      String?
+  messageSignature       String?             @db.Text
+  idNumber               String?
+  civilite               CiviliteType?
+  statutConjugal         StatutConjugalType?
+  hireDate               DateTime?
+  cnpsNumber             String?
+  residence              String?
   // Préférence de thème graphique : DEFAULT | AFRIKIMMO | DARK_GOLD
-  theme       String    @default("DEFAULT")
+  theme                  String              @default("DEFAULT")
   // Comptes de trésorerie par défaut, préremplis dans le champ « Compte » du
   // formulaire de nouvelle opération selon le sens choisi (entrée / sortie).
   defaultAccountEntreeId Int?
   defaultAccountSortieId Int?
-  lastLoginAt DateTime?
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
-  deletedAt   DateTime?
+  lastLoginAt            DateTime?
+  createdAt              DateTime            @default(now())
+  updatedAt              DateTime            @updatedAt
+  deletedAt              DateTime?
 
-  activities           CrmActivity[]   @relation("ActivityAssignedTo")
-  createdActivities    CrmActivity[]   @relation("ActivityCreatedBy")
-  conventions          Convention[]    @relation("AgentConventions")
-  notes                Note[]
-  archivedEntities     ArchiveRecord[] @relation("ArchivedBy")
-  restoredEntities     ArchiveRecord[] @relation("RestoredBy")
-  commissions          Commission[]    @relation("UserCommissions")
-  commissionsPaid      Commission[]    @relation("CommissionPaidBy")
-  commissionsCancelled Commission[]    @relation("CommissionCancelledBy")
-  treasuryOperations   TreasuryOperation[] @relation("TreasuryCreatedBy")
-  linkedBankAccounts   BankAccount[]       @relation("BankAccountLinkedUser")
-  bankAccountViews     BankAccountViewer[]
-  defaultAccountEntree BankAccount?        @relation("UserDefaultEntreeAccount", fields: [defaultAccountEntreeId], references: [id])
-  defaultAccountSortie BankAccount?        @relation("UserDefaultSortieAccount", fields: [defaultAccountSortieId], references: [id])
-  uploadedDocuments    Document[]          @relation("DocumentUploadedBy")
-  linkedDocuments      Document[]          @relation("DocumentLinkedUser")
-  documentAuditLogs    DocumentAuditLog[]  @relation("DocumentAuditUser")
-  managedBudgetLines   BudgetLine[]        @relation("BudgetLineManager")
-  closedBudgets        Budget[]            @relation("BudgetClosedBy")
-  assignedProspects    Prospect[]          @relation("ProspectAssignedTo")
-  createdProspects     Prospect[]          @relation("ProspectCreatedBy")
-  assignedClients      Client[]            @relation("ClientAssignedTo")
-  attestationsEmitted  Attestation[]       @relation("AttestationEmittedBy")
-  communicationsSent   Communication[]     @relation("CommunicationSentBy")
-  quotesAsAgent        Quote[]             @relation("QuoteAgent")
-  quotesCreated        Quote[]             @relation("QuoteCreatedBy")
-  ownedDocumentFolders   DocumentFolder[]       @relation("FolderOwner")
-  documentFolderAccesses DocumentFolderAccess[] @relation("FolderAccessUser")
-  employee               Employee?              @relation("UserEmployee")
-  leaveDecisions         LeaveRequest[]         @relation("LeaveDecidedBy")
-  forecastExpensesCreated ForecastExpense[]     @relation("ForecastExpenseCreatedBy")
-  forecastExpensesSettled ForecastExpense[]     @relation("ForecastExpenseSettledBy")
-  visitorsCreated         Visitor[]             @relation("VisitorCreatedBy")
+  activities                 CrmActivity[]                @relation("ActivityAssignedTo")
+  createdActivities          CrmActivity[]                @relation("ActivityCreatedBy")
+  conventions                Convention[]                 @relation("AgentConventions")
+  notes                      Note[]
+  archivedEntities           ArchiveRecord[]              @relation("ArchivedBy")
+  restoredEntities           ArchiveRecord[]              @relation("RestoredBy")
+  commissions                Commission[]                 @relation("UserCommissions")
+  commissionsPaid            Commission[]                 @relation("CommissionPaidBy")
+  commissionsCancelled       Commission[]                 @relation("CommissionCancelledBy")
+  treasuryOperations         TreasuryOperation[]          @relation("TreasuryCreatedBy")
+  linkedBankAccounts         BankAccount[]                @relation("BankAccountLinkedUser")
+  bankAccountViews           BankAccountViewer[]
+  defaultAccountEntree       BankAccount?                 @relation("UserDefaultEntreeAccount", fields: [defaultAccountEntreeId], references: [id])
+  defaultAccountSortie       BankAccount?                 @relation("UserDefaultSortieAccount", fields: [defaultAccountSortieId], references: [id])
+  uploadedDocuments          Document[]                   @relation("DocumentUploadedBy")
+  linkedDocuments            Document[]                   @relation("DocumentLinkedUser")
+  documentAuditLogs          DocumentAuditLog[]           @relation("DocumentAuditUser")
+  managedBudgetLines         BudgetLine[]                 @relation("BudgetLineManager")
+  closedBudgets              Budget[]                     @relation("BudgetClosedBy")
+  assignedProspects          Prospect[]                   @relation("ProspectAssignedTo")
+  createdProspects           Prospect[]                   @relation("ProspectCreatedBy")
+  assignedClients            Client[]                     @relation("ClientAssignedTo")
+  attestationsEmitted        Attestation[]                @relation("AttestationEmittedBy")
+  communicationsSent         Communication[]              @relation("CommunicationSentBy")
+  quotesAsAgent              Quote[]                      @relation("QuoteAgent")
+  quotesCreated              Quote[]                      @relation("QuoteCreatedBy")
+  ownedDocumentFolders       DocumentFolder[]             @relation("FolderOwner")
+  documentFolderAccesses     DocumentFolderAccess[]       @relation("FolderAccessUser")
+  employee                   Employee?                    @relation("UserEmployee")
+  leaveDecisions             LeaveRequest[]               @relation("LeaveDecidedBy")
+  forecastExpensesCreated    ForecastExpense[]            @relation("ForecastExpenseCreatedBy")
+  forecastExpensesSettled    ForecastExpense[]            @relation("ForecastExpenseSettledBy")
+  visitorsCreated            Visitor[]                    @relation("VisitorCreatedBy")
+  perfEvaluationsAsEvaluator PerformanceEvaluation[]      @relation("PerfEvaluator")
+  perfRankingSnapshots       PerformanceRankingSnapshot[] @relation("PerfRankingGeneratedBy")
 }
 
 enum UserRole {
@@ -105,7 +107,7 @@ enum UserRole {
 model Prospect {
   id           Int            @id @default(autoincrement())
   uuid         String         @unique @default(cuid())
-  reference    String         @unique  // Ex: PSP-2026-0001
+  reference    String         @unique // Ex: PSP-2026-0001
   firstName    String
   lastName     String
   email        String?
@@ -125,7 +127,7 @@ model Prospect {
 
   client     Client?       @relation(fields: [clientId], references: [id])
   assignedTo User?         @relation("ProspectAssignedTo", fields: [assignedToId], references: [id])
-  createdBy  User?         @relation("ProspectCreatedBy",  fields: [createdById],  references: [id])
+  createdBy  User?         @relation("ProspectCreatedBy", fields: [createdById], references: [id])
   activities CrmActivity[]
   tags       ProspectTag[]
   documents  Document[]
@@ -156,10 +158,10 @@ enum ProspectStatus {
 // ── CLIENTS ───────────────────────────────────────────────────
 
 model Client {
-  id                   Int        @id @default(autoincrement())
-  uuid                 String     @unique @default(cuid())
-  reference            String     @unique  // Ex: CLI-2026-0001
-  type                 ClientType @default(INDIVIDUEL)
+  id                   Int                @id @default(autoincrement())
+  uuid                 String             @unique @default(cuid())
+  reference            String             @unique // Ex: CLI-2026-0001
+  type                 ClientType         @default(INDIVIDUEL)
   firstName            String?
   lastName             String?
   civilite             CiviliteType       @default(MONSIEUR)
@@ -168,8 +170,8 @@ model Client {
   registre_de_commerce String?
   compte_contribuable  String?
   // Entreprise — informations complémentaires
-  website              String?  // Site web de l'entreprise
-  companyActivity      String?  // Activités de l'entreprise
+  website              String? // Site web de l'entreprise
+  companyActivity      String? // Activités de l'entreprise
   // Entreprise — représentant légal
   legalRepFirstName    String?
   legalRepLastName     String?
@@ -183,9 +185,9 @@ model Client {
   commune              String?
   city                 String?
   postalCode           String?
-  country              String     @default("CI")
+  country              String             @default("CI")
   nationality          String?
-  profession           String?  // Profession (client particulier)
+  profession           String? // Profession (client particulier)
   birthDate            DateTime?
   birthPlace           String?
   idNumber             String?
@@ -194,38 +196,38 @@ model Client {
   fatherLastName       String?
   motherFirstName      String?
   motherLastName       String?
-  notes                String?    @db.Text
-  isActive             Boolean      @default(true)
-  status               ClientStatus @default(ACTIF)
+  notes                String?            @db.Text
+  isActive             Boolean            @default(true)
+  status               ClientStatus       @default(ACTIF)
   // Refus de relances automatiques par canal (politique de communication).
-  smsOptOut            Boolean      @default(false)
-  emailOptOut          Boolean      @default(false)
+  smsOptOut            Boolean            @default(false)
+  emailOptOut          Boolean            @default(false)
   // Affectation : un client peut être suivi par un utilisateur interne ET
   // apporté par un référent externe (BusinessReferrer) ; les deux coexistent.
   assignedToId         Int?
   referrerId           Int?
-  createdAt            DateTime     @default(now())
-  updatedAt            DateTime     @updatedAt
+  createdAt            DateTime           @default(now())
+  updatedAt            DateTime           @updatedAt
   deletedAt            DateTime?
 
-  prospect             Prospect?
-  assignedTo           User?             @relation("ClientAssignedTo", fields: [assignedToId], references: [id])
-  referrer             BusinessReferrer? @relation("ClientReferrer", fields: [referrerId], references: [id])
-  idType               IdDocumentType?   @relation("ClientIdType", fields: [idTypeId], references: [id])
-  legalRepIdType       IdDocumentType?   @relation("ClientLegalRepIdType", fields: [legalRepIdTypeId], references: [id])
-  conventions          Convention[]      @relation("ConventionClient")
-  secondaryConventions Convention[]      @relation("ConventionSecondaryClient")
-  documents            Document[]
-  activities         CrmActivity[]
-  invoices           Invoice[]
-  installments       SaleInstallment[]
-  terrains           Terrain[]
-  properties         Property[]    @relation("ClientProperties")
-  attestations          Attestation[] @relation("AttestationClient")
-  attestationsSecondary Attestation[] @relation("AttestationSecondaryClient")
-  projects             Project[]
-  communications     Communication[]
-  quotes             Quote[]
+  prospect              Prospect?
+  assignedTo            User?             @relation("ClientAssignedTo", fields: [assignedToId], references: [id])
+  referrer              BusinessReferrer? @relation("ClientReferrer", fields: [referrerId], references: [id])
+  idType                IdDocumentType?   @relation("ClientIdType", fields: [idTypeId], references: [id])
+  legalRepIdType        IdDocumentType?   @relation("ClientLegalRepIdType", fields: [legalRepIdTypeId], references: [id])
+  conventions           Convention[]      @relation("ConventionClient")
+  secondaryConventions  Convention[]      @relation("ConventionSecondaryClient")
+  documents             Document[]
+  activities            CrmActivity[]
+  invoices              Invoice[]
+  installments          SaleInstallment[]
+  terrains              Terrain[]
+  properties            Property[]        @relation("ClientProperties")
+  attestations          Attestation[]     @relation("AttestationClient")
+  attestationsSecondary Attestation[]     @relation("AttestationSecondaryClient")
+  projects              Project[]
+  communications        Communication[]
+  quotes                Quote[]
 }
 
 enum ClientType {
@@ -250,8 +252,8 @@ enum StatutConjugalType {
   CELIBATAIRE
   MARIEE
   CONCUBINAGE
-  DIVORCE      // Divorcé(e)
-  VEUF         // Veuf/Veuve
+  DIVORCE // Divorcé(e)
+  VEUF // Veuf/Veuve
 }
 
 // ── PROPRIÉTAIRES ─────────────────────────────────────────────
@@ -263,17 +265,17 @@ model Owner {
   // Particulier
   firstName           String?
   lastName            String?
-  nationality         String?    // Nationalité (particulier)
-  idNumber            String?    // Numéro pièce d'identité (particulier)
-  idTypeId            Int?       // Type de pièce d'identité (particulier)
+  nationality         String? // Nationalité (particulier)
+  idNumber            String? // Numéro pièce d'identité (particulier)
+  idTypeId            Int? // Type de pièce d'identité (particulier)
   // Entreprise
   companyName         String?
-  registreCommerce    String?    // Numéro registre de commerce
-  legalRepFirstName   String?    // Prénom représentant légal
-  legalRepLastName    String?    // Nom représentant légal
-  legalRepPhone       String?    // Contact représentant légal
-  legalRepIdNumber    String?    // Numéro pièce d'identité représentant légal
-  legalRepIdTypeId    Int?       // Type de pièce d'identité du représentant légal
+  registreCommerce    String? // Numéro registre de commerce
+  legalRepFirstName   String? // Prénom représentant légal
+  legalRepLastName    String? // Nom représentant légal
+  legalRepPhone       String? // Contact représentant légal
+  legalRepIdNumber    String? // Numéro pièce d'identité représentant légal
+  legalRepIdTypeId    Int? // Type de pièce d'identité du représentant légal
   // Commun
   email               String?
   phone               String?
@@ -291,58 +293,58 @@ model Owner {
   updatedAt           DateTime   @updatedAt
   deletedAt           DateTime?
 
-  properties Property[]
-  terrains   Terrain[]
-  documents  Document[]
-  activities CrmActivity[]
-  projects   Project[]
+  properties     Property[]
+  terrains       Terrain[]
+  documents      Document[]
+  activities     CrmActivity[]
+  projects       Project[]
   communications Communication[]
-  idType         IdDocumentType? @relation("OwnerIdType",         fields: [idTypeId],         references: [id])
+  idType         IdDocumentType? @relation("OwnerIdType", fields: [idTypeId], references: [id])
   legalRepIdType IdDocumentType? @relation("OwnerLegalRepIdType", fields: [legalRepIdTypeId], references: [id])
 }
 
 // ── LOTISSEMENTS ───────────────────────────────────────────────
 
 model Lotissement {
-  id              Int               @id @default(autoincrement())
-  uuid            String            @unique @default(cuid())
-  reference       String            @unique  // Ex: LOT-2024-0001
-  nom             String
-  commune         String?
-  quartier        String?
-  ville           String
-  pays            String            @default("CI")
-  surface         Decimal?          @db.Decimal(12, 2)  // Surface totale en m²
-  nombreParcelles Int?
-  promoteur       String?
-  statut          LotissementStatus @default(EN_COURS_LOTISSEMENT)
+  id                        Int               @id @default(autoincrement())
+  uuid                      String            @unique @default(cuid())
+  reference                 String            @unique // Ex: LOT-2024-0001
+  nom                       String
+  commune                   String?
+  quartier                  String?
+  ville                     String
+  pays                      String            @default("CI")
+  surface                   Decimal?          @db.Decimal(12, 2) // Surface totale en m²
+  nombreParcelles           Int?
+  promoteur                 String?
+  statut                    LotissementStatus @default(EN_COURS_LOTISSEMENT)
   // Titre administratif sollicité (référentiel paramétrable) et numéro du
   // titre obtenu lorsqu'il est délivré.
-  titleTypeId     Int?
-  titleNumber     String?
-  description     String?           @db.Text
-  latitude        Float?
-  longitude       Float?
+  titleTypeId               Int?
+  titleNumber               String?
+  description               String?           @db.Text
+  latitude                  Float?
+  longitude                 Float?
   // Frais de démarches ACD : montant standard applicable lorsqu'un client confie
   // les démarches ACD à l'entreprise sur un terrain de ce lotissement. Sert de
   // pré-remplissage sur chaque terrain — la valeur retenue reste modifiable au
   // niveau du terrain (négociation, remise…).
-  fraisDemarchesAcdStandard Decimal? @db.Decimal(15, 2)
+  fraisDemarchesAcdStandard Decimal?          @db.Decimal(15, 2)
   // Grille de prix de vente par modalité de paiement (clé = PaymentModalites,
   // valeur = montant FCFA). Héritée par les terrains du lotissement, surchargeable
   // au niveau de chaque terrain. Ex : { "CASH": 5000000, "SUR_6_MOIS": 5500000 }
-  salePriceTiers  Json?
-  createdAt       DateTime          @default(now())
-  updatedAt       DateTime          @updatedAt
-  deletedAt       DateTime?
+  salePriceTiers            Json?
+  createdAt                 DateTime          @default(now())
+  updatedAt                 DateTime          @updatedAt
+  deletedAt                 DateTime?
 
-  terrains            Terrain[]
-  documents           Document[]
-  activities          CrmActivity[]
-  projects            Project[]
-  treasuryOperations  TreasuryOperation[]
-  quotes              Quote[]
-  titleType           LotissementTitleType? @relation(fields: [titleTypeId], references: [id])
+  terrains           Terrain[]
+  documents          Document[]
+  activities         CrmActivity[]
+  projects           Project[]
+  treasuryOperations TreasuryOperation[]
+  quotes             Quote[]
+  titleType          LotissementTitleType? @relation(fields: [titleTypeId], references: [id])
 }
 
 enum LotissementStatus {
@@ -361,7 +363,7 @@ enum LotissementStatus {
 model ProgrammeImmobilier {
   id                  Int             @id @default(autoincrement())
   uuid                String          @unique @default(cuid())
-  reference           String          @unique  // Ex: PROG-2026-0001
+  reference           String          @unique // Ex: PROG-2026-0001
   nom                 String
   type                ProgrammeType   @default(RESIDENTIEL)
   promoteur           String?
@@ -369,10 +371,10 @@ model ProgrammeImmobilier {
   quartier            String?
   ville               String
   pays                String          @default("CI")
-  surface             Decimal?        @db.Decimal(12, 2)  // Surface totale en m²
+  surface             Decimal?        @db.Decimal(12, 2) // Surface totale en m²
   nombreLogements     Int?
-  dateDebut           DateTime?       // Date de démarrage du programme
-  dateLivraisonPrevue DateTime?       // Date de livraison prévisionnelle
+  dateDebut           DateTime? // Date de démarrage du programme
+  dateLivraisonPrevue DateTime? // Date de livraison prévisionnelle
   statut              ProgrammeStatus @default(EN_PROJET)
   description         String?         @db.Text
   latitude            Float?
@@ -381,13 +383,13 @@ model ProgrammeImmobilier {
   updatedAt           DateTime        @updatedAt
   deletedAt           DateTime?
 
-  properties          Property[]
-  terrains            Terrain[]
-  documents           Document[]
-  activities          CrmActivity[]
-  projects            Project[]
-  treasuryOperations  TreasuryOperation[]
-  quotes              Quote[]
+  properties         Property[]
+  terrains           Terrain[]
+  documents          Document[]
+  activities         CrmActivity[]
+  projects           Project[]
+  treasuryOperations TreasuryOperation[]
+  quotes             Quote[]
 }
 
 enum ProgrammeType {
@@ -407,55 +409,55 @@ enum ProgrammeStatus {
 // ── TERRAINS ───────────────────────────────────────────────────
 
 model Terrain {
-  id             Int           @id @default(autoincrement())
-  uuid           String        @unique @default(cuid())
-  reference      String        @unique  // Ex: TER-2024-0001
-  lotissementId  Int
-  programmeId    Int?          // Programme immobilier d'origine (optionnel)
-  ownerId        Int?
-  clientId       Int?          // Attributaire (client à qui le terrain est attribué)
-  numeroIlot     String?       // Numéro d'îlot
-  numeroParcelle String?       // Numéro de parcelle/lot
-  statut         TerrainStatus @default(DISPONIBLE)
-  surface        Decimal?      @db.Decimal(12, 2)  // m²
-  prixVente      Decimal?      @db.Decimal(15, 2)
+  id                           Int           @id @default(autoincrement())
+  uuid                         String        @unique @default(cuid())
+  reference                    String        @unique // Ex: TER-2024-0001
+  lotissementId                Int
+  programmeId                  Int? // Programme immobilier d'origine (optionnel)
+  ownerId                      Int?
+  clientId                     Int? // Attributaire (client à qui le terrain est attribué)
+  numeroIlot                   String? // Numéro d'îlot
+  numeroParcelle               String? // Numéro de parcelle/lot
+  statut                       TerrainStatus @default(DISPONIBLE)
+  surface                      Decimal?      @db.Decimal(12, 2) // m²
+  prixVente                    Decimal?      @db.Decimal(15, 2)
   // Grille de prix par modalité (surcharge la grille héritée du lotissement).
-  salePriceTiers Json?
-  viabilise      Boolean       @default(false)
-  numeroADU                    String?  // Numéro ADU
-  numeroAttestationAttribution String?  // Numéro attestation d'attribution
-  numeroAttestationCession     String?  // Numéro attestation de cession
-  numeroDM                     String?  // Numéro décision de morcellement
-  titreFoncier                 String?  // Numéro titre foncier
-  numeroACD                    String?  // Numéro arrêté de concession définitive
-  description    String?       @db.Text
-  latitude       Float?
-  longitude      Float?
+  salePriceTiers               Json?
+  viabilise                    Boolean       @default(false)
+  numeroADU                    String? // Numéro ADU
+  numeroAttestationAttribution String? // Numéro attestation d'attribution
+  numeroAttestationCession     String? // Numéro attestation de cession
+  numeroDM                     String? // Numéro décision de morcellement
+  titreFoncier                 String? // Numéro titre foncier
+  numeroACD                    String? // Numéro arrêté de concession définitive
+  description                  String?       @db.Text
+  latitude                     Float?
+  longitude                    Float?
   // Frais de démarches ACD — option client : prise en charge des démarches ACD
   // par l'entreprise. Indépendant du prix du terrain et des frais de dossier.
-  acdDemarchesEnabled          Boolean   @default(false)   // Le client a opté pour la prise en charge
-  acdDemarchesAmount           Decimal?  @db.Decimal(15, 2) // Montant retenu (pré-rempli depuis Lotissement, modifiable)
-  acdDemarchesStartDate        DateTime?                    // Date de la 1ʳᵉ échéance (ou paiement comptant si cash)
-  acdDemarchesInstallmentCount Int?                         // 1 = comptant, N > 1 = échelonné (cadence mensuelle)
-  createdAt      DateTime      @default(now())
-  updatedAt      DateTime      @updatedAt
-  deletedAt      DateTime?
+  acdDemarchesEnabled          Boolean       @default(false) // Le client a opté pour la prise en charge
+  acdDemarchesAmount           Decimal?      @db.Decimal(15, 2) // Montant retenu (pré-rempli depuis Lotissement, modifiable)
+  acdDemarchesStartDate        DateTime? // Date de la 1ʳᵉ échéance (ou paiement comptant si cash)
+  acdDemarchesInstallmentCount Int? // 1 = comptant, N > 1 = échelonné (cadence mensuelle)
+  createdAt                    DateTime      @default(now())
+  updatedAt                    DateTime      @updatedAt
+  deletedAt                    DateTime?
 
-  lotissement Lotissement          @relation(fields: [lotissementId], references: [id])
-  programme   ProgrammeImmobilier? @relation(fields: [programmeId], references: [id])
-  owner       Owner?               @relation(fields: [ownerId], references: [id])
-  client      Client?              @relation(fields: [clientId], references: [id])
-  documents   Document[]
-  photos      TerrainPhoto[]
-  activities  CrmActivity[]
-  conventionLinks ConventionTerrain[]
+  lotissement          Lotissement              @relation(fields: [lotissementId], references: [id])
+  programme            ProgrammeImmobilier?     @relation(fields: [programmeId], references: [id])
+  owner                Owner?                   @relation(fields: [ownerId], references: [id])
+  client               Client?                  @relation(fields: [clientId], references: [id])
+  documents            Document[]
+  photos               TerrainPhoto[]
+  activities           CrmActivity[]
+  conventionLinks      ConventionTerrain[]
   priorConventionLinks ConventionPriorTerrain[]
-  attestations Attestation[]
-  invoices    Invoice[]
-  installments SaleInstallment[]
-  installmentLinks SaleInstallmentTerrain[]
-  projects    Project[]
-  quotes      Quote[]
+  attestations         Attestation[]
+  invoices             Invoice[]
+  installments         SaleInstallment[]
+  installmentLinks     SaleInstallmentTerrain[]
+  projects             Project[]
+  quotes               Quote[]
 }
 
 enum TerrainStatus {
@@ -480,59 +482,59 @@ model TerrainPhoto {
 // ── BIENS IMMOBILIERS ─────────────────────────────────────────
 
 model Property {
-  id            Int                @id @default(autoincrement())
-  uuid          String             @unique @default(cuid())
-  reference     String             @unique
-  type          PropertyType
-  status        PropertyStatus     @default(DISPONIBLE)
+  id             Int                @id @default(autoincrement())
+  uuid           String             @unique @default(cuid())
+  reference      String             @unique
+  type           PropertyType
+  status         PropertyStatus     @default(DISPONIBLE)
   // Origine du bien : un bien provient soit d'un propriétaire, soit d'un
   // programme immobilier (exclusif). Les deux champs peuvent être nuls.
-  ownerId       Int?
-  programmeId   Int?
+  ownerId        Int?
+  programmeId    Int?
   // Client rattaché au bien : présent uniquement lorsque le bien n'est pas
   // DISPONIBLE (réservé, sous option, vendu, en location…). Vidé automatiquement
   // au retour à DISPONIBLE.
-  clientId      Int?
-  address       String
-  addressLine2  String?
-  city          String
-  postalCode    String
-  country       String             @default("CI")
-  latitude      Float?
-  longitude     Float?
-  surface       Decimal?           @db.Decimal(10, 2)
-  surfaceCarrez Decimal?           @db.Decimal(10, 2)
-  rooms         Int?
-  bedrooms      Int?
-  bathrooms     Int?
-  floor         Int?
-  totalFloors   Int?
-  buildYear     Int?
-  condition     PropertyCondition?
-  garage        String?
-  cuisine       String?
+  clientId       Int?
+  address        String
+  addressLine2   String?
+  city           String
+  postalCode     String
+  country        String             @default("CI")
+  latitude       Float?
+  longitude      Float?
+  surface        Decimal?           @db.Decimal(10, 2)
+  surfaceCarrez  Decimal?           @db.Decimal(10, 2)
+  rooms          Int?
+  bedrooms       Int?
+  bathrooms      Int?
+  floor          Int?
+  totalFloors    Int?
+  buildYear      Int?
+  condition      PropertyCondition?
+  garage         String?
+  cuisine        String?
   terrasseBalcon String?
-  rentPrice     Decimal?           @db.Decimal(15, 2)
-  salePrice     Decimal?           @db.Decimal(15, 2)
+  rentPrice      Decimal?           @db.Decimal(15, 2)
+  salePrice      Decimal?           @db.Decimal(15, 2)
   // Grille de prix de vente par modalité de paiement (clé = PaymentModalites).
   salePriceTiers Json?
-  charges       Decimal?           @db.Decimal(15, 2)
-  taxeFonciere  Decimal?           @db.Decimal(15, 2)
-  description   String?            @db.Text
-  amenities     Json?
-  createdAt     DateTime           @default(now())
-  updatedAt     DateTime           @updatedAt
-  deletedAt     DateTime?
+  charges        Decimal?           @db.Decimal(15, 2)
+  taxeFonciere   Decimal?           @db.Decimal(15, 2)
+  description    String?            @db.Text
+  amenities      Json?
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @updatedAt
+  deletedAt      DateTime?
 
-  owner       Owner?               @relation(fields: [ownerId], references: [id])
-  programme   ProgrammeImmobilier? @relation(fields: [programmeId], references: [id])
-  client      Client?              @relation("ClientProperties", fields: [clientId], references: [id])
+  owner           Owner?               @relation(fields: [ownerId], references: [id])
+  programme       ProgrammeImmobilier? @relation(fields: [programmeId], references: [id])
+  client          Client?              @relation("ClientProperties", fields: [clientId], references: [id])
   conventionLinks ConventionProperty[]
-  documents   Document[]
-  photos      PropertyPhoto[]
-  activities  CrmActivity[]
-  attestations Attestation[]
-  quotes      Quote[]
+  documents       Document[]
+  photos          PropertyPhoto[]
+  activities      CrmActivity[]
+  attestations    Attestation[]
+  quotes          Quote[]
 }
 
 enum PropertyType {
@@ -578,90 +580,90 @@ model PropertyPhoto {
 // ── CONVENTIONS ───────────────────────────────────────────────
 
 model Convention {
-  id                   Int              @id @default(autoincrement())
-  uuid                 String           @unique @default(cuid())
-  reference            String           @unique
-  type                 ConventionType
-  status               ConventionStatus @default(BROUILLON)
-  assetType            ConventionAssetType @default(PROPERTY)
-  clientId             Int
-  secondaryClientId    Int?
-  parentConventionId   Int?
-  amendmentType        ConventionAmendmentType?
-  souscriptionType     ConventionSouscriptionType?
-  agentId              Int?
-  referrerId           Int?
-  startDate            DateTime
-  endDate              DateTime?
-  signedAt             DateTime?
+  id                      Int                         @id @default(autoincrement())
+  uuid                    String                      @unique @default(cuid())
+  reference               String                      @unique
+  type                    ConventionType
+  status                  ConventionStatus            @default(BROUILLON)
+  assetType               ConventionAssetType         @default(PROPERTY)
+  clientId                Int
+  secondaryClientId       Int?
+  parentConventionId      Int?
+  amendmentType           ConventionAmendmentType?
+  souscriptionType        ConventionSouscriptionType?
+  agentId                 Int?
+  referrerId              Int?
+  startDate               DateTime
+  endDate                 DateTime?
+  signedAt                DateTime?
   // Date de la convention héritée (importée de la base antérieure) — renseignée
   // pour les types AVENANT_DELAI_HERITE, AVENANT_RESILIATION_HERITE et
   // AVENANT_TRANSFERT_SITE_HERITE.
-  priorConventionDate  DateTime?
+  priorConventionDate     DateTime?
   // Conditions particulières (texte multi-lignes) choisies dans le formulaire de
   // convention (types hérités) parmi la liste configurée dans les Paramètres.
-  conditionsParticulieres String?       @db.Text
-  rentAmount           Decimal?         @db.Decimal(15, 2)
-  saleAmount           Decimal?         @db.Decimal(15, 2)
-  apportInitial        Decimal?         @db.Decimal(15, 2)
-  deposit              Decimal?         @db.Decimal(15, 2)
-  agencyFees           Decimal?         @db.Decimal(15, 2)
-  charges              Decimal?         @db.Decimal(15, 2)
+  conditionsParticulieres String?                     @db.Text
+  rentAmount              Decimal?                    @db.Decimal(15, 2)
+  saleAmount              Decimal?                    @db.Decimal(15, 2)
+  apportInitial           Decimal?                    @db.Decimal(15, 2)
+  deposit                 Decimal?                    @db.Decimal(15, 2)
+  agencyFees              Decimal?                    @db.Decimal(15, 2)
+  charges                 Decimal?                    @db.Decimal(15, 2)
   // Frais d'ouverture de dossier facturés au client à la signature.
-  fraisOuvertureDossier Decimal?        @db.Decimal(15, 2)
+  fraisOuvertureDossier   Decimal?                    @db.Decimal(15, 2)
   // Montant supplémentaire éventuel — utilisé pour l'avenant de transfert
   // de site / changement de lot lorsque le nouveau lot induit un complément
   // à payer par le client (différence de prix, frais d'avenant…).
-  additionalAmount     Decimal?         @db.Decimal(15, 2)
+  additionalAmount        Decimal?                    @db.Decimal(15, 2)
   // Total des versements antérieurs et solde antérieur — saisis manuellement
   // pour l'avenant de transfert de site/lot d'une convention HÉRITÉE
   // (AVENANT_TRANSFERT_SITE_HERITE), où la convention initiale n'existe pas
   // dans le système et ne permet pas de calculer ces montants automatiquement.
-  priorTotalVersements Decimal?         @db.Decimal(15, 2)
-  priorSolde           Decimal?         @db.Decimal(15, 2)
+  priorTotalVersements    Decimal?                    @db.Decimal(15, 2)
+  priorSolde              Decimal?                    @db.Decimal(15, 2)
   // Coût total des biens antérieurs — saisi manuellement pour le même avenant
   // de transfert de site/lot d'une convention HÉRITÉE.
-  priorTotalBiens      Decimal?         @db.Decimal(15, 2)
-  paymentDay           Int?
-  paymentMethod        PaymentMethod    @default(ESPECE)
-  paymentModalites     PaymentModalites @default(CASH)
-  installmentCount     Int?
-  installmentAmount    Decimal?         @db.Decimal(15, 2)
-  firstInstallmentDate DateTime?
-  lastInstallmentDate  DateTime?
-  indexType            String?
-  lastRevisionAt       DateTime?
+  priorTotalBiens         Decimal?                    @db.Decimal(15, 2)
+  paymentDay              Int?
+  paymentMethod           PaymentMethod               @default(ESPECE)
+  paymentModalites        PaymentModalites            @default(CASH)
+  installmentCount        Int?
+  installmentAmount       Decimal?                    @db.Decimal(15, 2)
+  firstInstallmentDate    DateTime?
+  lastInstallmentDate     DateTime?
+  indexType               String?
+  lastRevisionAt          DateTime?
   // Énumération des lots souscrits, figée à l'édition de la convention (même
   // valeur que la variable de template {{convention.lotsSouscrits}}). Stockée
   // pour être affichée sur les factures en face de la référence de convention.
-  lotsSouscrits        String?          @db.Text
+  lotsSouscrits           String?                     @db.Text
   // Énumération des lots ANTÉRIEURS souscrits, figée à l'édition (même valeur que
   // la variable de template {{convention.lotsAnterieursSouscrits}}). Renseignée
   // pour l'avenant de transfert de site / changement de lot (hérité ou non) :
   // énumère les terrains du champ « Terrains antérieurs rattachés ».
-  lotsAnterieursSouscrits String?       @db.Text
-  notes                String?          @db.Text
-  createdAt            DateTime         @default(now())
-  updatedAt            DateTime         @updatedAt
-  deletedAt            DateTime?
+  lotsAnterieursSouscrits String?                     @db.Text
+  notes                   String?                     @db.Text
+  createdAt               DateTime                    @default(now())
+  updatedAt               DateTime                    @updatedAt
+  deletedAt               DateTime?
 
   properties       ConventionProperty[]
   terrains         ConventionTerrain[]
   priorTerrains    ConventionPriorTerrain[]
-  client           Client         @relation("ConventionClient", fields: [clientId], references: [id])
-  secondaryClient  Client?        @relation("ConventionSecondaryClient", fields: [secondaryClientId], references: [id])
-  agent            User?          @relation("AgentConventions", fields: [agentId], references: [id])
-  referrer         BusinessReferrer? @relation("ConventionReferrer", fields: [referrerId], references: [id])
+  client           Client                   @relation("ConventionClient", fields: [clientId], references: [id])
+  secondaryClient  Client?                  @relation("ConventionSecondaryClient", fields: [secondaryClientId], references: [id])
+  agent            User?                    @relation("AgentConventions", fields: [agentId], references: [id])
+  referrer         BusinessReferrer?        @relation("ConventionReferrer", fields: [referrerId], references: [id])
   // Convention initiale/précédente (pour les avenants et résiliations)
-  parentConvention Convention?    @relation("ConventionAmendments", fields: [parentConventionId], references: [id])
-  amendments       Convention[]   @relation("ConventionAmendments")
-  invoices     Invoice[]
-  documents    Document[]
-  activities   CrmActivity[]
-  installments SaleInstallment[]
-  commissions  Commission[]
-  attestations Attestation[]
-  communications Communication[]
+  parentConvention Convention?              @relation("ConventionAmendments", fields: [parentConventionId], references: [id])
+  amendments       Convention[]             @relation("ConventionAmendments")
+  invoices         Invoice[]
+  documents        Document[]
+  activities       CrmActivity[]
+  installments     SaleInstallment[]
+  commissions      Commission[]
+  attestations     Attestation[]
+  communications   Communication[]
 }
 
 // Liaison Convention ↔ Bien immobilier (une convention peut couvrir plusieurs biens).
@@ -735,46 +737,46 @@ enum ConventionAmendmentType {
 
 // Sous-type d'une convention de souscription (rempli quand type === SOUSCRIPTION).
 enum ConventionSouscriptionType {
-  STANDARD            // Convention de souscription
-  AVEC_ACD            // Convention de souscription avec ACD
-  FINANCEMENT_PROJET  // Convention de financement sur projet
+  STANDARD // Convention de souscription
+  AVEC_ACD // Convention de souscription avec ACD
+  FINANCEMENT_PROJET // Convention de financement sur projet
 }
 
 // Modèle de convention enrichi (texte enrichi HTML : en-tête, corps, pied de page)
 model ConventionTemplate {
-  id        Int          @id @default(autoincrement())
-  uuid      String       @unique @default(cuid())
-  name      String
-  type      ConventionType
+  id                   Int                         @id @default(autoincrement())
+  uuid                 String                      @unique @default(cuid())
+  name                 String
+  type                 ConventionType
   // Nature spécifique (optionnelle) — laisser vide pour un modèle générique
   // couvrant toutes les natures de ce type de convention.
-  amendmentType    ConventionAmendmentType?
-  souscriptionType ConventionSouscriptionType?
+  amendmentType        ConventionAmendmentType?
+  souscriptionType     ConventionSouscriptionType?
   // En-tête monobloc — texte et/ou image. Toute image insérée occupe 100 %
   // de la largeur du bloc (cf. CSS du rendu PDF). La largeur du bloc et sa
   // hauteur sont configurables.
-  header       String? @db.LongText
-  headerWidth  Int     @default(100)
-  headerHeight Int     @default(140)
-  body        String     @db.LongText
-  footer      String?    @db.LongText
-  footerWidth  Int       @default(100)
-  footerHeight Int       @default(140)
+  header               String?                     @db.LongText
+  headerWidth          Int                         @default(100)
+  headerHeight         Int                         @default(140)
+  body                 String                      @db.LongText
+  footer               String?                     @db.LongText
+  footerWidth          Int                         @default(100)
+  footerHeight         Int                         @default(140)
   // Couleur de fond du pied de page (hex `#rrggbb` ou `transparent`).
   // `NULL` ⇒ valeur par défaut historique (`#dc2626`).
-  footerBgColor String?  @db.VarChar(20)
+  footerBgColor        String?                     @db.VarChar(20)
   // Bloc « Fin du document » — inséré à la suite du corps (signatures,
   // mentions légales finales…). Mêmes contrôles que le pied de page :
   // largeur en %, hauteur en px, couleur de fond optionnelle.
-  endOfDocument        String?  @db.LongText
-  endOfDocumentWidth   Int      @default(100)
-  endOfDocumentHeight  Int      @default(140)
-  endOfDocumentBgColor String?  @db.VarChar(20)
-  isActive  Boolean      @default(true)
-  isDefault Boolean      @default(false)
-  createdAt DateTime     @default(now())
-  updatedAt DateTime     @updatedAt
-  deletedAt DateTime?
+  endOfDocument        String?                     @db.LongText
+  endOfDocumentWidth   Int                         @default(100)
+  endOfDocumentHeight  Int                         @default(140)
+  endOfDocumentBgColor String?                     @db.VarChar(20)
+  isActive             Boolean                     @default(true)
+  isDefault            Boolean                     @default(false)
+  createdAt            DateTime                    @default(now())
+  updatedAt            DateTime                    @updatedAt
+  deletedAt            DateTime?
 }
 
 enum ConventionStatus {
@@ -790,43 +792,43 @@ enum ConventionStatus {
 
 // Type d'attestation émise pour un client depuis le module Conventions.
 enum AttestationType {
-  ATTRIBUTION         // Attribution d'un terrain à un client
-  CESSION             // Cession d'un terrain entre deux clients (cédant ≠ cessionnaire)
-  SOLDE               // Solde 0 pour acquisition (frais de dossier inclus)
+  ATTRIBUTION // Attribution d'un terrain à un client
+  CESSION // Cession d'un terrain entre deux clients (cédant ≠ cessionnaire)
+  SOLDE // Solde 0 pour acquisition (frais de dossier inclus)
   TRANSFERT_PROPRIETE // Transfert de propriété sur un bien/terrain déjà cédé
 }
 
 // Modèle d'attestation enrichi (texte HTML : en-tête, corps, pied de page).
 // Un modèle par défaut peut être défini pour chaque type d'attestation.
 model AttestationTemplate {
-  id           Int             @id @default(autoincrement())
-  uuid         String          @unique @default(cuid())
-  name         String
-  type         AttestationType
+  id                   Int             @id @default(autoincrement())
+  uuid                 String          @unique @default(cuid())
+  name                 String
+  type                 AttestationType
   // En-tête monobloc — texte et/ou image. Toute image insérée occupe 100 %
   // de la largeur du bloc (cf. CSS du rendu PDF). La largeur du bloc et sa
   // hauteur sont configurables.
-  header       String? @db.LongText
-  headerWidth  Int     @default(100)
-  headerHeight Int     @default(140)
-  body         String          @db.LongText
-  footer       String?         @db.LongText
-  footerWidth  Int             @default(100)
-  footerHeight Int             @default(140)
+  header               String?         @db.LongText
+  headerWidth          Int             @default(100)
+  headerHeight         Int             @default(140)
+  body                 String          @db.LongText
+  footer               String?         @db.LongText
+  footerWidth          Int             @default(100)
+  footerHeight         Int             @default(140)
   // Couleur de fond du pied de page (hex `#rrggbb` ou `transparent`).
   // `NULL` ⇒ valeur par défaut historique (`#dc2626`).
-  footerBgColor String?        @db.VarChar(20)
+  footerBgColor        String?         @db.VarChar(20)
   // Bloc « Fin du document » — inséré à la suite du corps (signatures,
   // mentions légales finales…). Mêmes contrôles que le pied de page.
-  endOfDocument        String?  @db.LongText
-  endOfDocumentWidth   Int      @default(100)
-  endOfDocumentHeight  Int      @default(140)
-  endOfDocumentBgColor String?  @db.VarChar(20)
-  isActive     Boolean         @default(true)
-  isDefault    Boolean         @default(false)
-  createdAt    DateTime        @default(now())
-  updatedAt    DateTime        @updatedAt
-  deletedAt    DateTime?
+  endOfDocument        String?         @db.LongText
+  endOfDocumentWidth   Int             @default(100)
+  endOfDocumentHeight  Int             @default(140)
+  endOfDocumentBgColor String?         @db.VarChar(20)
+  isActive             Boolean         @default(true)
+  isDefault            Boolean         @default(false)
+  createdAt            DateTime        @default(now())
+  updatedAt            DateTime        @updatedAt
+  deletedAt            DateTime?
 
   attestations Attestation[]
 }
@@ -839,15 +841,16 @@ model Attestation {
   uuid              String          @unique @default(cuid())
   reference         String          @unique // Ex: ATT-2026-0007
   type              AttestationType
-  clientId          Int             // Bénéficiaire (attributaire / cessionnaire / acquéreur)
-  secondaryClientId Int?            // Cédant (CESSION) ou ancien propriétaire (TRANSFERT_PROPRIETE)
+  clientId          Int // Bénéficiaire (attributaire / cessionnaire / acquéreur)
+  secondaryClientId Int? // Cédant (CESSION) ou ancien propriétaire (TRANSFERT_PROPRIETE)
   terrainId         Int?
   propertyId        Int?
-  conventionId      Int?            // Lien optionnel vers la convention d'origine
-  templateId        Int?            // Modèle utilisé au moment de l'émission
+  conventionId      Int? // Lien optionnel vers la convention d'origine
+  templateId        Int? // Modèle utilisé au moment de l'émission
   emittedAt         DateTime        @default(now())
   emittedById       Int?
   amount            Decimal?        @db.Decimal(15, 2) // Montant (utile pour SOLDE notamment)
+  prixTotalBien     Decimal?        @db.Decimal(15, 2) // Prix total du bien (affiché sur l'attestation de solde héritée)
   notes             String?         @db.Text
   createdAt         DateTime        @default(now())
   updatedAt         DateTime        @updatedAt
@@ -893,7 +896,7 @@ enum PaymentModalites {
 model Quote {
   id                    Int              @id @default(autoincrement())
   uuid                  String           @unique @default(cuid())
-  reference             String           @unique  // Ex: DEV-2026-0001
+  reference             String           @unique // Ex: DEV-2026-0001
   type                  QuoteType        @default(VENTE_TERRAIN)
   status                QuoteStatus      @default(BROUILLON)
   // Objet libre du devis (intitulé affiché en évidence sur le document)
@@ -909,7 +912,7 @@ model Quote {
   agentId               Int?
   // Dates de cycle de vie
   issueDate             DateTime         @default(now())
-  validUntil            DateTime?        // Date limite de validité (expiration auto)
+  validUntil            DateTime? // Date limite de validité (expiration auto)
   sentAt                DateTime?
   acceptedAt            DateTime?
   refusedAt             DateTime?
@@ -924,7 +927,7 @@ model Quote {
   taxRate               Decimal          @default(0) @db.Decimal(5, 2)
   taxAmount             Decimal          @default(0) @db.Decimal(15, 2)
   total                 Decimal          @default(0) @db.Decimal(15, 2)
-  depositExpected       Decimal?         @db.Decimal(15, 2)  // Acompte attendu
+  depositExpected       Decimal?         @db.Decimal(15, 2) // Acompte attendu
   // Acompte saisi en pourcentage : si actif, depositExpected = % du total TTC.
   depositIsPercent      Boolean          @default(false)
   depositPercent        Decimal?         @db.Decimal(5, 2)
@@ -970,11 +973,12 @@ model QuoteItem {
   designation String
   category    String? // Famille/bloc pour le regroupement et le sous-total
   quantity    Decimal @default(1) @db.Decimal(10, 2)
+  unit        String? // Unité de mesure (optionnelle, par ligne) — ex: m², kg, pièce…
   unitPrice   Decimal @default(0) @db.Decimal(15, 2)
   total       Decimal @default(0) @db.Decimal(15, 2)
   order       Int     @default(0)
 
-  quote       Quote   @relation(fields: [quoteId], references: [id], onDelete: Cascade)
+  quote Quote @relation(fields: [quoteId], references: [id], onDelete: Cascade)
 
   @@index([quoteId])
 }
@@ -1003,7 +1007,7 @@ model QuoteTemplate {
   updatedAt            DateTime  @updatedAt
   deletedAt            DateTime?
 
-  quotes               Quote[]
+  quotes Quote[]
 }
 
 enum QuoteType {
@@ -1032,8 +1036,8 @@ model CatalogItem {
   type        CatalogItemType @default(PRESTATION)
   designation String
   description String?         @db.Text
-  category    String?         // Famille libre (ex: « Bornage », « Mobilier »…)
-  unit        String?         // Unité (m², forfait, unité, heure…)
+  category    String? // Famille libre (ex: « Bornage », « Mobilier »…)
+  unit        String? // Unité (m², forfait, unité, heure…)
   unitPrice   Decimal         @default(0) @db.Decimal(15, 2)
   isActive    Boolean         @default(true)
   createdAt   DateTime        @default(now())
@@ -1051,10 +1055,10 @@ enum CatalogItemType {
 // ── COMPTABILITÉ ──────────────────────────────────────────────
 
 model Invoice {
-  id         Int           @id @default(autoincrement())
-  uuid       String        @unique @default(cuid())
-  reference  String        @unique
-  type       InvoiceType
+  id           Int           @id @default(autoincrement())
+  uuid         String        @unique @default(cuid())
+  reference    String        @unique
+  type         InvoiceType
   status       InvoiceStatus @default(BROUILLON)
   clientId     Int?
   conventionId Int?
@@ -1062,16 +1066,16 @@ model Invoice {
   // frais de démarches ACD : ces frais sont indépendants d'une convention).
   terrainId    Int?
   subtotal     Decimal       @db.Decimal(15, 2)
-  taxRate    Decimal       @default(0) @db.Decimal(5, 2)
-  taxAmount  Decimal       @db.Decimal(15, 2)
-  total      Decimal       @db.Decimal(15, 2)
-  issueDate  DateTime      @default(now())
-  dueDate    DateTime
-  paidAt     DateTime?
-  notes      String?       @db.Text
-  createdAt  DateTime      @default(now())
-  updatedAt  DateTime      @updatedAt
-  deletedAt  DateTime?
+  taxRate      Decimal       @default(0) @db.Decimal(5, 2)
+  taxAmount    Decimal       @db.Decimal(15, 2)
+  total        Decimal       @db.Decimal(15, 2)
+  issueDate    DateTime      @default(now())
+  dueDate      DateTime
+  paidAt       DateTime?
+  notes        String?       @db.Text
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+  deletedAt    DateTime?
 
   client       Client?           @relation(fields: [clientId], references: [id])
   convention   Convention?       @relation(fields: [conventionId], references: [id])
@@ -1125,7 +1129,7 @@ model Payment {
   paidAt        DateTime      @default(now())
   reference     String?
   notes         String?
-  bankAccountId Int?          // Compte de trésorerie crédité par ce règlement
+  bankAccountId Int? // Compte de trésorerie crédité par ce règlement
 
   invoice     Invoice      @relation(fields: [invoiceId], references: [id])
   bankAccount BankAccount? @relation(fields: [bankAccountId], references: [id])
@@ -1134,41 +1138,41 @@ model Payment {
 // ── ÉCHÉANCES DE VENTE ────────────────────────────────────────
 
 model SaleInstallment {
-  id                Int               @id @default(autoincrement())
+  id                  Int               @id @default(autoincrement())
   // Rattachement à la convention de vente. Nullable pour supporter les
   // échéances héritées de l'ancienne application (paiements échelonnés sur
   // terrain sans convention signée). Invariant applicatif : au moins l'un de
   // conventionId / clientId est renseigné.
-  conventionId      Int?
+  conventionId        Int?
   // Lien direct au client — utilisé pour les échéances sans convention
   // (données héritées). Pour les échéances issues d'une convention, le client
   // reste accessible via convention.clientId.
-  clientId          Int?
+  clientId            Int?
   // Terrain concerné par l'échéance héritée (ce qui est payé).
-  terrainId         Int?
+  terrainId           Int?
   // Détails de souscription hérités de l'ancienne application. Affichés sur la
   // facture à la place de la référence de convention (échéances héritées
   // uniquement). Null pour les échéances issues d'une convention.
-  detailsSouscription String?         @db.Text
-  installmentNumber Int
-  dueDate           DateTime
-  amount            Decimal           @db.Decimal(15, 2)
+  detailsSouscription String?           @db.Text
+  installmentNumber   Int
+  dueDate             DateTime
+  amount              Decimal           @db.Decimal(15, 2)
   // Montant déjà encaissé (paiements partiels). status = PARTIEL tant que
   // 0 < paidAmount < amount, PAYE une fois soldé.
-  paidAmount        Decimal           @default(0) @db.Decimal(15, 2)
-  status            InstallmentStatus @default(EN_ATTENTE)
-  paidAt            DateTime?
-  paymentMethod     PaymentMethod?
-  paymentRef        String?
-  invoiceId         Int?
-  notes             String?
-  createdAt         DateTime          @default(now())
-  updatedAt         DateTime          @updatedAt
+  paidAmount          Decimal           @default(0) @db.Decimal(15, 2)
+  status              InstallmentStatus @default(EN_ATTENTE)
+  paidAt              DateTime?
+  paymentMethod       PaymentMethod?
+  paymentRef          String?
+  invoiceId           Int?
+  notes               String?
+  createdAt           DateTime          @default(now())
+  updatedAt           DateTime          @updatedAt
 
-  convention   Convention?   @relation(fields: [conventionId], references: [id])
-  client       Client?       @relation(fields: [clientId], references: [id])
-  terrain      Terrain?      @relation(fields: [terrainId], references: [id])
-  invoice      Invoice?      @relation(fields: [invoiceId], references: [id])
+  convention   Convention?              @relation(fields: [conventionId], references: [id])
+  client       Client?                  @relation(fields: [clientId], references: [id])
+  terrain      Terrain?                 @relation(fields: [terrainId], references: [id])
+  invoice      Invoice?                 @relation(fields: [invoiceId], references: [id])
   activities   CrmActivity[]
   commissions  Commission[]
   // Terrains rattachés (échéances héritées) — une échéance peut concerner
@@ -1206,25 +1210,25 @@ enum InstallmentStatus {
 
 // ── MODÈLES DE FACTURE ────────────────────────────────────────
 model InvoiceTemplate {
-  id          Int                   @id @default(autoincrement())
-  uuid        String                @unique @default(cuid())
-  name        String
-  layout      InvoiceTemplateLayout  @default(CLASSIQUE)
-  headerHtml  String?               @db.LongText  // En-tête éditable (HTML)
-  footerHtml  String?               @db.LongText  // Pied de page éditable (HTML)
-  endOfDocument String?             @db.LongText  // Bloc « Fin du document » (HTML)
-  accentColor String                @default("#1E3A5F")
+  id                   Int                   @id @default(autoincrement())
+  uuid                 String                @unique @default(cuid())
+  name                 String
+  layout               InvoiceTemplateLayout @default(CLASSIQUE)
+  headerHtml           String?               @db.LongText // En-tête éditable (HTML)
+  footerHtml           String?               @db.LongText // Pied de page éditable (HTML)
+  endOfDocument        String?               @db.LongText // Bloc « Fin du document » (HTML)
+  accentColor          String                @default("#1E3A5F")
   // Couleur de fond des bandeaux de titre (récap versement). Le trait latéral
   // gauche des titres garde l'accent.
-  sectionColor String               @default("#d7dfe8")
+  sectionColor         String                @default("#d7dfe8")
   // Couleur de fond des en-têtes de tableaux de la facture (distincte des titres).
-  tableHeaderColor String           @default("#e2e8f0")
+  tableHeaderColor     String                @default("#e2e8f0")
   // Couleurs de TEXTE des bandeaux de titre et des en-têtes de tableaux.
-  sectionTextColor String           @default("#0f172a")
-  tableHeaderTextColor String       @default("#0f172a")
-  isActive    Boolean               @default(true)
-  createdAt   DateTime              @default(now())
-  updatedAt   DateTime              @updatedAt
+  sectionTextColor     String                @default("#0f172a")
+  tableHeaderTextColor String                @default("#0f172a")
+  isActive             Boolean               @default(true)
+  createdAt            DateTime              @default(now())
+  updatedAt            DateTime              @updatedAt
 }
 
 enum InvoiceTemplateLayout {
@@ -1243,9 +1247,9 @@ model ListExportTemplate {
   name            String
   orientation     ListExportOrientation @default(PAYSAGE)
   accentColor     String                @default("#1E3A5F")
-  headerHtml      String?               @db.LongText  // En-tête éditable (HTML)
-  footerHtml      String?               @db.LongText  // Pied de page éditable (HTML)
-  endOfDocument   String?               @db.LongText  // Bloc « Fin du document » (HTML)
+  headerHtml      String?               @db.LongText // En-tête éditable (HTML)
+  footerHtml      String?               @db.LongText // Pied de page éditable (HTML)
+  endOfDocument   String?               @db.LongText // Bloc « Fin du document » (HTML)
   showLogo        Boolean               @default(true) // Afficher le logo (haut à droite)
   showGeneratedAt Boolean               @default(true) // Afficher « Généré le … »
   showRowCount    Boolean               @default(true) // Afficher le nombre de lignes
@@ -1262,50 +1266,58 @@ enum ListExportOrientation {
 // ── CRM & COMMUNICATION ───────────────────────────────────────
 
 model CrmActivity {
-  id             Int            @id @default(autoincrement())
-  type           ActivityType
-  subject        String
-  description    String?        @db.Text
-  status         ActivityStatus @default(EN_ATTENTE)
-  dueDate        DateTime?
-  completedAt    DateTime?
-  userId         Int?
-  prospectId     Int?
-  clientId       Int?
-  ownerId        Int?
-  propertyId     Int?
-  conventionId   Int?
-  lotissementId  Int?
-  terrainId      Int?
-  programmeId    Int?
-  invoiceId      Int?
-  installmentId  Int?
-  projectId      Int?
-  quoteId        Int?
-  documentId     Int?
+  id                Int            @id @default(autoincrement())
+  type              ActivityType
+  subject           String
+  description       String?        @db.Text
+  status            ActivityStatus @default(EN_ATTENTE)
+  dueDate           DateTime?
+  completedAt       DateTime?
+  userId            Int?
+  prospectId        Int?
+  clientId          Int?
+  ownerId           Int?
+  propertyId        Int?
+  conventionId      Int?
+  lotissementId     Int?
+  terrainId         Int?
+  programmeId       Int?
+  invoiceId         Int?
+  installmentId     Int?
+  projectId         Int?
+  quoteId           Int?
+  documentId        Int?
   forecastExpenseId Int?
-  createdById    Int?
-  createdAt      DateTime       @default(now())
-  updatedAt      DateTime       @updatedAt
+  // Objectif de performance (Mesure « Manuelle ») auquel une tâche est liée.
+  // La tâche renseigne une quantité réalisée (`objectiveRealized`) au regard de
+  // la cible de l'objectif ; elle ne peut passer « Traité » qu'à 100 %.
+  objectiveId       Int?
+  objectiveRealized Decimal?       @db.Decimal(15, 2)
+  createdById       Int?
+  createdAt         DateTime       @default(now())
+  updatedAt         DateTime       @updatedAt
 
-  user        User?                @relation("ActivityAssignedTo", fields: [userId], references: [id])
-  createdBy   User?                @relation("ActivityCreatedBy", fields: [createdById], references: [id])
-  forecastExpense ForecastExpense? @relation(fields: [forecastExpenseId], references: [id])
-  prospect    Prospect?            @relation(fields: [prospectId], references: [id])
-  client      Client?              @relation(fields: [clientId], references: [id])
-  owner       Owner?               @relation(fields: [ownerId], references: [id])
-  property    Property?            @relation(fields: [propertyId], references: [id])
-  convention  Convention?          @relation(fields: [conventionId], references: [id])
-  lotissement Lotissement?         @relation(fields: [lotissementId], references: [id])
-  terrain     Terrain?             @relation(fields: [terrainId], references: [id])
-  programme   ProgrammeImmobilier? @relation(fields: [programmeId], references: [id])
-  invoice     Invoice?             @relation(fields: [invoiceId], references: [id])
-  installment SaleInstallment?     @relation(fields: [installmentId], references: [id])
-  project     Project?             @relation(fields: [projectId], references: [id])
-  quote       Quote?               @relation(fields: [quoteId], references: [id])
-  document    Document?            @relation("ActivityLinkedDocument", fields: [documentId], references: [id])
+  user            User?                @relation("ActivityAssignedTo", fields: [userId], references: [id])
+  createdBy       User?                @relation("ActivityCreatedBy", fields: [createdById], references: [id])
+  forecastExpense ForecastExpense?     @relation(fields: [forecastExpenseId], references: [id])
+  prospect        Prospect?            @relation(fields: [prospectId], references: [id])
+  client          Client?              @relation(fields: [clientId], references: [id])
+  owner           Owner?               @relation(fields: [ownerId], references: [id])
+  property        Property?            @relation(fields: [propertyId], references: [id])
+  convention      Convention?          @relation(fields: [conventionId], references: [id])
+  lotissement     Lotissement?         @relation(fields: [lotissementId], references: [id])
+  terrain         Terrain?             @relation(fields: [terrainId], references: [id])
+  programme       ProgrammeImmobilier? @relation(fields: [programmeId], references: [id])
+  invoice         Invoice?             @relation(fields: [invoiceId], references: [id])
+  installment     SaleInstallment?     @relation(fields: [installmentId], references: [id])
+  project         Project?             @relation(fields: [projectId], references: [id])
+  quote           Quote?               @relation(fields: [quoteId], references: [id])
+  document        Document?            @relation("ActivityLinkedDocument", fields: [documentId], references: [id])
+  objective       PerformanceObjective? @relation(fields: [objectiveId], references: [id])
   // Pièces jointes téléversées pour cette activité (0..n documents GED).
-  attachments Document[]           @relation("ActivityAttachments")
+  attachments     Document[]           @relation("ActivityAttachments")
+
+  @@index([objectiveId])
 }
 
 enum ActivityType {
@@ -1328,20 +1340,24 @@ enum ActivityStatus {
 }
 
 model Communication {
-  id         Int          @id @default(autoincrement())
-  channel    CommChannel
-  direction  CommDirection @default(SORTANT)
-  to         String
-  subject    String?
-  body       String       @db.Text
-  status     CommStatus   @default(EN_ATTENTE)
-  sentAt     DateTime?
-  errorMsg   String?       @db.Text
-  templateId Int?
+  id           Int           @id @default(autoincrement())
+  channel      CommChannel
+  direction    CommDirection @default(SORTANT)
+  to           String
+  subject      String?
+  body         String        @db.Text
+  status       CommStatus    @default(EN_ATTENTE)
+  sentAt       DateTime?
+  // Remis au serveur de messagerie (destinataire accepté par le SMTP) et
+  // première ouverture détectée (pixel de suivi) — emails sortants uniquement.
+  deliveredAt  DateTime?
+  openedAt     DateTime?
+  errorMsg     String?       @db.Text
+  templateId   Int?
   // Empreinte d'anti-doublon — verrouille un même rappel (cas + entité + fenêtre)
   // ex. INSTALLMENT_42_J-7. Non posée sur les envois manuels.
-  dedupeKey  String?      @unique
-  clientId   Int?
+  dedupeKey    String?       @unique
+  clientId     Int?
   // Rattachements optionnels — utilisés pour l'envoi ciblé depuis l'interface
   // Communication (Propriétaire / Convention) et la traçabilité.
   ownerId      Int?
@@ -1349,9 +1365,9 @@ model Communication {
   // Utilisateur ayant déclenché l'envoi manuel. Null pour les envois
   // systèmes (relances automatiques) — sert au filtrage de visibilité
   // dans l'historique pour les rôles non privilégiés.
-  senderId   Int?
-  metadata   Json?
-  createdAt  DateTime     @default(now())
+  senderId     Int?
+  metadata     Json?
+  createdAt    DateTime      @default(now())
 
   template   CommTemplate? @relation(fields: [templateId], references: [id])
   client     Client?       @relation(fields: [clientId], references: [id])
@@ -1366,18 +1382,18 @@ model Communication {
 }
 
 model CommTemplate {
-  id             Int          @id @default(autoincrement())
-  name           String
-  channel        CommChannel
-  subject        String?
-  body           String       @db.Text
-  variables      Json?
+  id        Int               @id @default(autoincrement())
+  name      String
+  channel   CommChannel
+  subject   String?
+  body      String            @db.Text
+  variables Json?
   // Catégorie d'usage : AUTO (relances automatiques) ou MANUEL (envois manuels).
   // Les rôles non privilégiés ne voient que les modèles MANUEL dans l'envoi manuel.
-  usageType      CommTemplateUsage @default(MANUEL)
-  isActive       Boolean      @default(true)
-  createdAt      DateTime     @default(now())
-  updatedAt      DateTime     @updatedAt
+  usageType CommTemplateUsage @default(MANUEL)
+  isActive  Boolean           @default(true)
+  createdAt DateTime          @default(now())
+  updatedAt DateTime          @updatedAt
 
   communications Communication[]
   reminderRules  ReminderRule[]
@@ -1395,29 +1411,29 @@ enum CommTemplateUsage {
 // ces règles, applique la déduplication via Communication.dedupeKey et journalise
 // une CrmActivity de type RAPPEL.
 model ReminderRule {
-  id           Int                  @id @default(autoincrement())
-  code         String               @unique  // ex: INSTALLMENT_UPCOMING_J-7_EMAIL
-  name         String
-  description  String?              @db.Text
-  triggerType  ReminderTriggerType
+  id          Int                 @id @default(autoincrement())
+  code        String              @unique // ex: INSTALLMENT_UPCOMING_J-7_EMAIL
+  name        String
+  description String?             @db.Text
+  triggerType ReminderTriggerType
   // Décalage par rapport à la date pivot, en jours.
   // Négatif = avant (préventif), positif = après (relance).
-  offsetDays   Int
-  channel      CommChannel
-  templateId   Int?
-  isActive     Boolean              @default(true)
-  createdAt    DateTime             @default(now())
-  updatedAt    DateTime             @updatedAt
+  offsetDays  Int
+  channel     CommChannel
+  templateId  Int?
+  isActive    Boolean             @default(true)
+  createdAt   DateTime            @default(now())
+  updatedAt   DateTime            @updatedAt
 
-  template     CommTemplate?        @relation(fields: [templateId], references: [id])
+  template CommTemplate? @relation(fields: [templateId], references: [id])
 
   @@index([templateId])
 }
 
 enum ReminderTriggerType {
-  INSTALLMENT_UPCOMING    // Échéance de vente à venir (offset négatif)
-  INSTALLMENT_OVERDUE     // Échéance de vente dépassée (offset positif)
-  CONVENTION_EXPIRING     // Convention de bail qui arrive à échéance (offset négatif)
+  INSTALLMENT_UPCOMING // Échéance de vente à venir (offset négatif)
+  INSTALLMENT_OVERDUE // Échéance de vente dépassée (offset positif)
+  CONVENTION_EXPIRING // Convention de bail qui arrive à échéance (offset négatif)
 }
 
 enum CommChannel {
@@ -1442,71 +1458,71 @@ enum CommStatus {
 // ── DOCUMENTS ─────────────────────────────────────────────────
 
 model Document {
-  id             Int          @id @default(autoincrement())
-  name           String
-  type           String       // Type MIME
-  path           String       @db.VarChar(500)  // Chemin de stockage (ou chemin réseau d'archives héritées)
-  size           Int          // Taille en octets
-  category       String?      // Catégorie technique héritée (identité, dm_scan…)
+  id                  Int       @id @default(autoincrement())
+  name                String
+  type                String // Type MIME
+  path                String    @db.VarChar(500) // Chemin de stockage (ou chemin réseau d'archives héritées)
+  size                Int // Taille en octets
+  category            String? // Catégorie technique héritée (identité, dm_scan…)
   // ── GED (gestion électronique de documents) ──────────────────
-  numeroArchive  String?      @unique  // Numéro d'archive automatique : ARC-AAAA-NNNN
-  description    String?      @db.Text
-  categoryId     Int?         // Catégorie documentaire (classement)
-  folderId       Int?         // Dossier dans l'arborescence documentaire
-  uploadedById   Int?         // Utilisateur ayant importé le document
-  ocrText        String?      @db.LongText  // Texte extrait par OCR (indexation plein texte)
-  isPhysical     Boolean      @default(false)  // Possède une contrepartie papier
-  physBureau     String?      // Localisation physique : bureau
-  physCarton     String?      // Localisation physique : carton
-  physClasseur   String?      // Localisation physique : classeur
+  numeroArchive       String?   @unique // Numéro d'archive automatique : ARC-AAAA-NNNN
+  description         String?   @db.Text
+  categoryId          Int? // Catégorie documentaire (classement)
+  folderId            Int? // Dossier dans l'arborescence documentaire
+  uploadedById        Int? // Utilisateur ayant importé le document
+  ocrText             String?   @db.LongText // Texte extrait par OCR (indexation plein texte)
+  isPhysical          Boolean   @default(false) // Possède une contrepartie papier
+  physBureau          String? // Localisation physique : bureau
+  physCarton          String? // Localisation physique : carton
+  physClasseur        String? // Localisation physique : classeur
   // ── Rattachement aux entités métier ──────────────────────────
-  clientId       Int?
-  ownerId        Int?
-  propertyId     Int?
-  conventionId   Int?
-  lotissementId  Int?
-  terrainId      Int?
-  programmeId    Int?
-  projectId      Int?
+  clientId            Int?
+  ownerId             Int?
+  propertyId          Int?
+  conventionId        Int?
+  lotissementId       Int?
+  terrainId           Int?
+  programmeId         Int?
+  projectId           Int?
   // Rattachements complémentaires : un document peut être lié à au plus
   // une entité de chaque type (FK nullables, pattern identique aux
   // rattachements ci-dessus).
-  prospectId     Int?
-  referrerId     Int?         // Apporteur d'affaires (BusinessReferrer)
-  linkedUserId   Int?         // Utilisateur rattaché (distinct de uploadedBy)
-  invoiceId      Int?
-  commissionId   Int?
-  attestationId  Int?
-  quoteId        Int?
-  treasuryOperationId Int?    // Opération de trésorerie rattachée
-  crmActivityId  Int?         // Activité CRM dont ce document est une pièce jointe
-  uploadedAt     DateTime     @default(now())
-  updatedAt      DateTime     @updatedAt
-  deletedAt      DateTime?
+  prospectId          Int?
+  referrerId          Int? // Apporteur d'affaires (BusinessReferrer)
+  linkedUserId        Int? // Utilisateur rattaché (distinct de uploadedBy)
+  invoiceId           Int?
+  commissionId        Int?
+  attestationId       Int?
+  quoteId             Int?
+  treasuryOperationId Int? // Opération de trésorerie rattachée
+  crmActivityId       Int? // Activité CRM dont ce document est une pièce jointe
+  uploadedAt          DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+  deletedAt           DateTime?
 
-  client           Client?              @relation(fields: [clientId], references: [id])
-  owner            Owner?               @relation(fields: [ownerId], references: [id])
-  property         Property?            @relation(fields: [propertyId], references: [id])
-  convention       Convention?          @relation(fields: [conventionId], references: [id])
-  lotissement      Lotissement?         @relation(fields: [lotissementId], references: [id])
-  terrain          Terrain?             @relation(fields: [terrainId], references: [id])
-  programme        ProgrammeImmobilier? @relation(fields: [programmeId], references: [id])
-  project          Project?             @relation(fields: [projectId], references: [id])
-  prospect         Prospect?            @relation(fields: [prospectId], references: [id])
-  referrer         BusinessReferrer?    @relation("DocumentReferrer", fields: [referrerId], references: [id])
-  linkedUser       User?                @relation("DocumentLinkedUser", fields: [linkedUserId], references: [id])
-  invoice          Invoice?             @relation(fields: [invoiceId], references: [id])
-  commission       Commission?          @relation(fields: [commissionId], references: [id])
-  attestation      Attestation?         @relation(fields: [attestationId], references: [id])
-  quote            Quote?               @relation(fields: [quoteId], references: [id])
-  treasuryOperation TreasuryOperation?  @relation(fields: [treasuryOperationId], references: [id])
-  documentCategory DocumentCategory?    @relation(fields: [categoryId], references: [id])
-  folder           DocumentFolder?      @relation(fields: [folderId], references: [id])
-  uploadedBy       User?                @relation("DocumentUploadedBy", fields: [uploadedById], references: [id])
-  crmActivity      CrmActivity?         @relation("ActivityAttachments", fields: [crmActivityId], references: [id])
-  tags             DocumentTag[]
-  auditLogs        DocumentAuditLog[]
-  activities       CrmActivity[]        @relation("ActivityLinkedDocument")
+  client            Client?              @relation(fields: [clientId], references: [id])
+  owner             Owner?               @relation(fields: [ownerId], references: [id])
+  property          Property?            @relation(fields: [propertyId], references: [id])
+  convention        Convention?          @relation(fields: [conventionId], references: [id])
+  lotissement       Lotissement?         @relation(fields: [lotissementId], references: [id])
+  terrain           Terrain?             @relation(fields: [terrainId], references: [id])
+  programme         ProgrammeImmobilier? @relation(fields: [programmeId], references: [id])
+  project           Project?             @relation(fields: [projectId], references: [id])
+  prospect          Prospect?            @relation(fields: [prospectId], references: [id])
+  referrer          BusinessReferrer?    @relation("DocumentReferrer", fields: [referrerId], references: [id])
+  linkedUser        User?                @relation("DocumentLinkedUser", fields: [linkedUserId], references: [id])
+  invoice           Invoice?             @relation(fields: [invoiceId], references: [id])
+  commission        Commission?          @relation(fields: [commissionId], references: [id])
+  attestation       Attestation?         @relation(fields: [attestationId], references: [id])
+  quote             Quote?               @relation(fields: [quoteId], references: [id])
+  treasuryOperation TreasuryOperation?   @relation(fields: [treasuryOperationId], references: [id])
+  documentCategory  DocumentCategory?    @relation(fields: [categoryId], references: [id])
+  folder            DocumentFolder?      @relation(fields: [folderId], references: [id])
+  uploadedBy        User?                @relation("DocumentUploadedBy", fields: [uploadedById], references: [id])
+  crmActivity       CrmActivity?         @relation("ActivityAttachments", fields: [crmActivityId], references: [id])
+  tags              DocumentTag[]
+  auditLogs         DocumentAuditLog[]
+  activities        CrmActivity[]        @relation("ActivityLinkedDocument")
 }
 
 // Catégorie documentaire — auto-référencée pour les sous-catégories.
@@ -1526,7 +1542,7 @@ model DocumentCategory {
 
 // Dossier de l'arborescence documentaire — auto-référencé.
 model DocumentFolder {
-  id        Int       @id @default(autoincrement())
+  id        Int                @id @default(autoincrement())
   name      String
   parentId  Int?
   // Type de dossier :
@@ -1536,13 +1552,13 @@ model DocumentFolder {
   kind      DocumentFolderKind @default(GENERAL)
   // Propriétaire : utilisateur pour un dossier PERSONAL, créateur pour un SHARED.
   ownerId   Int?
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
+  createdAt DateTime           @default(now())
+  updatedAt DateTime           @updatedAt
   deletedAt DateTime?
 
-  parent    DocumentFolder?  @relation("FolderTree", fields: [parentId], references: [id])
-  children  DocumentFolder[] @relation("FolderTree")
-  owner     User?            @relation("FolderOwner", fields: [ownerId], references: [id])
+  parent    DocumentFolder?        @relation("FolderTree", fields: [parentId], references: [id])
+  children  DocumentFolder[]       @relation("FolderTree")
+  owner     User?                  @relation("FolderOwner", fields: [ownerId], references: [id])
   accesses  DocumentFolderAccess[]
   documents Document[]
 }
@@ -1610,8 +1626,8 @@ model Note {
 }
 
 model Tag {
-  id    Int    @id @default(autoincrement())
-  name  String @unique
+  id    Int     @id @default(autoincrement())
+  name  String  @unique
   color String?
 
   prospects ProspectTag[]
@@ -1639,9 +1655,9 @@ model AppSetting {
 /// Table de référence des pays : code ISO 3166-1 alpha-2 et indicatif téléphonique.
 model Country {
   id       Int    @id @default(autoincrement())
-  isoCode  String @unique  // Code ISO 3166-1 alpha-2 (ex: CI)
-  name     String          // Nom du pays en français
-  dialCode String          // Indicatif téléphonique international (ex: +225)
+  isoCode  String @unique // Code ISO 3166-1 alpha-2 (ex: CI)
+  name     String // Nom du pays en français
+  dialCode String // Indicatif téléphonique international (ex: +225)
 }
 
 // ── TYPES DE PIÈCES D'IDENTITÉ ────────────────────────────────
@@ -1650,14 +1666,14 @@ model Country {
 /// Permis de conduire, etc.). Géré depuis Paramètres › Types de pièces
 /// d'identité. Une entrée par défaut (CNI) est créée en seed.
 model IdDocumentType {
-  id          Int       @id @default(autoincrement())
-  code        String    @unique  // Slug stable (ex: CNI, PASSEPORT)
-  label       String             // Libellé d'affichage (ex: « Carte Nationale d'Identité (CNI) »)
-  isDefault   Boolean   @default(false)
-  isActive    Boolean   @default(true)
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
-  deletedAt   DateTime?
+  id        Int       @id @default(autoincrement())
+  code      String    @unique // Slug stable (ex: CNI, PASSEPORT)
+  label     String // Libellé d'affichage (ex: « Carte Nationale d'Identité (CNI) »)
+  isDefault Boolean   @default(false)
+  isActive  Boolean   @default(true)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
 
   clients          Client[] @relation("ClientIdType")
   clientsLegalReps Client[] @relation("ClientLegalRepIdType")
@@ -1673,8 +1689,8 @@ model IdDocumentType {
 /// défaut (Arrêté d'approbation) est créée en seed.
 model LotissementTitleType {
   id              Int       @id @default(autoincrement())
-  code            String    @unique  // Slug stable (ex: ARRETE_APPROBATION)
-  label           String             // Libellé d'affichage (ex: « Arrêté d'approbation »)
+  code            String    @unique // Slug stable (ex: ARRETE_APPROBATION)
+  label           String // Libellé d'affichage (ex: « Arrêté d'approbation »)
   /// Libellé des documents administratifs livrés avec les terrains de ce
   /// titre (ex: « ACD, plan de masse, situation géographique »). Substitué
   /// dans les modèles de convention / attestation via la variable
@@ -1782,7 +1798,7 @@ model BusinessReferrer {
 model Commission {
   id              Int                       @id @default(autoincrement())
   uuid            String                    @unique @default(cuid())
-  reference       String                    @unique  // Ex: COM-2026-0001
+  reference       String                    @unique // Ex: COM-2026-0001
   // Rattachement à une convention (cas standard) OU à une échéance héritée
   // (paiement échelonné sans convention). Invariant applicatif : au moins l'un
   // de conventionId / installmentId est renseigné.
@@ -1797,20 +1813,20 @@ model Commission {
   referrerId      Int?
   // Calcul de la commission
   transactionType CommissionTransactionType // VENTE ou LOCATION
-  baseAmount      Decimal                   @db.Decimal(15, 2)  // Assiette (prix de vente ou loyer)
-  rate            Decimal                   @db.Decimal(5, 2)   // Taux en %
-  amount          Decimal                   @db.Decimal(15, 2)  // Montant de la commission
+  baseAmount      Decimal                   @db.Decimal(15, 2) // Assiette (prix de vente ou loyer)
+  rate            Decimal                   @db.Decimal(5, 2) // Taux en %
+  amount          Decimal                   @db.Decimal(15, 2) // Montant de la commission
   status          CommissionStatus          @default(A_PAYER)
   source          CommissionSource          @default(MANUEL)
   // Paiement
   paidAt          DateTime?
   paymentMethod   PaymentMethod?
-  paymentRef      String?                   // Référence du règlement (chèque, virement…)
-  paidById        Int?                      // Utilisateur ayant enregistré le paiement
+  paymentRef      String? // Référence du règlement (chèque, virement…)
+  paidById        Int? // Utilisateur ayant enregistré le paiement
   // Annulation
   cancelledAt     DateTime?
   cancelReason    String?                   @db.Text
-  cancelledById   Int?                      // Utilisateur ayant annulé la commission
+  cancelledById   Int? // Utilisateur ayant annulé la commission
   notes           String?                   @db.Text
   createdAt       DateTime                  @default(now())
   updatedAt       DateTime                  @updatedAt
@@ -1830,8 +1846,8 @@ model Commission {
 }
 
 enum CommissionBeneficiaryType {
-  USER       // Utilisateur de l'application (agent, manager…)
-  REFERRER   // Apporteur d'affaire externe
+  USER // Utilisateur de l'application (agent, manager…)
+  REFERRER // Apporteur d'affaire externe
 }
 
 enum CommissionTransactionType {
@@ -1849,8 +1865,8 @@ enum CommissionStatus {
 }
 
 enum CommissionSource {
-  MANUEL       // Commission saisie manuellement
-  AUTOMATIQUE  // Commission générée à l'activation de la convention
+  MANUEL // Commission saisie manuellement
+  AUTOMATIQUE // Commission générée à l'activation de la convention
 }
 
 // ── TRÉSORERIE ────────────────────────────────────────────────
@@ -1859,14 +1875,14 @@ enum CommissionSource {
 model BankAccount {
   id             Int                 @id @default(autoincrement())
   uuid           String              @unique @default(cuid())
-  name           String              // Libellé du compte (ex: « Compte courant SGBCI »)
+  name           String // Libellé du compte (ex: « Compte courant SGBCI »)
   type           TreasuryAccountType @default(BANQUE)
-  bankName       String?             // Nom de la banque / opérateur
-  accountNumber  String?             // Numéro de compte / RIB
+  bankName       String? // Nom de la banque / opérateur
+  accountNumber  String? // Numéro de compte / RIB
   iban           String?
   bic            String?
   currency       String              @default("XOF")
-  initialBalance Decimal             @default(0) @db.Decimal(15, 2)  // Solde d'ouverture
+  initialBalance Decimal             @default(0) @db.Decimal(15, 2) // Solde d'ouverture
   isActive       Boolean             @default(true)
   notes          String?             @db.Text
   // Compte privé : rattaché à un utilisateur. Hors SUPER_ADMIN/ADMIN, seul cet
@@ -1876,15 +1892,15 @@ model BankAccount {
   updatedAt      DateTime            @updatedAt
   deletedAt      DateTime?
 
-  linkedUser User?               @relation("BankAccountLinkedUser", fields: [linkedUserId], references: [id])
-  operations TreasuryOperation[]
-  payments   Payment[]
-  usersDefaultEntree User[]      @relation("UserDefaultEntreeAccount")
-  usersDefaultSortie User[]      @relation("UserDefaultSortieAccount")
+  linkedUser         User?               @relation("BankAccountLinkedUser", fields: [linkedUserId], references: [id])
+  operations         TreasuryOperation[]
+  payments           Payment[]
+  usersDefaultEntree User[]              @relation("UserDefaultEntreeAccount")
+  usersDefaultSortie User[]              @relation("UserDefaultSortieAccount")
   // Utilisateurs (non-admin) pour lesquels ce compte s'affiche dans le bloc
   // « Comptes de trésorerie » du tableau de bord. Liste d'affichage uniquement,
   // distincte du compte privé (`linkedUserId`) qui régit l'accès en écriture.
-  viewers    BankAccountViewer[]
+  viewers            BankAccountViewer[]
 }
 
 // Liste d'affichage d'un compte de trésorerie : association compte ↔ utilisateur
@@ -1912,9 +1928,9 @@ enum TreasuryAccountType {
 model TreasuryCategory {
   id             Int               @id @default(autoincrement())
   uuid           String            @unique @default(cuid())
-  label          String            // Libellé de l'objet (ex: « Encaissement loyer »)
+  label          String // Libellé de l'objet (ex: « Encaissement loyer »)
   direction      TreasuryDirection // Sens de l'opération : ENTREE ou SORTIE
-  accountingCode String?           // Numéro de compte comptable (ex: « 301 »)
+  accountingCode String? // Numéro de compte comptable (ex: « 301 »)
   isActive       Boolean           @default(true)
   createdAt      DateTime          @default(now())
   updatedAt      DateTime          @updatedAt
@@ -1931,75 +1947,75 @@ enum TreasuryDirection {
 
 // Mouvement de trésorerie : entrée ou sortie d'argent sur un compte.
 model TreasuryOperation {
-  id            Int               @id @default(autoincrement())
-  uuid          String            @unique @default(cuid())
-  reference     String            @unique  // Ex: OPT-2026-0001
-  bankAccountId Int
-  direction     TreasuryDirection
-  amount        Decimal           @db.Decimal(15, 2)
-  operationDate DateTime          @default(now())
-  categoryId    Int?              // Objet d'opération
-  label         String            // Libellé de l'opération
-  paymentMethod PaymentMethod     @default(ESPECE)
-  paymentRef    String?           // Référence du règlement (chèque, virement…)
-  source        TreasurySource    @default(MANUEL)
-  paymentId     Int?              // Paiement de facture rattaché (source FACTURE)
-  installmentId Int?              // Échéance de vente rattachée (source ECHEANCE)
-  commissionId  Int?              // Commission rattachée (source COMMISSION)
-  payslipId     Int?              // Bulletin de salaire rattaché (source PAIE)
-  forecastExpenseId Int?          // Charge prévisionnelle réglée (source CHARGE)
-  budgetLineId  Int?              // Ligne budgétaire d'imputation (sorties uniquement)
+  id                Int               @id @default(autoincrement())
+  uuid              String            @unique @default(cuid())
+  reference         String            @unique // Ex: OPT-2026-0001
+  bankAccountId     Int
+  direction         TreasuryDirection
+  amount            Decimal           @db.Decimal(15, 2)
+  operationDate     DateTime          @default(now())
+  categoryId        Int? // Objet d'opération
+  label             String // Libellé de l'opération
+  paymentMethod     PaymentMethod     @default(ESPECE)
+  paymentRef        String? // Référence du règlement (chèque, virement…)
+  source            TreasurySource    @default(MANUEL)
+  paymentId         Int? // Paiement de facture rattaché (source FACTURE)
+  installmentId     Int? // Échéance de vente rattachée (source ECHEANCE)
+  commissionId      Int? // Commission rattachée (source COMMISSION)
+  payslipId         Int? // Bulletin de salaire rattaché (source PAIE)
+  forecastExpenseId Int? // Charge prévisionnelle réglée (source CHARGE)
+  budgetLineId      Int? // Ligne budgétaire d'imputation (sorties uniquement)
   // Tiers de l'opération : bénéficiaire (« à destination de » pour une sortie)
   // ou émetteur (« en provenance de » pour une entrée). Facultatif.
-  thirdPartyId  Int?
+  thirdPartyId      Int?
   // Imputation analytique : une opération peut être rattachée à au plus UNE
   // entité parmi projet / lotissement / programme immobilier. L'exclusivité est
   // appliquée en code (validation Zod côté IPC).
-  projectId     Int?              // Projet rattaché
-  lotissementId Int?              // Lotissement rattaché
-  programmeId   Int?              // Programme immobilier rattaché
-  createdById   Int?
-  notes         String?           @db.Text
-  createdAt     DateTime          @default(now())
-  updatedAt     DateTime          @updatedAt
-  deletedAt     DateTime?
+  projectId         Int? // Projet rattaché
+  lotissementId     Int? // Lotissement rattaché
+  programmeId       Int? // Programme immobilier rattaché
+  createdById       Int?
+  notes             String?           @db.Text
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+  deletedAt         DateTime?
 
-  bankAccount BankAccount          @relation(fields: [bankAccountId], references: [id])
-  category    TreasuryCategory?    @relation(fields: [categoryId], references: [id])
-  createdBy   User?                @relation("TreasuryCreatedBy", fields: [createdById], references: [id])
-  budgetLine  BudgetLine?          @relation(fields: [budgetLineId], references: [id])
-  project     Project?             @relation(fields: [projectId], references: [id])
-  lotissement Lotissement?         @relation(fields: [lotissementId], references: [id])
-  programme   ProgrammeImmobilier? @relation(fields: [programmeId], references: [id])
-  thirdParty  TreasuryThirdParty?  @relation(fields: [thirdPartyId], references: [id])
-  payslip     Payslip?             @relation(fields: [payslipId], references: [id])
-  forecastExpense ForecastExpense? @relation(fields: [forecastExpenseId], references: [id])
-  documents   Document[]
+  bankAccount     BankAccount          @relation(fields: [bankAccountId], references: [id])
+  category        TreasuryCategory?    @relation(fields: [categoryId], references: [id])
+  createdBy       User?                @relation("TreasuryCreatedBy", fields: [createdById], references: [id])
+  budgetLine      BudgetLine?          @relation(fields: [budgetLineId], references: [id])
+  project         Project?             @relation(fields: [projectId], references: [id])
+  lotissement     Lotissement?         @relation(fields: [lotissementId], references: [id])
+  programme       ProgrammeImmobilier? @relation(fields: [programmeId], references: [id])
+  thirdParty      TreasuryThirdParty?  @relation(fields: [thirdPartyId], references: [id])
+  payslip         Payslip?             @relation(fields: [payslipId], references: [id])
+  forecastExpense ForecastExpense?     @relation(fields: [forecastExpenseId], references: [id])
+  documents       Document[]
 }
 
 // Tiers de trésorerie : bénéficiaire (« à destination de ») d'une sortie ou
 // émetteur (« en provenance de ») d'une entrée. Liste paramétrable, réutilisée
 // pour les deux sens d'opération.
 model TreasuryThirdParty {
-  id         Int       @id @default(autoincrement())
-  uuid       String    @unique @default(cuid())
-  fullName   String    // Nom complet du tiers
-  contacts   String?   // Contacts (téléphone, email…)
-  isActive   Boolean   @default(true)
-  createdAt  DateTime  @default(now())
-  updatedAt  DateTime  @updatedAt
-  deletedAt  DateTime?
+  id        Int       @id @default(autoincrement())
+  uuid      String    @unique @default(cuid())
+  fullName  String // Nom complet du tiers
+  contacts  String? // Contacts (téléphone, email…)
+  isActive  Boolean   @default(true)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
 
   operations TreasuryOperation[]
 }
 
 enum TreasurySource {
-  MANUEL      // Opération saisie manuellement
-  FACTURE     // Générée par l'encaissement d'une facture
-  ECHEANCE    // Générée par le règlement d'une échéance de vente
-  COMMISSION  // Générée par le paiement d'une commission
-  PAIE        // Générée par le paiement d'un bulletin de salaire
-  CHARGE      // Générée par le règlement d'une charge prévisionnelle
+  MANUEL // Opération saisie manuellement
+  FACTURE // Générée par l'encaissement d'une facture
+  ECHEANCE // Générée par le règlement d'une échéance de vente
+  COMMISSION // Générée par le paiement d'une commission
+  PAIE // Générée par le paiement d'un bulletin de salaire
+  CHARGE // Générée par le règlement d'une charge prévisionnelle
 }
 
 // Charge / dépense prévisionnelle : montant à régler à une date prévue, dont
@@ -2008,11 +2024,11 @@ enum TreasurySource {
 model ForecastExpense {
   id            Int                   @id @default(autoincrement())
   uuid          String                @unique @default(cuid())
-  reference     String                @unique  // Ex: CHP-2026-0001
-  label         String                // Libellé de la charge
-  categoryId    Int                   // Objet de sortie (TreasuryCategory direction SORTIE)
-  amount        Decimal               @db.Decimal(15, 2)  // Montant prévisionnel
-  dueDate       DateTime              // Date prévue de règlement
+  reference     String                @unique // Ex: CHP-2026-0001
+  label         String // Libellé de la charge
+  categoryId    Int // Objet de sortie (TreasuryCategory direction SORTIE)
+  amount        Decimal               @db.Decimal(15, 2) // Montant prévisionnel
+  dueDate       DateTime // Date prévue de règlement
   status        ForecastExpenseStatus @default(PREVUE)
   notes         String?               @db.Text
   // Règlement effectif
@@ -2020,7 +2036,7 @@ model ForecastExpense {
   settledAmount Decimal?              @db.Decimal(15, 2)
   paymentMethod PaymentMethod?
   // Traçabilité
-  createdById   Int?                  // Planificateur (visibilité par rôle)
+  createdById   Int? // Planificateur (visibilité par rôle)
   settledById   Int?
   createdAt     DateTime              @default(now())
   updatedAt     DateTime              @updatedAt
@@ -2037,9 +2053,9 @@ model ForecastExpense {
 }
 
 enum ForecastExpenseStatus {
-  PREVUE   // Planifiée, non réglée
-  REGLEE   // Réglée (opération de trésorerie générée)
-  ANNULEE  // Annulée
+  PREVUE // Planifiée, non réglée
+  REGLEE // Réglée (opération de trésorerie générée)
+  ANNULEE // Annulée
 }
 
 // ── BUDGETS ───────────────────────────────────────────────────
@@ -2050,14 +2066,14 @@ enum ForecastExpenseStatus {
 model Budget {
   id              Int          @id @default(autoincrement())
   uuid            String       @unique @default(cuid())
-  reference       String       @unique  // Ex: BUDG-2026-0001
+  reference       String       @unique // Ex: BUDG-2026-0001
   name            String
   description     String?      @db.Text
   periodStart     DateTime
   periodEnd       DateTime
-  totalAllocated  Decimal?     @db.Decimal(15, 2)  // Optionnel : somme indicative
+  totalAllocated  Decimal?     @db.Decimal(15, 2) // Optionnel : somme indicative
   status          BudgetStatus @default(OUVERT)
-  closingSnapshot Json?        // Récapitulatif figé à la clôture
+  closingSnapshot Json? // Récapitulatif figé à la clôture
   closedAt        DateTime?
   closedById      Int?
   notes           String?      @db.Text
@@ -2082,7 +2098,7 @@ model BudgetLine {
   id              Int       @id @default(autoincrement())
   uuid            String    @unique @default(cuid())
   budgetId        Int
-  code            String?   // Code court optionnel (ex: BL-001)
+  code            String? // Code court optionnel (ex: BL-001)
   label           String
   description     String?   @db.Text
   allocatedAmount Decimal   @db.Decimal(15, 2)
@@ -2104,10 +2120,10 @@ model BudgetLine {
 // Bornage, Bitumage, etc.). Géré depuis Paramètres › Types de projets.
 model ProjectType {
   id          Int       @id @default(autoincrement())
-  code        String    @unique  // Slug stable (ex: CONSTRUCTION_BATIMENTS)
-  label       String             // Libellé d'affichage
+  code        String    @unique // Slug stable (ex: CONSTRUCTION_BATIMENTS)
+  label       String // Libellé d'affichage
   description String?   @db.Text
-  color       String?            // Couleur hex (ex: #2563EB)
+  color       String? // Couleur hex (ex: #2563EB)
   isActive    Boolean   @default(true)
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
@@ -2121,51 +2137,51 @@ model ProjectType {
 // optionnels : client commanditaire, propriétaire, terrain, lotissement,
 // programme immobilier.
 model Project {
-  id              Int           @id @default(autoincrement())
-  uuid            String        @unique @default(cuid())
-  reference       String        @unique // Ex: PROJ-2026-0001
-  nom             String
-  typeId          Int           // Type de projet (obligatoire)
-  statut          ProjectStatus @default(EN_PROJET)
+  id             Int           @id @default(autoincrement())
+  uuid           String        @unique @default(cuid())
+  reference      String        @unique // Ex: PROJ-2026-0001
+  nom            String
+  typeId         Int // Type de projet (obligatoire)
+  statut         ProjectStatus @default(EN_PROJET)
   // Rattachements optionnels
-  clientId        Int?
-  ownerId         Int?
-  terrainId       Int?
-  lotissementId   Int?
-  programmeId     Int?
+  clientId       Int?
+  ownerId        Int?
+  terrainId      Int?
+  lotissementId  Int?
+  programmeId    Int?
   // Localisation
-  adresse         String?
-  commune         String?
-  quartier        String?
-  ville           String?
-  pays            String        @default("CI")
-  latitude        Float?
-  longitude       Float?
+  adresse        String?
+  commune        String?
+  quartier       String?
+  ville          String?
+  pays           String        @default("CI")
+  latitude       Float?
+  longitude      Float?
   // Dates & avancement
-  dateDebutPrevu  DateTime?
-  dateDebutReel   DateTime?
-  dateFinPrevue   DateTime?
-  dateFinReelle   DateTime?
-  avancement      Int           @default(0) // Taux d'avancement 0–100 %
+  dateDebutPrevu DateTime?
+  dateDebutReel  DateTime?
+  dateFinPrevue  DateTime?
+  dateFinReelle  DateTime?
+  avancement     Int           @default(0) // Taux d'avancement 0–100 %
   // Financier
-  budgetPrevu     Decimal?      @db.Decimal(15, 2)
-  budgetRealise   Decimal?      @db.Decimal(15, 2)
+  budgetPrevu    Decimal?      @db.Decimal(15, 2)
+  budgetRealise  Decimal?      @db.Decimal(15, 2)
   // Description
-  description     String?       @db.Text
-  notes           String?       @db.Text
-  createdAt       DateTime      @default(now())
-  updatedAt       DateTime      @updatedAt
-  deletedAt       DateTime?
+  description    String?       @db.Text
+  notes          String?       @db.Text
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+  deletedAt      DateTime?
 
-  type        ProjectType          @relation(fields: [typeId], references: [id])
-  client      Client?              @relation(fields: [clientId], references: [id])
-  owner       Owner?               @relation(fields: [ownerId], references: [id])
-  terrain     Terrain?             @relation(fields: [terrainId], references: [id])
-  lotissement Lotissement?         @relation(fields: [lotissementId], references: [id])
-  programme   ProgrammeImmobilier? @relation(fields: [programmeId], references: [id])
-  photos      ProjectPhoto[]
-  documents   Document[]
-  activities  CrmActivity[]
+  type               ProjectType          @relation(fields: [typeId], references: [id])
+  client             Client?              @relation(fields: [clientId], references: [id])
+  owner              Owner?               @relation(fields: [ownerId], references: [id])
+  terrain            Terrain?             @relation(fields: [terrainId], references: [id])
+  lotissement        Lotissement?         @relation(fields: [lotissementId], references: [id])
+  programme          ProgrammeImmobilier? @relation(fields: [programmeId], references: [id])
+  photos             ProjectPhoto[]
+  documents          Document[]
+  activities         CrmActivity[]
   treasuryOperations TreasuryOperation[]
 }
 
@@ -2194,56 +2210,66 @@ model ProjectPhoto {
 // personnel et contrats de travail. Les bulletins de paie, congés et pointage
 // sont ajoutés dans les phases suivantes.
 model Employee {
-  id             Int                 @id @default(autoincrement())
-  uuid           String              @unique @default(cuid())
-  matricule      String              @unique // Ex: EMP-2026-0001
+  id            Int                 @id @default(autoincrement())
+  uuid          String              @unique @default(cuid())
+  matricule     String              @unique // Ex: EMP-2026-0001
   // État civil
-  civilite       CiviliteType?
-  firstName      String
-  lastName       String
-  sexe           EmployeeSexe?
-  birthDate      DateTime?
-  birthPlace     String?
-  nationality    String?             @default("CI")
-  maritalStatus  StatutConjugalType?
-  childrenCount  Int                 @default(0)
-  igrParts       Decimal             @default(1) @db.Decimal(4, 1) // nombre de parts IGR (quotient familial)
+  civilite      CiviliteType?
+  firstName     String
+  lastName      String
+  sexe          EmployeeSexe?
+  birthDate     DateTime?
+  birthPlace    String?
+  nationality   String?             @default("CI")
+  maritalStatus StatutConjugalType?
+  childrenCount Int                 @default(0)
+  igrParts      Decimal             @default(1) @db.Decimal(4, 1) // nombre de parts IGR (quotient familial)
   // Coordonnées
-  email          String?
-  phone          String?
-  mobile         String?
-  address        String?
-  city           String?
+  email         String?
+  phone         String?
+  mobile        String?
+  address       String?
+  city          String?
   // Identité & protection sociale
-  idNumber       String? // numéro pièce d'identité
-  cnpsNumber     String? // numéro CNPS (sécurité sociale)
-  cmuNumber      String? // numéro CMU (couverture maladie universelle)
+  idNumber      String? // numéro pièce d'identité
+  cnpsNumber    String? // numéro CNPS (sécurité sociale)
+  cmuNumber     String? // numéro CMU (couverture maladie universelle)
   // Coordonnées bancaires (versement du salaire)
-  bankName       String?
-  bankRib        String?
+  bankName      String?
+  bankRib       String?
   // Poste
-  poste          String?
-  departement    String?
+  poste         String?
+  departement   String?
+  // Responsable hiérarchique (évaluateur au titre de la gestion de la performance)
+  managerId     Int?
   // Lien optionnel vers un compte utilisateur de l'application
-  userId         Int?                @unique
+  userId        Int?                @unique
   // Statut emploi
-  status         EmployeeStatus      @default(ACTIF)
-  hireDate       DateTime?
-  exitDate       DateTime?
-  exitReason     String?
-  photo          String?
-  notes          String?             @db.Text
-  createdAt      DateTime            @default(now())
-  updatedAt      DateTime            @updatedAt
-  deletedAt      DateTime?
+  status        EmployeeStatus      @default(ACTIF)
+  hireDate      DateTime?
+  exitDate      DateTime?
+  exitReason    String?
+  photo         String?
+  notes         String?             @db.Text
+  createdAt     DateTime            @default(now())
+  updatedAt     DateTime            @updatedAt
+  deletedAt     DateTime?
 
-  user          User?                @relation("UserEmployee", fields: [userId], references: [id])
-  contracts     EmploymentContract[] @relation("EmployeeContracts")
-  authorityContracts EmploymentContract[] @relation("ContractAuthority")
-  payslips      Payslip[]
-  leaveRequests LeaveRequest[]
-  attendance    AttendanceRecord[]
-  signedContracts EmployeeSignedContract[]
+  user               User?                     @relation("UserEmployee", fields: [userId], references: [id])
+  manager            Employee?                 @relation("EmployeeManager", fields: [managerId], references: [id])
+  subordinates       Employee[]                @relation("EmployeeManager")
+  contracts          EmploymentContract[]      @relation("EmployeeContracts")
+  authorityContracts EmploymentContract[]      @relation("ContractAuthority")
+  payslips           Payslip[]
+  leaveRequests      LeaveRequest[]
+  attendance         AttendanceRecord[]
+  signedContracts    EmployeeSignedContract[]
+  perfObjectives     PerformanceObjective[]
+  perfEvaluations    PerformanceEvaluation[]
+  progressPlans      ProgressPlan[]
+  perfRankingEntries PerformanceRankingEntry[]
+
+  @@index([managerId])
 }
 
 // Contrats signés (fichiers téléversés) rattachés à un employé — consultables
@@ -2252,14 +2278,14 @@ model EmployeeSignedContract {
   id           Int       @id @default(autoincrement())
   employeeId   Int
   name         String
-  type         String    // MIME
-  path         String    // chemin relatif dans le storage
+  type         String // MIME
+  path         String // chemin relatif dans le storage
   size         Int
   uploadedById Int?
   uploadedAt   DateTime  @default(now())
   deletedAt    DateTime?
 
-  employee     Employee  @relation(fields: [employeeId], references: [id])
+  employee Employee @relation(fields: [employeeId], references: [id])
 
   @@index([employeeId])
 }
@@ -2277,55 +2303,55 @@ enum EmployeeStatus {
 }
 
 model EmploymentContract {
-  id           Int            @id @default(autoincrement())
-  uuid         String         @unique @default(cuid())
-  reference    String         @unique // Ex: CTR-2026-0001
-  employeeId   Int
-  type         ContractType   @default(CDI)
-  status       ContractStatus @default(ACTIF)
-  poste        String?
-  categorie    String? // catégorie / classification professionnelle
-  startDate    DateTime
-  endDate      DateTime? // requis pour CDD / STAGE
-  trialEndDate DateTime? // fin de période d'essai
-  weeklyHours  Decimal?       @db.Decimal(5, 2) // durée hebdomadaire
-  baseSalary   Decimal        @db.Decimal(15, 2) // salaire de base mensuel brut
+  id                     Int            @id @default(autoincrement())
+  uuid                   String         @unique @default(cuid())
+  reference              String         @unique // Ex: CTR-2026-0001
+  employeeId             Int
+  type                   ContractType   @default(CDI)
+  status                 ContractStatus @default(ACTIF)
+  poste                  String?
+  categorie              String? // catégorie / classification professionnelle
+  startDate              DateTime
+  endDate                DateTime? // requis pour CDD / STAGE
+  trialEndDate           DateTime? // fin de période d'essai
+  weeklyHours            Decimal?       @db.Decimal(5, 2) // durée hebdomadaire
+  baseSalary             Decimal        @db.Decimal(15, 2) // salaire de base mensuel brut
   // Détail de rémunération inscrit au contrat (CDI/CDD). Saisi manuellement —
   // valeurs négociées figurant dans la clause de rémunération.
-  sursalaire         Decimal? @db.Decimal(15, 2)
-  primeAnciennete    Decimal? @db.Decimal(15, 2)
-  grossSalary        Decimal? @db.Decimal(15, 2) // salaire brut (base + sursalaire + prime d'ancienneté)
-  its                Decimal? @db.Decimal(15, 2) // retenue ITS
-  cnps               Decimal? @db.Decimal(15, 2) // retenue CNPS (part salariale)
-  cmu                Decimal? @db.Decimal(15, 2) // retenue CMU (part salariale)
-  totalDeductions    Decimal? @db.Decimal(15, 2) // total des retenues (ITS + CNPS + CMU)
-  transportAllowance Decimal? @db.Decimal(15, 2) // prime de transport
-  netSalary          Decimal? @db.Decimal(15, 2) // salaire net à payer
+  sursalaire             Decimal?       @db.Decimal(15, 2)
+  primeAnciennete        Decimal?       @db.Decimal(15, 2)
+  grossSalary            Decimal?       @db.Decimal(15, 2) // salaire brut (base + sursalaire + prime d'ancienneté)
+  its                    Decimal?       @db.Decimal(15, 2) // retenue ITS
+  cnps                   Decimal?       @db.Decimal(15, 2) // retenue CNPS (part salariale)
+  cmu                    Decimal?       @db.Decimal(15, 2) // retenue CMU (part salariale)
+  totalDeductions        Decimal?       @db.Decimal(15, 2) // total des retenues (ITS + CNPS + CMU)
+  transportAllowance     Decimal?       @db.Decimal(15, 2) // prime de transport
+  netSalary              Decimal?       @db.Decimal(15, 2) // salaire net à payer
   // Avenant CDD : rattachement au contrat CDD initial amendé (cumul ≤ 2 ans).
   // Renseigné uniquement pour les contrats de type AVENANT_CDD.
-  parentContractId Int?
+  parentContractId       Int?
   // Autorité responsable : employé signataire/responsable au titre du contrat
   // (distinct du salarié titulaire). Optionnel.
   responsibleAuthorityId Int?
   // Fonction de l'employé (référentiel paramétrable : titre + contenu en liste).
-  functionId   Int?
+  functionId             Int?
   // Objectifs assignés (référentiel paramétrable : titre + contenu en liste).
-  objectiveId  Int?
+  objectiveId            Int?
   // Commissions sur activité auxquelles l'employé a droit pour ce contrat.
   // Instantané JSON : tableau de { key, label, rate } (rate = taux en %).
-  activityCommissions Json?
-  notes        String?        @db.Text
-  createdAt    DateTime       @default(now())
-  updatedAt    DateTime       @updatedAt
-  deletedAt    DateTime?
+  activityCommissions    Json?
+  notes                  String?        @db.Text
+  createdAt              DateTime       @default(now())
+  updatedAt              DateTime       @updatedAt
+  deletedAt              DateTime?
 
-  employee            Employee             @relation("EmployeeContracts", fields: [employeeId], references: [id])
-  responsibleAuthority Employee?           @relation("ContractAuthority", fields: [responsibleAuthorityId], references: [id])
-  parentContract      EmploymentContract?  @relation("ContractAmendments", fields: [parentContractId], references: [id])
-  amendments          EmploymentContract[] @relation("ContractAmendments")
-  fonction            ContractFunction?    @relation(fields: [functionId], references: [id])
-  objective           ContractObjective?   @relation(fields: [objectiveId], references: [id])
-  payslips            Payslip[]
+  employee             Employee             @relation("EmployeeContracts", fields: [employeeId], references: [id])
+  responsibleAuthority Employee?            @relation("ContractAuthority", fields: [responsibleAuthorityId], references: [id])
+  parentContract       EmploymentContract?  @relation("ContractAmendments", fields: [parentContractId], references: [id])
+  amendments           EmploymentContract[] @relation("ContractAmendments")
+  fonction             ContractFunction?    @relation(fields: [functionId], references: [id])
+  objective            ContractObjective?   @relation(fields: [objectiveId], references: [id])
+  payslips             Payslip[]
 
   @@index([employeeId])
   @@index([parentContractId])
@@ -2338,26 +2364,26 @@ model EmploymentContract {
 // que ContractTemplate (en-tête / corps / fin du document / pied de page) ;
 // utilise les mêmes variables de contrat. Plusieurs modèles, un par défaut.
 model JobDescriptionTemplate {
-  id        Int     @id @default(autoincrement())
-  uuid      String  @unique @default(cuid())
-  name      String
-  header       String? @db.LongText
-  headerWidth  Int     @default(100)
-  headerHeight Int     @default(140)
-  body      String     @db.LongText
-  footer       String?   @db.LongText
-  footerWidth  Int       @default(100)
-  footerHeight Int       @default(140)
-  footerBgColor String?  @db.VarChar(20)
-  endOfDocument        String?  @db.LongText
-  endOfDocumentWidth   Int      @default(100)
-  endOfDocumentHeight  Int      @default(140)
-  endOfDocumentBgColor String?  @db.VarChar(20)
-  isDefault Boolean  @default(false)
-  isActive  Boolean  @default(true)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  deletedAt DateTime?
+  id                   Int       @id @default(autoincrement())
+  uuid                 String    @unique @default(cuid())
+  name                 String
+  header               String?   @db.LongText
+  headerWidth          Int       @default(100)
+  headerHeight         Int       @default(140)
+  body                 String    @db.LongText
+  footer               String?   @db.LongText
+  footerWidth          Int       @default(100)
+  footerHeight         Int       @default(140)
+  footerBgColor        String?   @db.VarChar(20)
+  endOfDocument        String?   @db.LongText
+  endOfDocumentWidth   Int       @default(100)
+  endOfDocumentHeight  Int       @default(140)
+  endOfDocumentBgColor String?   @db.VarChar(20)
+  isDefault            Boolean   @default(false)
+  isActive             Boolean   @default(true)
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+  deletedAt            DateTime?
 }
 
 // Fonction de l'employé (référentiel paramétrable) : un titre et un contenu
@@ -2389,6 +2415,33 @@ model ContractObjective {
   contracts EmploymentContract[]
 }
 
+// Référentiel « Poste / Fonction » du personnel (liste paramétrable). Alimente
+// le sélecteur « Poste » de la fiche employé (avec création à la volée). La
+// valeur retenue est stockée en clair dans `Employee.poste` (libellé), afin de
+// rester compatible avec les valeurs libres existantes et les clés « poste »
+// des profils de pondération et des objectifs par poste.
+model JobPosition {
+  id        Int       @id @default(autoincrement())
+  label     String    @unique
+  isActive  Boolean   @default(true)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+}
+
+// Référentiel « Département / Service » du personnel (liste paramétrable). Même
+// principe que JobPosition : alimente le sélecteur « Département / service » de
+// la fiche employé (avec création à la volée). La valeur retenue est stockée en
+// clair dans `Employee.departement` (libellé).
+model Department {
+  id        Int       @id @default(autoincrement())
+  label     String    @unique
+  isActive  Boolean   @default(true)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+}
+
 enum ContractType {
   CDI
   CDD
@@ -2406,7 +2459,7 @@ enum ContractType {
 model EssaiCategory {
   id            Int               @id @default(autoincrement())
   label         String            @unique
-  durationValue Int               // valeur du délai d'essai
+  durationValue Int // valeur du délai d'essai
   durationUnit  EssaiDurationUnit @default(MOIS)
   isActive      Boolean           @default(true)
   createdAt     DateTime          @default(now())
@@ -2437,7 +2490,7 @@ model Payslip {
   employeeId      Int
   contractId      Int?
   periodYear      Int
-  periodMonth     Int            // 1-12
+  periodMonth     Int // 1-12
   // Montants (FCFA)
   baseSalary      Decimal        @db.Decimal(15, 2) // salaire de base
   grossTaxable    Decimal        @db.Decimal(15, 2) // brut imposable
@@ -2445,7 +2498,7 @@ model Payslip {
   cnpsEmployee    Decimal        @db.Decimal(15, 2) // retenue CNPS salarié
   its             Decimal        @db.Decimal(15, 2) // impôt sur traitements et salaires
   cmuEmployee     Decimal        @db.Decimal(15, 2) // CMU part salarié
-  otherDeductions Decimal        @db.Decimal(15, 2) @default(0)
+  otherDeductions Decimal        @default(0) @db.Decimal(15, 2)
   totalDeductions Decimal        @db.Decimal(15, 2)
   netSalary       Decimal        @db.Decimal(15, 2) // net à payer
   employerCharges Decimal        @db.Decimal(15, 2) // total charges patronales
@@ -2501,33 +2554,33 @@ enum PayslipLineType {
 // Zones En-tête / Corps / Fin du document / Pied de page calquées sur
 // ConventionTemplate (rendu PDF avec en-tête/pied répétés sur chaque page).
 model ContractTemplate {
-  id        Int          @id @default(autoincrement())
-  uuid      String       @unique @default(cuid())
-  name      String
-  type      ContractType
+  id                   Int          @id @default(autoincrement())
+  uuid                 String       @unique @default(cuid())
+  name                 String
+  type                 ContractType
   // En-tête monobloc — texte et/ou image (image insérée → 100 % de la largeur
   // du bloc, cf. CSS du rendu PDF). Largeur et hauteur configurables.
-  header       String? @db.LongText
-  headerWidth  Int     @default(100)
-  headerHeight Int     @default(140)
-  body      String       @db.LongText
-  footer       String?   @db.LongText
-  footerWidth  Int       @default(100)
-  footerHeight Int       @default(140)
+  header               String?      @db.LongText
+  headerWidth          Int          @default(100)
+  headerHeight         Int          @default(140)
+  body                 String       @db.LongText
+  footer               String?      @db.LongText
+  footerWidth          Int          @default(100)
+  footerHeight         Int          @default(140)
   // Couleur de fond du pied de page (`#rrggbb` ou `transparent`). `NULL` ⇒
   // valeur par défaut historique (`#dc2626`).
-  footerBgColor String?  @db.VarChar(20)
+  footerBgColor        String?      @db.VarChar(20)
   // Bloc « Fin du document » — inséré à la suite du corps (signatures, mentions
   // finales…), une seule fois. Mêmes contrôles que le pied de page.
-  endOfDocument        String?  @db.LongText
-  endOfDocumentWidth   Int      @default(100)
-  endOfDocumentHeight  Int      @default(140)
-  endOfDocumentBgColor String?  @db.VarChar(20)
-  isDefault Boolean      @default(false)
-  isActive  Boolean      @default(true)
-  createdAt DateTime     @default(now())
-  updatedAt DateTime     @updatedAt
-  deletedAt DateTime?
+  endOfDocument        String?      @db.LongText
+  endOfDocumentWidth   Int          @default(100)
+  endOfDocumentHeight  Int          @default(140)
+  endOfDocumentBgColor String?      @db.VarChar(20)
+  isDefault            Boolean      @default(false)
+  isActive             Boolean      @default(true)
+  createdAt            DateTime     @default(now())
+  updatedAt            DateTime     @updatedAt
+  deletedAt            DateTime?
 }
 
 // Modèles éditables de bulletins de paie : 3 mises en page (MODELE_1/2/3),
@@ -2554,42 +2607,42 @@ enum PayslipTemplateLayout {
 
 // ── RESSOURCES HUMAINES — CONGÉS & ABSENCES ───────────────────
 model LeaveType {
-  id             Int            @id @default(autoincrement())
-  code           String         @unique
+  id             Int      @id @default(autoincrement())
+  code           String   @unique
   name           String
-  isPaid         Boolean        @default(true)
-  affectsBalance Boolean        @default(false) // déduit du solde de congés payés
+  isPaid         Boolean  @default(true)
+  affectsBalance Boolean  @default(false) // déduit du solde de congés payés
   color          String?
-  isActive       Boolean        @default(true)
-  createdAt      DateTime       @default(now())
-  updatedAt      DateTime       @updatedAt
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
 
   requests LeaveRequest[]
 }
 
 model LeaveRequest {
-  id           Int         @id @default(autoincrement())
-  uuid         String      @unique @default(cuid())
-  reference    String      @unique // CGE-YYYY-NNNN
-  employeeId   Int
-  typeId       Int
-  startDate    DateTime
-  endDate      DateTime
-  days         Decimal     @db.Decimal(5, 1) // jours décomptés
-  reason       String?     @db.Text
-  status       LeaveStatus @default(EN_ATTENTE)
-  decidedById  Int?
-  decidedAt    DateTime?
-  decisionNote String?
+  id            Int         @id @default(autoincrement())
+  uuid          String      @unique @default(cuid())
+  reference     String      @unique // CGE-YYYY-NNNN
+  employeeId    Int
+  typeId        Int
+  startDate     DateTime
+  endDate       DateTime
+  days          Decimal     @db.Decimal(5, 1) // jours décomptés
+  reason        String?     @db.Text
+  status        LeaveStatus @default(EN_ATTENTE)
+  decidedById   Int?
+  decidedAt     DateTime?
+  decisionNote  String?
   // Fiche « Congés & Absence » signée, scannée et jointe après validation.
   signedDocPath String?
   signedDocName String?
   signedDocType String?
   signedDocSize Int?
   signedDocAt   DateTime?
-  createdAt    DateTime    @default(now())
-  updatedAt    DateTime    @updatedAt
-  deletedAt    DateTime?
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+  deletedAt     DateTime?
 
   employee  Employee  @relation(fields: [employeeId], references: [id])
   type      LeaveType @relation(fields: [typeId], references: [id])
@@ -2615,8 +2668,8 @@ model AttendanceRecord {
   status        AttendanceStatus @default(PRESENT)
   hoursWorked   Decimal          @default(0) @db.Decimal(5, 2)
   overtimeHours Decimal          @default(0) @db.Decimal(5, 2)
-  arrivalTime   DateTime?        // Heure de pointage d'arrivée (scan QR)
-  departureTime DateTime?        // Heure de pointage de départ (scan QR)
+  arrivalTime   DateTime? // Heure de pointage d'arrivée (scan QR)
+  departureTime DateTime? // Heure de pointage de départ (scan QR)
   notes         String?
   createdAt     DateTime         @default(now())
   updatedAt     DateTime         @updatedAt
@@ -2640,21 +2693,21 @@ enum AttendanceStatus {
 model Visitor {
   id          Int           @id @default(autoincrement())
   uuid        String        @unique @default(cuid())
-  firstName   String        // Prénoms
-  lastName    String        // Nom
-  company     String?       // Entreprise
-  phone       String?       // Contacts
-  email       String?       // Adresse mail
-  objet       String        // Objet de visite
+  firstName   String // Prénoms
+  lastName    String // Nom
+  company     String? // Entreprise
+  phone       String? // Contacts
+  email       String? // Adresse mail
+  objet       String // Objet de visite
   details     String?       @db.Text
-  visitedAt   DateTime      @default(now())  // Jour et heure de visite (auto)
-  source      VisitorSource @default(QR)     // QR (auto-enregistré) ou INTERNE (saisi par l'accueil)
-  createdById Int?          // Utilisateur ayant saisi (si source INTERNE)
+  visitedAt   DateTime      @default(now()) // Jour et heure de visite (auto)
+  source      VisitorSource @default(QR) // QR (auto-enregistré) ou INTERNE (saisi par l'accueil)
+  createdById Int? // Utilisateur ayant saisi (si source INTERNE)
   createdAt   DateTime      @default(now())
   updatedAt   DateTime      @updatedAt
   deletedAt   DateTime?
 
-  createdBy   User?         @relation("VisitorCreatedBy", fields: [createdById], references: [id])
+  createdBy User? @relation("VisitorCreatedBy", fields: [createdById], references: [id])
 
   @@index([visitedAt])
 }
@@ -2672,4 +2725,307 @@ model VisitObject {
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
   deletedAt DateTime?
+}
+
+// ── ÉVALUATION & GESTION DES PERFORMANCES (Module 14) ─────────────────────────
+
+// Référentiel « Unité » des KPI (liste paramétrable). Même principe que
+// JobPosition : alimente le sélecteur « Unité » du formulaire KPI (avec création
+// à la volée). La valeur retenue est stockée en clair dans `KpiDefinition.unit`.
+model KpiUnit {
+  id        Int       @id @default(autoincrement())
+  label     String    @unique
+  isActive  Boolean   @default(true)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+}
+
+// Catalogue configurable des indicateurs de performance (KPI). Un KPI est soit
+// calculé automatiquement à partir d'une source de données de l'application
+// (ventes, commissions, encaissements, activités CRM, assiduité…), soit saisi
+// manuellement (source = MANUAL). `direction` indique si une valeur plus élevée
+// (HIGHER_BETTER) ou plus basse (LOWER_BETTER) est meilleure.
+model KpiDefinition {
+  id            Int          @id @default(autoincrement())
+  uuid          String       @unique @default(cuid())
+  code          String       @unique // slug stable, ex: SALES_AMOUNT
+  label         String
+  category      String? // regroupement d'affichage
+  source        KpiSource    @default(MANUAL)
+  metric        KpiMetric    @default(MANUAL_VALUE)
+  unit          String? // ex: FCFA, %, nb, h
+  direction     KpiDirection @default(HIGHER_BETTER)
+  defaultTarget Decimal?     @db.Decimal(15, 2)
+  description   String?      @db.Text
+  isActive      Boolean      @default(true)
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+  deletedAt     DateTime?
+
+  weightLines     PerformanceWeightLine[]
+  objectives      PerformanceObjective[]
+  evaluationLines PerformanceEvaluationLine[]
+}
+
+enum KpiSource {
+  SALES // Ventes / conventions (Convention.agentId = Employee.userId)
+  COMMISSIONS // Commissions encaissées (Commission.userId)
+  ACCOUNTING // Encaissements (Payment sur factures des conventions de l'agent)
+  CRM // Activités CRM traitées (CrmActivity.userId)
+  PROSPECTS // Prospection (Prospect.assignedToId = Employee.userId)
+  ATTENDANCE // Assiduité / pointage (AttendanceRecord.employeeId)
+  LEAVE // Congés / absences (LeaveRequest.employeeId)
+  PROJECT // Projets (niveau service — pas d'attribution par utilisateur)
+  MANUAL // Saisie manuelle par l'évaluateur
+}
+
+enum KpiMetric {
+  SALES_COUNT
+  SALES_AMOUNT
+  RESILIATION_COUNT
+  COMMISSION_AMOUNT
+  ENCAISSEMENT_AMOUNT
+  CRM_ACTIVITIES_DONE
+  CRM_VISITS
+  CRM_CALLS
+  PROSPECT_CONVERSION_RATE
+  ATTENDANCE_RATE
+  OVERTIME_HOURS
+  ABSENCE_DAYS
+  MANUAL_VALUE
+}
+
+enum KpiDirection {
+  HIGHER_BETTER
+  LOWER_BETTER
+}
+
+// Profil de pondération des KPI par poste. Chaque poste peut valoriser
+// différemment les KPI (somme des poids ramenée à 100 % au calcul du score).
+model PerformanceWeightProfile {
+  id        Int       @id @default(autoincrement())
+  uuid      String    @unique @default(cuid())
+  poste     String
+  name      String
+  isActive  Boolean   @default(true)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  lines PerformanceWeightLine[]
+
+  @@index([poste])
+}
+
+model PerformanceWeightLine {
+  id              Int     @id @default(autoincrement())
+  profileId       Int
+  kpiDefinitionId Int
+  weight          Decimal @db.Decimal(6, 2) // poids relatif du KPI dans le profil
+
+  profile       PerformanceWeightProfile @relation(fields: [profileId], references: [id])
+  kpiDefinition KpiDefinition            @relation(fields: [kpiDefinitionId], references: [id])
+
+  @@index([profileId])
+  @@index([kpiDefinitionId])
+}
+
+// Objectif (annuel ou trimestriel) fixé à un collaborateur. Si `kpiDefinitionId`
+// est renseigné et `measureType = AUTO`, la progression est mesurée à partir des
+// données de l'application ; sinon la progression est saisie manuellement.
+model PerformanceObjective {
+  id              Int             @id @default(autoincrement())
+  uuid            String          @unique @default(cuid())
+  // Cible de l'objectif : soit un employé précis (`employeeId`), soit un poste
+  // (`poste`) — auquel cas il s'applique à tous les employés occupant ce poste.
+  // Invariant applicatif : exactement l'un des deux est renseigné.
+  employeeId      Int?
+  poste           String?
+  cycleType       PerfCycleType   @default(ANNUEL)
+  year            Int
+  quarter         Int? // 1–4 pour un objectif trimestriel, null si annuel
+  title           String
+  description     String?         @db.Text
+  weight          Decimal         @default(1) @db.Decimal(6, 2)
+  targetValue     Decimal?        @db.Decimal(15, 2)
+  unit            String?
+  kpiDefinitionId Int?
+  measureType     PerfMeasureType @default(MANUAL)
+  progress        Int             @default(0) // 0–100 %
+  status          ObjectiveStatus @default(EN_COURS)
+  createdById     Int?
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+  deletedAt       DateTime?
+
+  employee      Employee?      @relation(fields: [employeeId], references: [id])
+  kpiDefinition KpiDefinition? @relation(fields: [kpiDefinitionId], references: [id])
+  linkedActivities CrmActivity[]
+
+  @@index([employeeId])
+  @@index([poste])
+  @@index([kpiDefinitionId])
+}
+
+enum PerfCycleType {
+  ANNUEL
+  TRIMESTRIEL
+}
+
+enum PerfMeasureType {
+  AUTO
+  MANUAL
+}
+
+enum ObjectiveStatus {
+  EN_COURS
+  ATTEINT
+  PARTIEL
+  NON_ATTEINT
+  ANNULE
+}
+
+// Fiche d'évaluation d'un collaborateur sur un cycle (annuel/trimestriel).
+// Validation électronique à 3 niveaux : responsable → collaborateur → Direction.
+model PerformanceEvaluation {
+  id                  Int              @id @default(autoincrement())
+  uuid                String           @unique @default(cuid())
+  reference           String           @unique // Ex: EVA-2026-0001
+  employeeId          Int
+  cycleType           PerfCycleType    @default(ANNUEL)
+  year                Int
+  quarter             Int?
+  evaluatorId         Int? // User responsable (évaluateur)
+  globalScore         Decimal?         @db.Decimal(6, 2) // note globale 0–100
+  status              EvaluationStatus @default(BROUILLON)
+  // Signatures électroniques (horodatage + identifiant utilisateur signataire)
+  managerSignedById   Int?
+  managerSignedAt     DateTime?
+  employeeSignedById  Int?
+  employeeSignedAt    DateTime?
+  directionSignedById Int?
+  directionSignedAt   DateTime?
+  refusedById         Int?
+  refusedAt           DateTime?
+  refusalReason       String?          @db.Text
+  strengths           String?          @db.Text
+  areasToImprove      String?          @db.Text
+  comments            String?          @db.Text
+  createdById         Int?
+  createdAt           DateTime         @default(now())
+  updatedAt           DateTime         @updatedAt
+  deletedAt           DateTime?
+
+  employee  Employee                    @relation(fields: [employeeId], references: [id])
+  evaluator User?                       @relation("PerfEvaluator", fields: [evaluatorId], references: [id])
+  lines     PerformanceEvaluationLine[]
+  plans     ProgressPlan[]
+
+  @@index([employeeId])
+  @@index([evaluatorId])
+}
+
+enum EvaluationStatus {
+  BROUILLON
+  SOUMISE
+  VALIDEE_RESPONSABLE
+  VALIDEE_COLLABORATEUR
+  VALIDEE_DIRECTION
+  CLOTUREE
+  REFUSEE
+}
+
+model PerformanceEvaluationLine {
+  id              Int      @id @default(autoincrement())
+  evaluationId    Int
+  objectiveId     Int?
+  kpiDefinitionId Int?
+  label           String
+  weight          Decimal  @default(1) @db.Decimal(6, 2)
+  targetValue     Decimal? @db.Decimal(15, 2)
+  actualValue     Decimal? @db.Decimal(15, 2)
+  score           Decimal? @db.Decimal(6, 2) // note de la ligne 0–100
+  comment         String?  @db.Text
+
+  evaluation    PerformanceEvaluation @relation(fields: [evaluationId], references: [id])
+  kpiDefinition KpiDefinition?        @relation(fields: [kpiDefinitionId], references: [id])
+
+  @@index([evaluationId])
+  @@index([kpiDefinitionId])
+}
+
+// Plan de progrès (actions + besoins de formation) rattaché à une évaluation.
+model ProgressPlan {
+  id            Int                @id @default(autoincrement())
+  uuid          String             @unique @default(cuid())
+  evaluationId  Int?
+  employeeId    Int
+  title         String
+  actions       String?            @db.Text
+  trainingNeeds String?            @db.Text
+  dueDate       DateTime?
+  status        ProgressPlanStatus @default(EN_COURS)
+  followUpNotes String?            @db.Text
+  createdById   Int?
+  createdAt     DateTime           @default(now())
+  updatedAt     DateTime           @updatedAt
+  deletedAt     DateTime?
+
+  evaluation PerformanceEvaluation? @relation(fields: [evaluationId], references: [id])
+  employee   Employee               @relation(fields: [employeeId], references: [id])
+
+  @@index([employeeId])
+  @@index([evaluationId])
+}
+
+enum ProgressPlanStatus {
+  EN_COURS
+  REALISE
+  ABANDONNE
+}
+
+// Classement figé (historique) sur une période. Les classements sont calculés à
+// la volée par défaut ; un snapshot archive un classement daté.
+model PerformanceRankingSnapshot {
+  id            Int               @id @default(autoincrement())
+  uuid          String            @unique @default(cuid())
+  periodType    RankingPeriodType
+  periodStart   DateTime
+  periodEnd     DateTime
+  basis         RankingBasis      @default(KPI)
+  generatedById Int?
+  createdAt     DateTime          @default(now())
+
+  generatedBy User?                     @relation("PerfRankingGeneratedBy", fields: [generatedById], references: [id])
+  entries     PerformanceRankingEntry[]
+
+  @@index([periodType, periodStart])
+}
+
+model PerformanceRankingEntry {
+  id         Int     @id @default(autoincrement())
+  snapshotId Int
+  employeeId Int
+  score      Decimal @db.Decimal(8, 2)
+  rank       Int
+
+  snapshot PerformanceRankingSnapshot @relation(fields: [snapshotId], references: [id])
+  employee Employee                   @relation(fields: [employeeId], references: [id])
+
+  @@index([snapshotId])
+  @@index([employeeId])
+}
+
+enum RankingPeriodType {
+  SEMAINE
+  MOIS
+  TRIMESTRE
+  SEMESTRE
+  ANNEE
+}
+
+enum RankingBasis {
+  KPI
+  EVALUATION
 }

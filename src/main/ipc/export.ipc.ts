@@ -41,6 +41,12 @@ interface ExportPayload {
   rows: string[][];
   /** Ligne de total / solde affichée en pied de tableau (facultatif). */
   totalRow?: string[];
+  /**
+   * Index de colonne servant de clé de regroupement (facultatif). Quand la
+   * valeur de cette colonne change d'une ligne à l'autre, le moteur insère une
+   * délimitation nette + un espacement entre les groupes (PDF & Excel).
+   */
+  sectionBreakColumn?: number;
 }
 
 /** Convertit un fragment HTML en texte brut (pour l'en-tête / pied Excel). */
@@ -149,7 +155,19 @@ async function buildXlsx(p: ExportPayload, theme: ThemePalette, tpl: ExportTempl
   headerRow.height = 20;
   r++;
 
+  const sbc = p.sectionBreakColumn;
+  const mediumBottom = { style: 'medium' as const, color: { argb: NAVY } };
+  let prevKey: string | undefined;
   rows.forEach((row, ri) => {
+    // Délimitation + espacement entre groupes (changement de sectionBreakColumn).
+    if (sbc != null && ri > 0 && row[sbc] !== prevKey) {
+      const gap = ws.getRow(r);
+      for (let ci = 0; ci < headers.length; ci++) {
+        gap.getCell(ci + 1).border = { bottom: mediumBottom };
+      }
+      gap.height = 8;
+      r++;
+    }
     const dataRow = ws.getRow(r);
     for (let ci = 0; ci < headers.length; ci++) {
       const cell = dataRow.getCell(ci + 1);
@@ -160,6 +178,7 @@ async function buildXlsx(p: ExportPayload, theme: ThemePalette, tpl: ExportTempl
         cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF1F5F9' } };
       }
     }
+    if (sbc != null) prevKey = row[sbc];
     r++;
   });
 
@@ -240,11 +259,22 @@ function buildHtml(
   tpl: ExportTemplate,
   logoDataUri: string | null,
 ): string {
-  const { title, subtitle, headers, rows, totalRow } = p;
+  const { title, subtitle, headers, rows, totalRow, sectionBreakColumn } = p;
   const meta = buildMeta(p, tpl);
   const thead = headers.map((h) => `<th>${escapeHtml(h)}</th>`).join('');
+  // Corps du tableau : insertion d'une délimitation + espacement entre groupes
+  // quand la valeur de `sectionBreakColumn` change d'une ligne à l'autre.
+  const bodyParts: string[] = [];
+  let prevKey: string | undefined;
+  rows.forEach((row, i) => {
+    if (sectionBreakColumn != null && i > 0 && row[sectionBreakColumn] !== prevKey) {
+      bodyParts.push(`<tr class="section-gap"><td colspan="${headers.length}"></td></tr>`);
+    }
+    bodyParts.push(`<tr>${row.map((c) => `<td>${escapeHtml(c)}</td>`).join('')}</tr>`);
+    if (sectionBreakColumn != null) prevKey = row[sectionBreakColumn];
+  });
   const tbody =
-    rows.map((row) => `<tr>${row.map((c) => `<td>${escapeHtml(c)}</td>`).join('')}</tr>`).join('') +
+    bodyParts.join('') +
     (totalRow && totalRow.length
       ? `<tr class="total-row">${totalRow.map((c) => `<td>${escapeHtml(c)}</td>`).join('')}</tr>`
       : '');
@@ -275,6 +305,8 @@ function buildHtml(
   td { padding: 5px 8px; border-bottom: 1px solid ${border}; font-size: 9px; }
   tbody tr:nth-child(even) td { background: ${surface}; }
   tbody tr.total-row td { background: ${border}; font-weight: bold; color: ${primary}; font-size: 10px; }
+  /* Délimitation + espacement entre groupes (sectionBreakColumn). */
+  tbody tr.section-gap td { background: #fff; border: none; border-bottom: 2px solid ${accent}; height: 12px; padding: 0; }
 </style></head><body>
   ${logoDataUri ? `<div class="doc-logo"><img src="${logoDataUri}"/></div>` : ''}
   ${headerHtml ? `<div class="doc-header">${headerHtml}</div>` : ''}

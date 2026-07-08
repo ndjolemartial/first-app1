@@ -165,6 +165,10 @@ const quotes = {
   cancel: (token: string, id: number) => api.invoke('quotes:cancel', { token, id }),
   delete: (token: string, id: number) => api.invoke('quotes:delete', { token, id }),
   convert: (token: string, id: number, options: object) => api.invoke('quotes:convert', { token, id, options }),
+  listUnits: (token: string, includeInactive?: boolean) => api.invoke('quotes:listUnits', { token, includeInactive }),
+  createUnit: (token: string, payload: object) => api.invoke('quotes:createUnit', { token, payload }),
+  updateUnit: (token: string, id: number, payload: object) => api.invoke('quotes:updateUnit', { token, id, payload }),
+  deleteUnit: (token: string, id: number) => api.invoke('quotes:deleteUnit', { token, id }),
 };
 
 const quoteTemplates = {
@@ -278,6 +282,10 @@ const communication = {
     api.invoke('communication:shareLocation', { token, payload }),
   previewShareLocation: (token: string, payload: object) =>
     api.invoke('communication:previewShareLocation', { token, payload }),
+  getTracking: (token: string) =>
+    api.invoke('communication:getTracking', { token }),
+  updateTracking: (token: string, baseUrl: string) =>
+    api.invoke('communication:updateTracking', { token, baseUrl }),
 };
 
 // Reminders (politique de relance automatique)
@@ -496,6 +504,20 @@ const hr = {
       api.invoke('hr:contractObjectives:update', { token, id, payload }),
     delete: (token: string, id: number) => api.invoke('hr:contractObjectives:delete', { token, id }),
   },
+  jobPositions: {
+    list: (token: string, includeInactive?: boolean) => api.invoke('hr:jobPositions:list', { token, includeInactive }),
+    create: (token: string, payload: object) => api.invoke('hr:jobPositions:create', { token, payload }),
+    update: (token: string, id: number, payload: object) =>
+      api.invoke('hr:jobPositions:update', { token, id, payload }),
+    delete: (token: string, id: number) => api.invoke('hr:jobPositions:delete', { token, id }),
+  },
+  departments: {
+    list: (token: string, includeInactive?: boolean) => api.invoke('hr:departments:list', { token, includeInactive }),
+    create: (token: string, payload: object) => api.invoke('hr:departments:create', { token, payload }),
+    update: (token: string, id: number, payload: object) =>
+      api.invoke('hr:departments:update', { token, id, payload }),
+    delete: (token: string, id: number) => api.invoke('hr:departments:delete', { token, id }),
+  },
   commissionActivities: {
     list: (token: string) => api.invoke('hr:commissionActivities:list', { token }),
   },
@@ -551,6 +573,72 @@ const hr = {
     summary: (token: string, employeeId: number, year: number, month: number) =>
       api.invoke('hr:attendance:summary', { token, employeeId, year, month }),
     bulkUpsert: (token: string, records: object[]) => api.invoke('hr:attendance:bulkUpsert', { token, records }),
+  },
+};
+
+// Performance — évaluation & gestion des performances du personnel
+const performance = {
+  kpis: {
+    list: (token: string, includeInactive?: boolean) => api.invoke('performance:kpis:list', { token, includeInactive }),
+    create: (token: string, payload: object) => api.invoke('performance:kpis:create', { token, payload }),
+    update: (token: string, id: number, payload: object) => api.invoke('performance:kpis:update', { token, id, payload }),
+    delete: (token: string, id: number) => api.invoke('performance:kpis:delete', { token, id }),
+  },
+  weights: {
+    list: (token: string) => api.invoke('performance:weights:list', { token }),
+    upsert: (token: string, id: number | null, payload: object) => api.invoke('performance:weights:upsert', { token, id, payload }),
+    delete: (token: string, id: number) => api.invoke('performance:weights:delete', { token, id }),
+  },
+  units: {
+    list: (token: string, includeInactive?: boolean) => api.invoke('performance:units:list', { token, includeInactive }),
+    create: (token: string, payload: object) => api.invoke('performance:units:create', { token, payload }),
+    update: (token: string, id: number, payload: object) => api.invoke('performance:units:update', { token, id, payload }),
+    delete: (token: string, id: number) => api.invoke('performance:units:delete', { token, id }),
+  },
+  employees: {
+    list: (token: string) => api.invoke('performance:employees:list', { token }),
+  },
+  objectives: {
+    list: (token: string, filters?: object) => api.invoke('performance:objectives:list', { token, filters }),
+    getById: (token: string, id: number) => api.invoke('performance:objectives:getById', { token, id }),
+    create: (token: string, payload: object) => api.invoke('performance:objectives:create', { token, payload }),
+    update: (token: string, id: number, payload: object) => api.invoke('performance:objectives:update', { token, id, payload }),
+    delete: (token: string, id: number) => api.invoke('performance:objectives:delete', { token, id }),
+    duplicate: (token: string, sourceObj: object, targetObj: object) => api.invoke('performance:objectives:duplicate', { token, source: sourceObj, target: targetObj }),
+  },
+  evaluations: {
+    list: (token: string, filters?: object) => api.invoke('performance:evaluations:list', { token, filters }),
+    getById: (token: string, id: number) => api.invoke('performance:evaluations:getById', { token, id }),
+    create: (token: string, payload: object) => api.invoke('performance:evaluations:create', { token, payload }),
+    update: (token: string, id: number, payload: object) => api.invoke('performance:evaluations:update', { token, id, payload }),
+    computeKpis: (token: string, id: number) => api.invoke('performance:evaluations:computeKpis', { token, id }),
+    submit: (token: string, id: number) => api.invoke('performance:evaluations:submit', { token, id }),
+    sign: (token: string, id: number, level: 'MANAGER' | 'EMPLOYEE' | 'DIRECTION') => api.invoke('performance:evaluations:sign', { token, id, level }),
+    refuse: (token: string, id: number, reason?: string) => api.invoke('performance:evaluations:refuse', { token, id, reason }),
+    delete: (token: string, id: number) => api.invoke('performance:evaluations:delete', { token, id }),
+  },
+  plans: {
+    list: (token: string, filters?: object) => api.invoke('performance:plans:list', { token, filters }),
+    create: (token: string, payload: object) => api.invoke('performance:plans:create', { token, payload }),
+    update: (token: string, id: number, payload: object) => api.invoke('performance:plans:update', { token, id, payload }),
+    delete: (token: string, id: number) => api.invoke('performance:plans:delete', { token, id }),
+  },
+  rankings: {
+    get: (token: string, periodType: string, refDate?: string, basis?: string) => api.invoke('performance:rankings:get', { token, periodType, refDate, basis }),
+    snapshot: (token: string, periodType: string, refDate?: string, basis?: string) => api.invoke('performance:rankings:snapshot', { token, periodType, refDate, basis }),
+    history: (token: string, periodType?: string) => api.invoke('performance:rankings:history', { token, periodType }),
+    getSnapshot: (token: string, id: number) => api.invoke('performance:rankings:getSnapshot', { token, id }),
+    deleteSnapshot: (token: string, id: number) => api.invoke('performance:rankings:deleteSnapshot', { token, id }),
+    getRoster: (token: string) => api.invoke('performance:ranking:getRoster', { token }),
+    setRoster: (token: string, ids: number[]) => api.invoke('performance:ranking:setRoster', { token, ids }),
+  },
+  dashboard: (token: string) => api.invoke('performance:dashboard', { token }),
+  me: {
+    overview: (token: string, year?: number) => api.invoke('performance:me:overview', { token, year }),
+    evaluation: (token: string, id: number) => api.invoke('performance:me:evaluation', { token, id }),
+    sign: (token: string, id: number) => api.invoke('performance:me:sign', { token, id }),
+    ranking: (token: string, periodType: string, refDate?: string) => api.invoke('performance:me:ranking', { token, periodType, refDate }),
+    manualObjectives: (token: string) => api.invoke('performance:me:manualObjectives', { token }),
   },
 };
 
@@ -896,4 +984,4 @@ const documents = {
   pathForFile: (file: File) => webUtils.getPathForFile(file),
 };
 
-contextBridge.exposeInMainWorld('electron', { auth, users, prospects, clients, owners, properties, conventions, conventionTemplates, attestationTemplates, attestations, quotes, quoteTemplates, catalog, accounting, bilan, communication, crm, archiving, documents, documentExport, lotissements, terrains, programmes, projects, hr, visitors, geo, countries, commissions, expenses, analytics, exporter, invoiceTemplates, listExportTemplates, treasury, budget, dashboard, settings, reminders, config });
+contextBridge.exposeInMainWorld('electron', { auth, users, prospects, clients, owners, properties, conventions, conventionTemplates, attestationTemplates, attestations, quotes, quoteTemplates, catalog, accounting, bilan, communication, crm, archiving, documents, documentExport, lotissements, terrains, programmes, projects, hr, performance, visitors, geo, countries, commissions, expenses, analytics, exporter, invoiceTemplates, listExportTemplates, treasury, budget, dashboard, settings, reminders, config });

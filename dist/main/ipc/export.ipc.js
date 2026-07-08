@@ -117,7 +117,19 @@ async function buildXlsx(p, theme, tpl) {
     });
     headerRow.height = 20;
     r++;
+    const sbc = p.sectionBreakColumn;
+    const mediumBottom = { style: 'medium', color: { argb: NAVY } };
+    let prevKey;
     rows.forEach((row, ri) => {
+        // Délimitation + espacement entre groupes (changement de sectionBreakColumn).
+        if (sbc != null && ri > 0 && row[sbc] !== prevKey) {
+            const gap = ws.getRow(r);
+            for (let ci = 0; ci < headers.length; ci++) {
+                gap.getCell(ci + 1).border = { bottom: mediumBottom };
+            }
+            gap.height = 8;
+            r++;
+        }
         const dataRow = ws.getRow(r);
         for (let ci = 0; ci < headers.length; ci++) {
             const cell = dataRow.getCell(ci + 1);
@@ -128,6 +140,8 @@ async function buildXlsx(p, theme, tpl) {
                 cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF1F5F9' } };
             }
         }
+        if (sbc != null)
+            prevKey = row[sbc];
         r++;
     });
     // Ligne de total / solde en pied de tableau.
@@ -198,10 +212,22 @@ function escapeHtml(value) {
  * les nuances secondaires reprennent le thème actif de l'utilisateur.
  */
 function buildHtml(p, theme, tpl, logoDataUri) {
-    const { title, subtitle, headers, rows, totalRow } = p;
+    const { title, subtitle, headers, rows, totalRow, sectionBreakColumn } = p;
     const meta = buildMeta(p, tpl);
     const thead = headers.map((h) => `<th>${escapeHtml(h)}</th>`).join('');
-    const tbody = rows.map((row) => `<tr>${row.map((c) => `<td>${escapeHtml(c)}</td>`).join('')}</tr>`).join('') +
+    // Corps du tableau : insertion d'une délimitation + espacement entre groupes
+    // quand la valeur de `sectionBreakColumn` change d'une ligne à l'autre.
+    const bodyParts = [];
+    let prevKey;
+    rows.forEach((row, i) => {
+        if (sectionBreakColumn != null && i > 0 && row[sectionBreakColumn] !== prevKey) {
+            bodyParts.push(`<tr class="section-gap"><td colspan="${headers.length}"></td></tr>`);
+        }
+        bodyParts.push(`<tr>${row.map((c) => `<td>${escapeHtml(c)}</td>`).join('')}</tr>`);
+        if (sectionBreakColumn != null)
+            prevKey = row[sectionBreakColumn];
+    });
+    const tbody = bodyParts.join('') +
         (totalRow && totalRow.length
             ? `<tr class="total-row">${totalRow.map((c) => `<td>${escapeHtml(c)}</td>`).join('')}</tr>`
             : '');
@@ -232,6 +258,8 @@ function buildHtml(p, theme, tpl, logoDataUri) {
   td { padding: 5px 8px; border-bottom: 1px solid ${border}; font-size: 9px; }
   tbody tr:nth-child(even) td { background: ${surface}; }
   tbody tr.total-row td { background: ${border}; font-weight: bold; color: ${primary}; font-size: 10px; }
+  /* Délimitation + espacement entre groupes (sectionBreakColumn). */
+  tbody tr.section-gap td { background: #fff; border: none; border-bottom: 2px solid ${accent}; height: 12px; padding: 0; }
 </style></head><body>
   ${logoDataUri ? `<div class="doc-logo"><img src="${logoDataUri}"/></div>` : ''}
   ${headerHtml ? `<div class="doc-header">${headerHtml}</div>` : ''}

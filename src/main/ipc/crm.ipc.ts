@@ -69,7 +69,52 @@ const activitySchema = z.object({
   invoiceId: z.number().int().positive().optional(),
   installmentId: z.number().int().positive().optional(),
   documentId: z.number().int().positive().optional(),
+  // Objectif de performance lié (tâche) + quantité réalisée.
+  objectiveId: z.number().int().positive().nullable().optional(),
+  objectiveRealized: z.number().nonnegative().nullable().optional(),
 });
+
+/** Fiche employé rattachée au compte utilisateur de la session, s'il existe. */
+async function sessionEmployeeId(db: ReturnType<typeof getDb>, session: { userId: number }): Promise<number | null> {
+  const e = await db.employee.findFirst({ where: { userId: session.userId, deletedAt: null }, select: { id: true } });
+  return e?.id ?? null;
+}
+
+/**
+ * Vérifie qu'un objectif est « liable » à une tâche du collaborateur connecté :
+ * objectif à Mesure MANUELLE, personnellement assigné (employeeId = son employé)
+ * et doté d'une cible chiffrée (> 0). Retourne la cible.
+ */
+async function assertLinkableObjective(db: ReturnType<typeof getDb>, session: { userId: number }, objectiveId: number): Promise<number> {
+  const empId = await sessionEmployeeId(db, session);
+  if (!empId) throw new Error('Aucun dossier du personnel rattaché à votre compte.');
+  const obj = await db.performanceObjective.findFirst({
+    where: { id: objectiveId, deletedAt: null, employeeId: empId, measureType: 'MANUAL' },
+    select: { targetValue: true },
+  });
+  if (!obj) throw new Error('Objectif introuvable : un objectif à Mesure « Manuelle » qui vous est assigné est requis.');
+  const target = obj.targetValue != null ? Number(obj.targetValue) : 0;
+  if (!(target > 0)) throw new Error('L’objectif lié doit avoir une cible chiffrée.');
+  return target;
+}
+
+/** Bloque le passage « Traité » d'une tâche liée tant que la cible n'est pas atteinte à 100 %. */
+function assertTaskCompletable(target: number | null, realized: number | null): void {
+  if (target != null && target > 0 && !(Number(realized ?? 0) >= target)) {
+    throw new Error('Cette tâche ne peut être marquée « Traité » : l’objectif lié n’est pas atteint à 100 %.');
+  }
+}
+
+/** Recalcule l'avancement d'un objectif = quantité réalisée cumulée des tâches liées / cible. */
+async function recomputeObjectiveProgress(db: ReturnType<typeof getDb>, objectiveId: number): Promise<void> {
+  const obj = await db.performanceObjective.findFirst({ where: { id: objectiveId, deletedAt: null }, select: { targetValue: true } });
+  if (!obj || obj.targetValue == null || Number(obj.targetValue) <= 0) return;
+  const agg = await db.crmActivity.aggregate({ where: { objectiveId }, _sum: { objectiveRealized: true } });
+  const realized = Number(agg._sum.objectiveRealized ?? 0);
+  // On conserve l'excédent au-delà de 100 % (ex. 120 %) — pas de plafond haut.
+  const progress = Math.max(0, Math.round((realized / Number(obj.targetValue)) * 100));
+  await db.performanceObjective.update({ where: { id: objectiveId }, data: { progress } });
+}
 
 export function registerCrmIPC(): void {
 
@@ -170,6 +215,7 @@ export function registerCrmIPC(): void {
           programme: { select: { id: true, reference: true, nom: true } },
           invoice: { select: { id: true, reference: true } },
           installment: { select: { id: true, installmentNumber: true, convention: { select: { reference: true } } } },
+          objective: { select: { id: true, title: true, targetValue: true, unit: true, measureType: true, year: true } },
           attachments: {
             where: { deletedAt: null },
             select: { id: true, name: true, type: true, size: true, numeroArchive: true, uploadedAt: true },
@@ -192,7 +238,14 @@ export function registerCrmIPC(): void {
       const parsed = activitySchema.safeParse(payload);
       if (!parsed.success) return { success: false, error: parsed.error.format() };
       const db = getDb();
-      const d = parsed.data;
+      const d = parsed.data as any;
+      // Lien objectif (réservé aux tâches) : validation + garde de complétion.
+      let objTarget: number | null = null;
+      if (d.objectiveId != null) {
+        if (d.type !== 'TASK') return { success: false, error: 'Un objectif ne peut être lié qu’à une tâche.' };
+        objTarget = await assertLinkableObjective(db, session, d.objectiveId);
+      }
+      if (d.status === 'TRAITE' && d.objectiveId != null) assertTaskCompletable(objTarget, d.objectiveRealized ?? null);
       const activity = await db.crmActivity.create({
         data: {
           type: d.type,
@@ -213,9 +266,12 @@ export function registerCrmIPC(): void {
           invoiceId: d.invoiceId ?? null,
           installmentId: d.installmentId ?? null,
           documentId: d.documentId ?? null,
+          objectiveId: d.type === 'TASK' ? (d.objectiveId ?? null) : null,
+          objectiveRealized: d.type === 'TASK' && d.objectiveId != null ? (d.objectiveRealized ?? null) : null,
           createdById: session.userId,
         } as any,
       });
+      if (activity.objectiveId) await recomputeObjectiveProgress(db, activity.objectiveId);
       logger.info(`CRM activity created: ${activity.id}`);
       return { success: true, data: activity };
     } catch (error: any) {
@@ -237,13 +293,33 @@ export function registerCrmIPC(): void {
         : { id };
       const existing = await db.crmActivity.findFirst({
         where: lookupWhere,
-        select: { id: true },
+        select: { id: true, type: true, status: true, objectiveId: true, objectiveRealized: true },
       });
       if (!existing) return { success: false, error: 'Activité introuvable ou inaccessible' };
       const d = parsed.data as any;
       if (d.dueDate) d.dueDate = new Date(d.dueDate);
       if (d.completedAt) d.completedAt = new Date(d.completedAt);
+      // Valeurs finales après application du payload partiel.
+      const finalType = d.type ?? existing.type;
+      const finalObjectiveId = 'objectiveId' in d ? (d.objectiveId ?? null) : existing.objectiveId;
+      const finalRealized = 'objectiveRealized' in d
+        ? (d.objectiveRealized ?? null)
+        : (existing.objectiveRealized != null ? Number(existing.objectiveRealized) : null);
+      const finalStatus = d.status ?? existing.status;
+      let objTarget: number | null = null;
+      if (finalObjectiveId != null) {
+        if (finalType !== 'TASK') return { success: false, error: 'Un objectif ne peut être lié qu’à une tâche.' };
+        objTarget = await assertLinkableObjective(db, session, finalObjectiveId);
+      }
+      if (finalStatus === 'TRAITE' && finalObjectiveId != null) assertTaskCompletable(objTarget, finalRealized);
+      // Une tâche sans objectif ne conserve pas de quantité réalisée.
+      if (finalObjectiveId == null) { d.objectiveId = null; d.objectiveRealized = null; }
       const activity = await db.crmActivity.update({ where: { id }, data: d });
+      // Recalcule l'avancement des objectifs impactés (ancien et nouveau).
+      const affected = new Set<number>();
+      if (existing.objectiveId) affected.add(existing.objectiveId);
+      if (finalObjectiveId) affected.add(finalObjectiveId);
+      for (const oid of affected) await recomputeObjectiveProgress(db, oid);
       return { success: true, data: activity };
     } catch (error: any) {
       return { success: false, error: error.message };
@@ -275,13 +351,19 @@ export function registerCrmIPC(): void {
         : { id };
       const existing = await db.crmActivity.findFirst({
         where: lookupWhere,
-        select: { id: true },
+        select: { id: true, objectiveId: true, objectiveRealized: true, objective: { select: { targetValue: true } } },
       });
       if (!existing) return { success: false, error: 'Activité introuvable ou inaccessible' };
+      // Tâche liée à un objectif : n'autorise « Traité » qu'à 100 % de la cible.
+      if (existing.objectiveId) {
+        const target = existing.objective?.targetValue != null ? Number(existing.objective.targetValue) : 0;
+        assertTaskCompletable(target, existing.objectiveRealized != null ? Number(existing.objectiveRealized) : null);
+      }
       const activity = await db.crmActivity.update({
         where: { id },
         data: { status: 'TRAITE', completedAt: new Date() },
       });
+      if (existing.objectiveId) await recomputeObjectiveProgress(db, existing.objectiveId);
       return { success: true, data: activity };
     } catch (error: any) {
       return { success: false, error: error.message };

@@ -66,6 +66,7 @@ const attestationBaseSchema = z.object({
   templateId: z.number().int().positive().optional(),
   emittedAt: z.string().optional(),
   amount: z.number().optional(),
+  prixTotalBien: z.number().optional(),
   notes: z.string().optional(),
 });
 
@@ -257,8 +258,8 @@ async function assertConventionEligibleForAttestation(
     where: { id: conventionId, deletedAt: null },
     select: {
       id: true, type: true, status: true, saleAmount: true, fraisOuvertureDossier: true,
-      additionalAmount: true, apportInitial: true, paymentModalites: true,
-      installments: { select: { id: true, amount: true, status: true } },
+      additionalAmount: true, apportInitial: true, paymentModalites: true, priorConventionDate: true, priorSolde: true,
+      installments: { select: { id: true, amount: true, paidAmount: true, status: true } },
     },
   });
   if (!c) throw new Error('Convention liée introuvable');
@@ -273,6 +274,21 @@ async function assertConventionEligibleForAttestation(
     );
   }
   if (attestationType === 'SOLDE' || attestationType === 'TRANSFERT_PROPRIETE') {
+    if (isHeritedConvention(c)) {
+      // Convention héritée : le solde est celui de ses échéances (montant restant
+      // dû = amount − paidAmount) si elle en a, sinon le solde antérieur importé
+      // (`priorSolde`). On autorise l'attestation dès que ce solde est ≤ 0.
+      const balance = heritedBalance(c);
+      if (balance == null) {
+        throw new Error('Solde de la convention héritée indéterminé : aucune échéance ni solde antérieur renseigné.');
+      }
+      if (Math.round(balance * 100) / 100 > 0) {
+        throw new Error(
+          `Le solde des échéances de la convention héritée doit être inférieur ou égal à 0 pour émettre cette attestation (solde restant : ${Math.round(balance)}).`,
+        );
+      }
+      return;
+    }
     const sale = Number(c.saleAmount ?? 0);
     if (!sale) {
       throw new Error('La convention liée n\'a pas de montant de souscription : solde indéterminé');
@@ -298,6 +314,28 @@ async function assertConventionEligibleForAttestation(
   }
 }
 
+/** Types de conventions « héritées » (importées de la base antérieure). */
+const HERITED_CONVENTION_TYPES = ['AVENANT_DELAI_HERITE', 'AVENANT_TRANSFERT_SITE_HERITE', 'AVENANT_RESILIATION_HERITE'];
+
+/** Vrai si la convention est héritée (date d'origine importée ou type hérité). */
+function isHeritedConvention(c: { type?: string | null; priorConventionDate?: Date | null }): boolean {
+  return c.priorConventionDate != null || (c.type != null && HERITED_CONVENTION_TYPES.includes(c.type));
+}
+
+/**
+ * Solde d'une convention héritée : montant restant dû sur ses échéances non
+ * annulées (amount − paidAmount) si elle en a, sinon le solde antérieur importé
+ * (`priorSolde`). `null` si indéterminé (ni échéance, ni solde antérieur).
+ */
+function heritedBalance(c: { priorSolde?: any; installments?: Array<{ amount: any; paidAmount: any; status: string }> }): number | null {
+  const active = (c.installments ?? []).filter((i) => i.status !== 'ANNULE');
+  if (active.length > 0) {
+    return active.reduce((s, i) => s + (Number(i.amount) - Number(i.paidAmount ?? 0)), 0);
+  }
+  if (c.priorSolde != null) return Number(c.priorSolde);
+  return null;
+}
+
 /**
  * Vérifie qu'une souscription héritée (échéances sans convention) est soldée pour
  * le couple (client, terrain). Le solde = somme des montants restant dus
@@ -311,33 +349,42 @@ async function assertConventionEligibleForAttestation(
 async function assertLegacySubscriptionSettled(
   db: ReturnType<typeof getDb>,
   clientId: number,
-  terrainId: number,
+  terrainId?: number | null,
 ): Promise<void> {
-  const installments = await db.saleInstallment.findMany({
-    where: {
-      conventionId: null,
-      clientId,
-      status: { not: 'ANNULE' },
-      OR: [
-        { terrainId },
-        { terrainLinks: { some: { terrainId } } },
-      ],
-    },
+  // Terrain optionnel : s'il est fourni, on cible la souscription de ce terrain ;
+  // sinon on considère toutes les échéances héritées du client (souscription
+  // héritée sans terrain rattaché).
+  const clientWhere: any = { conventionId: null, clientId, status: { not: 'ANNULE' } };
+  const where: any = { ...clientWhere };
+  if (terrainId) {
+    where.OR = [{ terrainId }, { terrainLinks: { some: { terrainId } } }];
+  }
+  let installments = await db.saleInstallment.findMany({
+    where,
     select: { amount: true, paidAmount: true },
   });
-  if (installments.length === 0) {
-    throw new Error(
-      'Aucune échéance héritée pour ce client et ce terrain : solde indéterminé',
-    );
+  // Repli : un terrain a été précisé mais aucune échéance héritée n'y correspond
+  // → on retombe sur l'ensemble des échéances héritées du client (la souscription
+  // héritée peut ne pas être rattachée à ce terrain).
+  if (installments.length === 0 && terrainId) {
+    installments = await db.saleInstallment.findMany({
+      where: clientWhere,
+      select: { amount: true, paidAmount: true },
+    });
   }
+  if (installments.length === 0) {
+    throw new Error('Aucune échéance héritée pour ce client : solde indéterminé');
+  }
+  // Solde net = total souscrit − total réglé (peut être ≤ 0). On autorise
+  // l'attestation dès que ce solde est inférieur ou égal à 0.
   const balance = installments.reduce(
-    (s, i) => s + Math.max(0, Number(i.amount) - Number(i.paidAmount ?? 0)),
+    (s, i) => s + (Number(i.amount) - Number(i.paidAmount ?? 0)),
     0,
   );
   // Tolérance d'arrondi (centimes) avant de bloquer.
   if (Math.round(balance * 100) / 100 > 0) {
     throw new Error(
-      `Le solde de la souscription héritée doit être à 0 pour émettre cette attestation `
+      `Le solde de la souscription héritée doit être inférieur ou égal à 0 pour émettre cette attestation `
       + `(solde restant : ${Math.round(balance)}).`,
     );
   }
@@ -438,10 +485,9 @@ export function registerAttestationsIPC(): void {
       const isLegacySolde = d.type === 'SOLDE' && !d.conventionId;
       if (isLegacySolde) {
         checkLegacySoldeRole(session);
-        if (!d.terrainId) {
-          return { success: false, error: 'Une attestation de solde sur une échéance héritée nécessite un terrain' };
-        }
-        await assertLegacySubscriptionSettled(db, d.clientId, d.terrainId);
+        // Terrain optionnel : une souscription héritée peut n'être rattachée à
+        // aucun terrain (échéances importées sans terrain).
+        await assertLegacySubscriptionSettled(db, d.clientId, d.terrainId ?? null);
       } else {
         checkWriteRole(session, WRITE_ROLES);
         // Vérifie l'éligibilité de la convention liée (pas d'avenant /
@@ -461,6 +507,7 @@ export function registerAttestationsIPC(): void {
         emittedAt: d.emittedAt ? new Date(d.emittedAt) : new Date(),
         emittedById: session.userId,
         amount: d.amount,
+        prixTotalBien: d.prixTotalBien,
         notes: d.notes,
       };
       const attestation = await db.attestation.create({ data, include: INCLUDE });
@@ -497,10 +544,7 @@ export function registerAttestationsIPC(): void {
       const isLegacySolde = effectiveType === 'SOLDE' && !effectiveConventionId;
       if (isLegacySolde) {
         checkLegacySoldeRole(session);
-        if (!effectiveTerrainId) {
-          return { success: false, error: 'Une attestation de solde sur une échéance héritée nécessite un terrain' };
-        }
-        await assertLegacySubscriptionSettled(db, effectiveClientId, effectiveTerrainId);
+        await assertLegacySubscriptionSettled(db, effectiveClientId, effectiveTerrainId ?? null);
       } else {
         checkWriteRole(session, WRITE_ROLES);
         await assertConventionEligibleForAttestation(db, effectiveConventionId, effectiveType);
@@ -570,25 +614,29 @@ export function registerAttestationsIPC(): void {
       if (!session) return { success: false, error: 'Session expirée' };
       checkRole(session, READ_ROLES);
       const cId = Number(clientId);
-      const tId = Number(terrainId);
-      if (!cId || !tId) return { success: false, error: 'Client et terrain requis' };
+      const tId = Number(terrainId) || 0; // 0/absent = toutes les échéances du client
+      if (!cId) return { success: false, error: 'Client requis' };
       const db = getDb();
-      const installments = await db.saleInstallment.findMany({
-        where: {
-          conventionId: null,
-          clientId: cId,
-          status: { not: 'ANNULE' },
-          OR: [
-            { terrainId: tId },
-            { terrainLinks: { some: { terrainId: tId } } },
-          ],
-        },
+      const clientWhere: any = { conventionId: null, clientId: cId, status: { not: 'ANNULE' } };
+      const where: any = { ...clientWhere };
+      if (tId) where.OR = [{ terrainId: tId }, { terrainLinks: { some: { terrainId: tId } } }];
+      let installments = await db.saleInstallment.findMany({
+        where,
         orderBy: { installmentNumber: 'asc' },
         select: { amount: true, paidAmount: true, detailsSouscription: true },
       });
+      // Repli : terrain précisé sans échéance rattachée → toutes les échéances du client.
+      if (installments.length === 0 && tId) {
+        installments = await db.saleInstallment.findMany({
+          where: clientWhere,
+          orderBy: { installmentNumber: 'asc' },
+          select: { amount: true, paidAmount: true, detailsSouscription: true },
+        });
+      }
       const total = installments.reduce((s, i) => s + Number(i.amount), 0);
       const paid = installments.reduce((s, i) => s + Number(i.paidAmount ?? 0), 0);
-      const balance = Math.max(0, Math.round((total - paid) * 100) / 100);
+      // Solde net (peut être ≤ 0 en cas de règlement intégral ou de trop-perçu).
+      const balance = Math.round((total - paid) * 100) / 100;
       const detailsSouscription = installments.find((i) => i.detailsSouscription)?.detailsSouscription ?? null;
       return ser({
         success: true,

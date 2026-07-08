@@ -5,7 +5,7 @@ import {
   LayoutDashboard, Users, UserSearch, UserCheck, Home, Building2,
   FileText, Calculator, MessageSquare, CalendarClock, Archive, Settings,
   Map, Landmark, Percent, Wallet, Building, PiggyBank, Briefcase, FileSpreadsheet, UserCog, ReceiptText, CalendarDays, Clock,
-  BarChart3, ChevronDown, UserPlus, IdCard,
+  BarChart3, ChevronDown, UserPlus, IdCard, Trophy, Gauge, Target, ClipboardCheck, Sliders,
 } from 'lucide-react';
 import { useAuthStore } from '../../stores/auth.store';
 
@@ -57,6 +57,18 @@ const navItems: NavEntry[] = [
       { label: 'Bulletins de paie', to: '/hr/payslips', icon: <ReceiptText className="h-5 w-5" />, roles: ['SUPER_ADMIN', 'ADMIN', 'RH', 'ACCOUNTANT', 'MANAGER'] },
       { label: 'Congés & absences', to: '/hr/leave', icon: <CalendarDays className="h-5 w-5" /> },
       { label: 'Pointage', to: '/hr/attendance', icon: <Clock className="h-5 w-5" />, roles: ['SUPER_ADMIN', 'ADMIN', 'RH', 'MANAGER', 'ASSISTANTE_DIRECTION'] },
+    ],
+  },
+  {
+    label: 'Performances',
+    icon: <Trophy className="h-5 w-5" />,
+    roles: ['SUPER_ADMIN', 'ADMIN', 'RH', 'MANAGER'],
+    children: [
+      { label: 'Tableau de bord', to: '/performance/dashboard', icon: <Gauge className="h-5 w-5" />, roles: ['SUPER_ADMIN', 'ADMIN', 'RH'] },
+      { label: 'Objectifs', to: '/performance/objectives', icon: <Target className="h-5 w-5" /> },
+      { label: 'Évaluations', to: '/performance/evaluations', icon: <ClipboardCheck className="h-5 w-5" /> },
+      { label: 'Classements', to: '/performance/rankings', icon: <Trophy className="h-5 w-5" /> },
+      { label: 'Configuration', to: '/performance/settings', icon: <Sliders className="h-5 w-5" />, roles: ['SUPER_ADMIN', 'ADMIN', 'RH'] },
     ],
   },
   // Self-service : accessible à tout utilisateur connecté (son propre dossier).

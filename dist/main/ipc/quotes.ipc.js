@@ -45,6 +45,7 @@ const itemSchema = zod_1.z.object({
     designation: zod_1.z.string().min(1, 'Désignation requise'),
     category: zod_1.z.string().nullable().optional(),
     quantity: zod_1.z.number().positive().default(1),
+    unit: zod_1.z.string().nullable().optional(),
     unitPrice: zod_1.z.number().min(0).default(0),
 });
 const quoteBaseSchema = zod_1.z.object({
@@ -303,6 +304,7 @@ function registerQuotesIPC() {
                             designation: it.designation,
                             category: it.category?.trim() || null,
                             quantity: String(it.quantity),
+                            unit: it.unit?.trim() || null,
                             unitPrice: String(it.unitPrice),
                             total: String(lines[i].total),
                             order: i,
@@ -399,6 +401,7 @@ function registerQuotesIPC() {
                             designation: it.designation,
                             category: it.category?.trim() || null,
                             quantity: String(it.quantity),
+                            unit: it.unit?.trim() || null,
                             unitPrice: String(it.unitPrice),
                             total: String(lines[i].total),
                             order: i,
@@ -604,6 +607,85 @@ function registerQuotesIPC() {
         }
         catch (error) {
             logger_1.default.error('quotes:convert error', error.message);
+            return { success: false, error: error.message };
+        }
+    });
+    /* ─── Unités de mesure (référentiel partagé `KpiUnit`) ─────────────── */
+    // Réutilise le même référentiel d'unités que le module Performances, afin que
+    // la liste proposée sur les lignes de devis soit celle de « Nouvel objectif ».
+    const unitSchema = zod_1.z.object({ label: zod_1.z.string().min(1, 'Libellé requis'), isActive: zod_1.z.boolean().optional() });
+    electron_1.ipcMain.handle('quotes:listUnits', async (_event, { token, includeInactive }) => {
+        try {
+            const session = (0, auth_service_1.getSession)(token);
+            if (!session)
+                return { success: false, error: 'Session expirée' };
+            (0, auth_service_1.checkRole)(session, READ_ROLES);
+            const where = { deletedAt: null };
+            if (!includeInactive)
+                where.isActive = true;
+            const data = await (0, db_service_1.getDb)().kpiUnit.findMany({ where, orderBy: { label: 'asc' } });
+            return { success: true, data: ser(data) };
+        }
+        catch (error) {
+            logger_1.default.error('quotes:listUnits error', error.message);
+            return { success: false, error: error.message };
+        }
+    });
+    electron_1.ipcMain.handle('quotes:createUnit', async (_event, { token, payload }) => {
+        try {
+            const session = (0, auth_service_1.getSession)(token);
+            if (!session)
+                return { success: false, error: 'Session expirée' };
+            (0, auth_service_1.checkRole)(session, WRITE_ROLES);
+            const parsed = unitSchema.safeParse(payload);
+            if (!parsed.success)
+                return { success: false, error: parsed.error.issues[0]?.message ?? 'Données invalides' };
+            const db = (0, db_service_1.getDb)();
+            const label = parsed.data.label.trim();
+            const existing = await db.kpiUnit.findUnique({ where: { label } });
+            if (existing) {
+                const data = await db.kpiUnit.update({ where: { id: existing.id }, data: { isActive: true, deletedAt: null } });
+                return { success: true, data: ser(data) };
+            }
+            const data = await db.kpiUnit.create({ data: { label, isActive: parsed.data.isActive ?? true } });
+            return { success: true, data: ser(data) };
+        }
+        catch (error) {
+            logger_1.default.error('quotes:createUnit error', error.message);
+            return { success: false, error: error.message };
+        }
+    });
+    electron_1.ipcMain.handle('quotes:updateUnit', async (_event, { token, id, payload }) => {
+        try {
+            const session = (0, auth_service_1.getSession)(token);
+            if (!session)
+                return { success: false, error: 'Session expirée' };
+            (0, auth_service_1.checkRole)(session, WRITE_ROLES);
+            const parsed = unitSchema.partial().safeParse(payload);
+            if (!parsed.success)
+                return { success: false, error: parsed.error.issues[0]?.message ?? 'Données invalides' };
+            const data = { ...parsed.data };
+            if (typeof data.label === 'string')
+                data.label = data.label.trim();
+            const updated = await (0, db_service_1.getDb)().kpiUnit.update({ where: { id: Number(id) }, data });
+            return { success: true, data: ser(updated) };
+        }
+        catch (error) {
+            logger_1.default.error('quotes:updateUnit error', error.message);
+            return { success: false, error: error.message };
+        }
+    });
+    electron_1.ipcMain.handle('quotes:deleteUnit', async (_event, { token, id }) => {
+        try {
+            const session = (0, auth_service_1.getSession)(token);
+            if (!session)
+                return { success: false, error: 'Session expirée' };
+            (0, auth_service_1.checkRole)(session, WRITE_ROLES);
+            await (0, db_service_1.getDb)().kpiUnit.update({ where: { id: Number(id) }, data: { deletedAt: new Date(), isActive: false } });
+            return { success: true };
+        }
+        catch (error) {
+            logger_1.default.error('quotes:deleteUnit error', error.message);
             return { success: false, error: error.message };
         }
     });

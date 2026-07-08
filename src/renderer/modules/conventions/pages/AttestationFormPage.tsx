@@ -53,14 +53,38 @@ function conventionOptionLabel(c: any): string {
   return `${c.reference} — ${t}${lotPart}`;
 }
 
+const HERITED_CONVENTION_TYPES = ['AVENANT_DELAI_HERITE', 'AVENANT_TRANSFERT_SITE_HERITE', 'AVENANT_RESILIATION_HERITE'];
+
+/** Vrai si la convention est héritée (date d'origine importée ou type hérité). */
+function isHeritedConvention(c: any): boolean {
+  return !!c && (c.priorConventionDate != null || HERITED_CONVENTION_TYPES.includes(c.type));
+}
+
+/** Montant souscrit d'une convention héritée (échéances, sinon montants antérieurs). */
+function heritedTotal(c: any): number {
+  const active = (c?.installments ?? []).filter((i: any) => i.status !== 'ANNULE');
+  if (active.length > 0) return active.reduce((s: number, i: any) => s + (Number(i.amount) || 0), 0);
+  return Number(c?.priorTotalBiens ?? c?.priorTotalVersements ?? 0);
+}
+
 /**
  * Solde d'une convention de souscription : (prix de vente + frais d'ouverture
  * de dossier + montant supplémentaire éventuel) − apport initial − somme des
  * échéances réglées. Les frais de démarches ACD ne sont jamais inclus.
- * Retourne `null` si le calcul n'est pas significatif (pas de prix de vente).
+ *
+ * Pour une **convention héritée**, le solde est celui de ses échéances (montant
+ * restant dû = amount − paidAmount sur les échéances non annulées) — il peut
+ * être ≤ 0. Retourne `null` si le calcul n'est pas significatif.
  */
 function computeSubscriptionBalance(c: any): number | null {
   if (!c) return null;
+  if (isHeritedConvention(c)) {
+    const installments: any[] = (c.installments ?? []).filter((i: any) => i.status !== 'ANNULE');
+    if (installments.length > 0) {
+      return installments.reduce((s, i) => s + (Number(i.amount) - Number(i.paidAmount ?? 0)), 0);
+    }
+    return c.priorSolde != null ? Number(c.priorSolde) : null;
+  }
   const sale = Number(c.saleAmount ?? 0);
   if (!sale) return null;
   const fraisOuv = Number(c.fraisOuvertureDossier ?? 0);
@@ -114,6 +138,7 @@ export default function AttestationFormPage() {
   const [legacyMode, setLegacyMode] = useState(legacyParam);
   const [emittedAt, setEmittedAt] = useState(toDateInput(new Date()));
   const [amount, setAmount] = useState('');
+  const [prixTotalBien, setPrixTotalBien] = useState('');
   const [notes, setNotes] = useState('');
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
@@ -198,9 +223,11 @@ export default function AttestationFormPage() {
       setConventionId(a.conventionId ? String(a.conventionId) : '');
       setEmittedAt(toDateInput(a.emittedAt));
       setAmount(a.amount != null ? String(a.amount) : '');
+      setPrixTotalBien(a.prixTotalBien != null ? String(a.prixTotalBien) : '');
       setNotes(a.notes ?? '');
-      // Attestation de solde sans convention rattachée à un terrain = héritée.
-      setLegacyMode(a.type === 'SOLDE' && !a.conventionId && !!a.terrainId);
+      // Attestation de solde sans convention = souscription héritée (avec ou
+      // sans terrain rattaché).
+      setLegacyMode(a.type === 'SOLDE' && !a.conventionId);
     }
   }, [res, isEdit]);
 
@@ -227,10 +254,14 @@ export default function AttestationFormPage() {
       setAmount('');
       return;
     }
-    if (selectedConvention?.saleAmount != null) {
+    // Convention héritée sans prix de vente : on aligne le montant sur le total
+    // souscrit (somme de ses échéances).
+    if (isHeritedConvention(selectedConvention) && selectedConvention?.saleAmount == null) {
+      if (!isEdit) setAmount(String(Math.round(heritedTotal(selectedConvention))));
+    } else if (selectedConvention?.saleAmount != null) {
       setAmount(String(Number(selectedConvention.saleAmount)));
     }
-  }, [legacyMode, hasLinkedConvention, selectedConvention?.id, selectedConvention?.saleAmount]);
+  }, [legacyMode, hasLinkedConvention, isEdit, selectedConvention?.id, selectedConvention?.saleAmount]);
 
   // Mode hérité : aligne le montant sur le total souscrit (somme des échéances
   // héritées du couple client/terrain). Ignoré à l'édition pour préserver la
@@ -362,8 +393,10 @@ export default function AttestationFormPage() {
       return;
     }
     if (legacyMode) {
-      // Souscription héritée : terrain obligatoire et solde (client + terrain)
-      // strictement nul.
+      // Souscription héritée : le terrain de souscription est obligatoire (porté
+      // sur l'attestation). Le solde est vérifié côté serveur sur les échéances
+      // héritées du client (repli si le terrain choisi n'a pas d'échéance
+      // rattachée) et doit être inférieur ou égal à 0.
       if (!terrainId) {
         setError('Sélectionnez le terrain de la souscription héritée');
         return;
@@ -373,7 +406,7 @@ export default function AttestationFormPage() {
         return;
       }
       if (legacyBalance > 0) {
-        setError(`Le solde de la souscription héritée doit être à 0 pour émettre cette attestation (solde restant : ${formatCurrency(legacyBalance)}).`);
+        setError(`Le solde de la souscription héritée doit être inférieur ou égal à 0 pour émettre cette attestation (solde restant : ${formatCurrency(legacyBalance)}).`);
         return;
       }
     } else {
@@ -413,6 +446,8 @@ export default function AttestationFormPage() {
       // Le montant n'est envoyé que lorsque le champ est visible — c'est-à-dire
       // pour SOLDE / TRANSFERT_PROPRIETE ou lorsqu'une convention est liée.
       amount: showSubscriptionFields && amount ? Number(amount) : undefined,
+      // Prix total du bien — saisi pour l'attestation de solde héritée.
+      prixTotalBien: legacyMode && prixTotalBien ? Number(prixTotalBien) : undefined,
       notes: notes || undefined,
     };
     const r = isEdit
@@ -439,7 +474,7 @@ export default function AttestationFormPage() {
             <p className="mb-4 text-sm text-indigo-700 bg-indigo-50 border border-indigo-100 rounded-lg px-3 py-2">
               Attestation de solde sur une <strong>souscription héritée</strong> (échéances sans convention).
               Émission réservée aux administrateurs, managers et comptables, et possible uniquement lorsque le
-              solde du couple client / terrain est à 0.
+              solde des échéances héritées du client est inférieur ou égal à 0.
             </p>
           )}
           <div className="grid grid-cols-2 gap-4">
@@ -482,7 +517,8 @@ export default function AttestationFormPage() {
                 onSearch={searchTerrains} onChange={(v) => setTerrainId(v)} />
             </div>
             <p className="mt-2 text-xs text-slate-400">
-              Le solde est calculé sur l'ensemble des échéances héritées de ce client rattachées au terrain choisi.
+              Le solde est vérifié sur les échéances héritées du client (le terrain choisi figure sur l'attestation ;
+              si aucune échéance n'y est rattachée, le solde porte sur l'ensemble des échéances héritées du client).
             </p>
           </Card>
         ) : !isSoldeOrTransfert && (
@@ -544,6 +580,19 @@ export default function AttestationFormPage() {
                     }
                   />
                 )}
+              </div>
+            )}
+
+            {/* Prix total du bien — attestation de solde sur échéance héritée. */}
+            {legacyMode && (
+              <div className="grid grid-cols-2 gap-4">
+                <Input
+                  label="Prix Total du bien (XOF)"
+                  type="number"
+                  value={prixTotalBien}
+                  onChange={(e) => setPrixTotalBien(e.target.value)}
+                  placeholder="Prix total du bien"
+                />
               </div>
             )}
 

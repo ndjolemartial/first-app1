@@ -313,6 +313,70 @@ export function useContractFunctions(includeInactive = false) {
   });
 }
 
+/* ─── Postes / Fonctions (référentiel du champ « Poste ») ───────── */
+
+export function useJobPositions(includeInactive = false) {
+  return useQuery({
+    queryKey: ['job-positions', includeInactive],
+    queryFn: () => ipc().jobPositions.list(token(), includeInactive),
+  });
+}
+
+export function useSaveJobPosition() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, payload }: { id?: number; payload: object }) =>
+      id ? ipc().jobPositions.update(token(), id, payload) : ipc().jobPositions.create(token(), payload),
+    onSuccess: (res) => {
+      if (res.success) { qc.invalidateQueries({ queryKey: ['job-positions'] }); toast.success('Poste enregistré'); }
+      else toast.error(String(res.error));
+    },
+  });
+}
+
+export function useDeleteJobPosition() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: number) => ipc().jobPositions.delete(token(), id),
+    onSuccess: (res) => {
+      if (res.success) { qc.invalidateQueries({ queryKey: ['job-positions'] }); toast.success('Poste supprimé'); }
+      else toast.error(String(res.error));
+    },
+  });
+}
+
+/* ─── Départements / Services (référentiel du champ « Département ») ─── */
+
+export function useDepartments(includeInactive = false) {
+  return useQuery({
+    queryKey: ['departments', includeInactive],
+    queryFn: () => ipc().departments.list(token(), includeInactive),
+  });
+}
+
+export function useSaveDepartment() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, payload }: { id?: number; payload: object }) =>
+      id ? ipc().departments.update(token(), id, payload) : ipc().departments.create(token(), payload),
+    onSuccess: (res) => {
+      if (res.success) { qc.invalidateQueries({ queryKey: ['departments'] }); toast.success('Département enregistré'); }
+      else toast.error(String(res.error));
+    },
+  });
+}
+
+export function useDeleteDepartment() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: number) => ipc().departments.delete(token(), id),
+    onSuccess: (res) => {
+      if (res.success) { qc.invalidateQueries({ queryKey: ['departments'] }); toast.success('Département supprimé'); }
+      else toast.error(String(res.error));
+    },
+  });
+}
+
 /* ─── Commissions sur activité (catalogue avec taux par défaut) ── */
 
 export function useCommissionActivities() {

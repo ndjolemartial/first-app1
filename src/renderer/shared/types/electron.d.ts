@@ -135,6 +135,10 @@ interface Window {
       cancel: (token: string, id: number) => Promise<IpcResponse<any>>;
       delete: (token: string, id: number) => Promise<IpcResponse>;
       convert: (token: string, id: number, options: object) => Promise<IpcResponse<any>>;
+      listUnits: (token: string, includeInactive?: boolean) => Promise<IpcResponse<any[]>>;
+      createUnit: (token: string, payload: object) => Promise<IpcResponse<any>>;
+      updateUnit: (token: string, id: number, payload: object) => Promise<IpcResponse<any>>;
+      deleteUnit: (token: string, id: number) => Promise<IpcResponse>;
     };
     quoteTemplates: {
       list: (token: string, filters?: object, page?: number, limit?: number) => Promise<IpcResponse<any[]>>;
@@ -177,6 +181,8 @@ interface Window {
         recipientId: number;
         channel: 'EMAIL' | 'WHATSAPP';
       }) => Promise<IpcResponse<{ to: string; subject: string; body: string; entityTitle: string }>>;
+      getTracking: (token: string) => Promise<IpcResponse<{ baseUrl: string }>>;
+      updateTracking: (token: string, baseUrl: string) => Promise<IpcResponse>;
     };
     crm: {
       listActivities: (token: string, filters?: object, page?: number, limit?: number) => Promise<IpcResponse<any[]>>;
@@ -350,6 +356,18 @@ interface Window {
         update: (token: string, id: number, payload: object) => Promise<IpcResponse<any>>;
         delete: (token: string, id: number) => Promise<IpcResponse>;
       };
+      jobPositions: {
+        list: (token: string, includeInactive?: boolean) => Promise<IpcResponse<any[]>>;
+        create: (token: string, payload: object) => Promise<IpcResponse<any>>;
+        update: (token: string, id: number, payload: object) => Promise<IpcResponse<any>>;
+        delete: (token: string, id: number) => Promise<IpcResponse>;
+      };
+      departments: {
+        list: (token: string, includeInactive?: boolean) => Promise<IpcResponse<any[]>>;
+        create: (token: string, payload: object) => Promise<IpcResponse<any>>;
+        update: (token: string, id: number, payload: object) => Promise<IpcResponse<any>>;
+        delete: (token: string, id: number) => Promise<IpcResponse>;
+      };
       commissionActivities: {
         list: (token: string) => Promise<IpcResponse<Array<{ key: string; label: string; defaultRate: number }>>>;
       };
@@ -400,6 +418,74 @@ interface Window {
         bulkUpsert: (token: string, records: object[]) => Promise<IpcResponse<{ saved: number }>>;
       };
     };
+    performance: {
+      kpis: {
+        list: (token: string, includeInactive?: boolean) => Promise<IpcResponse<any[]>>;
+        create: (token: string, payload: object) => Promise<IpcResponse<any>>;
+        update: (token: string, id: number, payload: object) => Promise<IpcResponse<any>>;
+        delete: (token: string, id: number) => Promise<IpcResponse>;
+      };
+      weights: {
+        list: (token: string) => Promise<IpcResponse<any[]>>;
+        upsert: (token: string, id: number | null, payload: object) => Promise<IpcResponse<any>>;
+        delete: (token: string, id: number) => Promise<IpcResponse>;
+      };
+      units: {
+        list: (token: string, includeInactive?: boolean) => Promise<IpcResponse<any[]>>;
+        create: (token: string, payload: object) => Promise<IpcResponse<any>>;
+        update: (token: string, id: number, payload: object) => Promise<IpcResponse<any>>;
+        delete: (token: string, id: number) => Promise<IpcResponse>;
+      };
+      employees: {
+        list: (token: string) => Promise<IpcResponse<any[]>>;
+      };
+      objectives: {
+        list: (token: string, filters?: object) => Promise<IpcResponse<any[]>>;
+        getById: (token: string, id: number) => Promise<IpcResponse<any>>;
+        create: (token: string, payload: object) => Promise<IpcResponse<any>>;
+        update: (token: string, id: number, payload: object) => Promise<IpcResponse<any>>;
+        delete: (token: string, id: number) => Promise<IpcResponse>;
+        duplicate: (token: string, source: object, target: object) => Promise<IpcResponse<{ created: number; skipped: number; total: number }>>;
+      };
+      evaluations: {
+        list: (token: string, filters?: object) => Promise<IpcResponse<any[]>>;
+        getById: (token: string, id: number) => Promise<IpcResponse<any>>;
+        create: (token: string, payload: object) => Promise<IpcResponse<any>>;
+        update: (token: string, id: number, payload: object) => Promise<IpcResponse<any>>;
+        computeKpis: (token: string, id: number) => Promise<IpcResponse<any>>;
+        submit: (token: string, id: number) => Promise<IpcResponse<any>>;
+        sign: (token: string, id: number, level: 'MANAGER' | 'EMPLOYEE' | 'DIRECTION') => Promise<IpcResponse<any>>;
+        refuse: (token: string, id: number, reason?: string) => Promise<IpcResponse<any>>;
+        delete: (token: string, id: number) => Promise<IpcResponse>;
+      };
+      plans: {
+        list: (token: string, filters?: object) => Promise<IpcResponse<any[]>>;
+        create: (token: string, payload: object) => Promise<IpcResponse<any>>;
+        update: (token: string, id: number, payload: object) => Promise<IpcResponse<any>>;
+        delete: (token: string, id: number) => Promise<IpcResponse>;
+      };
+      rankings: {
+        get: (token: string, periodType: string, refDate?: string, basis?: string) => Promise<IpcResponse<{
+          basis: string;
+          period: { start: string; end: string; label: string };
+          entries: Array<{ employeeId: number; employeeName: string; matricule: string; poste: string | null; departement: string | null; score: number; rank: number; linked: boolean }>;
+        }>>;
+        snapshot: (token: string, periodType: string, refDate?: string, basis?: string) => Promise<IpcResponse<any>>;
+        history: (token: string, periodType?: string) => Promise<IpcResponse<any[]>>;
+        getSnapshot: (token: string, id: number) => Promise<IpcResponse<any>>;
+        deleteSnapshot: (token: string, id: number) => Promise<IpcResponse>;
+        getRoster: (token: string) => Promise<IpcResponse<{ ids: number[]; employees: any[] }>>;
+        setRoster: (token: string, ids: number[]) => Promise<IpcResponse>;
+      };
+      dashboard: (token: string) => Promise<IpcResponse<any>>;
+      me: {
+        overview: (token: string, year?: number) => Promise<IpcResponse<any>>;
+        evaluation: (token: string, id: number) => Promise<IpcResponse<any>>;
+        sign: (token: string, id: number) => Promise<IpcResponse<any>>;
+        ranking: (token: string, periodType: string, refDate?: string) => Promise<IpcResponse<any>>;
+        manualObjectives: (token: string) => Promise<IpcResponse<any[]>>;
+      };
+    };
     geo: {
       resolveMapLink: (
         token: string,
@@ -422,6 +508,7 @@ interface Window {
           headers: string[];
           rows: string[][];
           totalRow?: string[];
+          sectionBreakColumn?: number;
         },
       ) => Promise<IpcResponse<{ path?: string; canceled?: boolean }>>;
       print: (
@@ -433,6 +520,7 @@ interface Window {
           headers: string[];
           rows: string[][];
           totalRow?: string[];
+          sectionBreakColumn?: number;
         },
       ) => Promise<IpcResponse<{ previewing?: boolean }>>;
     };

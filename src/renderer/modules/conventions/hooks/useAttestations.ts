@@ -57,7 +57,9 @@ export function useLegacyBalance(clientId: number, terrainId: number) {
   return useQuery({
     queryKey: ['attestation-legacy-balance', clientId, terrainId],
     queryFn: () => ipc().getLegacyBalance(token(), clientId, terrainId),
-    enabled: clientId > 0 && terrainId > 0,
+    // Terrain optionnel : le solde héritée peut porter sur toutes les échéances
+    // du client (souscription sans terrain rattaché) → terrainId = 0 autorisé.
+    enabled: clientId > 0,
   });
 }
 

@@ -27,7 +27,9 @@ import { registerLotissementsIPC } from './ipc/lotissements.ipc';
 import { registerTerrainsIPC } from './ipc/terrains.ipc';
 import { registerProgrammesIPC } from './ipc/programmes.ipc';
 import { registerProjectsIPC } from './ipc/projects.ipc';
-import { registerHrIPC } from './ipc/hr.ipc';
+import { registerHrIPC, seedJobPositionsFromEmployees, seedDepartmentsFromEmployees } from './ipc/hr.ipc';
+import { registerPerformanceIPC } from './ipc/performance.ipc';
+import { seedDefaultKpis, seedKpiUnits } from './services/performance.service';
 import { registerVisitorsIPC } from './ipc/visitors.ipc';
 import { registerGeoIPC } from './ipc/geo.ipc';
 import { registerCountriesIPC } from './ipc/countries.ipc';
@@ -133,6 +135,7 @@ function registerIPC(): void {
   registerProgrammesIPC();
   registerProjectsIPC();
   registerHrIPC();
+  registerPerformanceIPC();
   registerVisitorsIPC();
   registerGeoIPC();
   registerCountriesIPC();
@@ -211,6 +214,15 @@ app.whenReady().then(async () => {
   // Catégorie GED par défaut « UPLOAD FILES » (fichiers importés sans catégorie).
   seedUploadFilesCategory()
     .catch((e) => logger.error(`Upload files category bootstrap failed: ${e.message}`));
+  // Catalogue de KPI de performance par défaut + unités (idempotent).
+  seedDefaultKpis()
+    .then(() => seedKpiUnits())
+    .catch((e) => logger.error(`Performance KPIs bootstrap failed: ${e.message}`));
+  // Référentiels postes & départements amorcés depuis les fiches employés.
+  seedJobPositionsFromEmployees()
+    .catch((e) => logger.error(`Job positions bootstrap failed: ${e.message}`));
+  seedDepartmentsFromEmployees()
+    .catch((e) => logger.error(`Departments bootstrap failed: ${e.message}`));
   setupAppMenu();
   createWindow();
   logger.info('Application started');

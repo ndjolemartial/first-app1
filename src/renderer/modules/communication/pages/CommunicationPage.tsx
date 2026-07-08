@@ -11,7 +11,8 @@ import ExportMenu, { ExportColumn } from '../../../shared/components/ExportMenu'
 import ConfirmDialog from '../../../shared/components/ui/ConfirmDialog';
 import { useAuthStore } from '../../../shared/stores/auth.store';
 import { toast } from '../../../shared/components/ui/Toast';
-import { Mail, MessageSquare, Send, RefreshCw, Trash2 } from 'lucide-react';
+import { Mail, MessageSquare, Send, RefreshCw, Trash2, Eye } from 'lucide-react';
+import MessagePreviewModal from '../components/MessagePreviewModal';
 
 const CHANNEL_VARIANT: Record<string, 'info' | 'success' | 'default'> = {
   EMAIL: 'info',
@@ -69,6 +70,7 @@ export default function CommunicationPage() {
   const resend = useResendCommunication();
   const del = useDeleteCommunication();
   const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null);
+  const [previewComm, setPreviewComm] = useState<any | null>(null);
 
   const handleResend = async (id: number) => {
     const r = await resend.mutateAsync(id);
@@ -180,8 +182,15 @@ export default function CommunicationPage() {
                   </td>
                   <td className="px-4 py-3 font-medium">{comm.to}</td>
                   <td className="px-4 py-3 max-w-xs">
-                    {comm.subject && <p className="font-medium text-slate-800 truncate">{comm.subject}</p>}
-                    <p className="text-slate-400 truncate text-xs">{comm.body}</p>
+                    <button
+                      type="button"
+                      onClick={() => setPreviewComm(comm)}
+                      className="text-left w-full group"
+                      title="Voir le message"
+                    >
+                      {comm.subject && <p className="font-medium text-slate-800 truncate group-hover:text-indigo-600">{comm.subject}</p>}
+                      <p className="text-slate-400 truncate text-xs">{comm.body}</p>
+                    </button>
                   </td>
                   <td className="px-4 py-3 text-slate-500 text-xs">{comm.template?.name ?? '—'}</td>
                   <td className="px-4 py-3 text-slate-500">{formatDateTime(comm.sentAt ?? comm.createdAt)}</td>
@@ -192,30 +201,41 @@ export default function CommunicationPage() {
                     {comm.errorMsg && <p className="text-xs text-red-400 mt-0.5 max-w-[160px] truncate" title={comm.errorMsg}>{comm.errorMsg}</p>}
                   </td>
                   <td className="px-4 py-3 text-right">
-                    {comm.status === 'ECHEC' && (
-                      <div className="flex justify-end gap-2">
-                        <Button
-                          variant="secondary"
-                          size="sm"
-                          icon={<RefreshCw className={`h-3.5 w-3.5 ${resend.isPending && resend.variables === comm.id ? 'animate-spin' : ''}`} />}
-                          onClick={() => handleResend(comm.id)}
-                          disabled={resend.isPending}
-                          title="Renvoyer ce message"
-                        >
-                          Renvoyer
-                        </Button>
-                        <Button
-                          variant="danger"
-                          size="sm"
-                          icon={<Trash2 className="h-3.5 w-3.5" />}
-                          onClick={() => setConfirmDeleteId(comm.id)}
-                          disabled={del.isPending}
-                          title="Supprimer ce message en échec"
-                        >
-                          Supprimer
-                        </Button>
-                      </div>
-                    )}
+                    <div className="flex justify-end gap-2">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        icon={<Eye className="h-3.5 w-3.5" />}
+                        onClick={() => setPreviewComm(comm)}
+                        title="Aperçu du message (lecture seule)"
+                      >
+                        Voir
+                      </Button>
+                      {comm.status === 'ECHEC' && (
+                        <>
+                          <Button
+                            variant="secondary"
+                            size="sm"
+                            icon={<RefreshCw className={`h-3.5 w-3.5 ${resend.isPending && resend.variables === comm.id ? 'animate-spin' : ''}`} />}
+                            onClick={() => handleResend(comm.id)}
+                            disabled={resend.isPending}
+                            title="Renvoyer ce message"
+                          >
+                            Renvoyer
+                          </Button>
+                          <Button
+                            variant="danger"
+                            size="sm"
+                            icon={<Trash2 className="h-3.5 w-3.5" />}
+                            onClick={() => setConfirmDeleteId(comm.id)}
+                            disabled={del.isPending}
+                            title="Supprimer ce message en échec"
+                          >
+                            Supprimer
+                          </Button>
+                        </>
+                      )}
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -244,6 +264,8 @@ export default function CommunicationPage() {
         confirmLabel="Supprimer"
         loading={del.isPending}
       />
+
+      <MessagePreviewModal comm={previewComm} onClose={() => setPreviewComm(null)} />
     </PageLayout>
   );
 }

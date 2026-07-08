@@ -99,6 +99,12 @@ export default function AttestationDetailPage() {
                 <div className="text-xl font-semibold text-slate-800">{formatCurrency(Number(a.amount))}</div>
               </div>
             )}
+            {a.prixTotalBien != null && (
+              <div className="text-right">
+                <div className="text-xs text-slate-500 uppercase">Prix total du bien</div>
+                <div className="text-xl font-semibold text-slate-800">{formatCurrency(Number(a.prixTotalBien))}</div>
+              </div>
+            )}
           </div>
         </Card>
 

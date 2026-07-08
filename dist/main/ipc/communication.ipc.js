@@ -17,6 +17,8 @@ const settings_service_1 = require("../services/settings.service");
 const logger_1 = __importDefault(require("../utils/logger"));
 const zod_1 = require("zod");
 const WRITE_ROLES = ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'AGENT'];
+// Clé AppSetting : URL de base du pixel de suivi d'ouverture des emails.
+const COMM_TRACKING_KEY = 'communication.tracking.baseUrl';
 const READ_ROLES = [...WRITE_ROLES, 'ACCOUNTANT', 'READONLY'];
 // Rôles qui voient l'intégralité de l'historique de communication.
 // ASSISTANTE_DIRECTION est traité comme MANAGER (équivalence centralisée dans
@@ -519,6 +521,37 @@ function registerCommunicationIPC() {
             return { success: false, error: error.message };
         }
     });
+    // Configuration du suivi d'ouverture des emails (URL de base du pixel).
+    electron_1.ipcMain.handle('communication:getTracking', async (_event, { token }) => {
+        try {
+            const session = (0, auth_service_1.getSession)(token);
+            if (!session)
+                return { success: false, error: 'Session expirée' };
+            (0, auth_service_1.checkRole)(session, ['SUPER_ADMIN', 'ADMIN']);
+            const baseUrl = (await (0, settings_service_1.getSetting)(COMM_TRACKING_KEY)) ?? '';
+            return { success: true, data: { baseUrl } };
+        }
+        catch (error) {
+            return { success: false, error: error.message };
+        }
+    });
+    electron_1.ipcMain.handle('communication:updateTracking', async (_event, { token, baseUrl }) => {
+        try {
+            const session = (0, auth_service_1.getSession)(token);
+            if (!session)
+                return { success: false, error: 'Session expirée' };
+            (0, auth_service_1.checkRole)(session, ['SUPER_ADMIN', 'ADMIN']);
+            const url = String(baseUrl ?? '').trim();
+            if (url && !/^https?:\/\//i.test(url)) {
+                return { success: false, error: "L'URL de suivi doit commencer par http:// ou https://" };
+            }
+            await (0, settings_service_1.setSetting)(COMM_TRACKING_KEY, url);
+            return { success: true };
+        }
+        catch (error) {
+            return { success: false, error: error.message };
+        }
+    });
     // ── Envoi Email ────────────────────────────────────────────────────────────
     electron_1.ipcMain.handle('communication:sendEmail', async (_event, { token, payload }) => {
         try {
@@ -609,9 +642,14 @@ function registerCommunicationIPC() {
                     metadata: d.metadata ? d.metadata : undefined,
                 },
             });
+            // Pixel de suivi d'ouverture : injecté si une URL de suivi est configurée.
+            const trackBase = (await (0, settings_service_1.getSetting)(COMM_TRACKING_KEY))?.trim() || '';
+            const trackingPixelUrl = trackBase
+                ? `${trackBase}${trackBase.includes('?') ? '&' : '?'}c=${comm.id}`
+                : undefined;
             // Envoi via Nodemailer (SMTP) — paramétré côté AppSetting.
             try {
-                await (0, email_service_1.sendEmail)({
+                const info = await (0, email_service_1.sendEmail)({
                     to: d.to,
                     subject: finalSubject,
                     body: storedBody,
@@ -621,11 +659,14 @@ function registerCommunicationIPC() {
                     ...(mailAttachments ? { attachments: mailAttachments } : {}),
                     ...(cc.list.length ? { cc: cc.list } : {}),
                     ...(bcc.list.length ? { bcc: bcc.list } : {}),
+                    ...(trackingPixelUrl ? { trackingPixelUrl } : {}),
                     ...fromOverride,
                 });
+                // « Remis » : le serveur SMTP a accepté le destinataire principal.
+                const delivered = info.accepted.some((a) => a.toLowerCase() === d.to.toLowerCase());
                 await db.communication.update({
                     where: { id: comm.id },
-                    data: { status: 'ENVOYE', sentAt: new Date() },
+                    data: { status: 'ENVOYE', sentAt: new Date(), deliveredAt: delivered ? new Date() : null },
                 });
                 logger_1.default.info(`Email sent to ${d.to}`);
                 return { success: true, data: { ...comm, status: 'ENVOYE' } };

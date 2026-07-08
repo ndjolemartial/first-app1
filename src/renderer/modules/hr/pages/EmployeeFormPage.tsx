@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { useNavigate, useParams } from 'react-router-dom';
 import PageLayout from '../../../shared/components/layout/PageLayout';
@@ -6,8 +6,11 @@ import Card from '../../../shared/components/ui/Card';
 import Input from '../../../shared/components/ui/Input';
 import Select from '../../../shared/components/ui/Select';
 import Button from '../../../shared/components/ui/Button';
-import { Save } from 'lucide-react';
-import { useEmployee, useCreateEmployee, useUpdateEmployee, useLinkableUsers } from '../hooks/useHr';
+import { FormSearchSelect } from '../../../shared/components/ui/SearchSelect';
+import JobPositionModal from '../components/JobPositionModal';
+import DepartmentModal from '../components/DepartmentModal';
+import { Save, Plus } from 'lucide-react';
+import { useEmployee, useCreateEmployee, useUpdateEmployee, useLinkableUsers, useEmployees, useJobPositions, useDepartments } from '../hooks/useHr';
 import {
   CIVILITE_OPTIONS, SEXE_OPTIONS, MARITAL_OPTIONS, EMPLOYEE_STATUS_OPTIONS,
 } from '../types/hr.types';
@@ -38,6 +41,7 @@ interface FormData {
   bankRib: string;
   poste: string;
   departement: string;
+  managerId: string;
   userId: string;
   status: string;
   hireDate: string;
@@ -50,7 +54,7 @@ const EMPTY: FormData = {
   matricule: '', civilite: '', firstName: '', lastName: '', sexe: '', birthDate: '', birthPlace: '',
   nationality: 'CI', maritalStatus: '', childrenCount: 0, igrParts: 1, email: '', phone: '', mobile: '',
   address: '', city: '', idNumber: '', cnpsNumber: '', cmuNumber: '', bankName: '', bankRib: '',
-  poste: '', departement: '', userId: '', status: 'ACTIF', hireDate: '', exitDate: '', exitReason: '', notes: '',
+  poste: '', departement: '', managerId: '', userId: '', status: 'ACTIF', hireDate: '', exitDate: '', exitReason: '', notes: '',
 };
 
 export default function EmployeeFormPage() {
@@ -61,8 +65,16 @@ export default function EmployeeFormPage() {
 
   const { data: res } = useEmployee(isEdit ? employeeId : 0);
   const { data: usersRes } = useLinkableUsers(isEdit ? employeeId : undefined);
+  const { data: managersRes } = useEmployees({ status: 'ACTIF' }, 1, 1000);
   const create = useCreateEmployee();
   const update = useUpdateEmployee();
+
+  const managerOptions = [
+    { value: '', label: '— Aucun responsable —' },
+    ...((managersRes?.success && managersRes.data ? managersRes.data : [])
+      .filter((m: any) => !isEdit || m.id !== employeeId)
+      .map((m: any) => ({ value: String(m.id), label: `${m.matricule} — ${m.lastName ?? ''} ${m.firstName ?? ''}`.trim() }))),
+  ];
 
   const userOptions = [
     { value: '', label: '— Aucun compte lié —' },
@@ -74,9 +86,22 @@ export default function EmployeeFormPage() {
     }))),
   ];
 
-  const { register, handleSubmit, reset, formState: { errors, isSubmitting } } = useForm<FormData>({
+  const { register, handleSubmit, reset, control, setValue, formState: { errors, isSubmitting } } = useForm<FormData>({
     defaultValues: EMPTY,
   });
+
+  const { data: postesRes } = useJobPositions();
+  const { data: deptsRes } = useDepartments();
+  const [posteModalOpen, setPosteModalOpen] = useState(false);
+  const [deptModalOpen, setDeptModalOpen] = useState(false);
+  const posteOptions = [
+    { value: '', label: '— Aucun —' },
+    ...((postesRes?.success && postesRes.data ? postesRes.data : []).map((p: any) => ({ value: p.label, label: p.label }))),
+  ];
+  const deptOptions = [
+    { value: '', label: '— Aucun —' },
+    ...((deptsRes?.success && deptsRes.data ? deptsRes.data : []).map((d: any) => ({ value: d.label, label: d.label }))),
+  ];
 
   useEffect(() => {
     if (isEdit && res?.success && res.data) {
@@ -106,6 +131,7 @@ export default function EmployeeFormPage() {
         bankRib: e.bankRib ?? '',
         poste: e.poste ?? '',
         departement: e.departement ?? '',
+        managerId: e.managerId != null ? String(e.managerId) : '',
         userId: e.userId != null ? String(e.userId) : '',
         status: e.status ?? 'ACTIF',
         hireDate: toDateInput(e.hireDate),
@@ -179,8 +205,35 @@ export default function EmployeeFormPage() {
               placeholder={isEdit ? '' : 'Auto : AF-AAAA-0001 si laissé vide'}
               {...register('matricule')}
             />
-            <Input label="Poste" {...register('poste')} />
-            <Input label="Département / service" {...register('departement')} />
+            <div>
+              <div className="mb-1 flex items-center justify-between">
+                <label className="text-sm font-medium text-slate-700">Poste</label>
+                <button
+                  type="button"
+                  onClick={() => setPosteModalOpen(true)}
+                  title="Gérer les postes"
+                  className="flex items-center gap-1 rounded-md border border-slate-300 px-1.5 py-0.5 text-xs font-medium text-slate-600 hover:border-blue-400 hover:text-blue-600 transition-colors"
+                >
+                  <Plus className="h-3.5 w-3.5" /> Gérer
+                </button>
+              </div>
+              <FormSearchSelect control={control} name="poste" options={posteOptions} placeholder="Rechercher un poste…" />
+            </div>
+            <div>
+              <div className="mb-1 flex items-center justify-between">
+                <label className="text-sm font-medium text-slate-700">Département / service</label>
+                <button
+                  type="button"
+                  onClick={() => setDeptModalOpen(true)}
+                  title="Gérer les départements"
+                  className="flex items-center gap-1 rounded-md border border-slate-300 px-1.5 py-0.5 text-xs font-medium text-slate-600 hover:border-blue-400 hover:text-blue-600 transition-colors"
+                >
+                  <Plus className="h-3.5 w-3.5" /> Gérer
+                </button>
+              </div>
+              <FormSearchSelect control={control} name="departement" options={deptOptions} placeholder="Rechercher un département…" />
+            </div>
+            <Select label="Responsable hiérarchique" options={managerOptions} {...register('managerId')} />
             <Select label="Statut" options={EMPLOYEE_STATUS_OPTIONS} {...register('status')} />
             <Input label="Date d'embauche" type="date" {...register('hireDate')} />
             <Input label="Date de sortie" type="date" {...register('exitDate')} />
@@ -214,6 +267,17 @@ export default function EmployeeFormPage() {
           </Button>
         </div>
       </form>
+
+      <JobPositionModal
+        open={posteModalOpen}
+        onClose={() => setPosteModalOpen(false)}
+        onCreated={(label) => setValue('poste', label)}
+      />
+      <DepartmentModal
+        open={deptModalOpen}
+        onClose={() => setDeptModalOpen(false)}
+        onCreated={(label) => setValue('departement', label)}
+      />
     </PageLayout>
   );
 }

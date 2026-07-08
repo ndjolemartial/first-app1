@@ -27,6 +27,11 @@ interface ExportMenuProps<T = any> {
    * (pour calculer un total sur l'ensemble des données filtrées).
    */
   totalRow?: (string | number)[] | ((rows: T[]) => (string | number)[]);
+  /**
+   * Index de colonne de regroupement : quand sa valeur change d'une ligne à
+   * l'autre, le document insère une délimitation + un espacement entre groupes.
+   */
+  sectionBreakColumn?: number;
 }
 
 /**
@@ -40,6 +45,7 @@ export default function ExportMenu<T>({
   fetchRows,
   subtitle,
   totalRow,
+  sectionBreakColumn,
 }: ExportMenuProps<T>) {
   const token = useAuthStore((s) => s.token)!;
   const [open, setOpen] = useState(false);
@@ -79,6 +85,7 @@ export default function ExportMenu<T>({
         headers,
         rows: matrix,
         totalRow: resolvedTotal?.map((c) => (c === null || c === undefined ? '' : String(c))),
+        ...(sectionBreakColumn != null ? { sectionBreakColumn } : {}),
       });
       if (!res.success) {
         toast.error(typeof res.error === 'string' ? res.error : "Erreur lors de l'export");
