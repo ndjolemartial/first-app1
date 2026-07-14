@@ -80,7 +80,7 @@ export default function InstallmentCommissionsModal({ installment, onClose }: Pr
 
   const userOptions = users.map((u: any) => ({
     value: String(u.id),
-    label: `${u.firstName ?? ''} ${u.lastName ?? ''}`.trim() || `Utilisateur #${u.id}`,
+    label: `${u.lastName ?? ''} ${u.firstName ?? ''}`.trim() || `Utilisateur #${u.id}`,
   }));
 
   const { register, handleSubmit, watch, setValue, reset, formState: { isSubmitting } } = useForm({
@@ -142,7 +142,7 @@ export default function InstallmentCommissionsModal({ installment, onClose }: Pr
   const clientName = installment.client?.type === 'INDIVIDUEL'
     ? `${installment.client?.firstName ?? ''} ${installment.client?.lastName ?? ''}`.trim()
     : (installment.client?.entreprise ?? '—');
-  const referentName = referent ? `${referent.firstName} ${referent.lastName}`.trim() : null;
+  const referentName = referent ? `${referent.lastName} ${referent.firstName}`.trim() : null;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">

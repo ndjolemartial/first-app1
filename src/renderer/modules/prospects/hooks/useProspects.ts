@@ -143,6 +143,16 @@ export function useAssignableUsers(enabled = true) {
   });
 }
 
+/** Fiche de suivi chronologique du prospect (statuts, modifications, activités, documents). */
+export function useProspectTimeline(id: number) {
+  const token = useAuthStore((s) => s.token)!;
+  return useQuery({
+    queryKey: ['prospects', id, 'timeline'],
+    queryFn: () => ipc().getTimeline(token, id),
+    enabled: !!token && !!id,
+  });
+}
+
 export function useAssignProspect() {
   const token = useAuthStore((s) => s.token)!;
   const qc = useQueryClient();

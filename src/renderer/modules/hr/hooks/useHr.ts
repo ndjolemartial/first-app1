@@ -151,6 +151,17 @@ export function useGeneratePayslip() {
   });
 }
 
+export function useDuplicatePayslip() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: object) => ipc().payslips.duplicate(token(), payload),
+    onSuccess: (res) => {
+      if (res.success) { qc.invalidateQueries({ queryKey: ['payslips'] }); toast.success('Bulletin dupliqué'); }
+      else toast.error(String(res.error));
+    },
+  });
+}
+
 export function useUpdatePayslip() {
   const qc = useQueryClient();
   return useMutation({
@@ -612,6 +623,75 @@ export function useBulkUpsertAttendance() {
         qc.invalidateQueries({ queryKey: ['attendance-summary'] });
         toast.success('Pointage enregistré');
       } else toast.error(String(res.error));
+    },
+  });
+}
+
+/* ─── Retards & Départs précipités ───────────────────────────── */
+
+export function useLateness(filters: { year?: number; month?: number; employeeId?: number; onlyUnjustified?: boolean } = {}) {
+  return useQuery({
+    queryKey: ['lateness', filters],
+    queryFn: () => ipc().lateness.list(token(), filters),
+  });
+}
+
+export function useLatenessLinkableLeaveRequests(employeeId: number, date: string, enabled = true) {
+  return useQuery({
+    queryKey: ['lateness-leave-requests', employeeId, date],
+    queryFn: () => ipc().lateness.linkableLeaveRequests(token(), employeeId, date),
+    enabled: enabled && employeeId > 0 && !!date,
+  });
+}
+
+export function useLatenessLinkableActivities(employeeId: number, date: string, enabled = true) {
+  return useQuery({
+    queryKey: ['lateness-activities', employeeId, date],
+    queryFn: () => ipc().lateness.linkableActivities(token(), employeeId, date),
+    enabled: enabled && employeeId > 0 && !!date,
+  });
+}
+
+export function useJustifyLateness() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: object) => ipc().lateness.justify(token(), payload),
+    onSuccess: (res) => {
+      if (res.success) { qc.invalidateQueries({ queryKey: ['lateness'] }); toast.success('Journée marquée justifiée'); }
+      else toast.error(String(res.error));
+    },
+  });
+}
+
+export function useUnjustifyLateness() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ employeeId, date }: { employeeId: number; date: string }) => ipc().lateness.unjustify(token(), employeeId, date),
+    onSuccess: (res) => {
+      if (res.success) { qc.invalidateQueries({ queryKey: ['lateness'] }); toast.success('Justification retirée'); }
+      else toast.error(String(res.error));
+    },
+  });
+}
+
+export function useTolerateLateness() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: object) => ipc().lateness.tolerate(token(), payload),
+    onSuccess: (res) => {
+      if (res.success) { qc.invalidateQueries({ queryKey: ['lateness'] }); toast.success('Journée marquée tolérée'); }
+      else toast.error(String(res.error));
+    },
+  });
+}
+
+export function useUntolerateLateness() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ employeeId, date }: { employeeId: number; date: string }) => ipc().lateness.untolerate(token(), employeeId, date),
+    onSuccess: (res) => {
+      if (res.success) { qc.invalidateQueries({ queryKey: ['lateness'] }); toast.success('Tolérance retirée'); }
+      else toast.error(String(res.error));
     },
   });
 }

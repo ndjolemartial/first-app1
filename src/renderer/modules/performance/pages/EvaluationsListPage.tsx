@@ -21,7 +21,7 @@ const YEARS = [CURRENT_YEAR + 1, CURRENT_YEAR, CURRENT_YEAR - 1, CURRENT_YEAR - 
 
 function CreateEvaluationModal({ onClose, onCreated }: { onClose: () => void; onCreated: (id: number) => void }) {
   const create = useCreateEvaluation();
-  const { data: empRes } = usePerfEmployees();
+  const { data: empRes } = usePerfEmployees('evaluations');
   const employees: PerfEmployee[] = empRes?.success ? empRes.data ?? [] : [];
   const { register, handleSubmit, watch } = useForm({
     defaultValues: { employeeId: '', cycleType: 'ANNUEL', year: String(CURRENT_YEAR), quarter: '1' },

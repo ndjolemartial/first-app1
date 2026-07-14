@@ -75,7 +75,7 @@ export default function BeneficiaryCommissionsPage() {
   const isUser = type === 'USER';
   const name = beneficiary
     ? (isUser
-        ? `${beneficiary.firstName ?? ''} ${beneficiary.lastName ?? ''}`.trim()
+        ? `${beneficiary.lastName ?? ''} ${beneficiary.firstName ?? ''}`.trim()
         : (beneficiary.companyName || `${beneficiary.firstName ?? ''} ${beneficiary.lastName ?? ''}`.trim()))
     : 'Bénéficiaire';
 

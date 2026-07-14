@@ -11,7 +11,7 @@ import { FormSearchSelect } from '../../../shared/components/ui/SearchSelect';
 import Textarea from '../../../shared/components/ui/Textarea';
 import Card from '../../../shared/components/ui/Card';
 import { useActivity, useCreateActivity, useUpdateActivity } from '../hooks/useCrm';
-import { useMyManualObjectives } from '../../performance/hooks/usePerformance';
+import { useMyObjectives } from '../../performance/hooks/usePerformance';
 import { useClients } from '../../clients/hooks/useClients';
 import { useProperties } from '../../properties/hooks/useProperties';
 import { useConventions } from '../../conventions/hooks/useConventions';
@@ -54,7 +54,7 @@ const PROSPECT_FULL_VIEW_ROLES = ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ACCOUNTANT
 const PROSPECT_INACTIVE_STATUSES = ['CONVERTI', 'PERDU'];
 
 const schema = z.object({
-  type: z.enum(['NOTIFICATION', 'APPEL', 'EMAIL', 'SMS', 'REUNION', 'VISITE', 'TASK', 'RAPPEL', 'DOCUMENT']),
+  type: z.enum(['NOTIFICATION', 'APPEL', 'EMAIL', 'SMS', 'REUNION', 'VISITE', 'TASK', 'RAPPEL', 'DOCUMENT', 'CREATION_PUBLICATION']),
   subject: z.string().min(1, 'Sujet requis'),
   description: z.string().optional(),
   status: z.enum(['EN_ATTENTE', 'EN_TRAITEMENT', 'TRAITE', 'ANNULE']).default('EN_ATTENTE'),
@@ -82,10 +82,11 @@ const TYPE_OPTIONS = [
   { value: 'EMAIL', label: 'Email' },
   { value: 'SMS', label: 'SMS' },
   { value: 'REUNION', label: 'Réunion' },
-  { value: 'VISITE', label: 'Visite' },
+  { value: 'VISITE', label: 'Visite chantier / Sortie en clientèle / Courses' },
   { value: 'RAPPEL', label: 'Rappel' },
   { value: 'DOCUMENT', label: 'Document' },
   { value: 'NOTIFICATION', label: 'Notification' },
+  { value: 'CREATION_PUBLICATION', label: 'Créas / Publications / Articles' },
 ];
 
 const STATUS_OPTIONS = [
@@ -347,21 +348,26 @@ export default function ActivityFormPage() {
 
   const { register, handleSubmit, reset, control, watch, setValue, formState: { errors, isSubmitting } } = useForm<z.input<typeof schema>, any, FormData>({
     resolver: zodResolver(schema),
-    defaultValues: { type: 'TASK', status: 'EN_ATTENTE' },
+    // « Utilisateur » (assigné à) est présélectionné sur soi-même à la création
+    // (modifiable) : une activité créée sans rattachement explicite n'est
+    // attribuée à personne (ni KPI de performance, ni justification de retard
+    // via une activité « Visite chantier… »). Sans effet en édition (reset ci-dessous
+    // reflète la valeur déjà enregistrée, y compris si elle est vide).
+    defaultValues: { type: 'TASK', status: 'EN_ATTENTE', userId: currentUserId },
   });
 
-  // Objectifs manuels du collaborateur connecté — pour lier une tâche.
-  const watchedType = watch('type');
+  // Objectifs du collaborateur connecté — lien optionnel, quel que soit le type d'activité.
   const watchedObjectiveId = Number(watch('objectiveId')) || 0;
   const watchedRealized = Number(watch('objectiveRealized')) || 0;
-  const { data: objectivesRes } = useMyManualObjectives(watchedType === 'TASK');
-  const manualObjectives: any[] = objectivesRes?.success ? objectivesRes.data ?? [] : [];
+  const { data: objectivesRes } = useMyObjectives(true);
+  const myObjectives: any[] = objectivesRes?.success ? objectivesRes.data ?? [] : [];
   const objectiveOptions = [
     { value: '', label: '— Aucun —' },
-    ...manualObjectives.map((o: any) => ({ value: String(o.id), label: `${o.title} (cible ${Number(o.targetValue)} ${o.unit ?? ''})`.trim() })),
+    ...myObjectives.map((o: any) => ({ value: String(o.id), label: `${o.title} (cible ${Number(o.targetValue)} ${o.unit ?? ''})`.trim() })),
   ];
-  const selectedObjective = manualObjectives.find((o: any) => o.id === watchedObjectiveId);
+  const selectedObjective = myObjectives.find((o: any) => o.id === watchedObjectiveId);
   const objTarget = selectedObjective ? Number(selectedObjective.targetValue) : 0;
+  const objIsManual = selectedObjective?.measureType === 'MANUAL';
   // Pourcentage réel (peut dépasser 100 %) ; la barre visuelle reste plafonnée à 100 %.
   const objProgress = objTarget > 0 ? Math.round((watchedRealized / objTarget) * 100) : 0;
 
@@ -399,16 +405,17 @@ export default function ActivityFormPage() {
     for (const field of ENTITY_FIELDS) {
       if (!payload[field]) delete payload[field];
     }
-    // Lien objectif : réservé aux tâches ; sinon on n'envoie rien.
-    if (payload.type !== 'TASK' || !payload.objectiveId) {
+    // Lien objectif : optionnel, quel que soit le type d'activité.
+    if (!payload.objectiveId) {
       delete payload.objectiveId;
       delete payload.objectiveRealized;
     } else {
       payload.objectiveId = Number(payload.objectiveId);
       payload.objectiveRealized = Number(payload.objectiveRealized) || 0;
-      // Garde-fou client : « Traité » impossible tant que l'objectif n'est pas atteint.
-      if (payload.status === 'TRAITE' && objTarget > 0 && payload.objectiveRealized < objTarget) {
-        toast.error('Cette tâche ne peut être « Traité » : l’objectif lié n’est pas atteint à 100 %.');
+      // Garde-fou client : « Traité » impossible tant que l'objectif à Mesure
+      // « Manuelle » n'est pas atteint (les objectifs Auto ne bloquent pas).
+      if (payload.status === 'TRAITE' && objIsManual && objTarget > 0 && payload.objectiveRealized < objTarget) {
+        toast.error('Cette activité ne peut être « Traité » : l’objectif lié n’est pas atteint à 100 %.');
         return;
       }
     }
@@ -448,35 +455,36 @@ export default function ActivityFormPage() {
           </div>
         </Card>
 
-        {watchedType === 'TASK' && (
-          <Card>
-            <h3 className="text-base font-semibold text-slate-800 mb-1">Objectif lié (optionnel)</h3>
-            <p className="text-xs text-slate-400 mb-4">
-              Liez cette tâche à l'un de vos objectifs à Mesure « Manuelle ». La tâche ne pourra passer « Traité » qu'une fois l'objectif atteint à 100 %.
-            </p>
-            {manualObjectives.length === 0 ? (
-              <p className="text-sm text-slate-400">Aucun objectif à Mesure « Manuelle » ne vous est assigné.</p>
-            ) : (
-              <div className="grid grid-cols-2 gap-4">
-                <FormSearchSelect control={control} name="objectiveId" label="Objectif" options={objectiveOptions} />
-                {watchedObjectiveId > 0 && (
-                  <div>
-                    <Input label={`Quantité réalisée${selectedObjective?.unit ? ` (${selectedObjective.unit})` : ''}`} type="number" min="0" step="any" {...register('objectiveRealized')} />
-                    <div className="mt-2">
-                      <div className="flex items-center justify-between text-xs text-slate-500">
-                        <span>Objectif : {objTarget} {selectedObjective?.unit ?? ''}</span>
-                        <span className="tabular-nums">{objProgress}%</span>
-                      </div>
-                      <div className="mt-1 h-2 w-full rounded-full bg-slate-100">
-                        <div className={`h-2 rounded-full ${objProgress >= 100 ? 'bg-green-500' : 'bg-blue-500'}`} style={{ width: `${Math.min(100, objProgress)}%` }} />
-                      </div>
+        <Card>
+          <h3 className="text-base font-semibold text-slate-800 mb-1">Objectif lié (optionnel)</h3>
+          <p className="text-xs text-slate-400 mb-4">
+            Liez cette activité à l'un de vos objectifs, quel que soit son type de mesure.
+            {watchedObjectiveId > 0 && objIsManual
+              ? ' Cette activité ne pourra passer « Traité » qu\'une fois l\'objectif atteint à 100 % (objectif à Mesure « Manuelle »).'
+              : ''}
+          </p>
+          {myObjectives.length === 0 ? (
+            <p className="text-sm text-slate-400">Aucun objectif ne vous est assigné.</p>
+          ) : (
+            <div className="grid grid-cols-2 gap-4">
+              <FormSearchSelect control={control} name="objectiveId" label="Objectif" options={objectiveOptions} />
+              {watchedObjectiveId > 0 && (
+                <div>
+                  <Input label={`Quantité réalisée${selectedObjective?.unit ? ` (${selectedObjective.unit})` : ''}`} type="number" min="0" step="any" {...register('objectiveRealized')} />
+                  <div className="mt-2">
+                    <div className="flex items-center justify-between text-xs text-slate-500">
+                      <span>Objectif : {objTarget} {selectedObjective?.unit ?? ''}</span>
+                      <span className="tabular-nums">{objProgress}%</span>
+                    </div>
+                    <div className="mt-1 h-2 w-full rounded-full bg-slate-100">
+                      <div className={`h-2 rounded-full ${objProgress >= 100 ? 'bg-green-500' : 'bg-blue-500'}`} style={{ width: `${Math.min(100, objProgress)}%` }} />
                     </div>
                   </div>
-                )}
-              </div>
-            )}
-          </Card>
-        )}
+                </div>
+              )}
+            </div>
+          )}
+        </Card>
 
         <Card>
           <h3 className="text-base font-semibold text-slate-800 mb-1">Entité associée</h3>

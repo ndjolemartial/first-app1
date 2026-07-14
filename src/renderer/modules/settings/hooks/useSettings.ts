@@ -151,6 +151,32 @@ export function useUpdateAttendanceQr() {
   });
 }
 
+// ── Retards & Départs précipités ─────────────────────────────────────────────
+
+export function useLatenessSettings() {
+  const token = useAuthStore((s) => s.token)!;
+  return useQuery({
+    queryKey: ['settings', 'lateness'],
+    queryFn:  () => ipc().getLatenessSettings(token),
+    enabled:  !!token,
+  });
+}
+
+export function useUpdateLatenessSettings() {
+  const token = useAuthStore((s) => s.token)!;
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: { includeManagementRoles: boolean; toleranceMinutes: number }) => ipc().updateLatenessSettings(token, payload),
+    onSuccess:  (res) => {
+      if (res.success) {
+        qc.invalidateQueries({ queryKey: ['settings', 'lateness'] });
+        qc.invalidateQueries({ queryKey: ['lateness'] });
+        toast.success('Paramètre enregistré');
+      } else toast.error(String(res.error));
+    },
+  });
+}
+
 interface VisitorQrPayload {
   enabled: boolean;
   baseUrl: string;

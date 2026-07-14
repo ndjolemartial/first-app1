@@ -12,8 +12,9 @@ import ConfirmDialog from '../../../shared/components/ui/ConfirmDialog';
 import { SkeletonTable } from '../../../shared/components/ui/Skeleton';
 import { useAuthStore } from '../../../shared/stores/auth.store';
 import { formatCurrency, formatDate } from '../../../shared/utils/format';
-import { Printer, CheckCircle2, Banknote, XCircle, Trash2, Pencil } from 'lucide-react';
+import { Printer, CheckCircle2, Banknote, XCircle, Trash2, Pencil, Copy } from 'lucide-react';
 import { usePayslip, useUpdatePayslip, useUpdatePayslipStatus, useUpdatePayslipPayment, usePayslipPayAccounts, useDeletePayslip, usePrintPayslip } from '../hooks/useHr';
+import DuplicatePayslipModal from '../components/DuplicatePayslipModal';
 import {
   PAYSLIP_STATUS_LABEL, PAYSLIP_STATUS_VARIANT, MONTH_LABEL,
   PAYMENT_METHOD_OPTIONS, type PayslipLine,
@@ -157,7 +158,6 @@ function EditPayslipModal({ payslip, onClose }: { payslip: any; onClose: () => v
       sursalaire: lineAmount(lines, 'Sursalaire') || '',
       taxablePrime: lineAmount(lines, 'Primes imposables') || '',
       transportAllowance: lineAmount(lines, 'Indemnité de transport (non imposable)') || '',
-      otherDeductions: lineAmount(lines, 'Autres retenues') || '',
       includeOvertime: lineAmount(lines, 'Heures supplémentaires') > 0,
     },
   });
@@ -167,7 +167,6 @@ function EditPayslipModal({ payslip, onClose }: { payslip: any; onClose: () => v
       sursalaire: d.sursalaire ? Number(d.sursalaire) : 0,
       taxablePrime: d.taxablePrime ? Number(d.taxablePrime) : 0,
       transportAllowance: d.transportAllowance ? Number(d.transportAllowance) : 0,
-      otherDeductions: d.otherDeductions ? Number(d.otherDeductions) : 0,
       includeOvertime: !!d.includeOvertime,
     };
     const r = await update.mutateAsync({ id: payslip.id, payload });
@@ -191,7 +190,6 @@ function EditPayslipModal({ payslip, onClose }: { payslip: any; onClose: () => v
         <Input label="Sursalaire (FCFA)" type="number" step="1000" min="0" {...register('sursalaire')} />
         <Input label="Prime imposable (FCFA)" type="number" step="1000" min="0" {...register('taxablePrime')} />
         <Input label="Indemnité transport (FCFA)" type="number" step="1000" min="0" {...register('transportAllowance')} />
-        <Input label="Autres retenues (FCFA)" type="number" step="1000" min="0" {...register('otherDeductions')} />
       </div>
       <label className="mt-3 flex items-center gap-2 text-sm text-slate-700">
         <input type="checkbox" {...register('includeOvertime')} />
@@ -216,6 +214,7 @@ export default function PayslipDetailPage() {
   const [showEdit, setShowEdit] = useState(false);
   const [showEditPayment, setShowEditPayment] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [showDuplicate, setShowDuplicate] = useState(false);
 
   if (isLoading) return <PageLayout title="Bulletin"><Card><SkeletonTable rows={6} /></Card></PageLayout>;
   if (!res?.success || !res.data) return <PageLayout title="Bulletin"><Card>Bulletin introuvable.</Card></PageLayout>;
@@ -254,6 +253,11 @@ export default function PayslipDetailPage() {
             loading={printPayslip.isPending} onClick={() => printPayslip.mutate(payslipId)}>
             Aperçu / Imprimer
           </Button>
+          {canWrite && (
+            <Button variant="secondary" icon={<Copy className="h-4 w-4" />} onClick={() => setShowDuplicate(true)}>
+              Dupliquer
+            </Button>
+          )}
           {canWrite && p.status === 'BROUILLON' && (
             <Button variant="secondary" icon={<Pencil className="h-4 w-4" />} onClick={() => setShowEdit(true)}>
               Modifier
@@ -334,6 +338,7 @@ export default function PayslipDetailPage() {
       {showPay && <PayModal id={payslipId} amount={Number(p.netSalary)} onClose={() => setShowPay(false)} />}
       {showEdit && <EditPayslipModal payslip={p} onClose={() => setShowEdit(false)} />}
       {showEditPayment && <EditPaymentModal payslip={p} onClose={() => setShowEditPayment(false)} />}
+      {showDuplicate && <DuplicatePayslipModal source={p} onClose={() => setShowDuplicate(false)} />}
 
       <ConfirmDialog
         open={confirmDelete}

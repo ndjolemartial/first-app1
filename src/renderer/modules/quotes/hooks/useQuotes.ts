@@ -87,34 +87,11 @@ export function useDeleteQuote() {
   });
 }
 
-/* ─── Unités de mesure (référentiel partagé) ────────────────────── */
+/* ─── Unités de mesure (référentiel partagé, gérées depuis le Catalogue) ─── */
 
 export function useQuoteUnits(includeInactive = false) {
   return useQuery({
     queryKey: ['quote-units', includeInactive],
     queryFn: () => ipc().listUnits(token(), includeInactive),
-  });
-}
-
-export function useSaveQuoteUnit() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: ({ id, payload }: { id?: number; payload: object }) =>
-      id ? ipc().updateUnit(token(), id, payload) : ipc().createUnit(token(), payload),
-    onSuccess: (res) => {
-      if (res.success) { qc.invalidateQueries({ queryKey: ['quote-units'] }); toast.success('Unité enregistrée'); }
-      else toast.error(String(res.error));
-    },
-  });
-}
-
-export function useDeleteQuoteUnit() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (id: number) => ipc().deleteUnit(token(), id),
-    onSuccess: (res) => {
-      if (res.success) { qc.invalidateQueries({ queryKey: ['quote-units'] }); toast.success('Unité supprimée'); }
-      else toast.error(String(res.error));
-    },
   });
 }

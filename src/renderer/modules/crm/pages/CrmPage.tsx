@@ -12,11 +12,11 @@ import ExportMenu, { ExportColumn } from '../../../shared/components/ExportMenu'
 import { useAuthStore } from '../../../shared/stores/auth.store';
 import ActivityDetailModal from '../components/ActivityDetailModal';
 
-const FULL_VIEW_ROLES = ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ACCOUNTANT'];
+const FULL_VIEW_ROLES = ['SUPER_ADMIN', 'ADMIN', 'MANAGER'];
 import {
   Plus, CheckCircle2, Trash2, Phone, Mail, MessageSquare,
   Calendar, Eye, Users, Briefcase, FileText, Bell, File,
-  AlertCircle, Clock, Paperclip,
+  AlertCircle, Clock, Paperclip, PenTool,
 } from 'lucide-react';
 
 const TYPE_ICON: Record<string, React.ReactNode> = {
@@ -29,10 +29,12 @@ const TYPE_ICON: Record<string, React.ReactNode> = {
   RAPPEL: <Bell className="h-4 w-4" />,
   DOCUMENT: <File className="h-4 w-4" />,
   NOTIFICATION: <Bell className="h-4 w-4" />,
+  CREATION_PUBLICATION: <PenTool className="h-4 w-4" />,
 };
 const TYPE_LABEL: Record<string, string> = {
   APPEL: 'Appel', EMAIL: 'Email', SMS: 'SMS', REUNION: 'Réunion',
-  VISITE: 'Visite', TASK: 'Tâche', RAPPEL: 'Rappel', DOCUMENT: 'Document', NOTIFICATION: 'Notification',
+  VISITE: 'Visite chantier / Sortie en clientèle / Courses', TASK: 'Tâche', RAPPEL: 'Rappel', DOCUMENT: 'Document', NOTIFICATION: 'Notification',
+  CREATION_PUBLICATION: 'Créas / Publications / Articles',
 };
 const STATUS_VARIANT: Record<string, 'success' | 'warning' | 'danger' | 'default' | 'info'> = {
   EN_ATTENTE: 'warning', EN_TRAITEMENT: 'info', TRAITE: 'success', ANNULE: 'default',
@@ -102,7 +104,7 @@ export default function CrmPage() {
   const userOptions = useMemo(() => {
     const list = (assigneesQuery.data?.data ?? []) as Array<{ id: number; firstName: string; lastName: string }>;
     return list
-      .map((u) => ({ value: String(u.id), label: `${u.firstName ?? ''} ${u.lastName ?? ''}`.trim() || `#${u.id}` }))
+      .map((u) => ({ value: String(u.id), label: `${u.lastName ?? ''} ${u.firstName ?? ''}`.trim() || `#${u.id}` }))
       .sort((a, b) => a.label.localeCompare(b.label, 'fr'));
   }, [assigneesQuery.data]);
 

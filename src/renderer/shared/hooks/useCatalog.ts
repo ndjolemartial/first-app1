@@ -45,3 +45,67 @@ export function useDeleteCatalogItem() {
     },
   });
 }
+
+/* ─── Unités de mesure (référentiel partagé `KpiUnit`) ──────────── */
+
+export function useCatalogUnits(includeInactive = false) {
+  return useQuery({
+    queryKey: ['catalog-units', includeInactive],
+    queryFn: () => ipc().listUnits(token(), includeInactive),
+  });
+}
+
+export function useSaveCatalogUnit() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, payload }: { id?: number; payload: object }) =>
+      id ? ipc().updateUnit(token(), id, payload) : ipc().createUnit(token(), payload),
+    onSuccess: (res) => {
+      if (res.success) { qc.invalidateQueries({ queryKey: ['catalog-units'] }); toast.success('Unité enregistrée'); }
+      else toast.error(String(res.error));
+    },
+  });
+}
+
+export function useDeleteCatalogUnit() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: number) => ipc().deleteUnit(token(), id),
+    onSuccess: (res) => {
+      if (res.success) { qc.invalidateQueries({ queryKey: ['catalog-units'] }); toast.success('Unité supprimée'); }
+      else toast.error(String(res.error));
+    },
+  });
+}
+
+/* ─── Catégories (référentiel `CatalogCategory`) ─────────────────── */
+
+export function useCatalogCategories(includeInactive = false) {
+  return useQuery({
+    queryKey: ['catalog-categories', includeInactive],
+    queryFn: () => ipc().listCategories(token(), includeInactive),
+  });
+}
+
+export function useSaveCatalogCategory() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, payload }: { id?: number; payload: object }) =>
+      id ? ipc().updateCategory(token(), id, payload) : ipc().createCategory(token(), payload),
+    onSuccess: (res) => {
+      if (res.success) { qc.invalidateQueries({ queryKey: ['catalog-categories'] }); toast.success('Catégorie enregistrée'); }
+      else toast.error(String(res.error));
+    },
+  });
+}
+
+export function useDeleteCatalogCategory() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: number) => ipc().deleteCategory(token(), id),
+    onSuccess: (res) => {
+      if (res.success) { qc.invalidateQueries({ queryKey: ['catalog-categories'] }); toast.success('Catégorie supprimée'); }
+      else toast.error(String(res.error));
+    },
+  });
+}

@@ -11,6 +11,7 @@ import {
   Briefcase,
   Bell,
   File,
+  PenTool,
 } from 'lucide-react';
 import Card from '../../../shared/components/ui/Card';
 import Badge from '../../../shared/components/ui/Badge';
@@ -28,10 +29,12 @@ const TYPE_ICON: Record<string, React.ReactNode> = {
   RAPPEL: <Bell className="h-4 w-4" />,
   DOCUMENT: <File className="h-4 w-4" />,
   NOTIFICATION: <Bell className="h-4 w-4" />,
+  CREATION_PUBLICATION: <PenTool className="h-4 w-4" />,
 };
 const TYPE_LABEL: Record<string, string> = {
   APPEL: 'Appel', EMAIL: 'Email', SMS: 'SMS', REUNION: 'Réunion',
-  VISITE: 'Visite', TASK: 'Tâche', RAPPEL: 'Rappel', DOCUMENT: 'Document', NOTIFICATION: 'Notification',
+  VISITE: 'Visite chantier / Sortie en clientèle / Courses', TASK: 'Tâche', RAPPEL: 'Rappel', DOCUMENT: 'Document', NOTIFICATION: 'Notification',
+  CREATION_PUBLICATION: 'Créas / Publications / Articles',
 };
 const STATUS_VARIANT: Record<string, 'success' | 'warning' | 'danger' | 'default' | 'info'> = {
   EN_ATTENTE: 'warning', EN_TRAITEMENT: 'info', TRAITE: 'success', ANNULE: 'default',

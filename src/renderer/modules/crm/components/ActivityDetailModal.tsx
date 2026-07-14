@@ -11,7 +11,7 @@ import { useAuthStore } from '../../../shared/stores/auth.store';
 import { formatDate } from '../../../shared/utils/format';
 import {
   Phone, Mail, MessageSquare, Calendar, Eye, Briefcase, Bell, File,
-  FileText, Users, Paperclip, Pencil, Target, Save, CheckCircle2,
+  FileText, Users, Paperclip, Pencil, Target, Save, CheckCircle2, PenTool,
 } from 'lucide-react';
 
 const TYPE_ICON: Record<string, React.ReactNode> = {
@@ -24,10 +24,12 @@ const TYPE_ICON: Record<string, React.ReactNode> = {
   RAPPEL: <Bell className="h-4 w-4" />,
   DOCUMENT: <File className="h-4 w-4" />,
   NOTIFICATION: <Bell className="h-4 w-4" />,
+  CREATION_PUBLICATION: <PenTool className="h-4 w-4" />,
 };
 const TYPE_LABEL: Record<string, string> = {
   APPEL: 'Appel', EMAIL: 'Email', SMS: 'SMS', REUNION: 'Réunion',
-  VISITE: 'Visite', TASK: 'Tâche', RAPPEL: 'Rappel', DOCUMENT: 'Document', NOTIFICATION: 'Notification',
+  VISITE: 'Visite chantier / Sortie en clientèle / Courses', TASK: 'Tâche', RAPPEL: 'Rappel', DOCUMENT: 'Document', NOTIFICATION: 'Notification',
+  CREATION_PUBLICATION: 'Créas / Publications / Articles',
 };
 const STATUS_VARIANT: Record<string, 'success' | 'warning' | 'danger' | 'default' | 'info'> = {
   EN_ATTENTE: 'warning', EN_TRAITEMENT: 'info', TRAITE: 'success', ANNULE: 'default',
@@ -77,10 +79,13 @@ export default function ActivityDetailModal({ activityId, onClose }: Props) {
   }, [act?.id, act?.objectiveRealized, act?.objective]);
 
   const objTarget = act?.objective?.targetValue != null ? Number(act.objective.targetValue) : 0;
+  const objIsManual = act?.objective?.measureType === 'MANUAL';
   const realizedNum = Number(realized) || 0;
   // Pourcentage réel (peut dépasser 100 %) ; la barre reste plafonnée à 100 %.
   const objProgress = objTarget > 0 ? Math.round((realizedNum / objTarget) * 100) : 0;
   const objReached = objTarget > 0 && realizedNum >= objTarget;
+  // Seuls les objectifs à Mesure « Manuelle » conditionnent le passage « Traité ».
+  const canComplete = !objIsManual || objReached;
 
   const saveRealized = async () => {
     if (!act) return;
@@ -191,11 +196,11 @@ export default function ActivityDetailModal({ activityId, onClose }: Props) {
                   <Button size="sm" variant="secondary" icon={<Save className="h-4 w-4" />} loading={update.isPending} onClick={saveRealized}>
                     Enregistrer la quantité
                   </Button>
-                  <Button size="sm" icon={<CheckCircle2 className="h-4 w-4" />} loading={complete.isPending} disabled={!objReached} onClick={markDone}>
+                  <Button size="sm" icon={<CheckCircle2 className="h-4 w-4" />} loading={complete.isPending} disabled={!canComplete} onClick={markDone}>
                     Marquer « Traité »
                   </Button>
-                  {!objReached && (
-                    <span className="text-xs text-amber-600">Objectif non atteint : la tâche ne peut pas encore être « Traité ».</span>
+                  {!canComplete && (
+                    <span className="text-xs text-amber-600">Objectif non atteint : l’activité ne peut pas encore être « Traité ».</span>
                   )}
                 </div>
               )}

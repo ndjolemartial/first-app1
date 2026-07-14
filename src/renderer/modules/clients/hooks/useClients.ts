@@ -142,3 +142,13 @@ export function useClientReferrers() {
     enabled: !!token,
   });
 }
+
+/** Fiche de suivi chronologique du client (statuts, modifications, activités, paiements, conventions). */
+export function useClientTimeline(id: number) {
+  const token = useAuthStore((s) => s.token)!;
+  return useQuery({
+    queryKey: ['clients', id, 'timeline'],
+    queryFn: () => ipc().getTimeline(token, id),
+    enabled: !!token && !!id,
+  });
+}

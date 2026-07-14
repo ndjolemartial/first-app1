@@ -14,8 +14,9 @@ import EmptyState from '../../../shared/components/ui/EmptyState';
 import { useAuthStore } from '../../../shared/stores/auth.store';
 import { formatCurrency } from '../../../shared/utils/format';
 import ExportMenu, { ExportColumn } from '../../../shared/components/ExportMenu';
-import { PlusCircle, Eye, Printer, Settings, FileText } from 'lucide-react';
+import { PlusCircle, Eye, Printer, Settings, FileText, Copy } from 'lucide-react';
 import { usePayslips, useEmployees, useGeneratePayslip, usePrintPayslip } from '../hooks/useHr';
+import DuplicatePayslipModal from '../components/DuplicatePayslipModal';
 import {
   PAYSLIP_STATUS_LABEL, PAYSLIP_STATUS_VARIANT, PAYSLIP_STATUS_OPTIONS,
   MONTH_OPTIONS, MONTH_LABEL, type Payslip, type Employee,
@@ -55,7 +56,7 @@ function GenerateModal({ onClose }: { onClose: () => void }) {
   const { register, handleSubmit, formState: { isSubmitting } } = useForm({
     defaultValues: {
       employeeId: '', periodYear: String(now.getFullYear()), periodMonth: String(now.getMonth() + 1),
-      sursalaire: '', taxablePrime: '', transportAllowance: '', otherDeductions: '', includeOvertime: true,
+      sursalaire: '', taxablePrime: '', transportAllowance: '', includeOvertime: true,
     },
   });
 
@@ -68,7 +69,6 @@ function GenerateModal({ onClose }: { onClose: () => void }) {
       sursalaire: d.sursalaire ? Number(d.sursalaire) : 0,
       taxablePrime: d.taxablePrime ? Number(d.taxablePrime) : 0,
       transportAllowance: d.transportAllowance ? Number(d.transportAllowance) : 0,
-      otherDeductions: d.otherDeductions ? Number(d.otherDeductions) : 0,
       includeOvertime: !!d.includeOvertime,
     };
     const r = await generate.mutateAsync(payload);
@@ -104,7 +104,6 @@ function GenerateModal({ onClose }: { onClose: () => void }) {
         <Input label="Sursalaire (FCFA)" type="number" step="1000" min="0" {...register('sursalaire')} />
         <Input label="Prime imposable (FCFA)" type="number" step="1000" min="0" {...register('taxablePrime')} />
         <Input label="Indemnité transport (FCFA)" type="number" step="1000" min="0" {...register('transportAllowance')} />
-        <Input label="Autres retenues (FCFA)" type="number" step="1000" min="0" {...register('otherDeductions')} />
       </div>
       <label className="mt-3 flex items-center gap-2 text-sm text-slate-700">
         <input type="checkbox" {...register('includeOvertime')} />
@@ -126,6 +125,7 @@ export default function PayslipsListPage() {
   const [month, setMonth] = useState('');
   const [status, setStatus] = useState('');
   const [showGenerate, setShowGenerate] = useState(false);
+  const [duplicateSource, setDuplicateSource] = useState<Payslip | null>(null);
 
   const filters = {
     periodYear: year || undefined,
@@ -228,6 +228,10 @@ export default function PayslipsListPage() {
                         <Button variant="ghost" size="sm" title="Aperçu / Imprimer" icon={<Printer className="h-4 w-4" />}
                           loading={printPayslip.isPending && printPayslip.variables === p.id}
                           onClick={() => printPayslip.mutate(p.id)} />
+                        {canWrite && (
+                          <Button variant="ghost" size="sm" title="Dupliquer" icon={<Copy className="h-4 w-4" />}
+                            onClick={() => setDuplicateSource(p)} />
+                        )}
                         <Button variant="ghost" size="sm" icon={<Eye className="h-4 w-4" />}
                           onClick={() => navigate(`/hr/payslips/${p.id}`)} />
                       </div>
@@ -242,6 +246,7 @@ export default function PayslipsListPage() {
       </Card>
 
       {showGenerate && <GenerateModal onClose={() => setShowGenerate(false)} />}
+      {duplicateSource && <DuplicatePayslipModal source={duplicateSource} onClose={() => setDuplicateSource(null)} />}
     </PageLayout>
   );
 }

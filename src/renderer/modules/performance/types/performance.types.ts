@@ -1,10 +1,11 @@
 // Types & libellés du module Évaluation & gestion des performances (Module 14).
 
-export type KpiSource = 'SALES' | 'COMMISSIONS' | 'ACCOUNTING' | 'CRM' | 'PROSPECTS' | 'ATTENDANCE' | 'LEAVE' | 'PROJECT' | 'MANUAL';
+export type KpiSource = 'SALES' | 'COMMISSIONS' | 'ACCOUNTING' | 'CRM' | 'PROSPECTS' | 'ATTENDANCE' | 'LEAVE' | 'PROJECT' | 'SOCIAL' | 'MANUAL';
 export type KpiMetric =
   | 'SALES_COUNT' | 'SALES_AMOUNT' | 'RESILIATION_COUNT' | 'COMMISSION_AMOUNT' | 'ENCAISSEMENT_AMOUNT'
-  | 'CRM_ACTIVITIES_DONE' | 'CRM_VISITS' | 'CRM_CALLS' | 'PROSPECT_CONVERSION_RATE'
-  | 'ATTENDANCE_RATE' | 'OVERTIME_HOURS' | 'ABSENCE_DAYS' | 'MANUAL_VALUE';
+  | 'CRM_ACTIVITIES_DONE' | 'CRM_VISITS' | 'CRM_CALLS' | 'PROSPECT_CONVERSION_RATE' | 'NEW_POTENTIAL_PROSPECTS'
+  | 'SOCIAL_PUBLICATIONS_COUNT' | 'SOCIAL_VIEWS' | 'SOCIAL_INTERACTIONS' | 'SOCIAL_FOLLOWERS_GROWTH'
+  | 'ATTENDANCE_RATE' | 'OVERTIME_HOURS' | 'ABSENCE_DAYS' | 'LATE_EARLY_DEPARTURE_HOURS' | 'MANUAL_VALUE';
 export type KpiDirection = 'HIGHER_BETTER' | 'LOWER_BETTER';
 export type PerfCycleType = 'ANNUEL' | 'TRIMESTRIEL';
 export type ObjectiveStatus = 'EN_COURS' | 'ATTEINT' | 'PARTIEL' | 'NON_ATTEINT' | 'ANNULE';
@@ -138,6 +139,7 @@ export const KPI_SOURCE_LABEL: Record<KpiSource, string> = {
   ATTENDANCE: 'Assiduité / pointage',
   LEAVE: 'Congés / absences',
   PROJECT: 'Projets (service)',
+  SOCIAL: 'Réseaux sociaux / Web',
   MANUAL: 'Saisie manuelle',
 };
 
@@ -148,12 +150,18 @@ export const KPI_METRIC_LABEL: Record<KpiMetric, string> = {
   COMMISSION_AMOUNT: 'Commissions encaissées',
   ENCAISSEMENT_AMOUNT: 'Chiffre d’affaire réalisé',
   CRM_ACTIVITIES_DONE: 'Activités CRM traitées',
-  CRM_VISITS: 'Visites réalisées',
+  CRM_VISITS: 'Visites, Sorties en Clientèle ou Courses réalisées',
   CRM_CALLS: 'Appels passés',
   PROSPECT_CONVERSION_RATE: 'Taux de conversion prospects → clients (%)',
+  NEW_POTENTIAL_PROSPECTS: 'Nouveaux Clients potentiels',
+  SOCIAL_PUBLICATIONS_COUNT: 'Publications & articles réalisés',
+  SOCIAL_VIEWS: 'Vues générées (réseaux sociaux & web)',
+  SOCIAL_INTERACTIONS: 'Interactions générées (réseaux sociaux & web)',
+  SOCIAL_FOLLOWERS_GROWTH: 'Croissance du nombre d’abonnés',
   ATTENDANCE_RATE: 'Taux de présence (%)',
   OVERTIME_HOURS: 'Heures supplémentaires',
   ABSENCE_DAYS: 'Jours d’absence',
+  LATE_EARLY_DEPARTURE_HOURS: 'Taux de retard ou de Départ précipité',
   MANUAL_VALUE: 'Valeur saisie manuellement',
 };
 
@@ -163,10 +171,11 @@ export const METRICS_BY_SOURCE: Record<KpiSource, KpiMetric[]> = {
   COMMISSIONS: ['COMMISSION_AMOUNT'],
   ACCOUNTING: ['ENCAISSEMENT_AMOUNT'],
   CRM: ['CRM_ACTIVITIES_DONE', 'CRM_VISITS', 'CRM_CALLS'],
-  PROSPECTS: ['PROSPECT_CONVERSION_RATE'],
-  ATTENDANCE: ['ATTENDANCE_RATE', 'OVERTIME_HOURS', 'ABSENCE_DAYS'],
+  PROSPECTS: ['PROSPECT_CONVERSION_RATE', 'NEW_POTENTIAL_PROSPECTS'],
+  ATTENDANCE: ['ATTENDANCE_RATE', 'OVERTIME_HOURS', 'ABSENCE_DAYS', 'LATE_EARLY_DEPARTURE_HOURS'],
   LEAVE: ['ABSENCE_DAYS'],
   PROJECT: ['MANUAL_VALUE'],
+  SOCIAL: ['SOCIAL_PUBLICATIONS_COUNT', 'SOCIAL_VIEWS', 'SOCIAL_INTERACTIONS', 'SOCIAL_FOLLOWERS_GROWTH'],
   MANUAL: ['MANUAL_VALUE'],
 };
 

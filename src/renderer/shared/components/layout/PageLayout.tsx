@@ -19,7 +19,7 @@ export default function PageLayout({ title, breadcrumbs, actions, children }: Pa
   const { zoom, zoomIn, zoomOut, reset, handlers } = useZoom();
 
   return (
-    <div className="flex flex-col h-full bg-slate-50">
+    <div className="relative flex flex-col h-full bg-slate-50">
       <TopBar>
         <div className="flex flex-col">
           {breadcrumbs && (
@@ -56,8 +56,11 @@ export default function PageLayout({ title, breadcrumbs, actions, children }: Pa
         </main>
       </div>
 
-      {/* ── Contrôles de zoom (flottants, bas-droite) ───────────────────── */}
-      <div className="fixed bottom-6 right-6 z-30 flex items-center gap-1 rounded-full border border-slate-200 bg-white px-1.5 py-1 shadow-lg">
+      {/* ── Contrôles de zoom (flottants, bas-centre du volet de contenu —
+          `absolute` sur le conteneur `relative` de PageLayout, pas `fixed` sur
+          le viewport, pour ignorer la largeur du Sidebar et rester centré
+          uniquement par rapport à la zone de contenu à droite) ──────────── */}
+      <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-30 flex items-center gap-1 rounded-full border border-slate-200 bg-white px-1.5 py-1 shadow-lg">
         <button
           type="button"
           aria-label="Zoom arrière"

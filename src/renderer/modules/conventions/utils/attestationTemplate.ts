@@ -72,6 +72,9 @@ export const ATTESTATION_VARIABLE_GROUPS: VariableGroup[] = [
       { token: 'lotissement.natureTitre', label: 'Nature du titre sollicité (lotissement)' },
       { token: 'lotissement.numeroTitre', label: 'Numéro du titre obtenu (lotissement)' },
       { token: 'lotissement.documentsLivres', label: 'Documents livrés avec terrains' },
+      { token: 'terrain.nombre', label: 'Nombre de terrains sélectionnés' },
+      { token: 'terrain.nombre.enLettres', label: 'Nombre de terrains sélectionnés (en lettres)' },
+      { token: 'terrains.liste', label: 'Énumération des terrains sélectionnés' },
     ],
   },
   {
@@ -82,6 +85,9 @@ export const ATTESTATION_VARIABLE_GROUPS: VariableGroup[] = [
       { token: 'bien.ville', label: 'Ville' },
       { token: 'bien.superficie', label: 'Superficie (m²)' },
       { token: 'bien.superficie.enLettres', label: 'Superficie en lettres (m²)' },
+      { token: 'bien.nombre', label: 'Nombre de biens sélectionnés' },
+      { token: 'bien.nombre.enLettres', label: 'Nombre de biens sélectionnés (en lettres)' },
+      { token: 'biens.liste', label: 'Énumération des biens sélectionnés' },
     ],
   },
   {
@@ -245,6 +251,28 @@ function computeAvenantNumero(a: any): number | null {
   return idx >= 0 ? idx + 1 : null;
 }
 
+/** Jointure type "a, b et c" (virgules + « et » devant le dernier élément). */
+function joinFrenchList(items: string[]): string {
+  if (items.length === 0) return '';
+  if (items.length === 1) return items[0];
+  return `${items.slice(0, -1).join(', ')} et ${items[items.length - 1]}`;
+}
+
+/**
+ * Énumération simple des biens immobiliers sélectionnés sur une attestation :
+ * « TER-001 (12 rue X, Abidjan), TER-002 (…) et TER-003 (…) ». Les biens
+ * n'ayant pas la structure lot/îlot d'un terrain, on reste sur un format
+ * référence + localisation plutôt que `lotsEnumeration`.
+ */
+function propertiesEnumeration(properties: Array<{ reference?: string | null; address?: string | null; city?: string | null }>): string {
+  if (properties.length === 0) return '';
+  const parts = properties.map((p) => {
+    const loc = [p.address, p.city].filter(Boolean).join(', ');
+    return `${p.reference ?? ''}${loc ? ` (${loc})` : ''}`.trim();
+  });
+  return joinFrenchList(parts);
+}
+
 /**
  * Résout les variables {{token}} à partir d'une attestation chargée avec ses relations.
  *
@@ -266,6 +294,15 @@ export function resolveAttestationVariables(
     if (countriesMap && countriesMap[code]) return countriesMap[code];
     return code;
   };
+  // Sélection multiple de terrains/biens (ATTRIBUTION / CESSION) — repli sur
+  // le champ singulier `terrain`/`property` pour les attestations mono-bien
+  // (mode hérité, SOLDE/TRANSFERT_PROPRIETE, ou données antérieures à cette
+  // fonctionnalité). Les tokens singuliers `terrain.*`/`bien.*` ci-dessous
+  // portent donc toujours sur le premier élément de la sélection.
+  const terrainsList: any[] = (a.terrains ?? []).map((l: any) => l.terrain).filter(Boolean);
+  const propertiesList: any[] = (a.properties ?? []).map((l: any) => l.property).filter(Boolean);
+  const terrain = terrainsList[0] ?? a.terrain;
+  const property = propertiesList[0] ?? a.property;
   return {
     'attestation.reference': a.reference ?? '',
     'attestation.type': TYPE_LABELS[a.type] ?? a.type ?? '',
@@ -295,27 +332,35 @@ export function resolveAttestationVariables(
     'cedant.pieceIdentite': a.secondaryClient?.idNumber ?? '',
     'cedant.dateNaissance': date(a.secondaryClient?.birthDate),
     'cedant.lieuNaissance': a.secondaryClient?.birthPlace ?? '',
-    'terrain.reference': a.terrain?.reference ?? '',
-    'terrain.ilot': a.terrain?.numeroIlot ?? '',
-    'terrain.parcelle': a.terrain?.numeroParcelle ?? '',
-    'terrain.superficie': a.terrain?.surface != null ? String(a.terrain.surface) : '',
-    'terrain.superficie.enLettres': numL(a.terrain?.surface),
-    'terrain.prixVente': money(a.terrain?.prixVente),
-    'terrain.prixVente.enLettres': moneyL(a.terrain?.prixVente),
-    'terrain.titreFoncier': a.terrain?.titreFoncier ?? '',
-    'terrain.lotissement': a.terrain?.lotissement?.nom ?? '',
-    'lotissement.nom': a.terrain?.lotissement?.nom ?? '',
-    'lotissement.commune': a.terrain?.lotissement?.commune ?? '',
-    'lotissement.ville': a.terrain?.lotissement?.ville ?? '',
-    'lotissement.pays': countryName(a.terrain?.lotissement?.pays),
-    'lotissement.natureTitre': a.terrain?.lotissement?.titleType?.label ?? '',
-    'lotissement.numeroTitre': a.terrain?.lotissement?.titleNumber ?? '',
-    'lotissement.documentsLivres': a.terrain?.lotissement?.titleType?.documentsLivres ?? '',
-    'bien.reference': a.property?.reference ?? '',
-    'bien.adresse': a.property?.address ?? '',
-    'bien.ville': a.property?.city ?? '',
-    'bien.superficie': a.property?.surface != null ? String(a.property.surface) : '',
-    'bien.superficie.enLettres': numL(a.property?.surface),
+    'terrain.reference': terrain?.reference ?? '',
+    'terrain.ilot': terrain?.numeroIlot ?? '',
+    'terrain.parcelle': terrain?.numeroParcelle ?? '',
+    'terrain.superficie': terrain?.surface != null ? String(terrain.surface) : '',
+    'terrain.superficie.enLettres': numL(terrain?.surface),
+    'terrain.prixVente': money(terrain?.prixVente),
+    'terrain.prixVente.enLettres': moneyL(terrain?.prixVente),
+    'terrain.titreFoncier': terrain?.titreFoncier ?? '',
+    'terrain.lotissement': terrain?.lotissement?.nom ?? '',
+    'terrain.nombre': terrainsList.length ? String(terrainsList.length) : (terrain ? '1' : ''),
+    'terrain.nombre.enLettres': numL(terrainsList.length || (terrain ? 1 : undefined)),
+    // Énumération des terrains sélectionnés (attribution/cession multi-terrains) ;
+    // repli sur le terrain unique lorsque la sélection multiple n'est pas utilisée.
+    'terrains.liste': lotsEnumeration(terrainsList.length ? terrainsList : (terrain ? [terrain] : [])),
+    'lotissement.nom': terrain?.lotissement?.nom ?? '',
+    'lotissement.commune': terrain?.lotissement?.commune ?? '',
+    'lotissement.ville': terrain?.lotissement?.ville ?? '',
+    'lotissement.pays': countryName(terrain?.lotissement?.pays),
+    'lotissement.natureTitre': terrain?.lotissement?.titleType?.label ?? '',
+    'lotissement.numeroTitre': terrain?.lotissement?.titleNumber ?? '',
+    'lotissement.documentsLivres': terrain?.lotissement?.titleType?.documentsLivres ?? '',
+    'bien.reference': property?.reference ?? '',
+    'bien.adresse': property?.address ?? '',
+    'bien.ville': property?.city ?? '',
+    'bien.superficie': property?.surface != null ? String(property.surface) : '',
+    'bien.superficie.enLettres': numL(property?.surface),
+    'bien.nombre': propertiesList.length ? String(propertiesList.length) : (property ? '1' : ''),
+    'bien.nombre.enLettres': numL(propertiesList.length || (property ? 1 : undefined)),
+    'biens.liste': propertiesEnumeration(propertiesList.length ? propertiesList : (property ? [property] : [])),
     'convention.reference': a.convention?.reference ?? '',
     'convention.dateSignature': date(a.convention?.signedAt),
     'convention.dateConventionAnterieure': date(a.convention?.priorConventionDate),
@@ -328,11 +373,14 @@ export function resolveAttestationVariables(
       ? String(a.convention._count.terrains)
       : '',
     'convention.nombreTerrains.enLettres': numL(a.convention?._count?.terrains),
-    // Liste des lots souscrits via la convention (sinon retombe sur le terrain unique).
+    // Liste des lots souscrits via la convention (sinon retombe sur la
+    // sélection de terrains de l'attestation elle-même — mode hérité/multiple,
+    // avec repli sur le terrain unique pour les attestations mono-bien
+    // antérieures à la sélection multiple).
     'convention.lotsSouscrits': lotsEnumeration(
       (a.convention?.terrains ?? []).map((l: any) => l.terrain).filter(Boolean).length > 0
         ? (a.convention.terrains as any[]).map((l) => l.terrain).filter(Boolean)
-        : (a.terrain ? [a.terrain] : []),
+        : (terrainsList.length ? terrainsList : (terrain ? [terrain] : [])),
     ),
     'convention.fraisOuvertureDossier': money(a.convention?.fraisOuvertureDossier),
     'convention.fraisOuvertureDossier.enLettres': moneyL(a.convention?.fraisOuvertureDossier),

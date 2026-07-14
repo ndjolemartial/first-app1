@@ -4,7 +4,7 @@ import PageLayout from '../../../shared/components/layout/PageLayout';
 import Button from '../../../shared/components/ui/Button';
 import Input from '../../../shared/components/ui/Input';
 import Select from '../../../shared/components/ui/Select';
-import SearchSelect from '../../../shared/components/ui/SearchSelect';
+import SearchSelect, { type SearchSelectOption } from '../../../shared/components/ui/SearchSelect';
 import Textarea from '../../../shared/components/ui/Textarea';
 import Card from '../../../shared/components/ui/Card';
 import { useAttestation, useCreateAttestation, useUpdateAttestation, useLegacyBalance } from '../hooks/useAttestations';
@@ -16,7 +16,7 @@ import { ATTESTATION_TYPE_LABELS } from '../utils/attestationTemplate';
 import { formatPersonName, formatCurrency } from '../../../shared/utils/format';
 import { makeEntitySearch } from '../../../shared/utils/entitySearch';
 import { useAuthStore } from '../../../shared/stores/auth.store';
-import { Save } from 'lucide-react';
+import { Save, X } from 'lucide-react';
 
 const TYPE_OPTIONS = Object.entries(ATTESTATION_TYPE_LABELS).map(([value, label]) => ({ value, label }));
 
@@ -105,6 +105,77 @@ function toDateInput(val?: string | Date | null): string {
   return isNaN(d.getTime()) ? '' : d.toISOString().slice(0, 10);
 }
 
+/**
+ * Sélecteur multiple (puces + recherche) — même principe que `MultiAssetSelect`
+ * dans ConventionFormPage.tsx : ajoute un élément via un `SearchSelect`, l'affiche
+ * comme une puce retirable. `options` doit déjà exclure les éléments non éligibles
+ * (ex. hors du lotissement/programme verrouillé) tout en conservant ceux déjà
+ * sélectionnés (pour l'affichage de leur libellé).
+ */
+function MultiAssetSelect({
+  label,
+  options,
+  values,
+  onChange,
+  error,
+  onSearch,
+  addLabel = '— Ajouter un élément —',
+}: {
+  label: string;
+  options: SearchSelectOption[];
+  values: number[];
+  onChange: (next: number[]) => void;
+  error?: string;
+  onSearch?: (query: string) => Promise<SearchSelectOption[]>;
+  /** Libellé de l'option vide (ex. invite à choisir un cédant au préalable). */
+  addLabel?: string;
+}) {
+  const selectedSet = new Set(values.map(String));
+  const remainingOptions: SearchSelectOption[] = [
+    { value: '', label: addLabel },
+    ...options.filter((o) => o.value !== '' && !selectedSet.has(o.value)),
+  ];
+  const labelByValue = new Map(options.filter((o) => o.value !== '').map((o) => [o.value, o.label]));
+  return (
+    <div className="flex flex-col gap-1">
+      <label className="text-sm font-medium text-slate-700">{label}</label>
+      {values.length === 0 ? (
+        <p className="text-sm text-slate-400">Aucun élément sélectionné.</p>
+      ) : (
+        <div className="flex flex-wrap gap-2">
+          {values.map((v) => (
+            <span
+              key={v}
+              className="inline-flex items-center gap-1 rounded-full bg-blue-50 border border-blue-200 px-3 py-1 text-sm text-blue-700"
+            >
+              <span className="break-all">{labelByValue.get(String(v)) ?? `#${v}`}</span>
+              <button
+                type="button"
+                aria-label="Retirer"
+                onClick={() => onChange(values.filter((x) => x !== v))}
+                className="ml-1 rounded-full p-0.5 text-blue-500 hover:bg-blue-100 hover:text-red-500"
+              >
+                <X className="h-3 w-3" />
+              </button>
+            </span>
+          ))}
+        </div>
+      )}
+      <SearchSelect
+        options={remainingOptions}
+        value=""
+        onChange={(v) => {
+          const num = Number(v);
+          if (!v || !Number.isFinite(num)) return;
+          onChange([...values, num]);
+        }}
+        onSearch={onSearch}
+      />
+      {error && <p className="text-xs text-red-500">{error}</p>}
+    </div>
+  );
+}
+
 export default function AttestationFormPage() {
   const { id } = useParams<{ id?: string }>();
   const isEdit = !!id;
@@ -131,8 +202,13 @@ export default function AttestationFormPage() {
   const [clientId, setClientId] = useState(prefilledClientId);
   const [secondaryClientId, setSecondaryClientId] = useState('');
   const [assetType, setAssetType] = useState('TERRAIN');
-  const [terrainId, setTerrainId] = useState(prefilledTerrainId);
-  const [propertyId, setPropertyId] = useState('');
+  // Terrain(s) — sélection multiple, restreinte à un même lotissement.
+  // Utilisé à la fois par le mode hérité (souscription) et par « Bien concerné »
+  // (ATTRIBUTION / CESSION) : ces deux cartes sont mutuellement exclusives.
+  const [terrainIds, setTerrainIds] = useState<number[]>(prefilledTerrainId ? [Number(prefilledTerrainId)] : []);
+  // « Bien concerné » (ATTRIBUTION / CESSION) uniquement — biens immobiliers,
+  // restreints à un même programme immobilier (s'il est déterminable).
+  const [propertyIds, setPropertyIds] = useState<number[]>([]);
   const [conventionId, setConventionId] = useState(prefilledConventionId ?? '');
   // Vrai dès qu'on émet/édite une attestation de solde héritée (sans convention).
   const [legacyMode, setLegacyMode] = useState(legacyParam);
@@ -149,7 +225,6 @@ export default function AttestationFormPage() {
   const clientIdNum = clientId ? Number(clientId) : 0;
   const secondaryClientIdNum = secondaryClientId ? Number(secondaryClientId) : 0;
   const conventionIdNum = conventionId ? Number(conventionId) : 0;
-  const terrainIdNum = terrainId ? Number(terrainId) : 0;
 
   // Pour une cession, on ne propose que les terrains affectés au cédant
   // (Terrain.clientId === secondaryClientId). Pour les autres types, on
@@ -190,17 +265,18 @@ export default function AttestationFormPage() {
   const hasLinkedConvention = conventionIdNum > 0;
   const showSubscriptionFields = isSoldeOrTransfert || hasLinkedConvention;
 
-  // Solde de la souscription héritée (client + terrain). Récupéré côté serveur :
-  // total souscrit, encaissé, reste dû. Inactif hors mode hérité.
+  // Solde de la souscription héritée (client + terrain(s)). Récupéré côté
+  // serveur : total souscrit, encaissé, reste dû. Inactif hors mode hérité.
   const { data: legacyBalanceRes } = useLegacyBalance(
     legacyMode ? clientIdNum : 0,
-    legacyMode ? terrainIdNum : 0,
+    legacyMode ? terrainIds : [],
   );
   const legacyInfo = legacyMode ? legacyBalanceRes?.data : undefined;
   const legacyBalance = legacyInfo ? legacyInfo.balance : null;
 
-  // Terrain sélectionné (objet) — sert au lotissement affiché en mode hérité.
-  const selectedTerrain = (terrainsRes?.data ?? []).find((t: any) => String(t.id) === terrainId);
+  // Premier terrain sélectionné (objet) — sert au lotissement affiché en mode
+  // hérité (tous les terrains sélectionnés partagent le même lotissement).
+  const selectedTerrain = (terrainsRes?.data ?? []).find((t: any) => t.id === terrainIds[0]);
 
   const balance = legacyMode
     ? legacyBalance
@@ -218,8 +294,21 @@ export default function AttestationFormPage() {
       setType(a.type ?? 'ATTRIBUTION');
       setClientId(String(a.clientId ?? ''));
       setSecondaryClientId(a.secondaryClientId ? String(a.secondaryClientId) : '');
-      if (a.terrainId) { setAssetType('TERRAIN'); setTerrainId(String(a.terrainId)); }
-      if (a.propertyId) { setAssetType('PROPERTY'); setPropertyId(String(a.propertyId)); }
+      // Terrain(s) / bien(s) — sélection multiple : on lit la relation
+      // `terrains`/`properties` (join table), avec repli sur le champ
+      // singulier terrainId/propertyId pour les attestations mono-bien
+      // antérieures à cette fonctionnalité.
+      const terrainIdsFromRelation: number[] = (a.terrains ?? []).map((l: any) => l.terrainId ?? l.terrain?.id).filter(Boolean);
+      const propertyIdsFromRelation: number[] = (a.properties ?? []).map((l: any) => l.propertyId ?? l.property?.id).filter(Boolean);
+      const effTerrainIds = terrainIdsFromRelation.length ? terrainIdsFromRelation : (a.terrainId ? [a.terrainId] : []);
+      const effPropertyIds = propertyIdsFromRelation.length ? propertyIdsFromRelation : (a.propertyId ? [a.propertyId] : []);
+      setTerrainIds(effTerrainIds);
+      setPropertyIds(effPropertyIds);
+      const isLegacyAttestation = a.type === 'SOLDE' && !a.conventionId;
+      if (!isLegacyAttestation) {
+        if (effTerrainIds.length) setAssetType('TERRAIN');
+        else if (effPropertyIds.length) setAssetType('PROPERTY');
+      }
       setConventionId(a.conventionId ? String(a.conventionId) : '');
       setEmittedAt(toDateInput(a.emittedAt));
       setAmount(a.amount != null ? String(a.amount) : '');
@@ -227,17 +316,21 @@ export default function AttestationFormPage() {
       setNotes(a.notes ?? '');
       // Attestation de solde sans convention = souscription héritée (avec ou
       // sans terrain rattaché).
-      setLegacyMode(a.type === 'SOLDE' && !a.conventionId);
+      setLegacyMode(isLegacyAttestation);
     }
   }, [res, isEdit]);
 
   // Pré-remplissage depuis la convention source (création depuis ConventionDetailPage)
+  // — une convention rattache ses terrains/biens via les tables de liaison
+  // ConventionTerrain/ConventionProperty (sélection multiple côté convention).
   useEffect(() => {
     if (!isEdit && prefilledConv?.data) {
       const c = prefilledConv.data;
       setClientId(String(c.clientId));
-      if (c.terrainId) { setAssetType('TERRAIN'); setTerrainId(String(c.terrainId)); }
-      else if (c.propertyId) { setAssetType('PROPERTY'); setPropertyId(String(c.propertyId)); }
+      const cTerrainIds: number[] = (c.terrains ?? []).map((l: any) => l.terrainId ?? l.terrain?.id).filter(Boolean);
+      const cPropertyIds: number[] = (c.properties ?? []).map((l: any) => l.propertyId ?? l.property?.id).filter(Boolean);
+      if (cTerrainIds.length) { setAssetType('TERRAIN'); setTerrainIds(cTerrainIds); }
+      else if (cPropertyIds.length) { setAssetType('PROPERTY'); setPropertyIds(cPropertyIds); }
     }
   }, [prefilledConv, isEdit]);
 
@@ -296,27 +389,41 @@ export default function AttestationFormPage() {
   // qu'aucun cédant n'est sélectionné et on affiche un message dédié si le
   // cédant n'a aucun terrain affecté.
   const terrainsList: any[] = terrainsRes?.data ?? [];
-  let terrainOptions: Array<{ value: string; label: string }>;
-  if (isCession && secondaryClientIdNum <= 0) {
-    terrainOptions = [{ value: '', label: '— Choisir d\'abord le cédant —' }];
-  } else if (isCession && terrainsList.length === 0) {
-    terrainOptions = [{ value: '', label: 'Aucun terrain affecté à ce cédant' }];
-  } else {
-    terrainOptions = [
-      { value: '', label: '— Choisir un terrain —' },
-      ...terrainsList.map((t: any) => ({
-        value: String(t.id),
-        label: `${t.reference}${t.numeroParcelle ? ` — parcelle ${t.numeroParcelle}` : ''}`,
-      })),
-    ];
-  }
-  const propertyOptions = [
-    { value: '', label: '— Choisir un bien —' },
-    ...(propertiesRes?.data ?? []).map((p: any) => ({
+  const terrainAddLabel = isCession && secondaryClientIdNum <= 0
+    ? '— Choisir d\'abord le cédant —'
+    : (isCession && terrainsList.length === 0 ? 'Aucun terrain affecté à ce cédant' : undefined);
+  // « Bien concerné » (ATTRIBUTION / CESSION) — options pour la sélection
+  // multiple. Terrains : verrouillés sur le lotissement du premier terrain
+  // choisi. Biens : verrouillés sur le programme immobilier du premier bien
+  // choisi UNIQUEMENT s'il en a un (sinon sélection libre).
+  const lockedLotissementId: number | null = terrainIds.length > 0
+    ? (terrainsList.find((t: any) => t.id === terrainIds[0])?.lotissementId ?? null)
+    : null;
+  const terrainOptionsMulti: SearchSelectOption[] = terrainsList
+    .filter((t: any) => terrainIds.includes(t.id) || lockedLotissementId == null || t.lotissementId === lockedLotissementId)
+    .map((t: any) => ({
+      value: String(t.id),
+      label: `${t.reference}${t.numeroParcelle ? ` — parcelle ${t.numeroParcelle}` : ''}${t.lotissement?.nom ? ` (${t.lotissement.nom})` : ''}`,
+    }));
+  const propertiesList: any[] = propertiesRes?.data ?? [];
+  const lockedProgrammeId: number | null = propertyIds.length > 0
+    ? (propertiesList.find((p: any) => p.id === propertyIds[0])?.programmeId ?? null)
+    : null;
+  const propertyOptionsMulti: SearchSelectOption[] = propertiesList
+    .filter((p: any) => propertyIds.includes(p.id) || lockedProgrammeId == null || p.programmeId === lockedProgrammeId)
+    .map((p: any) => ({
       value: String(p.id),
       label: `${p.reference} — ${p.address}, ${p.city}`,
-    })),
-  ];
+    }));
+  const hasMixedLotissements = (() => {
+    const selected = terrainsList.filter((t: any) => terrainIds.includes(t.id));
+    return new Set(selected.map((t: any) => t.lotissementId ?? null)).size > 1;
+  })();
+  const hasMixedProgrammes = (() => {
+    const selected = propertiesList.filter((p: any) => propertyIds.includes(p.id));
+    const programmeIds = new Set(selected.map((p: any) => p.programmeId).filter((v: any) => v != null));
+    return programmeIds.size > 1;
+  })();
 
   // Recherche distante (serveur) pour afficher n'importe quel enregistrement
   // quel que soit le volume, en conservant les mêmes règles que les listes
@@ -332,18 +439,26 @@ export default function AttestationFormPage() {
       .filter((c: any) => String(c.id) !== clientId)
       .map((c: any) => ({ value: String(c.id), label: clientLabel(c) }));
   };
-  const searchProperties = makeEntitySearch(
-    (f, p, l) => window.electron.properties.list(token, f, p, l),
-    (p: any) => ({ value: String(p.id), label: `${p.reference} — ${p.address}, ${p.city}` }),
-  );
-  const searchTerrains = async (q: string) => {
-    if (isCession && secondaryClientIdNum <= 0) return []; // bloqué tant que pas de cédant
-    const filters: any = { ...terrainFilters, ...(q ? { search: q } : {}) };
+  // Recherche distante pour la sélection multiple « Bien concerné » —
+  // applique en plus le verrouillage lotissement/programme.
+  const searchTerrainsMulti = async (q: string) => {
+    if (isCession && secondaryClientIdNum <= 0) return [];
+    const filters: any = {
+      ...terrainFilters,
+      ...(q ? { search: q } : {}),
+      ...(lockedLotissementId != null ? { lotissementId: lockedLotissementId } : {}),
+    };
     const r: any = await window.electron.terrains.list(token, filters, 1, 100);
     return (r?.data ?? []).map((t: any) => ({
       value: String(t.id),
-      label: `${t.reference}${t.numeroParcelle ? ` — parcelle ${t.numeroParcelle}` : ''}`,
+      label: `${t.reference}${t.numeroParcelle ? ` — parcelle ${t.numeroParcelle}` : ''}${t.lotissement?.nom ? ` (${t.lotissement.nom})` : ''}`,
     }));
+  };
+  const searchPropertiesMulti = async (q: string) => {
+    const r: any = await window.electron.properties.list(token, q ? { search: q } : {}, 1, 100);
+    return (r?.data ?? [])
+      .filter((p: any) => lockedProgrammeId == null || p.programmeId === lockedProgrammeId)
+      .map((p: any) => ({ value: String(p.id), label: `${p.reference} — ${p.address}, ${p.city}` }));
   };
 
   // Options du select Convention liée : dépend du propriétaire des conventions
@@ -376,12 +491,20 @@ export default function AttestationFormPage() {
       setError('Le cessionnaire et le cédant doivent être deux clients différents');
       return;
     }
-    if (isCession && assetType === 'TERRAIN' && !terrainId) {
-      setError('Sélectionnez le terrain cédé');
+    if (!legacyMode && !isSoldeOrTransfert && isCession && assetType === 'TERRAIN' && terrainIds.length === 0) {
+      setError('Sélectionnez au moins un terrain cédé');
       return;
     }
-    if (isCession && assetType === 'PROPERTY' && !propertyId) {
-      setError('Sélectionnez le bien immobilier cédé');
+    if (!legacyMode && !isSoldeOrTransfert && isCession && assetType === 'PROPERTY' && propertyIds.length === 0) {
+      setError('Sélectionnez au moins un bien immobilier cédé');
+      return;
+    }
+    if (!legacyMode && !isSoldeOrTransfert && assetType === 'TERRAIN' && hasMixedLotissements) {
+      setError('Tous les terrains sélectionnés doivent provenir du même lotissement.');
+      return;
+    }
+    if (!legacyMode && !isSoldeOrTransfert && assetType === 'PROPERTY' && hasMixedProgrammes) {
+      setError('Tous les biens immobiliers sélectionnés doivent provenir du même programme immobilier.');
       return;
     }
     if (isTransfert && !secondaryClientId) {
@@ -393,12 +516,17 @@ export default function AttestationFormPage() {
       return;
     }
     if (legacyMode) {
-      // Souscription héritée : le terrain de souscription est obligatoire (porté
-      // sur l'attestation). Le solde est vérifié côté serveur sur les échéances
-      // héritées du client (repli si le terrain choisi n'a pas d'échéance
+      // Souscription héritée : le(s) terrain(s) de souscription sont
+      // obligatoires (portés sur l'attestation, et doivent provenir d'un même
+      // lotissement). Le solde est vérifié côté serveur sur les échéances
+      // héritées du client (repli si les terrains choisis n'ont pas d'échéance
       // rattachée) et doit être inférieur ou égal à 0.
-      if (!terrainId) {
-        setError('Sélectionnez le terrain de la souscription héritée');
+      if (terrainIds.length === 0) {
+        setError('Sélectionnez au moins un terrain de la souscription héritée');
+        return;
+      }
+      if (hasMixedLotissements) {
+        setError('Tous les terrains sélectionnés doivent provenir du même lotissement.');
         return;
       }
       if (legacyBalance == null) {
@@ -434,13 +562,16 @@ export default function AttestationFormPage() {
       type,
       clientId: Number(clientId),
       secondaryClientId: secondaryClientId ? Number(secondaryClientId) : undefined,
-      // Mode hérité : on attache le terrain de la souscription (et aucune
-      // convention). Pour une SOLDE / TRANSFERT sur convention, aucun bien n'est
-      // attaché — l'attestation porte sur la souscription dans son ensemble.
-      terrainId: legacyMode
-        ? (terrainId ? Number(terrainId) : undefined)
-        : (!isSoldeOrTransfert && assetType === 'TERRAIN' && terrainId ? Number(terrainId) : undefined),
-      propertyId: !legacyMode && !isSoldeOrTransfert && assetType === 'PROPERTY' && propertyId ? Number(propertyId) : undefined,
+      // Mode hérité : on attache le(s) terrain(s) de la souscription (sélection
+      // multiple, et aucune convention). Pour une SOLDE / TRANSFERT sur
+      // convention, aucun bien n'est attaché — l'attestation porte sur la
+      // souscription dans son ensemble. « Bien concerné » (ATTRIBUTION /
+      // CESSION) — on envoie toujours les deux tableaux (le non-sélectionné
+      // vide) afin que changer de type de bien efface bien l'autre côté serveur.
+      terrainIds: legacyMode
+        ? terrainIds
+        : (!isSoldeOrTransfert ? (assetType === 'TERRAIN' ? terrainIds : []) : undefined),
+      propertyIds: (!legacyMode && !isSoldeOrTransfert) ? (assetType === 'PROPERTY' ? propertyIds : []) : undefined,
       conventionId: legacyMode ? undefined : (conventionId ? Number(conventionId) : undefined),
       emittedAt: emittedAt ? new Date(emittedAt).toISOString() : undefined,
       // Le montant n'est envoyé que lorsque le champ est visible — c'est-à-dire
@@ -484,7 +615,8 @@ export default function AttestationFormPage() {
                 setType(e.target.value);
                 // En CESSION la liste des terrains est restreinte au cédant ;
                 // une sélection antérieure peut ne plus être valide.
-                setTerrainId('');
+                setTerrainIds([]);
+                setPropertyIds([]);
               }} />
             <Input label="Date d'émission *" type="date" value={emittedAt}
               onChange={(e) => setEmittedAt(e.target.value)} />
@@ -498,7 +630,7 @@ export default function AttestationFormPage() {
                   setSecondaryClientId(v);
                   // La liste des terrains se restreint au nouveau cédant : on
                   // efface le terrain précédemment choisi.
-                  setTerrainId('');
+                  setTerrainIds([]);
                 }} />
             )}
             {type === 'TRANSFERT_PROPRIETE' && (
@@ -511,29 +643,70 @@ export default function AttestationFormPage() {
 
         {legacyMode ? (
           <Card>
-            <h3 className="text-base font-semibold text-slate-800 mb-4">Terrain de la souscription</h3>
-            <div className="grid grid-cols-2 gap-4">
-              <SearchSelect label="Terrain *" options={terrainOptions} value={terrainId}
-                onSearch={searchTerrains} onChange={(v) => setTerrainId(v)} />
-            </div>
+            <h3 className="text-base font-semibold text-slate-800 mb-4">Terrain(s) de la souscription</h3>
+            <MultiAssetSelect
+              label="Terrain(s) *"
+              options={terrainOptionsMulti}
+              values={terrainIds}
+              onChange={setTerrainIds}
+              onSearch={searchTerrainsMulti}
+            />
+            {hasMixedLotissements && (
+              <p className="mt-2 text-xs text-red-700 bg-red-50 border border-red-200 rounded px-3 py-2">
+                Les terrains sélectionnés proviennent de lotissements différents. Retirez ceux qui n'appartiennent pas au même lotissement avant d'enregistrer.
+              </p>
+            )}
             <p className="mt-2 text-xs text-slate-400">
-              Le solde est vérifié sur les échéances héritées du client (le terrain choisi figure sur l'attestation ;
+              Le solde est vérifié sur les échéances héritées du client (le(s) terrain(s) choisi(s) figure(nt) sur l'attestation ;
               si aucune échéance n'y est rattachée, le solde porte sur l'ensemble des échéances héritées du client).
             </p>
           </Card>
         ) : !isSoldeOrTransfert && (
           <Card>
             <h3 className="text-base font-semibold text-slate-800 mb-4">Bien concerné</h3>
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-2 gap-4 items-start">
               <Select label={isCession ? 'Type de bien *' : 'Type de bien'} options={ASSET_OPTIONS} value={assetType}
                 onChange={(e) => setAssetType(e.target.value)} />
-              {assetType === 'TERRAIN' ? (
-                <SearchSelect label={isCession ? 'Terrain *' : 'Terrain'} options={terrainOptions} value={terrainId}
-                  onSearch={searchTerrains} onChange={(v) => setTerrainId(v)} />
-              ) : (
-                <SearchSelect label={isCession ? 'Bien immobilier *' : 'Bien immobilier'} options={propertyOptions} value={propertyId}
-                  onSearch={searchProperties} onChange={(v) => setPropertyId(v)} />
-              )}
+              <div className="space-y-2">
+                {assetType === 'TERRAIN' ? (
+                  <>
+                    <MultiAssetSelect
+                      label={isCession ? 'Terrain(s) *' : 'Terrain(s)'}
+                      options={terrainOptionsMulti}
+                      values={terrainIds}
+                      onChange={setTerrainIds}
+                      onSearch={searchTerrainsMulti}
+                      addLabel={terrainAddLabel}
+                    />
+                    <p className="text-xs text-slate-500">
+                      Tous les terrains sélectionnés doivent provenir du même lotissement.
+                    </p>
+                    {hasMixedLotissements && (
+                      <p className="text-xs text-red-700 bg-red-50 border border-red-200 rounded px-3 py-2">
+                        Les terrains sélectionnés proviennent de lotissements différents. Retirez ceux qui n'appartiennent pas au même lotissement avant d'enregistrer.
+                      </p>
+                    )}
+                  </>
+                ) : (
+                  <>
+                    <MultiAssetSelect
+                      label={isCession ? 'Bien(s) immobilier(s) *' : 'Bien(s) immobilier(s)'}
+                      options={propertyOptionsMulti}
+                      values={propertyIds}
+                      onChange={setPropertyIds}
+                      onSearch={searchPropertiesMulti}
+                    />
+                    <p className="text-xs text-slate-500">
+                      Si le premier bien choisi appartient à un programme immobilier, les suivants doivent en provenir également.
+                    </p>
+                    {hasMixedProgrammes && (
+                      <p className="text-xs text-red-700 bg-red-50 border border-red-200 rounded px-3 py-2">
+                        Les biens sélectionnés proviennent de programmes immobiliers différents. Retirez ceux qui n'appartiennent pas au même programme avant d'enregistrer.
+                      </p>
+                    )}
+                  </>
+                )}
+              </div>
             </div>
           </Card>
         )}
@@ -575,7 +748,7 @@ export default function AttestationFormPage() {
                     readOnly
                     placeholder={
                       legacyMode
-                        ? (terrainId ? '—' : 'Sélectionnez un terrain')
+                        ? (terrainIds.length > 0 ? '—' : 'Sélectionnez un terrain')
                         : (selectedConvention ? '—' : 'Sélectionnez une convention')
                     }
                   />
@@ -606,7 +779,7 @@ export default function AttestationFormPage() {
                   readOnly
                   placeholder={
                     legacyMode
-                      ? (terrainId ? '—' : 'Sélectionnez un terrain')
+                      ? (terrainIds.length > 0 ? '—' : 'Sélectionnez un terrain')
                       : (selectedConvention ? '—' : 'Sélectionnez une convention')
                   }
                 />
@@ -616,7 +789,7 @@ export default function AttestationFormPage() {
                   readOnly
                   placeholder={
                     legacyMode
-                      ? (terrainId ? '—' : 'Sélectionnez un terrain')
+                      ? (terrainIds.length > 0 ? '—' : 'Sélectionnez un terrain')
                       : (selectedConvention ? '—' : 'Sélectionnez une convention')
                   }
                 />

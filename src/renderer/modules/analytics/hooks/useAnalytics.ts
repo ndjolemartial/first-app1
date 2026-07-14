@@ -16,3 +16,6 @@ export const useChargesAnalytics = make('charges', (t) => ipc().charges(t));
 export const useContractsAnalytics = make('contracts', (t) => ipc().contracts(t));
 export const useRiskAnalytics = make('risk', (t) => ipc().risk(t));
 export const useRecommendations = make('recommendations', (t) => ipc().recommendations(t));
+export const useFollowUpAnalytics = make('followUp', (t) => ipc().followUp(t));
+export const useVisitorsAnalytics = make('visitors', (t) => ipc().visitors(t));
+export const useCallsAnalytics = make('calls', (t) => ipc().calls(t));

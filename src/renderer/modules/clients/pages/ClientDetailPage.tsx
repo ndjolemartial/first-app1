@@ -13,7 +13,7 @@ import {
 } from '../hooks/useClients';
 import { useAuthStore } from '../../../shared/stores/auth.store';
 import { formatDate } from '../../../shared/utils/format';
-import { Edit, Trash2, FileText, IdCard, Users } from 'lucide-react';
+import { Edit, Trash2, FileText, IdCard, Users, History } from 'lucide-react';
 import EntityDocumentsCard from '../../archiving/components/EntityDocumentsCard';
 
 /** Affectation client : AD est explicitement exclue (réduite au niveau AGENT sur ce module). */
@@ -96,8 +96,8 @@ export default function ClientDetailPage() {
       title={displayName}
       breadcrumbs={[{ label: 'Clients', to: '/clients' }, { label: displayName }]}
       actions={
-        canWrite ? (
-          <div className="flex gap-2 items-end">
+        <div className="flex gap-2 items-end">
+          {canWrite && (
             <div className="w-36">
               <Select
                 label=""
@@ -107,12 +107,18 @@ export default function ClientDetailPage() {
                 onChange={(e) => updateStatus.mutate({ id: c.id, status: e.target.value })}
               />
             </div>
-            <Button variant="secondary" icon={<Edit className="h-4 w-4" />}
-              onClick={() => navigate(`/clients/${id}/edit`)}>Modifier</Button>
-            <Button variant="danger" icon={<Trash2 className="h-4 w-4" />}
-              onClick={() => setConfirmDelete(true)}>Supprimer</Button>
-          </div>
-        ) : undefined
+          )}
+          <Button variant="secondary" icon={<History className="h-4 w-4" />}
+            onClick={() => navigate(`/clients/${id}/timeline`)}>Fiche de suivi</Button>
+          {canWrite && (
+            <>
+              <Button variant="secondary" icon={<Edit className="h-4 w-4" />}
+                onClick={() => navigate(`/clients/${id}/edit`)}>Modifier</Button>
+              <Button variant="danger" icon={<Trash2 className="h-4 w-4" />}
+                onClick={() => setConfirmDelete(true)}>Supprimer</Button>
+            </>
+          )}
+        </div>
       }
     >
       <div className="max-w-4xl mx-auto space-y-4">

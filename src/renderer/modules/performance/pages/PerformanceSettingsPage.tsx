@@ -194,8 +194,10 @@ function WeightModal({ profile, kpis, onClose }: { profile: WeightProfile | null
 
   const submit = async () => {
     if (!poste.trim() || !name.trim()) { toast.error('Poste et nom requis'); return; }
+    // Une valeur à 0 explicitement saisie doit être conservée (distincte d'un
+    // KPI non renseigné, qui retombe sur le poids par défaut de 1 au calcul).
     const lines = Object.entries(weights)
-      .filter(([, v]) => v !== '' && Number(v) > 0)
+      .filter(([, v]) => v !== '' && !Number.isNaN(Number(v)) && Number(v) >= 0)
       .map(([kpiDefinitionId, v]) => ({ kpiDefinitionId: Number(kpiDefinitionId), weight: Number(v) }));
     const r = await save.mutateAsync({ id: profile?.id ?? null, payload: { poste: poste.trim(), name: name.trim(), isActive: true, lines } });
     if (r.success) onClose();

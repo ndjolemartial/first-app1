@@ -42,6 +42,7 @@ interface Window {
         email: string;
         role: string;
       }>>>;
+      getTimeline: (token: string, id: number) => Promise<IpcResponse<any[]>>;
     };
     clients: {
       list: (token: string, filters?: object, page?: number, limit?: number) => Promise<IpcResponse<any[]>>;
@@ -67,6 +68,7 @@ interface Window {
         companyName: string | null;
         email: string | null;
       }>>>;
+      getTimeline: (token: string, id: number) => Promise<IpcResponse<any[]>>;
     };
     owners: {
       list: (token: string, filters?: object, page?: number, limit?: number) => Promise<IpcResponse<any[]>>;
@@ -121,7 +123,7 @@ interface Window {
       update: (token: string, id: number, payload: object) => Promise<IpcResponse<any>>;
       delete: (token: string, id: number) => Promise<IpcResponse>;
       typeStats: (token: string, filters?: object) => Promise<IpcResponse<Record<string, number>>>;
-      getLegacyBalance: (token: string, clientId: number, terrainId: number) => Promise<IpcResponse<{ total: number; paid: number; balance: number; count: number; detailsSouscription: string | null }>>;
+      getLegacyBalance: (token: string, clientId: number, terrainIds: number[]) => Promise<IpcResponse<{ total: number; paid: number; balance: number; count: number; detailsSouscription: string | null }>>;
     };
     quotes: {
       list: (token: string, filters?: object, page?: number, limit?: number) => Promise<IpcResponse<any[]>>;
@@ -136,9 +138,6 @@ interface Window {
       delete: (token: string, id: number) => Promise<IpcResponse>;
       convert: (token: string, id: number, options: object) => Promise<IpcResponse<any>>;
       listUnits: (token: string, includeInactive?: boolean) => Promise<IpcResponse<any[]>>;
-      createUnit: (token: string, payload: object) => Promise<IpcResponse<any>>;
-      updateUnit: (token: string, id: number, payload: object) => Promise<IpcResponse<any>>;
-      deleteUnit: (token: string, id: number) => Promise<IpcResponse>;
     };
     quoteTemplates: {
       list: (token: string, filters?: object, page?: number, limit?: number) => Promise<IpcResponse<any[]>>;
@@ -153,6 +152,14 @@ interface Window {
       create: (token: string, payload: object) => Promise<IpcResponse<any>>;
       update: (token: string, id: number, payload: object) => Promise<IpcResponse<any>>;
       delete: (token: string, id: number) => Promise<IpcResponse>;
+      listUnits: (token: string, includeInactive?: boolean) => Promise<IpcResponse<any[]>>;
+      createUnit: (token: string, payload: object) => Promise<IpcResponse<any>>;
+      updateUnit: (token: string, id: number, payload: object) => Promise<IpcResponse<any>>;
+      deleteUnit: (token: string, id: number) => Promise<IpcResponse>;
+      listCategories: (token: string, includeInactive?: boolean) => Promise<IpcResponse<any[]>>;
+      createCategory: (token: string, payload: object) => Promise<IpcResponse<any>>;
+      updateCategory: (token: string, id: number, payload: object) => Promise<IpcResponse<any>>;
+      deleteCategory: (token: string, id: number) => Promise<IpcResponse>;
     };
     communication: {
       listTemplates: (token: string, channel?: string) => Promise<IpcResponse<any[]>>;
@@ -258,6 +265,58 @@ interface Window {
       updateObject: (token: string, id: number, payload: object) => Promise<IpcResponse<any>>;
       deleteObject: (token: string, id: number) => Promise<IpcResponse>;
     };
+    calls: {
+      list: (token: string, filters?: object, page?: number, limit?: number) => Promise<IpcResponse<any[]>>;
+      getById: (token: string, id: number) => Promise<IpcResponse<any>>;
+      create: (token: string, payload: object) => Promise<IpcResponse<any>>;
+      update: (token: string, id: number, payload: object) => Promise<IpcResponse<any>>;
+      delete: (token: string, id: number) => Promise<IpcResponse>;
+      stats: (token: string) => Promise<IpcResponse<{ total: number; today: number; month: number; entrant: number; sortant: number }>>;
+      searchClients: (token: string, search?: string) => Promise<IpcResponse<any[]>>;
+      searchProspects: (token: string, search?: string) => Promise<IpcResponse<any[]>>;
+      phoneLines: {
+        list: (token: string, includeInactive?: boolean) => Promise<IpcResponse<any[]>>;
+        create: (token: string, payload: object) => Promise<IpcResponse<any>>;
+        update: (token: string, id: number, payload: object) => Promise<IpcResponse<any>>;
+        delete: (token: string, id: number) => Promise<IpcResponse>;
+      };
+    };
+    socialMedia: {
+      platforms: {
+        list: (token: string, includeInactive?: boolean) => Promise<IpcResponse<any[]>>;
+        create: (token: string, payload: object) => Promise<IpcResponse<any>>;
+        update: (token: string, id: number, payload: object) => Promise<IpcResponse<any>>;
+        delete: (token: string, id: number) => Promise<IpcResponse>;
+      };
+      publications: {
+        list: (token: string, filters?: object, page?: number, limit?: number) => Promise<IpcResponse<any[]>>;
+        create: (token: string, payload: object) => Promise<IpcResponse<any>>;
+        update: (token: string, id: number, payload: object) => Promise<IpcResponse<any>>;
+        delete: (token: string, id: number) => Promise<IpcResponse>;
+      };
+      snapshots: {
+        list: (token: string, platformId?: number, limit?: number) => Promise<IpcResponse<any[]>>;
+        upsert: (token: string, payload: object) => Promise<IpcResponse<any>>;
+        delete: (token: string, id: number) => Promise<IpcResponse>;
+      };
+      dashboard: (token: string) => Promise<IpcResponse<{
+        counters: {
+          platforms: number;
+          activePlatforms: number;
+          publicationsTotal: number;
+          viewsTotal: number;
+          interactionsTotal: number;
+          followersTotal: number;
+        };
+        trend: Array<{ label: string; publications: number; views: number; interactions: number }>;
+        followersTrend: Array<{ label: string; total: number }>;
+        byPlatform: Array<{
+          id: number; name: string; type: string; isActive: boolean;
+          publications: number; views: number; interactions: number;
+          followers: number | null; followersDate: string | null;
+        }>;
+      }>>;
+    };
     terrains: {
       list: (token: string, filters?: object, page?: number, limit?: number) => Promise<IpcResponse<any[]>>;
       getById: (token: string, id: number) => Promise<IpcResponse<any>>;
@@ -321,6 +380,7 @@ interface Window {
         list: (token: string, filters?: object, page?: number, limit?: number) => Promise<IpcResponse<any[]>>;
         getById: (token: string, id: number) => Promise<IpcResponse<any>>;
         generate: (token: string, payload: object) => Promise<IpcResponse<any>>;
+        duplicate: (token: string, payload: object) => Promise<IpcResponse<any>>;
         update: (token: string, id: number, payload: object) => Promise<IpcResponse<any>>;
         updateStatus: (token: string, id: number, status: string, paymentMethod?: string, paidAt?: string, bankAccountId?: number) => Promise<IpcResponse<any>>;
         updatePayment: (token: string, id: number, paidAt?: string, paymentMethod?: string, bankAccountId?: number) => Promise<IpcResponse<any>>;
@@ -417,6 +477,15 @@ interface Window {
         summary: (token: string, employeeId: number, year: number, month: number) => Promise<IpcResponse<{ daysPresent: number; daysAbsent: number; daysLeave: number; totalHours: number; overtimeHours: number; overtimeAmount: number }>>;
         bulkUpsert: (token: string, records: object[]) => Promise<IpcResponse<{ saved: number }>>;
       };
+      lateness: {
+        list: (token: string, filters?: { year?: number; month?: number; employeeId?: number; onlyUnjustified?: boolean }) => Promise<IpcResponse<any[]>>;
+        linkableLeaveRequests: (token: string, employeeId: number, date: string) => Promise<IpcResponse<any[]>>;
+        linkableActivities: (token: string, employeeId: number, date: string) => Promise<IpcResponse<any[]>>;
+        justify: (token: string, payload: object) => Promise<IpcResponse<any>>;
+        unjustify: (token: string, employeeId: number, date: string) => Promise<IpcResponse>;
+        tolerate: (token: string, payload: object) => Promise<IpcResponse<any>>;
+        untolerate: (token: string, employeeId: number, date: string) => Promise<IpcResponse>;
+      };
     };
     performance: {
       kpis: {
@@ -437,7 +506,7 @@ interface Window {
         delete: (token: string, id: number) => Promise<IpcResponse>;
       };
       employees: {
-        list: (token: string) => Promise<IpcResponse<any[]>>;
+        list: (token: string, scope?: 'evaluations') => Promise<IpcResponse<any[]>>;
       };
       objectives: {
         list: (token: string, filters?: object) => Promise<IpcResponse<any[]>>;
@@ -483,7 +552,7 @@ interface Window {
         evaluation: (token: string, id: number) => Promise<IpcResponse<any>>;
         sign: (token: string, id: number) => Promise<IpcResponse<any>>;
         ranking: (token: string, periodType: string, refDate?: string) => Promise<IpcResponse<any>>;
-        manualObjectives: (token: string) => Promise<IpcResponse<any[]>>;
+        objectives: (token: string) => Promise<IpcResponse<any[]>>;
       };
     };
     geo: {
@@ -706,10 +775,14 @@ interface Window {
       financial: (token: string) => Promise<IpcResponse<any>>;
       portfolio: (token: string) => Promise<IpcResponse<any>>;
       crm: (token: string) => Promise<IpcResponse<any>>;
+      crmDetail: (token: string, metric: string, extra?: object, page?: number, limit?: number) => Promise<IpcResponse<any[]> & { entity?: string; total?: number }>;
       charges: (token: string) => Promise<IpcResponse<any>>;
       contracts: (token: string) => Promise<IpcResponse<any>>;
       risk: (token: string) => Promise<IpcResponse<any>>;
       recommendations: (token: string) => Promise<IpcResponse<any>>;
+      followUp: (token: string) => Promise<IpcResponse<any>>;
+      visitors: (token: string) => Promise<IpcResponse<any>>;
+      calls: (token: string) => Promise<IpcResponse<any>>;
     };
     treasury: {
       getDashboard: (token: string) => Promise<IpcResponse<any>>;
@@ -842,6 +915,10 @@ interface Window {
         expectedArrival: string;
         expectedDeparture: string;
       }) => Promise<IpcResponse>;
+
+      // Retards & Départs précipités — inclusion des employés liés SUPER_ADMIN/ADMIN/MANAGER
+      getLatenessSettings: (token: string) => Promise<IpcResponse<{ includeManagementRoles: boolean; toleranceMinutes: number }>>;
+      updateLatenessSettings: (token: string, payload: { includeManagementRoles: boolean; toleranceMinutes: number }) => Promise<IpcResponse>;
 
       // QR Visiteurs (app web autonome)
       getVisitorQr: (token: string) => Promise<IpcResponse<{

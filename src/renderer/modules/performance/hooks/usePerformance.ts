@@ -80,8 +80,8 @@ export function useDeleteKpiUnit() {
 
 /* ─── Employés (périmètre performance) ──────────────────────────── */
 
-export function usePerfEmployees() {
-  return useQuery({ queryKey: ['perf-employees'], queryFn: () => ipc().employees.list(token()) });
+export function usePerfEmployees(scope?: 'evaluations') {
+  return useQuery({ queryKey: ['perf-employees', scope], queryFn: () => ipc().employees.list(token(), scope) });
 }
 
 /* ─── Objectifs ─────────────────────────────────────────────────── */
@@ -270,9 +270,9 @@ export function useMyRanking(periodType: string) {
   return useQuery({ queryKey: ['perf-me-ranking', periodType], queryFn: () => ipc().me.ranking(token(), periodType) });
 }
 
-/** Objectifs à Mesure « Manuelle » assignés au collaborateur connecté (pour lier une tâche). */
-export function useMyManualObjectives(enabled = true) {
-  return useQuery({ queryKey: ['perf-me-manual-objectives'], queryFn: () => ipc().me.manualObjectives(token()), enabled });
+/** Tous les objectifs (Manuel ou Auto) assignés au collaborateur connecté (pour lier une activité). */
+export function useMyObjectives(enabled = true) {
+  return useQuery({ queryKey: ['perf-me-objectives'], queryFn: () => ipc().me.objectives(token()), enabled });
 }
 
 export function useMySignEvaluation() {

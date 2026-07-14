@@ -16,8 +16,8 @@ import {
 import { CONTRACT_TYPE_LABEL } from '../types/hr.types';
 import { formatDate, formatCurrency } from '../../../shared/utils/format';
 import { FileText, ClipboardList, Printer, IdCard, ReceiptText, CalendarDays, Clock, BookOpen, Eye, Trophy, Target, Check } from 'lucide-react';
-import { useMyPerformance, useMyRanking, useMySignEvaluation } from '../../performance/hooks/usePerformance';
-import { EVAL_STATUS_LABEL, EVAL_STATUS_VARIANT, OBJECTIVE_STATUS_LABEL, OBJECTIVE_STATUS_VARIANT, PERIOD_LABEL, type Evaluation, type Objective } from '../../performance/types/performance.types';
+import { useMyPerformance, useMySignEvaluation } from '../../performance/hooks/usePerformance';
+import { EVAL_STATUS_LABEL, EVAL_STATUS_VARIANT, OBJECTIVE_STATUS_LABEL, OBJECTIVE_STATUS_VARIANT, type Evaluation, type Objective } from '../../performance/types/performance.types';
 
 type Tab = 'profil' | 'bulletins' | 'conges' | 'pointage' | 'performances' | 'reglement';
 
@@ -96,27 +96,15 @@ export default function MyHrPage() {
 function PerformancesTab() {
   const currentYear = new Date().getFullYear();
   const { data: res, isLoading } = useMyPerformance(currentYear);
-  const { data: rankRes } = useMyRanking('MOIS');
   const sign = useMySignEvaluation();
 
   if (isLoading) return <Card><SkeletonTable rows={5} /></Card>;
   const d = res?.success ? res.data : null;
   const objectives: Objective[] = d?.objectives ?? [];
   const evaluations: Evaluation[] = d?.evaluations ?? [];
-  const rank = rankRes?.success ? rankRes.data : null;
 
   return (
     <div className="space-y-4">
-      {rank?.entry && (
-        <Card className="flex items-center gap-3">
-          <div className="rounded-lg bg-amber-50 p-2 text-amber-600"><Trophy className="h-5 w-5" /></div>
-          <div>
-            <div className="text-sm text-slate-500">Mon classement — {PERIOD_LABEL[rank.period ? 'MOIS' : 'MOIS']} ({rank.period?.label})</div>
-            <div className="text-lg font-semibold text-slate-900">{rank.entry.rank}<sup>e</sup> / {rank.total} · score {Number(rank.entry.score).toFixed(1)}</div>
-          </div>
-        </Card>
-      )}
-
       <Card padding={false}>
         <div className="flex items-center gap-2 px-4 py-2 text-sm font-semibold text-slate-700 border-b border-slate-100"><Target className="h-4 w-4" /> Mes objectifs {currentYear}</div>
         {objectives.length === 0 ? (

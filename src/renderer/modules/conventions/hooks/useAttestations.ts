@@ -49,16 +49,16 @@ export function useUpdateAttestation() {
 
 /**
  * Solde d'une souscription héritée (échéances sans convention) pour le couple
- * (client, terrain). Sert au formulaire d'attestation de solde héritée : le
- * reste dû doit être nul pour autoriser l'émission. Inactif tant que client et
- * terrain ne sont pas tous deux renseignés.
+ * (client, terrain(s)). Sert au formulaire d'attestation de solde héritée : le
+ * reste dû doit être nul pour autoriser l'émission. Inactif tant que le client
+ * n'est pas renseigné.
  */
-export function useLegacyBalance(clientId: number, terrainId: number) {
+export function useLegacyBalance(clientId: number, terrainIds: number[]) {
   return useQuery({
-    queryKey: ['attestation-legacy-balance', clientId, terrainId],
-    queryFn: () => ipc().getLegacyBalance(token(), clientId, terrainId),
-    // Terrain optionnel : le solde héritée peut porter sur toutes les échéances
-    // du client (souscription sans terrain rattaché) → terrainId = 0 autorisé.
+    queryKey: ['attestation-legacy-balance', clientId, terrainIds],
+    queryFn: () => ipc().getLegacyBalance(token(), clientId, terrainIds),
+    // Terrain(s) optionnel(s) : le solde héritée peut porter sur toutes les
+    // échéances du client (souscription sans terrain rattaché) → [] autorisé.
     enabled: clientId > 0,
   });
 }

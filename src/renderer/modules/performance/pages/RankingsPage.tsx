@@ -155,7 +155,7 @@ export default function RankingsPage() {
   const snapshotData = snapRes?.success ? snapRes.data : null;
   const snapshotEntries: RankingEntry[] = (snapshotData?.entries ?? []).map((en: any) => ({
     employeeId: en.employee?.id ?? en.employeeId,
-    employeeName: `${en.employee?.firstName ?? ''} ${en.employee?.lastName ?? ''}`.trim() || '—',
+    employeeName: `${en.employee?.lastName ?? ''} ${en.employee?.firstName ?? ''}`.trim() || '—',
     matricule: en.employee?.matricule ?? '',
     poste: en.employee?.poste ?? null,
     departement: en.employee?.departement ?? null,

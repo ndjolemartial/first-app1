@@ -6,6 +6,7 @@ import {
   FileText, Calculator, MessageSquare, CalendarClock, Archive, Settings,
   Map, Landmark, Percent, Wallet, Building, PiggyBank, Briefcase, FileSpreadsheet, UserCog, ReceiptText, CalendarDays, Clock,
   BarChart3, ChevronDown, UserPlus, IdCard, Trophy, Gauge, Target, ClipboardCheck, Sliders,
+  Share2, PenTool, Users2, AlarmClockOff, TrendingUp, AlertTriangle, Lightbulb, Radar, Phone,
 } from 'lucide-react';
 import { useAuthStore } from '../../stores/auth.store';
 
@@ -41,22 +42,40 @@ const navItems: NavEntry[] = [
   { label: 'Conventions / Attestations', to: '/conventions', icon: <FileText className="h-5 w-5" />, roles: ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ACCOUNTANT', 'ASSISTANTE_DIRECTION', 'AGENT', 'AGENT_TECHNIQUE'] },
   { label: 'Commissions', to: '/commissions', icon: <Percent className="h-5 w-5" />, roles: ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ACCOUNTANT', 'ASSISTANTE_DIRECTION', 'AGENT', 'AGENT_TECHNIQUE', 'READONLY'] },
   { label: 'Comptabilité', to: '/accounting', icon: <Calculator className="h-5 w-5" />, roles: ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ACCOUNTANT'] },
-  { label: 'Trésorerie', to: '/treasury', icon: <Wallet className="h-5 w-5" />, roles: ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ACCOUNTANT', 'READONLY'] },
-  { label: 'Budgets', to: '/budgets', icon: <PiggyBank className="h-5 w-5" />, roles: ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ACCOUNTANT', 'READONLY'] },
+  { label: 'Trésorerie', to: '/treasury', icon: <Wallet className="h-5 w-5" />, roles: ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ACCOUNTANT'] },
+  { label: 'Budgets', to: '/budgets', icon: <PiggyBank className="h-5 w-5" />, roles: ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ACCOUNTANT'] },
   { label: 'Charges prévisionnelles', to: '/expenses', icon: <ReceiptText className="h-5 w-5" />, roles: ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ACCOUNTANT', 'ASSISTANTE_DIRECTION'] },
   { label: 'Communication', to: '/communication', icon: <MessageSquare className="h-5 w-5" /> },
   { label: 'Activités & CRM', to: '/crm', icon: <CalendarClock className="h-5 w-5" /> },
+  {
+    label: 'Réseaux Sociaux & Web',
+    icon: <Share2 className="h-5 w-5" />,
+    // Groupe visible dès qu'un sous-onglet l'est pour le rôle : Publications &
+    // articles est ouvert à tous sauf READONLY, d'où cette liste large.
+    roles: ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ACCOUNTANT', 'ASSISTANTE_DIRECTION', 'AGENT', 'AGENT_TECHNIQUE', 'RH'],
+    children: [
+      { label: 'Tableau de bord', to: '/social-media/dashboard', icon: <Gauge className="h-5 w-5" />, roles: ['SUPER_ADMIN', 'ADMIN', 'MANAGER'] },
+      { label: 'Publications & articles', to: '/social-media/publications', icon: <PenTool className="h-5 w-5" /> },
+      { label: 'Abonnés', to: '/social-media/followers', icon: <Users2 className="h-5 w-5" />, roles: ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ASSISTANTE_DIRECTION', 'AGENT_TECHNIQUE'] },
+      { label: 'Plateformes', to: '/social-media/platforms', icon: <Share2 className="h-5 w-5" />, roles: ['SUPER_ADMIN', 'ADMIN', 'MANAGER'] },
+    ],
+  },
   { label: 'Archivage', to: '/archiving', icon: <Archive className="h-5 w-5" /> },
   { label: 'Projets', to: '/projects', icon: <Briefcase className="h-5 w-5" />, roles: ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ACCOUNTANT', 'ASSISTANTE_DIRECTION', 'AGENT_TECHNIQUE'] },
   {
     label: 'Gestion du personnel',
     icon: <UserCog className="h-5 w-5" />,
-    roles: ['SUPER_ADMIN', 'ADMIN', 'RH', 'ACCOUNTANT', 'MANAGER', 'ASSISTANTE_DIRECTION'],
+    // Groupe visible de tous : « Retards & Départs précipités » est accessible
+    // à tout rôle (auto-consultation pour les rôles hors SUPER_ADMIN/ADMIN/
+    // MANAGER — cf. le sous-menu). Les autres sous-menus restent restreints
+    // individuellement (« Congés & absences » porte donc désormais sa propre
+    // liste, identique au périmètre historique du groupe).
     children: [
       { label: 'RH & Paie', to: '/hr/employees', icon: <Users className="h-5 w-5" />, roles: ['SUPER_ADMIN', 'ADMIN', 'RH', 'ACCOUNTANT', 'MANAGER'] },
       { label: 'Bulletins de paie', to: '/hr/payslips', icon: <ReceiptText className="h-5 w-5" />, roles: ['SUPER_ADMIN', 'ADMIN', 'RH', 'ACCOUNTANT', 'MANAGER'] },
-      { label: 'Congés & absences', to: '/hr/leave', icon: <CalendarDays className="h-5 w-5" /> },
+      { label: 'Congés & absences', to: '/hr/leave', icon: <CalendarDays className="h-5 w-5" />, roles: ['SUPER_ADMIN', 'ADMIN', 'RH', 'ACCOUNTANT', 'MANAGER', 'ASSISTANTE_DIRECTION'] },
       { label: 'Pointage', to: '/hr/attendance', icon: <Clock className="h-5 w-5" />, roles: ['SUPER_ADMIN', 'ADMIN', 'RH', 'MANAGER', 'ASSISTANTE_DIRECTION'] },
+      { label: 'Retards & Départs précipités', to: '/hr/lateness', icon: <AlarmClockOff className="h-5 w-5" /> },
     ],
   },
   {
@@ -74,7 +93,37 @@ const navItems: NavEntry[] = [
   // Self-service : accessible à tout utilisateur connecté (son propre dossier).
   { label: 'Mon espace RH', to: '/my-hr', icon: <IdCard className="h-5 w-5" /> },
   { label: 'Gestion des visiteurs', to: '/visitors', icon: <UserPlus className="h-5 w-5" />, roles: ['SUPER_ADMIN', 'ADMIN', 'ASSISTANTE_DIRECTION', 'MANAGER'] },
-  { label: 'Analyses décisionnelles', to: '/analytics', icon: <BarChart3 className="h-5 w-5" />, roles: ['SUPER_ADMIN', 'ADMIN'] },
+  {
+    label: 'Gestion des appels', to: '/calls', icon: <Phone className="h-5 w-5" />,
+    roles: ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ASSISTANTE_DIRECTION', 'ACCOUNTANT'],
+  },
+  {
+    label: 'Analyses décisionnelles',
+    icon: <BarChart3 className="h-5 w-5" />,
+    // Groupe ouvert aussi au MANAGER (plein accès CRM & Clients, Suivi
+    // Prospects & Clients, Statistiques visiteurs) et, pour Suivi Prospects &
+    // Clients uniquement, en accès restreint (périmètre affecté) à AGENT,
+    // AGENT_TECHNIQUE, ACCOUNTANT, ASSISTANTE_DIRECTION et READONLY — les
+    // autres sous-menus restent réservés à SUPER_ADMIN/ADMIN (ou MANAGER pour
+    // les 3 rubriques citées).
+    roles: [
+      'SUPER_ADMIN', 'ADMIN', 'MANAGER',
+      'AGENT', 'AGENT_TECHNIQUE', 'ACCOUNTANT', 'ASSISTANTE_DIRECTION', 'READONLY',
+    ],
+    children: [
+      { label: 'Tableau de bord', to: '/analytics/executive', icon: <LayoutDashboard className="h-5 w-5" />, roles: ['SUPER_ADMIN', 'ADMIN'] },
+      { label: 'Finances et rentabilité', to: '/analytics/financial', icon: <TrendingUp className="h-5 w-5" />, roles: ['SUPER_ADMIN', 'ADMIN'] },
+      { label: 'Portefeuille', to: '/analytics/portfolio', icon: <Building2 className="h-5 w-5" />, roles: ['SUPER_ADMIN', 'ADMIN'] },
+      { label: 'CRM & Clients', to: '/analytics/crm', icon: <Users className="h-5 w-5" />, roles: ['SUPER_ADMIN', 'ADMIN', 'MANAGER'] },
+      { label: 'Suivi Prospects & Clients', to: '/analytics/followup', icon: <Radar className="h-5 w-5" /> },
+      { label: 'Charges', to: '/analytics/charges', icon: <ReceiptText className="h-5 w-5" />, roles: ['SUPER_ADMIN', 'ADMIN'] },
+      { label: 'Contractuel', to: '/analytics/contracts', icon: <FileText className="h-5 w-5" />, roles: ['SUPER_ADMIN', 'ADMIN'] },
+      { label: 'Statistiques visiteurs', to: '/analytics/visitors', icon: <UserPlus className="h-5 w-5" />, roles: ['SUPER_ADMIN', 'ADMIN', 'MANAGER'] },
+      { label: 'Statistiques appels', to: '/analytics/calls', icon: <Phone className="h-5 w-5" />, roles: ['SUPER_ADMIN', 'ADMIN', 'MANAGER'] },
+      { label: 'Risques', to: '/analytics/risk', icon: <AlertTriangle className="h-5 w-5" />, roles: ['SUPER_ADMIN', 'ADMIN'] },
+      { label: 'Recommandations', to: '/analytics/recommendations', icon: <Lightbulb className="h-5 w-5" />, roles: ['SUPER_ADMIN', 'ADMIN'] },
+    ],
+  },
   { label: 'Paramètres', to: '/settings', icon: <Settings className="h-5 w-5" />, roles: ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ACCOUNTANT', 'RH'] },
 ];
 

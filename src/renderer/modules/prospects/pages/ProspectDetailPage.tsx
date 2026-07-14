@@ -12,7 +12,7 @@ import {
 } from '../hooks/useProspects';
 import { useAuthStore } from '../../../shared/stores/auth.store';
 import { formatDate, formatCurrency } from '../../../shared/utils/format';
-import { Edit, Trash2, UserCheck } from 'lucide-react';
+import { Edit, Trash2, UserCheck, History } from 'lucide-react';
 import EntityDocumentsCard from '../../archiving/components/EntityDocumentsCard';
 
 /** Affectation des prospects : exclusivement réservée aux MANAGER+ (les comptables n'y ont pas accès). */
@@ -118,6 +118,13 @@ export default function ProspectDetailPage() {
               Convertir en client
             </Button>
           )}
+          <Button
+            variant="secondary"
+            icon={<History className="h-4 w-4" />}
+            onClick={() => navigate(`/prospects/${id}/timeline`)}
+          >
+            Fiche de suivi
+          </Button>
           <Button
             variant="secondary"
             icon={<Edit className="h-4 w-4" />}

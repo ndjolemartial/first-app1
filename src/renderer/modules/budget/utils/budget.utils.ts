@@ -16,8 +16,8 @@ export const BUDGET_STATUS_OPTIONS = [
   { value: 'CLOTURE', label: 'Clôturé' },
 ];
 
-/** Rôles autorisés à consulter le module budget. */
-export const BUDGET_READ_ROLES = ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ACCOUNTANT', 'ASSISTANTE_DIRECTION', 'READONLY'];
+/** Rôles autorisés à consulter le module budget (ASSISTANTE_DIRECTION et READONLY exclus, cf. `checkBudgetRole` dans `budget.ipc.ts`). */
+export const BUDGET_READ_ROLES = ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ACCOUNTANT'];
 /**
  * Administration du module budget : création, modification, clôture, suppression
  * des budgets et des lignes. Les non-admin n'ont qu'un accès en lecture aux lignes

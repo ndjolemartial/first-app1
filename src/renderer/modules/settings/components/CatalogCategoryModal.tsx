@@ -4,26 +4,26 @@ import Modal from '../../../shared/components/ui/Modal';
 import Button from '../../../shared/components/ui/Button';
 import Input from '../../../shared/components/ui/Input';
 import ConfirmDialog from '../../../shared/components/ui/ConfirmDialog';
-import { useQuoteUnits, useSaveQuoteUnit, useDeleteQuoteUnit } from '../hooks/useQuotes';
+import { useCatalogCategories, useSaveCatalogCategory, useDeleteCatalogCategory } from '../../../shared/hooks/useCatalog';
 
 interface Props {
   open: boolean;
   onClose: () => void;
-  /** Notifié après création d'une unité (pour la pré-sélectionner sur la ligne). */
+  /** Notifié après création d'une catégorie (pour la pré-sélectionner sur l'article). */
   onCreated?: (label: string) => void;
 }
 
 /**
- * Fenêtre d'édition des unités de mesure (référentiel partagé avec le module
- * Performances). Permet d'ajouter, renommer et supprimer les valeurs proposées
- * dans la colonne « Unité » des lignes de devis.
+ * Fenêtre d'édition des catégories du catalogue prestations/produits
+ * (référentiel `CatalogCategory`). Permet d'ajouter, renommer et supprimer les
+ * valeurs proposées dans le champ « Catégorie » du formulaire « Nouvel article ».
  */
-export default function QuoteUnitModal({ open, onClose, onCreated }: Props) {
-  const { data: res } = useQuoteUnits();
+export default function CatalogCategoryModal({ open, onClose, onCreated }: Props) {
+  const { data: res } = useCatalogCategories();
   const list: any[] = res?.success ? res.data ?? [] : [];
 
-  const save = useSaveQuoteUnit();
-  const remove = useDeleteQuoteUnit();
+  const save = useSaveCatalogCategory();
+  const remove = useDeleteCatalogCategory();
 
   const [editingId, setEditingId] = useState<number | null>(null);
   const [label, setLabel] = useState('');
@@ -31,7 +31,7 @@ export default function QuoteUnitModal({ open, onClose, onCreated }: Props) {
   const [toDelete, setToDelete] = useState<any | null>(null);
 
   const resetForm = () => { setEditingId(null); setLabel(''); setError(''); };
-  const startEdit = (u: any) => { setEditingId(u.id); setLabel(u.label ?? ''); setError(''); };
+  const startEdit = (c: any) => { setEditingId(c.id); setLabel(c.label ?? ''); setError(''); };
 
   const handleSubmit = async () => {
     const name = label.trim();
@@ -57,19 +57,19 @@ export default function QuoteUnitModal({ open, onClose, onCreated }: Props) {
       <Modal
         open={open}
         onClose={onClose}
-        title="Unités de mesure"
+        title="Catégories du catalogue"
         size="lg"
         footer={<Button variant="secondary" onClick={onClose}>Fermer</Button>}
       >
         <div className="space-y-5">
           <div className="rounded-lg border border-slate-200 bg-slate-50/60 p-4 space-y-3">
-            <h3 className="text-sm font-semibold text-slate-700">{editingId ? 'Modifier l’unité' : 'Ajouter une unité'}</h3>
+            <h3 className="text-sm font-semibold text-slate-700">{editingId ? 'Modifier la catégorie' : 'Ajouter une catégorie'}</h3>
             <Input
-              label="Libellé de l’unité"
+              label="Libellé de la catégorie"
               required
               value={label}
               onChange={(e) => setLabel(e.target.value)}
-              placeholder="Ex : m², kg, pièce, jour, forfait…"
+              placeholder="Ex : GÉOMÈTRE, MOBILIER…"
             />
             {error && <p className="text-sm text-red-600">{error}</p>}
             <div className="flex justify-end gap-2">
@@ -88,14 +88,14 @@ export default function QuoteUnitModal({ open, onClose, onCreated }: Props) {
           </div>
 
           {list.length === 0 ? (
-            <p className="text-sm text-slate-400">Aucune unité enregistrée.</p>
+            <p className="text-sm text-slate-400">Aucune catégorie enregistrée.</p>
           ) : (
             <ul className="divide-y divide-slate-100 rounded-lg border border-slate-100 max-h-72 overflow-y-auto">
-              {list.map((u) => (
-                <li key={u.id} className="flex items-center gap-3 px-3 py-2.5 text-sm hover:bg-slate-50">
-                  <span className="flex-1 min-w-0 truncate font-medium text-slate-800">{u.label}</span>
-                  <Button variant="ghost" size="sm" icon={<Pencil className="h-4 w-4" />} onClick={() => startEdit(u)} title="Modifier" />
-                  <Button variant="ghost" size="sm" icon={<Trash2 className="h-4 w-4 text-red-500" />} onClick={() => setToDelete(u)} title="Supprimer" />
+              {list.map((c) => (
+                <li key={c.id} className="flex items-center gap-3 px-3 py-2.5 text-sm hover:bg-slate-50">
+                  <span className="flex-1 min-w-0 truncate font-medium text-slate-800">{c.label}</span>
+                  <Button variant="ghost" size="sm" icon={<Pencil className="h-4 w-4" />} onClick={() => startEdit(c)} title="Modifier" />
+                  <Button variant="ghost" size="sm" icon={<Trash2 className="h-4 w-4 text-red-500" />} onClick={() => setToDelete(c)} title="Supprimer" />
                 </li>
               ))}
             </ul>
@@ -107,8 +107,8 @@ export default function QuoteUnitModal({ open, onClose, onCreated }: Props) {
         open={!!toDelete}
         onClose={() => setToDelete(null)}
         onConfirm={confirmDelete}
-        title="Supprimer l’unité"
-        message={`Supprimer « ${toDelete?.label} » ? Les lignes de devis utilisant déjà cette unité ne seront pas modifiées.`}
+        title="Supprimer la catégorie"
+        message={`Supprimer « ${toDelete?.label} » ? Les articles utilisant déjà cette catégorie ne seront pas modifiés.`}
         confirmLabel="Supprimer"
         loading={remove.isPending}
       />

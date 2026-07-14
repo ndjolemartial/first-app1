@@ -4,9 +4,12 @@ import { useCatalog } from '../hooks/useCatalog';
 import { formatCurrency } from '../utils/format';
 
 export interface CatalogPick {
+  id: number;
   designation: string;
   unitPrice: number;
   category: string | null;
+  reference: string | null;
+  unit: string | null;
 }
 
 interface Props {
@@ -14,18 +17,24 @@ interface Props {
   onPick: (item: CatalogPick) => void;
   label?: string;
   placeholder?: string;
+  /** Identifiants d'articles à exclure de la liste (déjà utilisés). */
+  excludeIds?: number[];
 }
 
 /**
  * Sélecteur d'article du catalogue (prestations / produits). À chaque choix,
  * remonte la désignation et le prix unitaire pour pré-remplir une ligne de
  * devis ou de facture, puis se réinitialise. Affiche uniquement les articles
- * actifs.
+ * actifs, à l'exception de ceux listés dans `excludeIds`.
  */
-export default function CatalogPicker({ onPick, label, placeholder = 'Choisir dans le catalogue…' }: Props) {
+export default function CatalogPicker({ onPick, label, placeholder = 'Choisir dans le catalogue…', excludeIds }: Props) {
   const { data: res } = useCatalog({});
   const [value, setValue] = useState('');
-  const items: any[] = res?.data ?? [];
+  const allItems: any[] = res?.data ?? [];
+  const items = useMemo(
+    () => (excludeIds?.length ? allItems.filter((it) => !excludeIds.includes(it.id)) : allItems),
+    [allItems, excludeIds],
+  );
 
   const options = useMemo(() => [
     { value: '', label: placeholder },
@@ -35,7 +44,7 @@ export default function CatalogPicker({ onPick, label, placeholder = 'Choisir da
     })),
   ], [items, placeholder]);
 
-  if (items.length === 0) return null;
+  if (allItems.length === 0) return null;
 
   return (
     <SearchSelect
@@ -45,7 +54,7 @@ export default function CatalogPicker({ onPick, label, placeholder = 'Choisir da
       placeholder={placeholder}
       onChange={(v) => {
         const it = items.find((i) => String(i.id) === v);
-        if (it) onPick({ designation: it.designation, unitPrice: Number(it.unitPrice), category: it.category ?? null });
+        if (it) onPick({ id: it.id, designation: it.designation, unitPrice: Number(it.unitPrice), category: it.category ?? null, reference: it.reference ?? null, unit: it.unit ?? null });
         setValue('');
       }}
     />

@@ -45,8 +45,8 @@ const SOURCE_OPTIONS = [
 const STATUS_OPTIONS = [
   { value: 'NOUVEAU',              label: 'Nouveau' },
   { value: 'CONTACTE',             label: 'Contacté' },
-  { value: 'QUALIFIE',             label: 'Client potentiel' },
   { value: 'ENVOI_PROPOSITION',    label: 'Proposition envoyée' },
+  { value: 'QUALIFIE',             label: 'Client potentiel' },
   { value: 'NEGOCIATION_EN_COURS', label: 'Négociation en cours' },
   { value: 'PERDU',                label: 'Perdu' },
 ];

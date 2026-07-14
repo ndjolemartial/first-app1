@@ -3,6 +3,7 @@ import Card from '../../../shared/components/ui/Card';
 import Button from '../../../shared/components/ui/Button';
 import Input from '../../../shared/components/ui/Input';
 import Select from '../../../shared/components/ui/Select';
+import SearchSelect from '../../../shared/components/ui/SearchSelect';
 import Textarea from '../../../shared/components/ui/Textarea';
 import Badge from '../../../shared/components/ui/Badge';
 import Modal from '../../../shared/components/ui/Modal';
@@ -11,12 +12,15 @@ import EmptyState from '../../../shared/components/ui/EmptyState';
 import { SkeletonTable } from '../../../shared/components/ui/Skeleton';
 import {
   useCatalog, useCreateCatalogItem, useUpdateCatalogItem, useDeleteCatalogItem,
+  useCatalogUnits, useCatalogCategories,
 } from '../../../shared/hooks/useCatalog';
+import CatalogUnitModal from './CatalogUnitModal';
+import CatalogCategoryModal from './CatalogCategoryModal';
 import { formatCurrency } from '../../../shared/utils/format';
-import { PlusCircle, Edit, Trash2, Save, ShoppingBag, Search } from 'lucide-react';
+import { PlusCircle, Edit, Trash2, Save, ShoppingBag, Search, Settings2 } from 'lucide-react';
 
 interface Row {
-  id: number; type: string; designation: string; description?: string | null;
+  id: number; type: string; designation: string; reference?: string | null; description?: string | null;
   category?: string | null; unit?: string | null; unitPrice: number | string; isActive: boolean;
 }
 
@@ -26,7 +30,7 @@ const TYPE_OPTIONS = [
 ];
 const TYPE_LABEL: Record<string, string> = { PRESTATION: 'Prestation', PRODUIT: 'Produit' };
 
-const blank: Row = { id: 0, type: 'PRESTATION', designation: '', description: '', category: '', unit: '', unitPrice: 0, isActive: true };
+const blank: Row = { id: 0, type: 'PRESTATION', designation: '', reference: '', description: '', category: '', unit: '', unitPrice: 0, isActive: true };
 
 export default function CatalogSettingsTab() {
   const [search, setSearch] = useState('');
@@ -39,6 +43,12 @@ export default function CatalogSettingsTab() {
   const items: Row[] = res?.success ? (res.data as Row[]) ?? [] : [];
   const [edit, setEdit] = useState<{ open: boolean; row: Row | null }>({ open: false, row: null });
   const [confirm, setConfirm] = useState<{ open: boolean; row: Row | null }>({ open: false, row: null });
+  const [unitModalOpen, setUnitModalOpen] = useState(false);
+  const [categoryModalOpen, setCategoryModalOpen] = useState(false);
+  const { data: unitsRes } = useCatalogUnits();
+  const unitOptions = (unitsRes?.success && unitsRes.data ? unitsRes.data : []).map((u: any) => ({ value: u.label, label: u.label }));
+  const { data: categoriesRes } = useCatalogCategories();
+  const categoryOptions = (categoriesRes?.success && categoriesRes.data ? categoriesRes.data : []).map((c: any) => ({ value: c.label, label: c.label }));
 
   const openNew = () => setEdit({ open: true, row: { ...blank } });
   const openEdit = (row: Row) => setEdit({ open: true, row: { ...row, unitPrice: Number(row.unitPrice) } });
@@ -50,6 +60,7 @@ export default function CatalogSettingsTab() {
     const payload = {
       type: r.type,
       designation: r.designation.trim(),
+      reference: r.reference?.trim() || null,
       description: r.description || null,
       category: r.category || null,
       unit: r.unit || null,
@@ -141,16 +152,37 @@ export default function CatalogSettingsTab() {
               <Input label="Prix unitaire (XOF)" type="number" value={String(edit.row.unitPrice)}
                 onChange={(e) => setEdit((s) => ({ ...s, row: { ...s.row!, unitPrice: Number(e.target.value) } }))} />
             </div>
+            <div>
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-sm font-medium text-slate-700">Catégorie (optionnel)</span>
+                <button type="button" onClick={() => setCategoryModalOpen(true)}
+                  className="inline-flex items-center gap-1 text-xs font-medium text-blue-600 hover:text-blue-700">
+                  <Settings2 className="h-3.5 w-3.5" /> Gérer les catégories
+                </button>
+              </div>
+              <SearchSelect options={categoryOptions} value={edit.row.category ?? ''}
+                onChange={(v) => setEdit((s) => ({ ...s, row: { ...s.row!, category: v } }))}
+                placeholder="ex: GÉOMÈTRE" />
+            </div>
             <Input label="Désignation" required value={edit.row.designation}
               onChange={(e) => setEdit((s) => ({ ...s, row: { ...s.row!, designation: e.target.value } }))}
               placeholder="ex: Bornage de terrain" />
             <div className="grid grid-cols-2 gap-4">
-              <Input label="Catégorie (optionnel)" value={edit.row.category ?? ''}
-                onChange={(e) => setEdit((s) => ({ ...s, row: { ...s.row!, category: e.target.value.toUpperCase() } }))}
-                placeholder="ex: GÉOMÈTRE" />
-              <Input label="Unité (optionnel)" value={edit.row.unit ?? ''}
-                onChange={(e) => setEdit((s) => ({ ...s, row: { ...s.row!, unit: e.target.value } }))}
-                placeholder="ex: forfait, m², heure" />
+              <Input label="Référence (optionnel)" value={edit.row.reference ?? ''}
+                onChange={(e) => setEdit((s) => ({ ...s, row: { ...s.row!, reference: e.target.value } }))}
+                placeholder="ex: ART-001" />
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <span className="text-sm font-medium text-slate-700">Unité (optionnel)</span>
+                  <button type="button" onClick={() => setUnitModalOpen(true)}
+                    className="inline-flex items-center gap-1 text-xs font-medium text-blue-600 hover:text-blue-700">
+                    <Settings2 className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+                <SearchSelect options={unitOptions} value={edit.row.unit ?? ''}
+                  onChange={(v) => setEdit((s) => ({ ...s, row: { ...s.row!, unit: v } }))}
+                  placeholder="ex: forfait, m², heure" />
+              </div>
             </div>
             <Textarea label="Description (optionnel)" rows={2} value={edit.row.description ?? ''}
               onChange={(e) => setEdit((s) => ({ ...s, row: { ...s.row!, description: e.target.value } }))} />
@@ -172,6 +204,11 @@ export default function CatalogSettingsTab() {
       <ConfirmDialog open={confirm.open} onClose={() => setConfirm({ open: false, row: null })} onConfirm={onDelete}
         loading={remove.isPending} title="Supprimer l'article"
         message={`Supprimer « ${confirm.row?.designation} » du catalogue ?`} confirmLabel="Supprimer" />
+
+      <CatalogCategoryModal open={categoryModalOpen} onClose={() => setCategoryModalOpen(false)}
+        onCreated={(label) => setEdit((s) => (s.row ? { ...s, row: { ...s.row, category: label } } : s))} />
+      <CatalogUnitModal open={unitModalOpen} onClose={() => setUnitModalOpen(false)}
+        onCreated={(label) => setEdit((s) => (s.row ? { ...s, row: { ...s.row, unit: label } } : s))} />
     </Card>
   );
 }

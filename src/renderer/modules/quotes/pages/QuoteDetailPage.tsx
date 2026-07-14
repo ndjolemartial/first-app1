@@ -9,7 +9,10 @@ import ConfirmDialog from '../../../shared/components/ui/ConfirmDialog';
 import {
   useQuote, useSendQuote, useAcceptQuote, useRefuseQuote, useCancelQuote, useConvertQuote, useDeleteQuote,
 } from '../hooks/useQuotes';
-import { QUOTE_STATUS_LABELS, QUOTE_STATUS_VARIANT, QUOTE_TYPE_LABELS, groupItemsByCategory, hasItemCategories, hasItemUnits } from '../utils/quoteTemplate';
+import {
+  QUOTE_STATUS_LABELS, QUOTE_STATUS_VARIANT, QUOTE_TYPE_LABELS, groupItemsByCategory, hasItemCategories,
+  hasItemUnits, hasItemReferences, hasSectionLines, splitIntoSections, splitBySubtitle, DEFAULT_REFERENCE_COLUMN_LABEL,
+} from '../utils/quoteTemplate';
 import { formatCurrency, formatDate, formatPersonName } from '../../../shared/utils/format';
 import { useAuthStore } from '../../../shared/stores/auth.store';
 import { Send, Check, X, Ban, Repeat, Pencil, Trash2, FileText } from 'lucide-react';
@@ -69,6 +72,125 @@ function ConvertModal({ quote, onClose }: { quote: any; onClose: () => void }) {
   );
 }
 
+function ItemsTableHead({ showReference, showUnit, referenceLabel }: { showReference: boolean; showUnit: boolean; referenceLabel: string }) {
+  return (
+    <thead className="bg-slate-50">
+      <tr>
+        {showReference && <th className="text-left px-4 py-2.5 font-medium text-slate-600">{referenceLabel}</th>}
+        <th className="text-left px-4 py-2.5 font-medium text-slate-600">Désignation</th>
+        <th className="text-right px-4 py-2.5 font-medium text-slate-600">Qté</th>
+        {showUnit && <th className="text-center px-4 py-2.5 font-medium text-slate-600">Unité</th>}
+        <th className="text-right px-4 py-2.5 font-medium text-slate-600">Prix unitaire</th>
+        <th className="text-right px-4 py-2.5 font-medium text-slate-600">Total</th>
+      </tr>
+    </thead>
+  );
+}
+
+/**
+ * Lignes (tr) d'une liste d'articles : regroupées par catégorie (en-tête +
+ * sous-total) si au moins une catégorie est renseignée, sinon à plat. Utilisé
+ * aussi bien pour un devis sans section que pour chaque sous-section d'un
+ * devis avec titres/sous-titres. Chaque cellule porte un `title` pour afficher
+ * sa valeur complète au survol (utile si le texte est tronqué).
+ */
+function ArticleRowsBody({ items, showReference, showUnit, colCount }: { items: any[]; showReference: boolean; showUnit: boolean; colCount: number }) {
+  if (!items.length) return null;
+  if (!hasItemCategories(items)) {
+    return (
+      <>
+        {items.map((it: any) => (
+          <tr key={it.id}>
+            {showReference && <td className="px-4 py-2.5" title={it.reference ?? ''}>{it.reference ?? ''}</td>}
+            <td className="px-4 py-2.5" title={it.designation}>{it.designation}</td>
+            <td className="px-4 py-2.5 text-right" title={String(Number(it.quantity))}>{Number(it.quantity)}</td>
+            {showUnit && <td className="px-4 py-2.5 text-center" title={it.unit ?? ''}>{it.unit ?? ''}</td>}
+            <td className="px-4 py-2.5 text-right" title={formatCurrency(Number(it.unitPrice))}>{formatCurrency(Number(it.unitPrice))}</td>
+            <td className="px-4 py-2.5 text-right font-medium" title={formatCurrency(Number(it.total))}>{formatCurrency(Number(it.total))}</td>
+          </tr>
+        ))}
+      </>
+    );
+  }
+  return (
+    <>
+      {groupItemsByCategory(items).map((g) => (
+        <Fragment key={g.category || '—'}>
+          <tr className="bg-slate-100/70">
+            <td colSpan={colCount} className="px-4 py-2 font-semibold text-slate-700" title={g.category || 'AUTRES'}>{g.category || 'AUTRES'}</td>
+          </tr>
+          {g.items.map((it: any) => (
+            <tr key={it.id}>
+              {showReference && <td className="px-4 py-2.5" title={it.reference ?? ''}>{it.reference ?? ''}</td>}
+              <td className="px-4 py-2.5 pl-8" title={it.designation}>{it.designation}</td>
+              <td className="px-4 py-2.5 text-right" title={String(Number(it.quantity))}>{Number(it.quantity)}</td>
+              {showUnit && <td className="px-4 py-2.5 text-center" title={it.unit ?? ''}>{it.unit ?? ''}</td>}
+              <td className="px-4 py-2.5 text-right" title={formatCurrency(Number(it.unitPrice))}>{formatCurrency(Number(it.unitPrice))}</td>
+              <td className="px-4 py-2.5 text-right font-medium" title={formatCurrency(Number(it.total))}>{formatCurrency(Number(it.total))}</td>
+            </tr>
+          ))}
+          <tr className="text-slate-500 italic">
+            <td colSpan={colCount - 1} className="px-4 py-1.5 text-right">Sous-total {g.category || 'AUTRES'}</td>
+            <td className="px-4 py-1.5 text-right" title={formatCurrency(g.subtotal)}>{formatCurrency(g.subtotal)}</td>
+          </tr>
+        </Fragment>
+      ))}
+    </>
+  );
+}
+
+/**
+ * Tableau des lignes d'un devis. Les lignes de titre découpent le devis en
+ * sections (titre en évidence au-dessus d'un tableau dédié) ; au sein d'une
+ * section (ou du devis entier s'il n'y a pas de titre), les lignes de
+ * sous-titre découpent les articles en sous-blocs — chacun conservant, comme
+ * en l'absence de titre/sous-titre, le regroupement par catégorie avec
+ * sous-total lorsque des catégories sont renseignées.
+ */
+function QuoteItemsTable({ items, referenceLabel }: { items: any[]; referenceLabel: string }) {
+  const showUnit = hasItemUnits(items);
+  const showReference = hasItemReferences(items);
+  const colCount = 4 + (showReference ? 1 : 0) + (showUnit ? 1 : 0);
+
+  if (hasSectionLines(items)) {
+    return (
+      <>
+        {splitIntoSections(items).map((section, i) => (
+          <div key={i} className={i > 0 ? 'border-t border-slate-200' : ''}>
+            {section.title && <div className="px-4 pt-4 pb-1 font-bold uppercase text-sm text-slate-800">{section.title}</div>}
+            {section.items.length > 0 && (
+              <table className="w-full text-sm">
+                <ItemsTableHead showReference={showReference} showUnit={showUnit} referenceLabel={referenceLabel} />
+                <tbody className="divide-y divide-slate-100">
+                  {splitBySubtitle(section.items).map((sub, j) => (
+                    <Fragment key={j}>
+                      {sub.subtitle && (
+                        <tr className="bg-slate-50/70">
+                          <td colSpan={colCount} className="px-4 py-2 font-semibold italic text-slate-700">{sub.subtitle}</td>
+                        </tr>
+                      )}
+                      <ArticleRowsBody items={sub.items} showReference={showReference} showUnit={showUnit} colCount={colCount} />
+                    </Fragment>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+        ))}
+      </>
+    );
+  }
+
+  return (
+    <table className="w-full text-sm">
+      <ItemsTableHead showReference={showReference} showUnit={showUnit} referenceLabel={referenceLabel} />
+      <tbody className="divide-y divide-slate-100">
+        <ArticleRowsBody items={items} showReference={showReference} showUnit={showUnit} colCount={colCount} />
+      </tbody>
+    </table>
+  );
+}
+
 export default function QuoteDetailPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
@@ -94,6 +216,12 @@ export default function QuoteDetailPage() {
 
   const recipient = q.client ? formatPersonName(q.client, '') : (q.prospect ? `${q.prospect.firstName ?? ''} ${q.prospect.lastName ?? ''}`.trim() + ' (prospect)' : '—');
   const isConverted = !!q.convertedConventionId || !!q.convertedInvoiceId;
+  // Sélection multiple de terrains/biens (relation), avec repli sur le
+  // terrain/bien scalaire unique pour les devis antérieurs à cette fonctionnalité.
+  const terrainsList: any[] = (q.terrains ?? []).map((l: any) => l.terrain).filter(Boolean);
+  const effectiveTerrains = terrainsList.length ? terrainsList : (q.terrain ? [q.terrain] : []);
+  const propertiesList: any[] = (q.properties ?? []).map((l: any) => l.property).filter(Boolean);
+  const effectiveProperties = propertiesList.length ? propertiesList : (q.property ? [q.property] : []);
 
   return (
     <PageLayout
@@ -142,58 +270,40 @@ export default function QuoteDetailPage() {
             <div><div className="text-slate-500">Destinataire</div><div className="font-medium">{recipient}</div></div>
             <div><div className="text-slate-500">Émis le</div><div className="font-medium">{formatDate(q.issueDate)}</div></div>
             <div><div className="text-slate-500">Validité</div><div className="font-medium">{q.validUntil ? formatDate(q.validUntil) : '—'}</div></div>
-            {q.terrain && <div><div className="text-slate-500">Terrain</div><div className="font-medium">{q.terrain.reference}</div></div>}
-            {q.property && <div><div className="text-slate-500">Bien</div><div className="font-medium">{q.property.reference}</div></div>}
+            {effectiveTerrains.length > 0 && (
+              <div className="md:col-span-2">
+                <div className="text-slate-500">{effectiveTerrains.length > 1 ? 'Terrains' : 'Terrain'}</div>
+                <div className="font-medium space-y-0.5">
+                  {effectiveTerrains.map((t: any) => (
+                    <div key={t.id}>
+                      {t.reference}
+                      {t.numeroIlot ? ` — Îlot ${t.numeroIlot}` : ''}
+                      {t.numeroParcelle ? `, Lot ${t.numeroParcelle}` : ''}
+                      {t.lotissement?.nom ? ` (${t.lotissement.nom})` : ''}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+            {effectiveProperties.length > 0 && (
+              <div className="md:col-span-2">
+                <div className="text-slate-500">{effectiveProperties.length > 1 ? 'Biens' : 'Bien'}</div>
+                <div className="font-medium space-y-0.5">
+                  {effectiveProperties.map((p: any) => (
+                    <div key={p.id}>
+                      {p.reference} — {p.address}{p.city ? `, ${p.city}` : ''}
+                      {p.programme?.nom ? ` (${p.programme.nom})` : ''}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
             {q.agent && <div><div className="text-slate-500">Agent</div><div className="font-medium">{q.agent.firstName} {q.agent.lastName}</div></div>}
           </div>
         </Card>
 
         <Card className="!p-0 overflow-hidden">
-          {(() => { const showUnit = hasItemUnits(q.items ?? []); return (
-          <table className="w-full text-sm">
-            <thead className="bg-slate-50">
-              <tr>
-                <th className="text-left px-4 py-2.5 font-medium text-slate-600">Désignation</th>
-                <th className="text-right px-4 py-2.5 font-medium text-slate-600">Qté</th>
-                {showUnit && <th className="text-left px-4 py-2.5 font-medium text-slate-600">Unité</th>}
-                <th className="text-right px-4 py-2.5 font-medium text-slate-600">Prix unitaire</th>
-                <th className="text-right px-4 py-2.5 font-medium text-slate-600">Total</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {hasItemCategories(q.items ?? [])
-                ? groupItemsByCategory(q.items ?? []).map((g) => (
-                    <Fragment key={g.category || '—'}>
-                      <tr className="bg-slate-100/70">
-                        <td colSpan={showUnit ? 5 : 4} className="px-4 py-2 font-semibold text-slate-700">{g.category || 'AUTRES'}</td>
-                      </tr>
-                      {g.items.map((it: any) => (
-                        <tr key={it.id}>
-                          <td className="px-4 py-2.5 pl-8">{it.designation}</td>
-                          <td className="px-4 py-2.5 text-right">{Number(it.quantity)}</td>
-                          {showUnit && <td className="px-4 py-2.5">{it.unit ?? ''}</td>}
-                          <td className="px-4 py-2.5 text-right">{formatCurrency(Number(it.unitPrice))}</td>
-                          <td className="px-4 py-2.5 text-right font-medium">{formatCurrency(Number(it.total))}</td>
-                        </tr>
-                      ))}
-                      <tr className="text-slate-500 italic">
-                        <td colSpan={showUnit ? 4 : 3} className="px-4 py-1.5 text-right">Sous-total {g.category || 'AUTRES'}</td>
-                        <td className="px-4 py-1.5 text-right">{formatCurrency(g.subtotal)}</td>
-                      </tr>
-                    </Fragment>
-                  ))
-                : (q.items ?? []).map((it: any) => (
-                    <tr key={it.id}>
-                      <td className="px-4 py-2.5">{it.designation}</td>
-                      <td className="px-4 py-2.5 text-right">{Number(it.quantity)}</td>
-                      {showUnit && <td className="px-4 py-2.5">{it.unit ?? ''}</td>}
-                      <td className="px-4 py-2.5 text-right">{formatCurrency(Number(it.unitPrice))}</td>
-                      <td className="px-4 py-2.5 text-right font-medium">{formatCurrency(Number(it.total))}</td>
-                    </tr>
-                  ))}
-            </tbody>
-          </table>
-          ); })()}
+          <QuoteItemsTable items={q.items ?? []} referenceLabel={q.referenceColumnLabel || DEFAULT_REFERENCE_COLUMN_LABEL} />
           <div className="flex flex-col items-end gap-1 p-4 border-t border-slate-200 text-sm">
             <div className="flex gap-8"><span className="text-slate-500">Sous-total</span><span className="w-40 text-right font-medium">{formatCurrency(Number(q.subtotal))}</span></div>
             {Number(q.discountAmount) > 0 && <div className="flex gap-8"><span className="text-slate-500">Remise{q.discountIsPercent ? ` (${Number(q.discountPercent) || 0} %)` : ''}</span><span className="w-40 text-right font-medium">- {formatCurrency(Number(q.discountAmount))}</span></div>}
