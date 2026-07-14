@@ -53,41 +53,48 @@ model User {
   updatedAt              DateTime            @updatedAt
   deletedAt              DateTime?
 
-  activities                 CrmActivity[]                @relation("ActivityAssignedTo")
-  createdActivities          CrmActivity[]                @relation("ActivityCreatedBy")
-  conventions                Convention[]                 @relation("AgentConventions")
+  activities                 CrmActivity[]                  @relation("ActivityAssignedTo")
+  createdActivities          CrmActivity[]                  @relation("ActivityCreatedBy")
+  conventions                Convention[]                   @relation("AgentConventions")
   notes                      Note[]
-  archivedEntities           ArchiveRecord[]              @relation("ArchivedBy")
-  restoredEntities           ArchiveRecord[]              @relation("RestoredBy")
-  commissions                Commission[]                 @relation("UserCommissions")
-  commissionsPaid            Commission[]                 @relation("CommissionPaidBy")
-  commissionsCancelled       Commission[]                 @relation("CommissionCancelledBy")
-  treasuryOperations         TreasuryOperation[]          @relation("TreasuryCreatedBy")
-  linkedBankAccounts         BankAccount[]                @relation("BankAccountLinkedUser")
+  timelineEvents             EntityTimelineEvent[]
+  archivedEntities           ArchiveRecord[]                @relation("ArchivedBy")
+  restoredEntities           ArchiveRecord[]                @relation("RestoredBy")
+  commissions                Commission[]                   @relation("UserCommissions")
+  commissionsPaid            Commission[]                   @relation("CommissionPaidBy")
+  commissionsCancelled       Commission[]                   @relation("CommissionCancelledBy")
+  treasuryOperations         TreasuryOperation[]            @relation("TreasuryCreatedBy")
+  linkedBankAccounts         BankAccount[]                  @relation("BankAccountLinkedUser")
   bankAccountViews           BankAccountViewer[]
-  defaultAccountEntree       BankAccount?                 @relation("UserDefaultEntreeAccount", fields: [defaultAccountEntreeId], references: [id])
-  defaultAccountSortie       BankAccount?                 @relation("UserDefaultSortieAccount", fields: [defaultAccountSortieId], references: [id])
-  uploadedDocuments          Document[]                   @relation("DocumentUploadedBy")
-  linkedDocuments            Document[]                   @relation("DocumentLinkedUser")
-  documentAuditLogs          DocumentAuditLog[]           @relation("DocumentAuditUser")
-  managedBudgetLines         BudgetLine[]                 @relation("BudgetLineManager")
-  closedBudgets              Budget[]                     @relation("BudgetClosedBy")
-  assignedProspects          Prospect[]                   @relation("ProspectAssignedTo")
-  createdProspects           Prospect[]                   @relation("ProspectCreatedBy")
-  assignedClients            Client[]                     @relation("ClientAssignedTo")
-  attestationsEmitted        Attestation[]                @relation("AttestationEmittedBy")
-  communicationsSent         Communication[]              @relation("CommunicationSentBy")
-  quotesAsAgent              Quote[]                      @relation("QuoteAgent")
-  quotesCreated              Quote[]                      @relation("QuoteCreatedBy")
-  ownedDocumentFolders       DocumentFolder[]             @relation("FolderOwner")
-  documentFolderAccesses     DocumentFolderAccess[]       @relation("FolderAccessUser")
-  employee                   Employee?                    @relation("UserEmployee")
-  leaveDecisions             LeaveRequest[]               @relation("LeaveDecidedBy")
-  forecastExpensesCreated    ForecastExpense[]            @relation("ForecastExpenseCreatedBy")
-  forecastExpensesSettled    ForecastExpense[]            @relation("ForecastExpenseSettledBy")
-  visitorsCreated            Visitor[]                    @relation("VisitorCreatedBy")
-  perfEvaluationsAsEvaluator PerformanceEvaluation[]      @relation("PerfEvaluator")
-  perfRankingSnapshots       PerformanceRankingSnapshot[] @relation("PerfRankingGeneratedBy")
+  defaultAccountEntree       BankAccount?                   @relation("UserDefaultEntreeAccount", fields: [defaultAccountEntreeId], references: [id])
+  defaultAccountSortie       BankAccount?                   @relation("UserDefaultSortieAccount", fields: [defaultAccountSortieId], references: [id])
+  uploadedDocuments          Document[]                     @relation("DocumentUploadedBy")
+  linkedDocuments            Document[]                     @relation("DocumentLinkedUser")
+  documentAuditLogs          DocumentAuditLog[]             @relation("DocumentAuditUser")
+  managedBudgetLines         BudgetLine[]                   @relation("BudgetLineManager")
+  closedBudgets              Budget[]                       @relation("BudgetClosedBy")
+  assignedProspects          Prospect[]                     @relation("ProspectAssignedTo")
+  createdProspects           Prospect[]                     @relation("ProspectCreatedBy")
+  assignedClients            Client[]                       @relation("ClientAssignedTo")
+  attestationsEmitted        Attestation[]                  @relation("AttestationEmittedBy")
+  communicationsSent         Communication[]                @relation("CommunicationSentBy")
+  quotesAsAgent              Quote[]                        @relation("QuoteAgent")
+  quotesCreated              Quote[]                        @relation("QuoteCreatedBy")
+  ownedDocumentFolders       DocumentFolder[]               @relation("FolderOwner")
+  documentFolderAccesses     DocumentFolderAccess[]         @relation("FolderAccessUser")
+  employee                   Employee?                      @relation("UserEmployee")
+  leaveDecisions             LeaveRequest[]                 @relation("LeaveDecidedBy")
+  forecastExpensesCreated    ForecastExpense[]              @relation("ForecastExpenseCreatedBy")
+  forecastExpensesSettled    ForecastExpense[]              @relation("ForecastExpenseSettledBy")
+  visitorsCreated            Visitor[]                      @relation("VisitorCreatedBy")
+  callsCreated               PhoneCall[]                    @relation("PhoneCallCreatedBy")
+  perfEvaluationsAsEvaluator PerformanceEvaluation[]        @relation("PerfEvaluator")
+  perfRankingSnapshots       PerformanceRankingSnapshot[]   @relation("PerfRankingGeneratedBy")
+  socialPlatformsResponsible SocialPlatform[]               @relation("SocialPlatformResponsible")
+  socialPublicationsAuthored SocialPublication[]            @relation("SocialPublicationAuthor")
+  socialSnapshotsRecorded    SocialFollowerSnapshot[]       @relation("SocialSnapshotRecordedBy")
+  delayJustificationsMade    AttendanceDelayJustification[] @relation("AttendanceDelayJustifiedBy")
+  delayTolerationsMade       AttendanceDelayJustification[] @relation("AttendanceDelayToleratedBy")
 }
 
 enum UserRole {
@@ -132,6 +139,7 @@ model Prospect {
   tags       ProspectTag[]
   documents  Document[]
   quotes     Quote[]
+  calls      PhoneCall[]
 }
 
 enum ProspectSource {
@@ -228,6 +236,7 @@ model Client {
   projects              Project[]
   communications        Communication[]
   quotes                Quote[]
+  calls                 PhoneCall[]
 }
 
 enum ClientType {
@@ -453,11 +462,13 @@ model Terrain {
   conventionLinks      ConventionTerrain[]
   priorConventionLinks ConventionPriorTerrain[]
   attestations         Attestation[]
+  attestationLinks     AttestationTerrain[]
   invoices             Invoice[]
   installments         SaleInstallment[]
   installmentLinks     SaleInstallmentTerrain[]
   projects             Project[]
   quotes               Quote[]
+  quoteLinks           QuoteTerrain[]
 }
 
 enum TerrainStatus {
@@ -529,12 +540,14 @@ model Property {
   owner           Owner?               @relation(fields: [ownerId], references: [id])
   programme       ProgrammeImmobilier? @relation(fields: [programmeId], references: [id])
   client          Client?              @relation("ClientProperties", fields: [clientId], references: [id])
-  conventionLinks ConventionProperty[]
-  documents       Document[]
-  photos          PropertyPhoto[]
-  activities      CrmActivity[]
-  attestations    Attestation[]
-  quotes          Quote[]
+  conventionLinks   ConventionProperty[]
+  documents         Document[]
+  photos            PropertyPhoto[]
+  activities        CrmActivity[]
+  attestations      Attestation[]
+  attestationLinks  AttestationProperty[]
+  quotes            Quote[]
+  quoteLinks        QuoteProperty[]
 }
 
 enum PropertyType {
@@ -843,6 +856,9 @@ model Attestation {
   type              AttestationType
   clientId          Int // Bénéficiaire (attributaire / cessionnaire / acquéreur)
   secondaryClientId Int? // Cédant (CESSION) ou ancien propriétaire (TRANSFERT_PROPRIETE)
+  // Terrain / bien principal — conservé pour compatibilité (souscription
+  // héritée, attestations mono-bien historiques) ; toujours renseigné avec le
+  // 1ᵉʳ élément de `terrains`/`properties` lorsque la sélection est multiple.
   terrainId         Int?
   propertyId        Int?
   conventionId      Int? // Lien optionnel vers la convention d'origine
@@ -864,6 +880,38 @@ model Attestation {
   template        AttestationTemplate? @relation(fields: [templateId], references: [id])
   emittedBy       User?                @relation("AttestationEmittedBy", fields: [emittedById], references: [id])
   documents       Document[]
+  terrains        AttestationTerrain[]
+  properties      AttestationProperty[]
+}
+
+// Liaison Attestation ↔ Terrain (sélection multiple, ex : attribution ou
+// cession portant sur plusieurs terrains d'un même lotissement).
+model AttestationTerrain {
+  attestationId Int
+  terrainId     Int
+  order         Int      @default(0)
+  createdAt     DateTime @default(now())
+
+  attestation Attestation @relation(fields: [attestationId], references: [id], onDelete: Cascade)
+  terrain     Terrain     @relation(fields: [terrainId], references: [id])
+
+  @@id([attestationId, terrainId])
+  @@index([terrainId])
+}
+
+// Liaison Attestation ↔ Bien immobilier (sélection multiple, ex : attribution
+// ou cession portant sur plusieurs biens d'un même programme immobilier).
+model AttestationProperty {
+  attestationId Int
+  propertyId    Int
+  order         Int      @default(0)
+  createdAt     DateTime @default(now())
+
+  attestation Attestation @relation(fields: [attestationId], references: [id], onDelete: Cascade)
+  property    Property    @relation(fields: [propertyId], references: [id])
+
+  @@id([attestationId, propertyId])
+  @@index([propertyId])
 }
 
 enum PaymentMethod {
@@ -938,6 +986,9 @@ model Quote {
   notes                 String?          @db.Text
   conditions            String?          @db.Text
   templateId            Int?
+  // Titre modifiable de la colonne « Référence / LOT » du tableau des articles
+  // (null = libellé par défaut « Référence / LOT »)
+  referenceColumnLabel  String?
   // Traçabilité de la conversion (scalaires — pas de FK Prisma vers
   // Convention/Invoice pour limiter le couplage ; résolues à la lecture)
   convertedConventionId Int?
@@ -960,6 +1011,8 @@ model Quote {
   items       QuoteItem[]
   activities  CrmActivity[]
   documents   Document[]
+  terrains    QuoteTerrain[]
+  properties  QuoteProperty[]
 
   @@index([clientId])
   @@index([prospectId])
@@ -967,20 +1020,67 @@ model Quote {
   @@index([status])
 }
 
+// Liaison Devis ↔ Terrain (sélection multiple, ex : devis portant sur
+// plusieurs terrains d'un même lotissement). `Quote.terrainId` reste en
+// scalaire (aligné sur le 1ᵉʳ élément) pour compatibilité avec les modèles
+// de document existants.
+model QuoteTerrain {
+  quoteId   Int
+  terrainId Int
+  order     Int      @default(0)
+  createdAt DateTime @default(now())
+
+  quote   Quote   @relation(fields: [quoteId], references: [id], onDelete: Cascade)
+  terrain Terrain @relation(fields: [terrainId], references: [id])
+
+  @@id([quoteId, terrainId])
+  @@index([terrainId])
+}
+
+// Liaison Devis ↔ Bien immobilier (sélection multiple, ex : devis portant sur
+// plusieurs biens d'un même programme immobilier).
+model QuoteProperty {
+  quoteId    Int
+  propertyId Int
+  order      Int      @default(0)
+  createdAt  DateTime @default(now())
+
+  quote    Quote    @relation(fields: [quoteId], references: [id], onDelete: Cascade)
+  property Property @relation(fields: [propertyId], references: [id])
+
+  @@id([quoteId, propertyId])
+  @@index([propertyId])
+}
+
 model QuoteItem {
-  id          Int     @id @default(autoincrement())
-  quoteId     Int
-  designation String
-  category    String? // Famille/bloc pour le regroupement et le sous-total
-  quantity    Decimal @default(1) @db.Decimal(10, 2)
-  unit        String? // Unité de mesure (optionnelle, par ligne) — ex: m², kg, pièce…
-  unitPrice   Decimal @default(0) @db.Decimal(15, 2)
-  total       Decimal @default(0) @db.Decimal(15, 2)
-  order       Int     @default(0)
+  id            Int               @id @default(autoincrement())
+  quoteId       Int
+  lineType      QuoteItemLineType @default(ARTICLE)
+  designation   String // Pour TITLE/SUBTITLE : porte le texte du titre/sous-titre
+  reference     String? // Référence ou lot (optionnelle, par ligne) — libre, ex: article catalogue
+  category      String? // Famille/bloc pour le regroupement et le sous-total
+  quantity      Decimal           @default(1) @db.Decimal(10, 2)
+  unit          String? // Unité de mesure (optionnelle, par ligne) — ex: m², kg, pièce…
+  unitPrice     Decimal           @default(0) @db.Decimal(15, 2)
+  total         Decimal           @default(0) @db.Decimal(15, 2)
+  order         Int               @default(0)
+  // Article du catalogue d'origine (scalaire — pas de FK Prisma, pour ne pas
+  // bloquer si l'article est supprimé). Sert à empêcher l'ajout en double du
+  // même article dans un devis (cf. CatalogPicker.excludeIds).
+  catalogItemId Int?
 
   quote Quote @relation(fields: [quoteId], references: [id], onDelete: Cascade)
 
   @@index([quoteId])
+}
+
+/// Type de ligne d'un devis : article normal, ligne de titre (affichée en
+/// évidence, marque le début d'une section) ou ligne de sous-titre (repère
+/// intermédiaire au sein du tableau des articles).
+enum QuoteItemLineType {
+  ARTICLE
+  TITLE
+  SUBTITLE
 }
 
 /// Modèle de devis paramétrable (header/body/footer HTML + variables), calqué
@@ -1035,6 +1135,7 @@ model CatalogItem {
   uuid        String          @unique @default(cuid())
   type        CatalogItemType @default(PRESTATION)
   designation String
+  reference   String? // Référence libre de l'article (optionnelle)
   description String?         @db.Text
   category    String? // Famille libre (ex: « Bornage », « Mobilier »…)
   unit        String? // Unité (m², forfait, unité, heure…)
@@ -1050,6 +1151,19 @@ model CatalogItem {
 enum CatalogItemType {
   PRESTATION
   PRODUIT
+}
+
+// Référentiel « Catégorie » du catalogue (liste paramétrable). Même principe
+// que `KpiUnit` : alimente le sélecteur « Catégorie » du formulaire « Nouvel
+// article » (avec création à la volée). La valeur retenue est stockée en clair
+// dans `CatalogItem.category`.
+model CatalogCategory {
+  id        Int       @id @default(autoincrement())
+  label     String    @unique
+  isActive  Boolean   @default(true)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
 }
 
 // ── COMPTABILITÉ ──────────────────────────────────────────────
@@ -1297,25 +1411,29 @@ model CrmActivity {
   createdAt         DateTime       @default(now())
   updatedAt         DateTime       @updatedAt
 
-  user            User?                @relation("ActivityAssignedTo", fields: [userId], references: [id])
-  createdBy       User?                @relation("ActivityCreatedBy", fields: [createdById], references: [id])
-  forecastExpense ForecastExpense?     @relation(fields: [forecastExpenseId], references: [id])
-  prospect        Prospect?            @relation(fields: [prospectId], references: [id])
-  client          Client?              @relation(fields: [clientId], references: [id])
-  owner           Owner?               @relation(fields: [ownerId], references: [id])
-  property        Property?            @relation(fields: [propertyId], references: [id])
-  convention      Convention?          @relation(fields: [conventionId], references: [id])
-  lotissement     Lotissement?         @relation(fields: [lotissementId], references: [id])
-  terrain         Terrain?             @relation(fields: [terrainId], references: [id])
-  programme       ProgrammeImmobilier? @relation(fields: [programmeId], references: [id])
-  invoice         Invoice?             @relation(fields: [invoiceId], references: [id])
-  installment     SaleInstallment?     @relation(fields: [installmentId], references: [id])
-  project         Project?             @relation(fields: [projectId], references: [id])
-  quote           Quote?               @relation(fields: [quoteId], references: [id])
-  document        Document?            @relation("ActivityLinkedDocument", fields: [documentId], references: [id])
-  objective       PerformanceObjective? @relation(fields: [objectiveId], references: [id])
+  user               User?                         @relation("ActivityAssignedTo", fields: [userId], references: [id])
+  createdBy          User?                         @relation("ActivityCreatedBy", fields: [createdById], references: [id])
+  forecastExpense    ForecastExpense?              @relation(fields: [forecastExpenseId], references: [id])
+  prospect           Prospect?                     @relation(fields: [prospectId], references: [id])
+  client             Client?                       @relation(fields: [clientId], references: [id])
+  owner              Owner?                        @relation(fields: [ownerId], references: [id])
+  property           Property?                     @relation(fields: [propertyId], references: [id])
+  convention         Convention?                   @relation(fields: [conventionId], references: [id])
+  lotissement        Lotissement?                  @relation(fields: [lotissementId], references: [id])
+  terrain            Terrain?                      @relation(fields: [terrainId], references: [id])
+  programme          ProgrammeImmobilier?          @relation(fields: [programmeId], references: [id])
+  invoice            Invoice?                      @relation(fields: [invoiceId], references: [id])
+  installment        SaleInstallment?              @relation(fields: [installmentId], references: [id])
+  project            Project?                      @relation(fields: [projectId], references: [id])
+  quote              Quote?                        @relation(fields: [quoteId], references: [id])
+  document           Document?                     @relation("ActivityLinkedDocument", fields: [documentId], references: [id])
+  objective          PerformanceObjective?         @relation(fields: [objectiveId], references: [id])
   // Pièces jointes téléversées pour cette activité (0..n documents GED).
-  attachments     Document[]           @relation("ActivityAttachments")
+  attachments        Document[]                    @relation("ActivityAttachments")
+  // Justification d'une ligne de retard/départ précipité par cette activité
+  // (Visite chantier / Sortie en clientèle / Courses, traitée) — au plus une
+  // (contrainte unique côté AttendanceDelayJustification.crmActivityId).
+  delayJustification AttendanceDelayJustification?
 
   @@index([objectiveId])
 }
@@ -1330,6 +1448,7 @@ enum ActivityType {
   TASK
   RAPPEL
   DOCUMENT
+  CREATION_PUBLICATION
 }
 
 enum ActivityStatus {
@@ -1496,6 +1615,7 @@ model Document {
   quoteId             Int?
   treasuryOperationId Int? // Opération de trésorerie rattachée
   crmActivityId       Int? // Activité CRM dont ce document est une pièce jointe
+  socialPublicationId Int? // Publication/article (réseaux sociaux & web) dont ce document est une pièce jointe
   uploadedAt          DateTime  @default(now())
   updatedAt           DateTime  @updatedAt
   deletedAt           DateTime?
@@ -1520,6 +1640,7 @@ model Document {
   folder            DocumentFolder?      @relation(fields: [folderId], references: [id])
   uploadedBy        User?                @relation("DocumentUploadedBy", fields: [uploadedById], references: [id])
   crmActivity       CrmActivity?         @relation("ActivityAttachments", fields: [crmActivityId], references: [id])
+  socialPublication SocialPublication?   @relation("SocialPublicationAttachments", fields: [socialPublicationId], references: [id])
   tags              DocumentTag[]
   auditLogs         DocumentAuditLog[]
   activities        CrmActivity[]        @relation("ActivityLinkedDocument")
@@ -1623,6 +1744,33 @@ model Note {
   updatedAt  DateTime @updatedAt
 
   user User? @relation(fields: [userId], references: [id])
+}
+
+/// Journal chronologique des changements de statut et modifications de fiche
+/// pour les entités Client / Prospect (fiche de suivi). Alimenté uniquement à
+/// partir de sa mise en place — aucune donnée rétroactive (pas d'historique
+/// avant la création de ce modèle). Même convention entityType/entityId que
+/// `Note` (pas de relation Prisma typée, pour rester générique).
+model EntityTimelineEvent {
+  id          Int                @id @default(autoincrement())
+  uuid        String             @unique @default(cuid())
+  entityType  String // "CLIENT" | "PROSPECT"
+  entityId    Int
+  eventType   TimelineEventType
+  description String             @db.Text
+  oldValue    String?
+  newValue    String?
+  userId      Int?
+  createdAt   DateTime           @default(now())
+
+  user User? @relation(fields: [userId], references: [id])
+
+  @@index([entityType, entityId])
+}
+
+enum TimelineEventType {
+  STATUS_CHANGE
+  MODIFICATION
 }
 
 model Tag {
@@ -2255,19 +2403,20 @@ model Employee {
   updatedAt     DateTime            @updatedAt
   deletedAt     DateTime?
 
-  user               User?                     @relation("UserEmployee", fields: [userId], references: [id])
-  manager            Employee?                 @relation("EmployeeManager", fields: [managerId], references: [id])
-  subordinates       Employee[]                @relation("EmployeeManager")
-  contracts          EmploymentContract[]      @relation("EmployeeContracts")
-  authorityContracts EmploymentContract[]      @relation("ContractAuthority")
-  payslips           Payslip[]
-  leaveRequests      LeaveRequest[]
-  attendance         AttendanceRecord[]
-  signedContracts    EmployeeSignedContract[]
-  perfObjectives     PerformanceObjective[]
-  perfEvaluations    PerformanceEvaluation[]
-  progressPlans      ProgressPlan[]
-  perfRankingEntries PerformanceRankingEntry[]
+  user                User?                          @relation("UserEmployee", fields: [userId], references: [id])
+  manager             Employee?                      @relation("EmployeeManager", fields: [managerId], references: [id])
+  subordinates        Employee[]                     @relation("EmployeeManager")
+  contracts           EmploymentContract[]           @relation("EmployeeContracts")
+  authorityContracts  EmploymentContract[]           @relation("ContractAuthority")
+  payslips            Payslip[]
+  leaveRequests       LeaveRequest[]
+  attendance          AttendanceRecord[]
+  signedContracts     EmployeeSignedContract[]
+  perfObjectives      PerformanceObjective[]
+  perfEvaluations     PerformanceEvaluation[]
+  progressPlans       ProgressPlan[]
+  perfRankingEntries  PerformanceRankingEntry[]
+  delayJustifications AttendanceDelayJustification[]
 
   @@index([managerId])
 }
@@ -2644,9 +2793,10 @@ model LeaveRequest {
   updatedAt     DateTime    @updatedAt
   deletedAt     DateTime?
 
-  employee  Employee  @relation(fields: [employeeId], references: [id])
-  type      LeaveType @relation(fields: [typeId], references: [id])
-  decidedBy User?     @relation("LeaveDecidedBy", fields: [decidedById], references: [id])
+  employee            Employee                       @relation(fields: [employeeId], references: [id])
+  type                LeaveType                      @relation(fields: [typeId], references: [id])
+  decidedBy           User?                          @relation("LeaveDecidedBy", fields: [decidedById], references: [id])
+  delayJustifications AttendanceDelayJustification[]
 
   @@index([employeeId])
   @@index([typeId])
@@ -2727,6 +2877,67 @@ model VisitObject {
   deletedAt DateTime?
 }
 
+// ── GESTION DES APPELS (entrants / sortants) ──────────────────────────────────
+
+/// Journal des appels téléphoniques entrants et sortants. Rattachement
+/// optionnel à un client ou un prospect existant (contexte), sinon coordonnées
+/// libres (firstName/lastName/company/phone/email).
+model PhoneCall {
+  id          Int           @id @default(autoincrement())
+  uuid        String        @unique @default(cuid())
+  direction   CallDirection
+  // Ligne téléphonique de l'entreprise utilisée pour passer/recevoir l'appel
+  // (référentiel paramétrable `PhoneLine`, même principe que `Employee.poste`).
+  ligne       String?
+  firstName   String?
+  lastName    String?
+  company     String?
+  phone       String
+  email       String?
+  objet       String // Objet de l'appel
+  details     String?       @db.Text
+  duration    Int? // Durée en minutes
+  status      CallStatus    @default(ABOUTI)
+  calledAt    DateTime      @default(now())
+  clientId    Int?
+  prospectId  Int?
+  createdById Int?
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+  deletedAt   DateTime?
+
+  client    Client?   @relation(fields: [clientId], references: [id])
+  prospect  Prospect? @relation(fields: [prospectId], references: [id])
+  createdBy User?     @relation("PhoneCallCreatedBy", fields: [createdById], references: [id])
+
+  @@index([calledAt])
+  @@index([clientId])
+  @@index([prospectId])
+}
+
+enum CallDirection {
+  ENTRANT
+  SORTANT
+}
+
+enum CallStatus {
+  ABOUTI
+  MANQUE
+  OCCUPE
+  MESSAGE_LAISSE
+}
+
+// Lignes téléphoniques de l'entreprise — liste paramétrable (même principe que
+// JobPosition) alimentant le champ « Ligne téléphonique » du formulaire d'appel.
+model PhoneLine {
+  id        Int       @id @default(autoincrement())
+  label     String    @unique
+  isActive  Boolean   @default(true)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+}
+
 // ── ÉVALUATION & GESTION DES PERFORMANCES (Module 14) ─────────────────────────
 
 // Référentiel « Unité » des KPI (liste paramétrable). Même principe que
@@ -2777,6 +2988,7 @@ enum KpiSource {
   ATTENDANCE // Assiduité / pointage (AttendanceRecord.employeeId)
   LEAVE // Congés / absences (LeaveRequest.employeeId)
   PROJECT // Projets (niveau service — pas d'attribution par utilisateur)
+  SOCIAL // Réseaux sociaux / site web (SocialPublication.authorId, SocialPlatform.responsibleId)
   MANUAL // Saisie manuelle par l'évaluateur
 }
 
@@ -2790,9 +3002,15 @@ enum KpiMetric {
   CRM_VISITS
   CRM_CALLS
   PROSPECT_CONVERSION_RATE
+  NEW_POTENTIAL_PROSPECTS
+  SOCIAL_PUBLICATIONS_COUNT
+  SOCIAL_VIEWS
+  SOCIAL_INTERACTIONS
+  SOCIAL_FOLLOWERS_GROWTH
   ATTENDANCE_RATE
   OVERTIME_HOURS
   ABSENCE_DAYS
+  LATE_EARLY_DEPARTURE_HOURS
   MANUAL_VALUE
 }
 
@@ -2859,8 +3077,8 @@ model PerformanceObjective {
   updatedAt       DateTime        @updatedAt
   deletedAt       DateTime?
 
-  employee      Employee?      @relation(fields: [employeeId], references: [id])
-  kpiDefinition KpiDefinition? @relation(fields: [kpiDefinitionId], references: [id])
+  employee         Employee?      @relation(fields: [employeeId], references: [id])
+  kpiDefinition    KpiDefinition? @relation(fields: [kpiDefinitionId], references: [id])
   linkedActivities CrmActivity[]
 
   @@index([employeeId])
@@ -3028,4 +3246,121 @@ enum RankingPeriodType {
 enum RankingBasis {
   KPI
   EVALUATION
+}
+
+// ── RÉSEAUX SOCIAUX & PLATEFORMES WEB (Module 15) ──────────────────────────
+// Suivi manuel de l'activité digitale de l'entreprise : comptes réseaux
+// sociaux et site web, publications/articles, relevés d'abonnés. Alimente le
+// tableau de bord du module et le catalogue KPI (source SOCIAL).
+
+model SocialPlatform {
+  id            Int                @id @default(autoincrement())
+  uuid          String             @unique @default(cuid())
+  name          String
+  type          SocialPlatformType
+  url           String?
+  // Collaborateur responsable du compte/de la plateforme — sert de base
+  // d'attribution au KPI SOCIAL_FOLLOWERS_GROWTH (croissance d'abonnés).
+  responsibleId Int?
+  isActive      Boolean            @default(true)
+  notes         String?            @db.Text
+  createdAt     DateTime           @default(now())
+  updatedAt     DateTime           @updatedAt
+  deletedAt     DateTime?
+
+  responsible       User?                    @relation("SocialPlatformResponsible", fields: [responsibleId], references: [id])
+  publications      SocialPublication[]
+  followerSnapshots SocialFollowerSnapshot[]
+}
+
+enum SocialPlatformType {
+  FACEBOOK
+  INSTAGRAM
+  LINKEDIN
+  TIKTOK
+  X_TWITTER
+  YOUTUBE
+  WEBSITE
+  AUTRE
+}
+
+model SocialPublication {
+  id                Int                   @id @default(autoincrement())
+  uuid              String                @unique @default(cuid())
+  platformId        Int
+  type              SocialPublicationType @default(PUBLICATION)
+  title             String
+  publishedAt       DateTime
+  url               String?
+  viewsCount        Int                   @default(0)
+  interactionsCount Int                   @default(0)
+  // Auteur / responsable de la publication — base d'attribution des KPI
+  // SOCIAL_PUBLICATIONS_COUNT, SOCIAL_VIEWS, SOCIAL_INTERACTIONS.
+  authorId          Int?
+  notes             String?               @db.Text
+  createdAt         DateTime              @default(now())
+  updatedAt         DateTime              @updatedAt
+  deletedAt         DateTime?
+
+  platform    SocialPlatform @relation(fields: [platformId], references: [id])
+  author      User?          @relation("SocialPublicationAuthor", fields: [authorId], references: [id])
+  attachments Document[]     @relation("SocialPublicationAttachments")
+
+  @@index([platformId])
+  @@index([authorId])
+}
+
+enum SocialPublicationType {
+  PUBLICATION
+  ARTICLE
+}
+
+model SocialFollowerSnapshot {
+  id             Int      @id @default(autoincrement())
+  platformId     Int
+  date           DateTime
+  followersCount Int
+  recordedById   Int?
+  notes          String?
+  createdAt      DateTime @default(now())
+
+  platform   SocialPlatform @relation(fields: [platformId], references: [id])
+  recordedBy User?          @relation("SocialSnapshotRecordedBy", fields: [recordedById], references: [id])
+
+  @@unique([platformId, date])
+}
+
+// ── RETARDS & DÉPARTS PRÉCIPITÉS ────────────────────────────────────────────
+// Justification d'une journée de retard d'arrivée / départ anticipé non
+// couverte automatiquement : un administrateur ou manager relie la journée à
+// une demande de congé approuvée ou à une activité CRM « Visite chantier /
+// Sortie en clientèle / Courses » traitée, ce qui la marque « justifiée ».
+model AttendanceDelayJustification {
+  id             Int       @id @default(autoincrement())
+  employeeId     Int
+  date           DateTime  @db.Date
+  leaveRequestId Int?
+  crmActivityId  Int?      @unique // une activité ne justifie qu'une seule journée
+  justified      Boolean   @default(false)
+  justifiedById  Int?
+  justifiedAt    DateTime?
+  // Tolérance : marquage manuel (SUPER_ADMIN/ADMIN/MANAGER), sans demande de
+  // congé ni activité CRM liée, plafonné par `hr.lateness.toleranceMinutes`
+  // (Paramètres → Retards & Départs précipités). Exclut la journée du cumul
+  // non justifié (donc du KPI LATE_EARLY_DEPARTURE_HOURS), comme `justified`.
+  tolerated      Boolean   @default(false)
+  toleratedById  Int?
+  toleratedAt    DateTime?
+  notes          String?   @db.Text
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  employee     Employee      @relation(fields: [employeeId], references: [id])
+  leaveRequest LeaveRequest? @relation(fields: [leaveRequestId], references: [id])
+  crmActivity  CrmActivity?  @relation(fields: [crmActivityId], references: [id])
+  justifiedBy  User?         @relation("AttendanceDelayJustifiedBy", fields: [justifiedById], references: [id])
+  toleratedBy  User?         @relation("AttendanceDelayToleratedBy", fields: [toleratedById], references: [id])
+
+  @@unique([employeeId, date])
+  @@index([employeeId])
 }
