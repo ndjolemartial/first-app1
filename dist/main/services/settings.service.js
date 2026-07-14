@@ -268,6 +268,13 @@ exports.SettingsKeys = {
     attendanceQrModel: 'attendance.qr.model', // modèle visuel du QR ('1' | '2' | '3')
     attendanceExpectedArrival: 'attendance.expectedArrival', // 'HH:MM' seuil de retard (défaut 08:00)
     attendanceExpectedDeparture: 'attendance.expectedDeparture', // 'HH:MM' seuil de départ anticipé (défaut 17:00)
+    // Retards & Départs précipités — par défaut, les employés liés à un compte
+    // SUPER_ADMIN/ADMIN/MANAGER ne sont ni calculés ni affichés. Ce commutateur
+    // permet de les réintégrer.
+    latenessIncludeManagementRoles: 'hr.lateness.includeManagementRoles', // 'true' | 'false' (défaut false = exclus)
+    // Limite (en minutes) en deçà de laquelle une journée de retard/départ
+    // précipité peut être marquée « Tolérée » par SUPER_ADMIN/ADMIN/MANAGER.
+    latenessToleranceMinutes: 'hr.lateness.toleranceMinutes', // nombre (défaut 15)
     // QR Visiteurs — app web autonome (dossier web-visiteurs/ sur le serveur local).
     visitorQrEnabled: 'visitors.qr.enabled', // 'true' | 'false'
     visitorQrBaseUrl: 'visitors.qr.baseUrl', // URL de l'app web visiteurs (ex. http://192.168.1.10/visiteurs/)

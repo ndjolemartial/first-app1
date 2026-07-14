@@ -35,6 +35,12 @@ const PERF_MANAGE_ROLES = ['SUPER_ADMIN', 'ADMIN', 'RH', 'MANAGER'];
 // Signature « Direction » (3ᵉ niveau).
 const PERF_DIRECTION_ROLES = ['SUPER_ADMIN', 'ADMIN'];
 
+// Objectifs liés à ces KPI ne sont jamais proposés dans le sélecteur « Objectif
+// lié » de « Nouvelle activité » (quel que soit l'utilisateur connecté) : leur
+// progression n'a pas de sens rattachée à une activité CRM ponctuelle. Exportée
+// pour être réutilisée par crm.ipc.ts (garde de liaison d'objectif).
+export const LINKABLE_EXCLUDED_METRICS = ['CRM_ACTIVITIES_DONE', 'ABSENCE_DAYS', 'ATTENDANCE_RATE', 'LATE_EARLY_DEPARTURE_HOURS'];
+
 type Db = ReturnType<typeof getDb>;
 type Session = { userId: number; role: string };
 
@@ -83,6 +89,41 @@ async function scopeEmployeeWhere(db: Db, session: Session): Promise<Record<stri
   return ids === null ? {} : { employeeId: { in: ids.length ? ids : [-1] } };
 }
 
+/**
+ * Identifiants des employés accessibles à la session pour la gestion des
+ * ÉVALUATIONS spécifiquement. `null` = aucune restriction (admins / RH). Un
+ * MANAGER accède ici à TOUS les employés (pas seulement son équipe), à
+ * l'exception de ceux dont le compte utilisateur rattaché a le rôle
+ * SUPER_ADMIN ou ADMIN. Périmètre plus large que `accessibleEmployeeIds`
+ * (utilisé par les objectifs/plans, restés limités à l'équipe).
+ */
+async function accessibleEmployeeIdsForEvaluations(db: Db, session: Session): Promise<number[] | null> {
+  if (isPerfAdmin(session.role)) return null;
+  const employees = await db.employee.findMany({
+    where: {
+      deletedAt: null,
+      OR: [
+        { userId: null },
+        { user: { role: { notIn: ['SUPER_ADMIN', 'ADMIN'] } } },
+      ],
+    },
+    select: { id: true },
+  });
+  return employees.map((e) => e.id);
+}
+
+/** Vérifie qu'un employé est accessible à la session pour les évaluations (sinon lève). */
+async function assertEmployeeAccessibleEval(db: Db, session: Session, employeeId: number): Promise<void> {
+  const ids = await accessibleEmployeeIdsForEvaluations(db, session);
+  if (ids !== null && !ids.includes(employeeId)) throw new Error('Accès restreint : ce collaborateur est rattaché à un compte SUPER_ADMIN/ADMIN.');
+}
+
+/** Fragment `where` limitant `employeeId` au périmètre accessible pour les évaluations. */
+async function scopeEmployeeWhereEval(db: Db, session: Session): Promise<Record<string, unknown>> {
+  const ids = await accessibleEmployeeIdsForEvaluations(db, session);
+  return ids === null ? {} : { employeeId: { in: ids.length ? ids : [-1] } };
+}
+
 const emptyToNull = (v: unknown): unknown => (v === '' || v === undefined ? null : v);
 
 async function nextEvaluationReference(db: Db): Promise<string> {
@@ -102,11 +143,12 @@ const kpiSchema = z.object({
   code: z.string().min(1, 'Code requis'),
   label: z.string().min(1, 'Libellé requis'),
   category: z.preprocess(emptyToNull, z.string().nullable().optional()),
-  source: z.enum(['SALES', 'COMMISSIONS', 'ACCOUNTING', 'CRM', 'PROSPECTS', 'ATTENDANCE', 'LEAVE', 'PROJECT', 'MANUAL']),
+  source: z.enum(['SALES', 'COMMISSIONS', 'ACCOUNTING', 'CRM', 'PROSPECTS', 'ATTENDANCE', 'LEAVE', 'PROJECT', 'SOCIAL', 'MANUAL']),
   metric: z.enum([
     'SALES_COUNT', 'SALES_AMOUNT', 'RESILIATION_COUNT', 'COMMISSION_AMOUNT', 'ENCAISSEMENT_AMOUNT',
-    'CRM_ACTIVITIES_DONE', 'CRM_VISITS', 'CRM_CALLS', 'PROSPECT_CONVERSION_RATE',
-    'ATTENDANCE_RATE', 'OVERTIME_HOURS', 'ABSENCE_DAYS', 'MANUAL_VALUE',
+    'CRM_ACTIVITIES_DONE', 'CRM_VISITS', 'CRM_CALLS', 'PROSPECT_CONVERSION_RATE', 'NEW_POTENTIAL_PROSPECTS',
+    'SOCIAL_PUBLICATIONS_COUNT', 'SOCIAL_VIEWS', 'SOCIAL_INTERACTIONS', 'SOCIAL_FOLLOWERS_GROWTH',
+    'ATTENDANCE_RATE', 'OVERTIME_HOURS', 'ABSENCE_DAYS', 'LATE_EARLY_DEPARTURE_HOURS', 'MANUAL_VALUE',
   ]),
   unit: z.preprocess(emptyToNull, z.string().nullable().optional()),
   direction: z.enum(['HIGHER_BETTER', 'LOWER_BETTER']).optional(),
@@ -383,12 +425,17 @@ export function registerPerformanceIPC(): void {
 
   /* ─── Sélecteur d'employés (périmètre accessible) ───────────────── */
 
-  ipcMain.handle('performance:employees:list', async (_e, { token }: any) => {
+  // `scope: 'evaluations'` élargit le périmètre MANAGER à tous les employés
+  // (hors comptes SUPER_ADMIN/ADMIN) pour le sélecteur de « Nouvelle évaluation ».
+  // Sans ce paramètre (objectifs, plans…), le périmètre reste limité à l'équipe.
+  ipcMain.handle('performance:employees:list', async (_e, { token, scope }: any) => {
     try {
       const session = requireSession(token);
       checkExact(session, PERF_MANAGE_ROLES);
       const db = getDb();
-      const ids = await accessibleEmployeeIds(db, session);
+      const ids = scope === 'evaluations'
+        ? await accessibleEmployeeIdsForEvaluations(db, session)
+        : await accessibleEmployeeIds(db, session);
       const where: any = { deletedAt: null };
       if (ids !== null) where.id = { in: ids.length ? ids : [-1] };
       const data = await db.employee.findMany({
@@ -612,7 +659,7 @@ export function registerPerformanceIPC(): void {
       const session = requireSession(token);
       checkExact(session, PERF_MANAGE_ROLES);
       const db = getDb();
-      const where: any = { deletedAt: null, ...(await scopeEmployeeWhere(db, session)) };
+      const where: any = { deletedAt: null, ...(await scopeEmployeeWhereEval(db, session)) };
       if (filters.employeeId) where.employeeId = Number(filters.employeeId);
       if (filters.year) where.year = Number(filters.year);
       if (filters.cycleType) where.cycleType = filters.cycleType;
@@ -639,7 +686,7 @@ export function registerPerformanceIPC(): void {
       const db = getDb();
       const data = await evaluationDetail(db, Number(id));
       if (!data) return { success: false, error: 'Évaluation introuvable' };
-      await assertEmployeeAccessible(db, session, data.employeeId);
+      await assertEmployeeAccessibleEval(db, session, data.employeeId);
       return ser({ success: true, data });
     } catch (error: any) {
       logger.error('performance:evaluations:getById error', error.message);
@@ -654,7 +701,7 @@ export function registerPerformanceIPC(): void {
       const parsed = evalSchema.safeParse(payload);
       if (!parsed.success) return { success: false, error: parsed.error.issues[0]?.message ?? 'Données invalides' };
       const db = getDb();
-      await assertEmployeeAccessible(db, session, parsed.data.employeeId);
+      await assertEmployeeAccessibleEval(db, session, parsed.data.employeeId);
       const { lines, ...header } = parsed.data;
       const reference = await nextEvaluationReference(db);
       const data = await db.$transaction(async (tx) => {
@@ -682,7 +729,7 @@ export function registerPerformanceIPC(): void {
       const db = getDb();
       const existing = await db.performanceEvaluation.findFirst({ where: { id: Number(id), deletedAt: null } });
       if (!existing) return { success: false, error: 'Évaluation introuvable' };
-      await assertEmployeeAccessible(db, session, existing.employeeId);
+      await assertEmployeeAccessibleEval(db, session, existing.employeeId);
       if (['VALIDEE_DIRECTION', 'CLOTUREE'].includes(existing.status)) {
         return { success: false, error: 'Évaluation validée : modification impossible.' };
       }
@@ -721,7 +768,7 @@ export function registerPerformanceIPC(): void {
         include: { employee: { select: { id: true, userId: true, poste: true } }, lines: true },
       });
       if (!evaluation) return { success: false, error: 'Évaluation introuvable' };
-      await assertEmployeeAccessible(db, session, evaluation.employeeId);
+      await assertEmployeeAccessibleEval(db, session, evaluation.employeeId);
       if (['VALIDEE_DIRECTION', 'CLOTUREE'].includes(evaluation.status)) {
         return { success: false, error: 'Évaluation validée : recalcul impossible.' };
       }
@@ -772,7 +819,7 @@ export function registerPerformanceIPC(): void {
       const db = getDb();
       const existing = await db.performanceEvaluation.findFirst({ where: { id: Number(id), deletedAt: null } });
       if (!existing) return { success: false, error: 'Évaluation introuvable' };
-      await assertEmployeeAccessible(db, session, existing.employeeId);
+      await assertEmployeeAccessibleEval(db, session, existing.employeeId);
       if (!['BROUILLON', 'REFUSEE'].includes(existing.status)) {
         return { success: false, error: 'Évaluation déjà soumise.' };
       }
@@ -811,7 +858,7 @@ export function registerPerformanceIPC(): void {
       const db = getDb();
       const existing = await db.performanceEvaluation.findFirst({ where: { id: Number(id), deletedAt: null } });
       if (!existing) return { success: false, error: 'Évaluation introuvable' };
-      await assertEmployeeAccessible(db, session, existing.employeeId);
+      await assertEmployeeAccessibleEval(db, session, existing.employeeId);
       const data = await db.performanceEvaluation.update({
         where: { id: Number(id) },
         data: { status: 'REFUSEE', refusedById: session.userId, refusedAt: new Date(), refusalReason: reason ?? null },
@@ -1155,28 +1202,36 @@ export function registerPerformanceIPC(): void {
     }
   });
 
-  // Objectifs à Mesure « Manuelle » personnellement assignés au collaborateur
-  // connecté et dotés d'une cible chiffrée (> 0) — pour lier une tâche CRM.
-  ipcMain.handle('performance:me:manualObjectives', async (_e, { token }: any) => {
+  // Tous les objectifs (Manuel ou Auto) assignés au collaborateur connecté —
+  // les siens (employeeId) et ceux définis pour son poste — dotés d'une cible
+  // chiffrée (> 0), pour lier une activité CRM, quel que soit son type. Seuls
+  // les objectifs à Mesure « Manuelle » conditionnent le passage « Traité » à
+  // 100 % (cf. crm.ipc.ts). Exclut les objectifs liés aux KPI d'assiduité/CRM
+  // ci-dessous, non pertinents à lier à une activité (cf. LINKABLE_EXCLUDED_METRICS).
+  ipcMain.handle('performance:me:objectives', async (_e, { token }: any) => {
     try {
       const session = requireSession(token);
       const db = getDb();
-      const me = await sessionEmployee(db, session);
+      const me = await db.employee.findFirst({ where: { userId: session.userId, deletedAt: null }, select: { id: true, poste: true } });
       if (!me) return ser({ success: true, data: [] });
+      const objectiveTargets: any[] = [{ employeeId: me.id }];
+      if (me.poste) objectiveTargets.push({ poste: me.poste });
       const data = await db.performanceObjective.findMany({
         where: {
           deletedAt: null,
-          employeeId: me.id,
-          measureType: 'MANUAL',
+          AND: [
+            { OR: objectiveTargets },
+            { OR: [{ kpiDefinitionId: null }, { kpiDefinition: { metric: { notIn: LINKABLE_EXCLUDED_METRICS } } }] },
+          ],
           targetValue: { not: null, gt: 0 },
           status: { notIn: ['ATTEINT', 'ANNULE'] },
         },
         orderBy: [{ year: 'desc' }, { createdAt: 'desc' }],
-        select: { id: true, title: true, targetValue: true, unit: true, year: true, cycleType: true, quarter: true },
+        select: { id: true, title: true, targetValue: true, unit: true, year: true, cycleType: true, quarter: true, measureType: true },
       });
       return ser({ success: true, data });
     } catch (error: any) {
-      logger.error('performance:me:manualObjectives error', error.message);
+      logger.error('performance:me:objectives error', error.message);
       return { success: false, error: error.message };
     }
   });
@@ -1300,7 +1355,7 @@ async function buildDashboard(db: Db) {
     .slice(0, 20)
     .map((p) => ({
       id: p.id,
-      employee: `${p.employee.firstName} ${p.employee.lastName}`.trim(),
+      employee: `${p.employee.lastName} ${p.employee.firstName}`.trim(),
       departement: p.employee.departement,
       trainingNeeds: p.trainingNeeds,
       dueDate: p.dueDate,

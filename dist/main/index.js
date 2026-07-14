@@ -36,6 +36,8 @@ const hr_ipc_1 = require("./ipc/hr.ipc");
 const performance_ipc_1 = require("./ipc/performance.ipc");
 const performance_service_1 = require("./services/performance.service");
 const visitors_ipc_1 = require("./ipc/visitors.ipc");
+const calls_ipc_1 = require("./ipc/calls.ipc");
+const social_media_ipc_1 = require("./ipc/social-media.ipc");
 const geo_ipc_1 = require("./ipc/geo.ipc");
 const countries_ipc_1 = require("./ipc/countries.ipc");
 const commissions_ipc_1 = require("./ipc/commissions.ipc");
@@ -136,6 +138,8 @@ function registerIPC() {
     (0, hr_ipc_1.registerHrIPC)();
     (0, performance_ipc_1.registerPerformanceIPC)();
     (0, visitors_ipc_1.registerVisitorsIPC)();
+    (0, calls_ipc_1.registerCallsIPC)();
+    (0, social_media_ipc_1.registerSocialMediaIPC)();
     (0, geo_ipc_1.registerGeoIPC)();
     (0, countries_ipc_1.registerCountriesIPC)();
     (0, commissions_ipc_1.registerCommissionsIPC)();

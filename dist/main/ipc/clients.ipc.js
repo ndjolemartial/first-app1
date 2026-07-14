@@ -9,6 +9,7 @@ const db_service_1 = require("../services/db.service");
 const auth_service_1 = require("../services/auth.service");
 const logger_1 = __importDefault(require("../utils/logger"));
 const zod_1 = require("zod");
+const timeline_service_1 = require("../services/timeline.service");
 // ── Schéma ───────────────────────────────────────────────────────────────────
 const clientBaseSchema = zod_1.z.object({
     type: zod_1.z.enum(['INDIVIDUEL', 'ENTREPRISE']).default('INDIVIDUEL'),
@@ -260,6 +261,34 @@ function registerClientsIPC() {
             return { success: false, error: error.message };
         }
     });
+    // ── Fiche de suivi chronologique ───────────────────────────────────────────
+    electron_1.ipcMain.handle('clients:getTimeline', async (_event, { token, id }) => {
+        try {
+            const session = (0, auth_service_1.getSession)(token);
+            if (!session)
+                return { success: false, error: 'Session expirée' };
+            (0, auth_service_1.checkRole)(session, READ_ROLES);
+            const db = (0, db_service_1.getDb)();
+            const client = await db.client.findUnique({
+                where: { id, deletedAt: null },
+                select: { id: true, createdAt: true, assignedToId: true, prospect: { select: { assignedToId: true } } },
+            });
+            if (!client)
+                return { success: false, error: 'Client introuvable' };
+            if (!hasFullView(session.role)) {
+                const visible = client.assignedToId === session.userId ||
+                    client.prospect?.assignedToId === session.userId;
+                if (!visible)
+                    return { success: false, error: 'Client inaccessible' };
+            }
+            const timeline = await (0, timeline_service_1.buildEntityTimeline)(db, 'CLIENT', id, client.createdAt);
+            return { success: true, data: ser(timeline) };
+        }
+        catch (error) {
+            logger_1.default.error('clients:getTimeline', error.message);
+            return { success: false, error: error.message };
+        }
+    });
     // ── Création ───────────────────────────────────────────────────────────────
     electron_1.ipcMain.handle('clients:create', async (_event, { token, payload }) => {
         try {
@@ -296,10 +325,30 @@ function registerClientsIPC() {
             if (!parsed.success)
                 return { success: false, error: parsed.error.format() };
             const db = (0, db_service_1.getDb)();
+            const before = await db.client.findUnique({ where: { id, deletedAt: null } });
+            if (!before)
+                return { success: false, error: 'Client introuvable' };
             const data = { ...parsed.data };
             if (data.birthDate)
                 data.birthDate = new Date(data.birthDate);
             const client = await db.client.update({ where: { id, deletedAt: null }, data });
+            // Fiche de suivi chronologique : le statut fait l'objet d'un événement
+            // dédié, le reste des champs modifiés d'un événement de synthèse.
+            const { status: newStatus, ...rest } = data;
+            if (newStatus !== undefined) {
+                await (0, timeline_service_1.recordStatusChange)(db, {
+                    entityType: 'CLIENT', entityId: id,
+                    oldValue: before.status, newValue: newStatus,
+                    labels: timeline_service_1.CLIENT_STATUS_LABELS, userId: session.userId,
+                });
+            }
+            const changedFields = (0, timeline_service_1.diffChangedFields)(before, rest);
+            if (changedFields.length) {
+                await (0, timeline_service_1.recordModification)(db, {
+                    entityType: 'CLIENT', entityId: id,
+                    changedFields, labels: timeline_service_1.CLIENT_FIELD_LABELS, userId: session.userId,
+                });
+            }
             return { success: true, data: client };
         }
         catch (error) {
@@ -337,6 +386,10 @@ function registerClientsIPC() {
                 data: { isActive: !client.isActive },
                 select: { id: true, isActive: true },
             });
+            await (0, timeline_service_1.recordModification)(db, {
+                entityType: 'CLIENT', entityId: id,
+                changedFields: ['isActive'], labels: timeline_service_1.CLIENT_FIELD_LABELS, userId: session.userId,
+            });
             return { success: true, data: updated };
         }
         catch (error) {
@@ -354,10 +407,16 @@ function registerClientsIPC() {
             if (!parsed.success)
                 return { success: false, error: 'Statut invalide' };
             const db = (0, db_service_1.getDb)();
+            const before = await db.client.findUnique({ where: { id, deletedAt: null }, select: { status: true } });
             const updated = await db.client.update({
                 where: { id, deletedAt: null },
                 data: { status: parsed.data },
                 select: { id: true, status: true },
+            });
+            await (0, timeline_service_1.recordStatusChange)(db, {
+                entityType: 'CLIENT', entityId: id,
+                oldValue: before?.status, newValue: parsed.data,
+                labels: timeline_service_1.CLIENT_STATUS_LABELS, userId: session.userId,
             });
             logger_1.default.info(`Client #${id} status updated to ${parsed.data}`);
             return { success: true, data: updated };
@@ -400,6 +459,10 @@ function registerClientsIPC() {
                     referrer: { select: REFERRER_BRIEF_SELECT },
                 },
             });
+            await (0, timeline_service_1.recordModification)(db, {
+                entityType: 'CLIENT', entityId: id,
+                changedFields: ['assignedToId'], labels: timeline_service_1.CLIENT_FIELD_LABELS, userId: session.userId,
+            });
             logger_1.default.info(parsedId.data === null
                 ? `Client #${id} désaffecté`
                 : `Client #${id} affecté à l'utilisateur #${parsedId.data}`);
@@ -441,6 +504,10 @@ function registerClientsIPC() {
                     assignedTo: { select: USER_BRIEF_SELECT },
                     referrer: { select: REFERRER_BRIEF_SELECT },
                 },
+            });
+            await (0, timeline_service_1.recordModification)(db, {
+                entityType: 'CLIENT', entityId: id,
+                changedFields: ['referrerId'], labels: timeline_service_1.CLIENT_FIELD_LABELS, userId: session.userId,
             });
             logger_1.default.info(parsedId.data === null
                 ? `Client #${id} : apporteur retiré`

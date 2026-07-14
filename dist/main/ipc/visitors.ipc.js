@@ -22,6 +22,10 @@ const VISITOR_ROLES = ['SUPER_ADMIN', 'ADMIN', 'ASSISTANTE_DIRECTION', 'MANAGER'
 // Gestion (écriture) des « Objets de visite » — MANAGER exclu : il accède au
 // module visiteurs mais pas à la configuration des objets.
 const VISITOR_OBJECT_ROLES = ['SUPER_ADMIN', 'ADMIN', 'ASSISTANTE_DIRECTION'];
+// Suppression d'un visiteur — réservée à SUPER_ADMIN/ADMIN/MANAGER :
+// ASSISTANTE_DIRECTION accède au module (consultation/saisie) mais ne peut
+// pas supprimer un enregistrement.
+const VISITOR_DELETE_ROLES = ['SUPER_ADMIN', 'ADMIN', 'MANAGER'];
 /**
  * Contrôle de rôle EXACT pour le module visiteurs (n'applique pas les
  * équivalences de `checkRole`) : autoriser `MANAGER` explicitement sans faire
@@ -156,7 +160,7 @@ function registerVisitorsIPC() {
             const session = (0, auth_service_1.getSession)(token);
             if (!session)
                 return { success: false, error: 'Session expirée' };
-            checkVisitorRole(session, VISITOR_ROLES);
+            checkVisitorRole(session, VISITOR_DELETE_ROLES);
             const db = (0, db_service_1.getDb)();
             await db.visitor.update({ where: { id }, data: { deletedAt: new Date() } });
             logger_1.default.info(`Visiteur archivé (soft delete) : id=${id}`);

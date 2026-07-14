@@ -43,21 +43,42 @@ const QUOTE_TYPES = ['VENTE_TERRAIN', 'VENTE_BIEN', 'PRESTATION', 'FRAIS'] as co
 /** Sérialise les Decimal Prisma (non clonables par l'IPC Electron). */
 const ser = <T>(v: T): T => JSON.parse(JSON.stringify(v));
 
+const QUOTE_ITEM_LINE_TYPES = ['ARTICLE', 'TITLE', 'SUBTITLE'] as const;
+
 const itemSchema = z.object({
+  lineType: z.enum(QUOTE_ITEM_LINE_TYPES).default('ARTICLE'),
   designation: z.string().min(1, 'Désignation requise'),
+  reference: z.string().nullable().optional(),
   category: z.string().nullable().optional(),
-  quantity: z.number().positive().default(1),
+  quantity: z.number().min(0).default(1),
   unit: z.string().nullable().optional(),
   unitPrice: z.number().min(0).default(0),
+  catalogItemId: z.number().int().positive().nullable().optional(),
 });
+
+/**
+ * Normalise une ligne de devis : les lignes de titre/sous-titre ne portent
+ * qu'un texte (désignation) — quantité, prix, unité, référence et catégorie
+ * sont forcés à vide/zéro côté serveur, quoi qu'ait envoyé le client, afin
+ * qu'elles ne puissent jamais impacter les totaux.
+ */
+function normalizeItem<T extends { lineType?: string; quantity: number; unitPrice: number; unit?: string | null; reference?: string | null; category?: string | null; catalogItemId?: number | null }>(it: T): T {
+  if (it.lineType === 'ARTICLE' || !it.lineType) return it;
+  return { ...it, quantity: 0, unitPrice: 0, unit: null, reference: null, category: null, catalogItemId: null };
+}
 
 const quoteBaseSchema = z.object({
   type: z.enum(QUOTE_TYPES).default('VENTE_TERRAIN'),
-  objet: z.string().max(255).optional(),
+  objet: z.string().max(255).nullable().optional(),
   prospectId: z.number().int().positive().nullable().optional(),
   clientId: z.number().int().positive().nullable().optional(),
   terrainId: z.number().int().positive().nullable().optional(),
   propertyId: z.number().int().positive().nullable().optional(),
+  // Sélection multiple de terrains/biens (mêmes principe que les Attestations) —
+  // `terrainId`/`propertyId` restent en scalaires (alignés sur le 1ᵉʳ élément)
+  // pour compatibilité avec la conversion en convention/facture.
+  terrainIds: z.array(z.number().int().positive()).optional(),
+  propertyIds: z.array(z.number().int().positive()).optional(),
   programmeId: z.number().int().positive().nullable().optional(),
   lotissementId: z.number().int().positive().nullable().optional(),
   agentId: z.number().int().positive().nullable().optional(),
@@ -78,6 +99,7 @@ const quoteBaseSchema = z.object({
   notes: z.string().optional(),
   conditions: z.string().optional(),
   templateId: z.number().int().positive().nullable().optional(),
+  referenceColumnLabel: z.string().max(50).nullable().optional(),
   items: z.array(itemSchema).default([]),
 });
 
@@ -96,7 +118,45 @@ const INCLUDE = {
   agent: { select: { id: true, firstName: true, lastName: true, nomCommercial: true, matricule: true } },
   template: { select: { id: true, name: true } },
   items: { orderBy: { order: 'asc' as const } },
+  // Sélection multiple de terrains/biens.
+  terrains: {
+    orderBy: { order: 'asc' as const },
+    include: { terrain: { select: { id: true, reference: true, numeroIlot: true, numeroParcelle: true, surface: true, statut: true, lotissement: { select: { id: true, nom: true, ville: true } } } } },
+  },
+  properties: {
+    orderBy: { order: 'asc' as const },
+    include: { property: { select: { id: true, reference: true, address: true, city: true, status: true, programme: { select: { id: true, nom: true } } } } },
+  },
 };
+
+/** Déduplique une liste d'identifiants en conservant l'ordre. */
+function dedupeIds(ids: number[]): number[] {
+  return Array.from(new Set(ids));
+}
+
+/** Vérifie que les terrains d'un devis (sélection multiple) proviennent tous du même lotissement. */
+async function assertSingleLotissement(db: ReturnType<typeof getDb>, terrainIds: number[] | undefined): Promise<void> {
+  if (!terrainIds || terrainIds.length < 2) return;
+  const terrains = await db.terrain.findMany({ where: { id: { in: terrainIds } }, select: { id: true, lotissementId: true } });
+  const lotIds = new Set(terrains.map((t) => t.lotissementId));
+  if (lotIds.size > 1) {
+    throw new Error('Tous les terrains d\'un devis doivent provenir du même lotissement.');
+  }
+}
+
+/**
+ * Vérifie que les biens d'un devis (sélection multiple) proviennent du même
+ * programme immobilier lorsque celui-ci est déterminable (un bien sans
+ * programme n'impose aucune contrainte).
+ */
+async function assertSingleProgramme(db: ReturnType<typeof getDb>, propertyIds: number[] | undefined): Promise<void> {
+  if (!propertyIds || propertyIds.length < 2) return;
+  const properties = await db.property.findMany({ where: { id: { in: propertyIds } }, select: { id: true, programmeId: true } });
+  const programmeIds = new Set(properties.map((p) => p.programmeId).filter((id): id is number => id != null));
+  if (programmeIds.size > 1) {
+    throw new Error('Tous les biens immobiliers d\'un devis doivent provenir du même programme immobilier.');
+  }
+}
 
 /** Référence auto DEV-YYYY-NNNN (séquence annuelle). */
 async function nextReference(db: ReturnType<typeof getDb>): Promise<string> {
@@ -277,9 +337,18 @@ export function registerQuotesIPC(): void {
       if (!session) return { success: false, error: 'Session expirée' };
       checkRole(session, WRITE_ROLES);
       const parsed = createSchema.safeParse(payload);
-      if (!parsed.success) return { success: false, error: parsed.error.format() };
-      const d = parsed.data;
+      if (!parsed.success) {
+        logger.error('quotes validation error', JSON.stringify(parsed.error.issues));
+        return { success: false, error: parsed.error.format() };
+      }
+      const d = { ...parsed.data, items: parsed.data.items.map(normalizeItem) };
       const db = getDb();
+      // Sélection multiple de terrains/biens — repli sur le champ singulier
+      // terrainId/propertyId pour compatibilité (anciens payloads mono-bien).
+      const terrainIds = dedupeIds(d.terrainIds?.length ? d.terrainIds : (d.terrainId ? [d.terrainId] : []));
+      const propertyIds = dedupeIds(d.propertyIds?.length ? d.propertyIds : (d.propertyId ? [d.propertyId] : []));
+      await assertSingleLotissement(db, terrainIds);
+      await assertSingleProgramme(db, propertyIds);
       const { subtotal, taxAmount, total, lines, discountAmount, depositExpected } = resolveQuoteAmounts(d.items, d);
       const reference = await nextReference(db);
       const quote = await db.quote.create({
@@ -290,8 +359,8 @@ export function registerQuotesIPC(): void {
           objet: d.objet?.trim() || null,
           prospectId: d.prospectId ?? null,
           clientId: d.clientId ?? null,
-          terrainId: d.terrainId ?? null,
-          propertyId: d.propertyId ?? null,
+          terrainId: terrainIds[0] ?? null,
+          propertyId: propertyIds[0] ?? null,
           programmeId: d.programmeId ?? null,
           lotissementId: d.lotissementId ?? null,
           agentId: d.agentId ?? null,
@@ -311,16 +380,22 @@ export function registerQuotesIPC(): void {
           notes: d.notes ?? null,
           conditions: d.conditions ?? null,
           templateId: d.templateId ?? null,
+          referenceColumnLabel: d.referenceColumnLabel?.trim() || null,
           createdById: session.userId,
+          terrains: terrainIds.length ? { create: terrainIds.map((terrainId, order) => ({ terrainId, order })) } : undefined,
+          properties: propertyIds.length ? { create: propertyIds.map((propertyId, order) => ({ propertyId, order })) } : undefined,
           items: {
             create: d.items.map((it, i) => ({
+              lineType: it.lineType,
               designation: it.designation,
+              reference: it.reference?.trim() || null,
               category: it.category?.trim() || null,
               quantity: String(it.quantity) as never,
               unit: it.unit?.trim() || null,
               unitPrice: String(it.unitPrice) as never,
               total: String(lines[i].total) as never,
               order: i,
+              catalogItemId: it.catalogItemId ?? null,
             })),
           },
         },
@@ -340,8 +415,11 @@ export function registerQuotesIPC(): void {
       if (!session) return { success: false, error: 'Session expirée' };
       checkRole(session, WRITE_ROLES);
       const parsed = quoteBaseSchema.partial().safeParse(payload);
-      if (!parsed.success) return { success: false, error: parsed.error.format() };
-      const d = parsed.data;
+      if (!parsed.success) {
+        logger.error('quotes validation error', JSON.stringify(parsed.error.issues));
+        return { success: false, error: parsed.error.format() };
+      }
+      const d = { ...parsed.data, items: parsed.data.items?.map(normalizeItem) };
       const db = getDb();
       const existing = await db.quote.findUnique({ where: { id: Number(id) }, include: { items: true } });
       if (!existing || existing.deletedAt) return { success: false, error: 'Devis introuvable' };
@@ -349,6 +427,17 @@ export function registerQuotesIPC(): void {
       if (existing.status === 'ACCEPTE' || existing.convertedConventionId) {
         return { success: false, error: 'Un devis accepté ou converti ne peut plus être modifié' };
       }
+      // Sélection multiple de terrains/biens — repli sur le champ singulier
+      // terrainId/propertyId si seul celui-ci est transmis (compatibilité).
+      // `undefined` = non transmis (ne touche pas la sélection existante).
+      const terrainIds = d.terrainIds !== undefined
+        ? dedupeIds(d.terrainIds)
+        : (d.terrainId !== undefined ? (d.terrainId ? [d.terrainId] : []) : undefined);
+      const propertyIds = d.propertyIds !== undefined
+        ? dedupeIds(d.propertyIds)
+        : (d.propertyId !== undefined ? (d.propertyId ? [d.propertyId] : []) : undefined);
+      await assertSingleLotissement(db, terrainIds);
+      await assertSingleProgramme(db, propertyIds);
       // Recalcule les totaux à partir des lignes fournies (ou existantes), en
       // tenant compte des modes pourcentage (remise / acompte) — fusion des
       // valeurs fournies avec celles déjà enregistrées.
@@ -379,8 +468,8 @@ export function registerQuotesIPC(): void {
         ...(d.objet !== undefined ? { objet: d.objet?.trim() || null } : {}),
         ...(d.prospectId !== undefined ? { prospectId: d.prospectId } : {}),
         ...(d.clientId !== undefined ? { clientId: d.clientId } : {}),
-        ...(d.terrainId !== undefined ? { terrainId: d.terrainId } : {}),
-        ...(d.propertyId !== undefined ? { propertyId: d.propertyId } : {}),
+        ...(terrainIds !== undefined ? { terrainId: terrainIds[0] ?? null } : {}),
+        ...(propertyIds !== undefined ? { propertyId: propertyIds[0] ?? null } : {}),
         ...(d.programmeId !== undefined ? { programmeId: d.programmeId } : {}),
         ...(d.lotissementId !== undefined ? { lotissementId: d.lotissementId } : {}),
         ...(d.agentId !== undefined ? { agentId: d.agentId } : {}),
@@ -390,6 +479,7 @@ export function registerQuotesIPC(): void {
         ...(d.notes !== undefined ? { notes: d.notes } : {}),
         ...(d.conditions !== undefined ? { conditions: d.conditions } : {}),
         ...(d.templateId !== undefined ? { templateId: d.templateId } : {}),
+        ...(d.referenceColumnLabel !== undefined ? { referenceColumnLabel: d.referenceColumnLabel?.trim() || null } : {}),
         discountAmount: String(discountAmount) as never,
         discountIsPercent,
         discountPercent: discountIsPercent && discountPercent != null ? (String(discountPercent) as never) : null,
@@ -409,15 +499,30 @@ export function registerQuotesIPC(): void {
           await tx.quoteItem.createMany({
             data: d.items.map((it, i) => ({
               quoteId: Number(id),
+              lineType: it.lineType,
               designation: it.designation,
+              reference: it.reference?.trim() || null,
               category: it.category?.trim() || null,
               quantity: String(it.quantity) as never,
               unit: it.unit?.trim() || null,
               unitPrice: String(it.unitPrice) as never,
               total: String(lines[i].total) as never,
               order: i,
+              catalogItemId: it.catalogItemId ?? null,
             })),
           });
+        }
+        if (terrainIds !== undefined) {
+          await tx.quoteTerrain.deleteMany({ where: { quoteId: Number(id) } });
+          if (terrainIds.length) {
+            await tx.quoteTerrain.createMany({ data: terrainIds.map((terrainId, order) => ({ quoteId: Number(id), terrainId, order })) });
+          }
+        }
+        if (propertyIds !== undefined) {
+          await tx.quoteProperty.deleteMany({ where: { quoteId: Number(id) } });
+          if (propertyIds.length) {
+            await tx.quoteProperty.createMany({ data: propertyIds.map((propertyId, order) => ({ quoteId: Number(id), propertyId, order })) });
+          }
         }
         return tx.quote.update({ where: { id: Number(id) }, data, include: INCLUDE });
       });
@@ -633,11 +738,10 @@ export function registerQuotesIPC(): void {
     }
   });
 
-  /* ─── Unités de mesure (référentiel partagé `KpiUnit`) ─────────────── */
-  // Réutilise le même référentiel d'unités que le module Performances, afin que
-  // la liste proposée sur les lignes de devis soit celle de « Nouvel objectif ».
-  const unitSchema = z.object({ label: z.string().min(1, 'Libellé requis'), isActive: z.boolean().optional() });
-
+  /* ─── Unités de mesure (référentiel partagé `KpiUnit`, lecture seule) ───
+   * La gestion (création/modification/suppression) se fait désormais depuis
+   * le Catalogue prestations/produits (« Nouvel article » → « Gérer les
+   * unités »), sur le même référentiel partagé. */
   ipcMain.handle('quotes:listUnits', async (_event, { token, includeInactive }: any) => {
     try {
       const session = getSession(token);
@@ -649,58 +753,6 @@ export function registerQuotesIPC(): void {
       return { success: true, data: ser(data) };
     } catch (error: any) {
       logger.error('quotes:listUnits error', error.message);
-      return { success: false, error: error.message };
-    }
-  });
-
-  ipcMain.handle('quotes:createUnit', async (_event, { token, payload }: any) => {
-    try {
-      const session = getSession(token);
-      if (!session) return { success: false, error: 'Session expirée' };
-      checkRole(session, WRITE_ROLES);
-      const parsed = unitSchema.safeParse(payload);
-      if (!parsed.success) return { success: false, error: parsed.error.issues[0]?.message ?? 'Données invalides' };
-      const db = getDb();
-      const label = parsed.data.label.trim();
-      const existing = await db.kpiUnit.findUnique({ where: { label } });
-      if (existing) {
-        const data = await db.kpiUnit.update({ where: { id: existing.id }, data: { isActive: true, deletedAt: null } });
-        return { success: true, data: ser(data) };
-      }
-      const data = await db.kpiUnit.create({ data: { label, isActive: parsed.data.isActive ?? true } });
-      return { success: true, data: ser(data) };
-    } catch (error: any) {
-      logger.error('quotes:createUnit error', error.message);
-      return { success: false, error: error.message };
-    }
-  });
-
-  ipcMain.handle('quotes:updateUnit', async (_event, { token, id, payload }: any) => {
-    try {
-      const session = getSession(token);
-      if (!session) return { success: false, error: 'Session expirée' };
-      checkRole(session, WRITE_ROLES);
-      const parsed = unitSchema.partial().safeParse(payload);
-      if (!parsed.success) return { success: false, error: parsed.error.issues[0]?.message ?? 'Données invalides' };
-      const data: any = { ...parsed.data };
-      if (typeof data.label === 'string') data.label = data.label.trim();
-      const updated = await getDb().kpiUnit.update({ where: { id: Number(id) }, data });
-      return { success: true, data: ser(updated) };
-    } catch (error: any) {
-      logger.error('quotes:updateUnit error', error.message);
-      return { success: false, error: error.message };
-    }
-  });
-
-  ipcMain.handle('quotes:deleteUnit', async (_event, { token, id }: any) => {
-    try {
-      const session = getSession(token);
-      if (!session) return { success: false, error: 'Session expirée' };
-      checkRole(session, WRITE_ROLES);
-      await getDb().kpiUnit.update({ where: { id: Number(id) }, data: { deletedAt: new Date(), isActive: false } });
-      return { success: true };
-    } catch (error: any) {
-      logger.error('quotes:deleteUnit error', error.message);
       return { success: false, error: error.message };
     }
   });

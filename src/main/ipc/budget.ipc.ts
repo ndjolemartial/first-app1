@@ -13,7 +13,7 @@ import {
 } from '../services/budget.service';
 import logger from '../utils/logger';
 
-const READ_ROLES = ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ACCOUNTANT', 'READONLY'];
+const READ_ROLES = ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ACCOUNTANT'];
 // Administration du module budget (création/modification/clôture/suppression de budgets
 // et lignes) : réservée aux administrateurs. Les gestionnaires non-admin n'ont qu'un
 // accès en lecture aux lignes qui leur sont allouées.
@@ -24,7 +24,8 @@ const ADMIN_ROLES = ['SUPER_ADMIN', 'ADMIN'];
  *
  * Exception à l'équivalence ACCOUNTANT/MANAGER : ASSISTANTE_DIRECTION, qui
  * hérite normalement des permissions MANAGER, n'a pas accès au module
- * Budget (décision produit).
+ * Budget (décision produit). READONLY n'a pas non plus accès (retiré de
+ * `READ_ROLES` ci-dessus ; aucune équivalence `checkRole` ne le concerne).
  */
 function checkBudgetRole(session: { role: string }, allowedRoles: string[]): void {
   if (session.role === 'ASSISTANTE_DIRECTION') {

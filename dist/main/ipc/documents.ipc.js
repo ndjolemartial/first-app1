@@ -258,6 +258,7 @@ const importSchema = zod_1.z.object({
     attestationId: zod_1.z.number().int().positive().optional(),
     treasuryOperationId: zod_1.z.number().int().positive().optional(),
     crmActivityId: zod_1.z.number().int().positive().optional(),
+    socialPublicationId: zod_1.z.number().int().positive().optional(),
 });
 const updateGedSchema = zod_1.z.object({
     name: zod_1.z.string().min(1).optional(),
@@ -714,6 +715,7 @@ function registerDocumentsIPC() {
                         attestationId: d.attestationId ?? null,
                         treasuryOperationId: d.treasuryOperationId ?? null,
                         crmActivityId: d.crmActivityId ?? null,
+                        socialPublicationId: d.socialPublicationId ?? null,
                         tags: d.tagIds && d.tagIds.length
                             ? { create: d.tagIds.map((tagId) => ({ tagId })) }
                             : undefined,

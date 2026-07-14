@@ -3,6 +3,17 @@ import { getDb } from '../services/db.service';
 import { getSession, checkRole } from '../services/auth.service';
 import logger from '../utils/logger';
 import { z } from 'zod';
+import {
+  PROSPECT_FIELD_LABELS,
+  PROSPECT_STATUS_LABELS,
+  buildEntityTimeline,
+  diffChangedFields,
+  recordModification,
+  recordStatusChange,
+} from '../services/timeline.service';
+
+/** Sérialise pour l'IPC : les Date/Decimal Prisma ne sont pas clonables par Electron. */
+const ser = <T>(v: T): T => JSON.parse(JSON.stringify(v));
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -226,6 +237,29 @@ export function registerProspectsIPC(): void {
     }
   });
 
+  // ── Fiche de suivi chronologique ───────────────────────────────────────────
+  ipcMain.handle('prospects:getTimeline', async (_event, { token, id }: any) => {
+    try {
+      const session = getSession(token);
+      if (!session) return { success: false, error: 'Session expirée' };
+      checkRole(session, READ_ROLES);
+      const db = getDb();
+      const prospect = await db.prospect.findUnique({
+        where: { id, deletedAt: null },
+        select: { id: true, createdAt: true, assignedToId: true },
+      });
+      if (!prospect) return { success: false, error: 'Prospect introuvable' };
+      if (!hasFullView(session.role) && prospect.assignedToId !== session.userId) {
+        return { success: false, error: 'Prospect inaccessible' };
+      }
+      const timeline = await buildEntityTimeline(db, 'PROSPECT', id, prospect.createdAt);
+      return { success: true, data: ser(timeline) };
+    } catch (error: any) {
+      logger.error('prospects:getTimeline', error.message);
+      return { success: false, error: error.message };
+    }
+  });
+
   // ── Création ───────────────────────────────────────────────────────────────
   ipcMain.handle('prospects:create', async (_event, { token, payload }: any) => {
     try {
@@ -284,6 +318,8 @@ export function registerProspectsIPC(): void {
       }
 
       const db = getDb();
+      const before = await db.prospect.findUnique({ where: { id, deletedAt: null } });
+      if (!before) return { success: false, error: 'Prospect introuvable' };
       const data: any = { ...parsed.data };
       if (data.budget !== undefined) data.budget = String(data.budget);
       // Seuls les rôles d'assignation peuvent modifier l'affectation via update.
@@ -297,6 +333,25 @@ export function registerProspectsIPC(): void {
           createdBy:  { select: USER_BRIEF_SELECT },
         },
       });
+
+      // Fiche de suivi chronologique : le statut fait l'objet d'un événement
+      // dédié, le reste des champs modifiés d'un événement de synthèse.
+      const { status: newStatus, ...rest } = data;
+      if (newStatus !== undefined) {
+        await recordStatusChange(db, {
+          entityType: 'PROSPECT', entityId: id,
+          oldValue: before.status, newValue: newStatus,
+          labels: PROSPECT_STATUS_LABELS, userId: session.userId,
+        });
+      }
+      const changedFields = diffChangedFields(before, rest);
+      if (changedFields.length) {
+        await recordModification(db, {
+          entityType: 'PROSPECT', entityId: id,
+          changedFields, labels: PROSPECT_FIELD_LABELS, userId: session.userId,
+        });
+      }
+
       logger.info(`Prospect mis à jour : #${id}`);
       return { success: true, data: serialize(prospect) };
     } catch (error: any) {
@@ -333,9 +388,15 @@ export function registerProspectsIPC(): void {
       if (!parsed.success) return { success: false, error: 'Statut invalide' };
 
       const db = getDb();
+      const before = await db.prospect.findUnique({ where: { id, deletedAt: null }, select: { status: true } });
       const prospect = await db.prospect.update({
         where: { id, deletedAt: null },
         data:  { status: parsed.data },
+      });
+      await recordStatusChange(db, {
+        entityType: 'PROSPECT', entityId: id,
+        oldValue: before?.status, newValue: parsed.data,
+        labels: PROSPECT_STATUS_LABELS, userId: session.userId,
       });
       return { success: true, data: serialize(prospect) };
     } catch (error: any) {
@@ -384,6 +445,10 @@ export function registerProspectsIPC(): void {
           assignedTo: { select: USER_BRIEF_SELECT },
           createdBy:  { select: USER_BRIEF_SELECT },
         },
+      });
+      await recordModification(db, {
+        entityType: 'PROSPECT', entityId: id,
+        changedFields: ['assignedToId'], labels: PROSPECT_FIELD_LABELS, userId: session.userId,
       });
       logger.info(
         parsedId.data === null
@@ -465,6 +530,12 @@ export function registerProspectsIPC(): void {
           data:  { status: 'CONVERTI', convertedAt: new Date(), clientId: client.id },
         });
         return { client, prospect: updated };
+      });
+
+      await recordStatusChange(db, {
+        entityType: 'PROSPECT', entityId: id,
+        oldValue: prospect.status, newValue: 'CONVERTI',
+        labels: PROSPECT_STATUS_LABELS, userId: session.userId,
       });
 
       logger.info(`Prospect #${id} converti en client #${result.client.id}`);

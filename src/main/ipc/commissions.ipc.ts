@@ -253,7 +253,7 @@ export function registerCommissionsIPC(): void {
           ? db.businessReferrer.findMany({ where: { id: { in: referrerIds } }, select: { id: true, firstName: true, lastName: true, companyName: true } })
           : Promise.resolve([]),
       ]);
-      const userMap = new Map(users.map((u) => [u.id, `${u.firstName} ${u.lastName}`.trim()]));
+      const userMap = new Map(users.map((u) => [u.id, `${u.lastName} ${u.firstName}`.trim()]));
       const referrerMap = new Map(referrers.map((r) => [r.id, r.companyName || `${r.firstName} ${r.lastName}`.trim()]));
       for (const entry of recap.values()) {
         entry.name = entry.beneficiaryType === 'USER'

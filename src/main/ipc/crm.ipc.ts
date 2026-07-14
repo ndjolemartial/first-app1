@@ -1,6 +1,7 @@
 import { ipcMain } from 'electron';
 import { getDb } from '../services/db.service';
 import { getSession, checkRole } from '../services/auth.service';
+import { LINKABLE_EXCLUDED_METRICS } from './performance.ipc';
 import logger from '../utils/logger';
 import { z } from 'zod';
 
@@ -9,12 +10,12 @@ const WRITE_ROLES = ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'AGENT'];
 
 /**
  * Rôles qui voient l'ensemble des activités CRM, sans filtre de propriété.
- * Les rôles restreints (AGENT, READONLY) ne voient que les activités
- * qui leur sont assignées (`userId`), qu'ils ont créées (`createdById`),
- * ou qui sont rattachées à un client / prospect / convention dont ils
- * sont l'utilisateur référent (`assignedToId` / `agentId`).
+ * Les rôles restreints (AGENT, ACCOUNTANT, READONLY) ne voient que les
+ * activités qui leur sont assignées (`userId`), qu'ils ont créées
+ * (`createdById`), ou qui sont rattachées à un client / prospect / convention
+ * dont ils sont l'utilisateur référent (`assignedToId` / `agentId`).
  */
-const FULL_VIEW_ROLES = ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ACCOUNTANT'];
+const FULL_VIEW_ROLES = ['SUPER_ADMIN', 'ADMIN', 'MANAGER'];
 
 function hasFullView(role: string): boolean {
   return FULL_VIEW_ROLES.includes(role);
@@ -51,7 +52,7 @@ function buildVisibilityWhere(session: { userId: number; role: string }): any {
 }
 
 const activitySchema = z.object({
-  type: z.enum(['NOTIFICATION', 'APPEL', 'EMAIL', 'SMS', 'REUNION', 'VISITE', 'TASK', 'RAPPEL', 'DOCUMENT']),
+  type: z.enum(['NOTIFICATION', 'APPEL', 'EMAIL', 'SMS', 'REUNION', 'VISITE', 'TASK', 'RAPPEL', 'DOCUMENT', 'CREATION_PUBLICATION']),
   subject: z.string().min(1),
   description: z.string().optional(),
   status: z.enum(['EN_ATTENTE', 'EN_TRAITEMENT', 'TRAITE', 'ANNULE']).default('EN_ATTENTE'),
@@ -74,28 +75,36 @@ const activitySchema = z.object({
   objectiveRealized: z.number().nonnegative().nullable().optional(),
 });
 
-/** Fiche employé rattachée au compte utilisateur de la session, s'il existe. */
-async function sessionEmployeeId(db: ReturnType<typeof getDb>, session: { userId: number }): Promise<number | null> {
-  const e = await db.employee.findFirst({ where: { userId: session.userId, deletedAt: null }, select: { id: true } });
-  return e?.id ?? null;
+/** Fiche employé (id + poste) rattachée au compte utilisateur de la session, s'il existe. */
+async function sessionEmployeeForObjectives(db: ReturnType<typeof getDb>, session: { userId: number }): Promise<{ id: number; poste: string | null } | null> {
+  return db.employee.findFirst({ where: { userId: session.userId, deletedAt: null }, select: { id: true, poste: true } });
 }
 
 /**
- * Vérifie qu'un objectif est « liable » à une tâche du collaborateur connecté :
- * objectif à Mesure MANUELLE, personnellement assigné (employeeId = son employé)
- * et doté d'une cible chiffrée (> 0). Retourne la cible.
+ * Vérifie qu'un objectif est « liable » à une activité du collaborateur
+ * connecté : personnellement assigné (employeeId = son employé) **ou**
+ * défini pour son poste (poste = son poste), et doté d'une cible chiffrée
+ * (> 0), quel que soit son type de mesure (Manuel ou Auto). Retourne la
+ * cible et le type de mesure.
  */
-async function assertLinkableObjective(db: ReturnType<typeof getDb>, session: { userId: number }, objectiveId: number): Promise<number> {
-  const empId = await sessionEmployeeId(db, session);
-  if (!empId) throw new Error('Aucun dossier du personnel rattaché à votre compte.');
+async function assertLinkableObjective(db: ReturnType<typeof getDb>, session: { userId: number }, objectiveId: number): Promise<{ target: number; measureType: string }> {
+  const me = await sessionEmployeeForObjectives(db, session);
+  if (!me) throw new Error('Aucun dossier du personnel rattaché à votre compte.');
+  const targets: any[] = [{ employeeId: me.id }];
+  if (me.poste) targets.push({ poste: me.poste });
   const obj = await db.performanceObjective.findFirst({
-    where: { id: objectiveId, deletedAt: null, employeeId: empId, measureType: 'MANUAL' },
-    select: { targetValue: true },
+    where: {
+      id: objectiveId,
+      deletedAt: null,
+      OR: targets,
+      AND: [{ OR: [{ kpiDefinitionId: null }, { kpiDefinition: { metric: { notIn: LINKABLE_EXCLUDED_METRICS } } }] }],
+    } as any,
+    select: { targetValue: true, measureType: true },
   });
-  if (!obj) throw new Error('Objectif introuvable : un objectif à Mesure « Manuelle » qui vous est assigné est requis.');
+  if (!obj) throw new Error('Objectif introuvable : un objectif qui vous est assigné (personnellement ou via votre poste) est requis.');
   const target = obj.targetValue != null ? Number(obj.targetValue) : 0;
   if (!(target > 0)) throw new Error('L’objectif lié doit avoir une cible chiffrée.');
-  return target;
+  return { target, measureType: obj.measureType };
 }
 
 /** Bloque le passage « Traité » d'une tâche liée tant que la cible n'est pas atteinte à 100 %. */
@@ -165,7 +174,7 @@ export function registerCrmIPC(): void {
           where: finalWhere,
           skip: (page - 1) * limit,
           take: limit,
-          orderBy: [{ dueDate: 'asc' }, { createdAt: 'desc' }],
+          orderBy: { createdAt: 'desc' },
           include: {
             user: { select: { id: true, firstName: true, lastName: true } },
             client: { select: { id: true, firstName: true, lastName: true, entreprise: true, type: true } },
@@ -239,13 +248,18 @@ export function registerCrmIPC(): void {
       if (!parsed.success) return { success: false, error: parsed.error.format() };
       const db = getDb();
       const d = parsed.data as any;
-      // Lien objectif (réservé aux tâches) : validation + garde de complétion.
+      // Lien objectif (optionnel, quel que soit le type d'activité) : validation
+      // + garde de complétion réservée aux objectifs à Mesure « Manuelle ».
       let objTarget: number | null = null;
+      let objMeasureType: string | null = null;
       if (d.objectiveId != null) {
-        if (d.type !== 'TASK') return { success: false, error: 'Un objectif ne peut être lié qu’à une tâche.' };
-        objTarget = await assertLinkableObjective(db, session, d.objectiveId);
+        const linked = await assertLinkableObjective(db, session, d.objectiveId);
+        objTarget = linked.target;
+        objMeasureType = linked.measureType;
       }
-      if (d.status === 'TRAITE' && d.objectiveId != null) assertTaskCompletable(objTarget, d.objectiveRealized ?? null);
+      if (d.status === 'TRAITE' && d.objectiveId != null && objMeasureType === 'MANUAL') {
+        assertTaskCompletable(objTarget, d.objectiveRealized ?? null);
+      }
       const activity = await db.crmActivity.create({
         data: {
           type: d.type,
@@ -266,8 +280,8 @@ export function registerCrmIPC(): void {
           invoiceId: d.invoiceId ?? null,
           installmentId: d.installmentId ?? null,
           documentId: d.documentId ?? null,
-          objectiveId: d.type === 'TASK' ? (d.objectiveId ?? null) : null,
-          objectiveRealized: d.type === 'TASK' && d.objectiveId != null ? (d.objectiveRealized ?? null) : null,
+          objectiveId: d.objectiveId ?? null,
+          objectiveRealized: d.objectiveId != null ? (d.objectiveRealized ?? null) : null,
           createdById: session.userId,
         } as any,
       });
@@ -300,19 +314,22 @@ export function registerCrmIPC(): void {
       if (d.dueDate) d.dueDate = new Date(d.dueDate);
       if (d.completedAt) d.completedAt = new Date(d.completedAt);
       // Valeurs finales après application du payload partiel.
-      const finalType = d.type ?? existing.type;
       const finalObjectiveId = 'objectiveId' in d ? (d.objectiveId ?? null) : existing.objectiveId;
       const finalRealized = 'objectiveRealized' in d
         ? (d.objectiveRealized ?? null)
         : (existing.objectiveRealized != null ? Number(existing.objectiveRealized) : null);
       const finalStatus = d.status ?? existing.status;
       let objTarget: number | null = null;
+      let objMeasureType: string | null = null;
       if (finalObjectiveId != null) {
-        if (finalType !== 'TASK') return { success: false, error: 'Un objectif ne peut être lié qu’à une tâche.' };
-        objTarget = await assertLinkableObjective(db, session, finalObjectiveId);
+        const linked = await assertLinkableObjective(db, session, finalObjectiveId);
+        objTarget = linked.target;
+        objMeasureType = linked.measureType;
       }
-      if (finalStatus === 'TRAITE' && finalObjectiveId != null) assertTaskCompletable(objTarget, finalRealized);
-      // Une tâche sans objectif ne conserve pas de quantité réalisée.
+      if (finalStatus === 'TRAITE' && finalObjectiveId != null && objMeasureType === 'MANUAL') {
+        assertTaskCompletable(objTarget, finalRealized);
+      }
+      // Une activité sans objectif ne conserve pas de quantité réalisée.
       if (finalObjectiveId == null) { d.objectiveId = null; d.objectiveRealized = null; }
       const activity = await db.crmActivity.update({ where: { id }, data: d });
       // Recalcule l'avancement des objectifs impactés (ancien et nouveau).
@@ -351,11 +368,12 @@ export function registerCrmIPC(): void {
         : { id };
       const existing = await db.crmActivity.findFirst({
         where: lookupWhere,
-        select: { id: true, objectiveId: true, objectiveRealized: true, objective: { select: { targetValue: true } } },
+        select: { id: true, objectiveId: true, objectiveRealized: true, objective: { select: { targetValue: true, measureType: true } } },
       });
       if (!existing) return { success: false, error: 'Activité introuvable ou inaccessible' };
-      // Tâche liée à un objectif : n'autorise « Traité » qu'à 100 % de la cible.
-      if (existing.objectiveId) {
+      // Objectif lié à Mesure « Manuelle » : n'autorise « Traité » qu'à 100 % de
+      // la cible. Les objectifs Auto ne conditionnent pas la complétion.
+      if (existing.objectiveId && existing.objective?.measureType === 'MANUAL') {
         const target = existing.objective?.targetValue != null ? Number(existing.objective.targetValue) : 0;
         assertTaskCompletable(target, existing.objectiveRealized != null ? Number(existing.objectiveRealized) : null);
       }

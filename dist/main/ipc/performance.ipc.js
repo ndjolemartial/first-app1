@@ -3,6 +3,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
+exports.LINKABLE_EXCLUDED_METRICS = void 0;
 exports.registerPerformanceIPC = registerPerformanceIPC;
 const electron_1 = require("electron");
 const zod_1 = require("zod");
@@ -28,6 +29,11 @@ const PERF_ADMIN_ROLES = ['SUPER_ADMIN', 'ADMIN', 'RH'];
 const PERF_MANAGE_ROLES = ['SUPER_ADMIN', 'ADMIN', 'RH', 'MANAGER'];
 // Signature « Direction » (3ᵉ niveau).
 const PERF_DIRECTION_ROLES = ['SUPER_ADMIN', 'ADMIN'];
+// Objectifs liés à ces KPI ne sont jamais proposés dans le sélecteur « Objectif
+// lié » de « Nouvelle activité » (quel que soit l'utilisateur connecté) : leur
+// progression n'a pas de sens rattachée à une activité CRM ponctuelle. Exportée
+// pour être réutilisée par crm.ipc.ts (garde de liaison d'objectif).
+exports.LINKABLE_EXCLUDED_METRICS = ['CRM_ACTIVITIES_DONE', 'ABSENCE_DAYS', 'ATTENDANCE_RATE', 'LATE_EARLY_DEPARTURE_HOURS'];
 function requireSession(token) {
     const session = (0, auth_service_1.getSession)(token);
     if (!session)
@@ -71,6 +77,40 @@ async function scopeEmployeeWhere(db, session) {
     const ids = await accessibleEmployeeIds(db, session);
     return ids === null ? {} : { employeeId: { in: ids.length ? ids : [-1] } };
 }
+/**
+ * Identifiants des employés accessibles à la session pour la gestion des
+ * ÉVALUATIONS spécifiquement. `null` = aucune restriction (admins / RH). Un
+ * MANAGER accède ici à TOUS les employés (pas seulement son équipe), à
+ * l'exception de ceux dont le compte utilisateur rattaché a le rôle
+ * SUPER_ADMIN ou ADMIN. Périmètre plus large que `accessibleEmployeeIds`
+ * (utilisé par les objectifs/plans, restés limités à l'équipe).
+ */
+async function accessibleEmployeeIdsForEvaluations(db, session) {
+    if (isPerfAdmin(session.role))
+        return null;
+    const employees = await db.employee.findMany({
+        where: {
+            deletedAt: null,
+            OR: [
+                { userId: null },
+                { user: { role: { notIn: ['SUPER_ADMIN', 'ADMIN'] } } },
+            ],
+        },
+        select: { id: true },
+    });
+    return employees.map((e) => e.id);
+}
+/** Vérifie qu'un employé est accessible à la session pour les évaluations (sinon lève). */
+async function assertEmployeeAccessibleEval(db, session, employeeId) {
+    const ids = await accessibleEmployeeIdsForEvaluations(db, session);
+    if (ids !== null && !ids.includes(employeeId))
+        throw new Error('Accès restreint : ce collaborateur est rattaché à un compte SUPER_ADMIN/ADMIN.');
+}
+/** Fragment `where` limitant `employeeId` au périmètre accessible pour les évaluations. */
+async function scopeEmployeeWhereEval(db, session) {
+    const ids = await accessibleEmployeeIdsForEvaluations(db, session);
+    return ids === null ? {} : { employeeId: { in: ids.length ? ids : [-1] } };
+}
 const emptyToNull = (v) => (v === '' || v === undefined ? null : v);
 async function nextEvaluationReference(db) {
     const year = new Date().getFullYear();
@@ -87,11 +127,12 @@ const kpiSchema = zod_1.z.object({
     code: zod_1.z.string().min(1, 'Code requis'),
     label: zod_1.z.string().min(1, 'Libellé requis'),
     category: zod_1.z.preprocess(emptyToNull, zod_1.z.string().nullable().optional()),
-    source: zod_1.z.enum(['SALES', 'COMMISSIONS', 'ACCOUNTING', 'CRM', 'PROSPECTS', 'ATTENDANCE', 'LEAVE', 'PROJECT', 'MANUAL']),
+    source: zod_1.z.enum(['SALES', 'COMMISSIONS', 'ACCOUNTING', 'CRM', 'PROSPECTS', 'ATTENDANCE', 'LEAVE', 'PROJECT', 'SOCIAL', 'MANUAL']),
     metric: zod_1.z.enum([
         'SALES_COUNT', 'SALES_AMOUNT', 'RESILIATION_COUNT', 'COMMISSION_AMOUNT', 'ENCAISSEMENT_AMOUNT',
-        'CRM_ACTIVITIES_DONE', 'CRM_VISITS', 'CRM_CALLS', 'PROSPECT_CONVERSION_RATE',
-        'ATTENDANCE_RATE', 'OVERTIME_HOURS', 'ABSENCE_DAYS', 'MANUAL_VALUE',
+        'CRM_ACTIVITIES_DONE', 'CRM_VISITS', 'CRM_CALLS', 'PROSPECT_CONVERSION_RATE', 'NEW_POTENTIAL_PROSPECTS',
+        'SOCIAL_PUBLICATIONS_COUNT', 'SOCIAL_VIEWS', 'SOCIAL_INTERACTIONS', 'SOCIAL_FOLLOWERS_GROWTH',
+        'ATTENDANCE_RATE', 'OVERTIME_HOURS', 'ABSENCE_DAYS', 'LATE_EARLY_DEPARTURE_HOURS', 'MANUAL_VALUE',
     ]),
     unit: zod_1.z.preprocess(emptyToNull, zod_1.z.string().nullable().optional()),
     direction: zod_1.z.enum(['HIGHER_BETTER', 'LOWER_BETTER']).optional(),
@@ -364,12 +405,17 @@ function registerPerformanceIPC() {
         }
     });
     /* ─── Sélecteur d'employés (périmètre accessible) ───────────────── */
-    electron_1.ipcMain.handle('performance:employees:list', async (_e, { token }) => {
+    // `scope: 'evaluations'` élargit le périmètre MANAGER à tous les employés
+    // (hors comptes SUPER_ADMIN/ADMIN) pour le sélecteur de « Nouvelle évaluation ».
+    // Sans ce paramètre (objectifs, plans…), le périmètre reste limité à l'équipe.
+    electron_1.ipcMain.handle('performance:employees:list', async (_e, { token, scope }) => {
         try {
             const session = requireSession(token);
             checkExact(session, PERF_MANAGE_ROLES);
             const db = (0, db_service_1.getDb)();
-            const ids = await accessibleEmployeeIds(db, session);
+            const ids = scope === 'evaluations'
+                ? await accessibleEmployeeIdsForEvaluations(db, session)
+                : await accessibleEmployeeIds(db, session);
             const where = { deletedAt: null };
             if (ids !== null)
                 where.id = { in: ids.length ? ids : [-1] };
@@ -621,7 +667,7 @@ function registerPerformanceIPC() {
             const session = requireSession(token);
             checkExact(session, PERF_MANAGE_ROLES);
             const db = (0, db_service_1.getDb)();
-            const where = { deletedAt: null, ...(await scopeEmployeeWhere(db, session)) };
+            const where = { deletedAt: null, ...(await scopeEmployeeWhereEval(db, session)) };
             if (filters.employeeId)
                 where.employeeId = Number(filters.employeeId);
             if (filters.year)
@@ -653,7 +699,7 @@ function registerPerformanceIPC() {
             const data = await evaluationDetail(db, Number(id));
             if (!data)
                 return { success: false, error: 'Évaluation introuvable' };
-            await assertEmployeeAccessible(db, session, data.employeeId);
+            await assertEmployeeAccessibleEval(db, session, data.employeeId);
             return (0, performance_service_1.ser)({ success: true, data });
         }
         catch (error) {
@@ -669,7 +715,7 @@ function registerPerformanceIPC() {
             if (!parsed.success)
                 return { success: false, error: parsed.error.issues[0]?.message ?? 'Données invalides' };
             const db = (0, db_service_1.getDb)();
-            await assertEmployeeAccessible(db, session, parsed.data.employeeId);
+            await assertEmployeeAccessibleEval(db, session, parsed.data.employeeId);
             const { lines, ...header } = parsed.data;
             const reference = await nextEvaluationReference(db);
             const data = await db.$transaction(async (tx) => {
@@ -698,7 +744,7 @@ function registerPerformanceIPC() {
             const existing = await db.performanceEvaluation.findFirst({ where: { id: Number(id), deletedAt: null } });
             if (!existing)
                 return { success: false, error: 'Évaluation introuvable' };
-            await assertEmployeeAccessible(db, session, existing.employeeId);
+            await assertEmployeeAccessibleEval(db, session, existing.employeeId);
             if (['VALIDEE_DIRECTION', 'CLOTUREE'].includes(existing.status)) {
                 return { success: false, error: 'Évaluation validée : modification impossible.' };
             }
@@ -739,7 +785,7 @@ function registerPerformanceIPC() {
             });
             if (!evaluation)
                 return { success: false, error: 'Évaluation introuvable' };
-            await assertEmployeeAccessible(db, session, evaluation.employeeId);
+            await assertEmployeeAccessibleEval(db, session, evaluation.employeeId);
             if (['VALIDEE_DIRECTION', 'CLOTUREE'].includes(evaluation.status)) {
                 return { success: false, error: 'Évaluation validée : recalcul impossible.' };
             }
@@ -785,7 +831,7 @@ function registerPerformanceIPC() {
             const existing = await db.performanceEvaluation.findFirst({ where: { id: Number(id), deletedAt: null } });
             if (!existing)
                 return { success: false, error: 'Évaluation introuvable' };
-            await assertEmployeeAccessible(db, session, existing.employeeId);
+            await assertEmployeeAccessibleEval(db, session, existing.employeeId);
             if (!['BROUILLON', 'REFUSEE'].includes(existing.status)) {
                 return { success: false, error: 'Évaluation déjà soumise.' };
             }
@@ -825,7 +871,7 @@ function registerPerformanceIPC() {
             const existing = await db.performanceEvaluation.findFirst({ where: { id: Number(id), deletedAt: null } });
             if (!existing)
                 return { success: false, error: 'Évaluation introuvable' };
-            await assertEmployeeAccessible(db, session, existing.employeeId);
+            await assertEmployeeAccessibleEval(db, session, existing.employeeId);
             const data = await db.performanceEvaluation.update({
                 where: { id: Number(id) },
                 data: { status: 'REFUSEE', refusedById: session.userId, refusedAt: new Date(), refusalReason: reason ?? null },
@@ -1181,30 +1227,39 @@ function registerPerformanceIPC() {
             return { success: false, error: error.message };
         }
     });
-    // Objectifs à Mesure « Manuelle » personnellement assignés au collaborateur
-    // connecté et dotés d'une cible chiffrée (> 0) — pour lier une tâche CRM.
-    electron_1.ipcMain.handle('performance:me:manualObjectives', async (_e, { token }) => {
+    // Tous les objectifs (Manuel ou Auto) assignés au collaborateur connecté —
+    // les siens (employeeId) et ceux définis pour son poste — dotés d'une cible
+    // chiffrée (> 0), pour lier une activité CRM, quel que soit son type. Seuls
+    // les objectifs à Mesure « Manuelle » conditionnent le passage « Traité » à
+    // 100 % (cf. crm.ipc.ts). Exclut les objectifs liés aux KPI d'assiduité/CRM
+    // ci-dessous, non pertinents à lier à une activité (cf. LINKABLE_EXCLUDED_METRICS).
+    electron_1.ipcMain.handle('performance:me:objectives', async (_e, { token }) => {
         try {
             const session = requireSession(token);
             const db = (0, db_service_1.getDb)();
-            const me = await sessionEmployee(db, session);
+            const me = await db.employee.findFirst({ where: { userId: session.userId, deletedAt: null }, select: { id: true, poste: true } });
             if (!me)
                 return (0, performance_service_1.ser)({ success: true, data: [] });
+            const objectiveTargets = [{ employeeId: me.id }];
+            if (me.poste)
+                objectiveTargets.push({ poste: me.poste });
             const data = await db.performanceObjective.findMany({
                 where: {
                     deletedAt: null,
-                    employeeId: me.id,
-                    measureType: 'MANUAL',
+                    AND: [
+                        { OR: objectiveTargets },
+                        { OR: [{ kpiDefinitionId: null }, { kpiDefinition: { metric: { notIn: exports.LINKABLE_EXCLUDED_METRICS } } }] },
+                    ],
                     targetValue: { not: null, gt: 0 },
                     status: { notIn: ['ATTEINT', 'ANNULE'] },
                 },
                 orderBy: [{ year: 'desc' }, { createdAt: 'desc' }],
-                select: { id: true, title: true, targetValue: true, unit: true, year: true, cycleType: true, quarter: true },
+                select: { id: true, title: true, targetValue: true, unit: true, year: true, cycleType: true, quarter: true, measureType: true },
             });
             return (0, performance_service_1.ser)({ success: true, data });
         }
         catch (error) {
-            logger_1.default.error('performance:me:manualObjectives error', error.message);
+            logger_1.default.error('performance:me:objectives error', error.message);
             return { success: false, error: error.message };
         }
     });
@@ -1323,7 +1378,7 @@ async function buildDashboard(db) {
         .slice(0, 20)
         .map((p) => ({
         id: p.id,
-        employee: `${p.employee.firstName} ${p.employee.lastName}`.trim(),
+        employee: `${p.employee.lastName} ${p.employee.firstName}`.trim(),
         departement: p.employee.departement,
         trainingNeeds: p.trainingNeeds,
         dueDate: p.dueDate,

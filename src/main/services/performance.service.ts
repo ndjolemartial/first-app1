@@ -1,5 +1,9 @@
 import { getDb } from './db.service';
-import { getSetting } from './settings.service';
+import { getSetting, SettingsKeys } from './settings.service';
+import { getAttendanceClockSettings, minutesOfDay, thresholdMinutes } from './attendance.service';
+
+/** Rôles exclus par défaut des Retards & Départs précipités (calcul et affichage). */
+const LATENESS_MANAGEMENT_ROLES = ['SUPER_ADMIN', 'ADMIN', 'MANAGER'];
 
 /** Clé AppSetting : liste (JSON d'ids) des employés à inclure dans les classements. */
 export const RANKING_ROSTER_KEY = 'performance.rankingEmployeeIds';
@@ -146,7 +150,7 @@ export async function computeMetricValue(
   end: Date,
 ): Promise<number | null> {
   const uid = employee.userId;
-  const needsUser = ['SALES', 'COMMISSIONS', 'ACCOUNTING', 'CRM', 'PROSPECTS'].includes(kpi.source);
+  const needsUser = ['SALES', 'COMMISSIONS', 'ACCOUNTING', 'CRM', 'PROSPECTS', 'SOCIAL'].includes(kpi.source);
   if (needsUser && !uid) return null;
 
   switch (kpi.metric) {
@@ -220,6 +224,57 @@ export async function computeMetricValue(
       if (total === 0) return null;
       return Math.round((converted / total) * 1000) / 10; // %
     }
+    case 'NEW_POTENTIAL_PROSPECTS': {
+      // Nouveaux prospects (créés dans la période, assignés à l'agent) dont le
+      // statut actuel est « Client potentiel » (QUALIFIE) ou « Négociation en
+      // cours » (NEGOCIATION_EN_COURS).
+      return db.prospect.count({
+        where: {
+          deletedAt: null,
+          assignedToId: uid!,
+          createdAt: { gte: start, lt: end },
+          status: { in: ['QUALIFIE', 'NEGOCIATION_EN_COURS'] },
+        },
+      });
+    }
+    case 'SOCIAL_PUBLICATIONS_COUNT': {
+      return db.socialPublication.count({
+        where: { deletedAt: null, authorId: uid!, publishedAt: { gte: start, lt: end } },
+      });
+    }
+    case 'SOCIAL_VIEWS': {
+      const agg = await db.socialPublication.aggregate({
+        where: { deletedAt: null, authorId: uid!, publishedAt: { gte: start, lt: end } },
+        _sum: { viewsCount: true },
+      });
+      return agg._sum.viewsCount ?? 0;
+    }
+    case 'SOCIAL_INTERACTIONS': {
+      const agg = await db.socialPublication.aggregate({
+        where: { deletedAt: null, authorId: uid!, publishedAt: { gte: start, lt: end } },
+        _sum: { interactionsCount: true },
+      });
+      return agg._sum.interactionsCount ?? 0;
+    }
+    case 'SOCIAL_FOLLOWERS_GROWTH': {
+      // Croissance nette d'abonnés sur la période, cumulée sur les plateformes
+      // dont l'agent est responsable : dernier relevé connu en fin de période
+      // moins dernier relevé connu avant le début de la période.
+      const platforms = await db.socialPlatform.findMany({
+        where: { deletedAt: null, responsibleId: uid! },
+        select: { id: true },
+      });
+      if (!platforms.length) return null;
+      let growth = 0;
+      for (const p of platforms) {
+        const [before, atEnd] = await Promise.all([
+          db.socialFollowerSnapshot.findFirst({ where: { platformId: p.id, date: { lt: start } }, orderBy: { date: 'desc' } }),
+          db.socialFollowerSnapshot.findFirst({ where: { platformId: p.id, date: { lt: end } }, orderBy: { date: 'desc' } }),
+        ]);
+        growth += (atEnd?.followersCount ?? 0) - (before?.followersCount ?? 0);
+      }
+      return growth;
+    }
     case 'ATTENDANCE_RATE': {
       const records = await db.attendanceRecord.findMany({
         where: { employeeId: employee.id, date: { gte: start, lt: end } },
@@ -242,10 +297,169 @@ export async function computeMetricValue(
         where: { employeeId: employee.id, date: { gte: start, lt: end }, status: 'ABSENT' },
       });
     }
+    case 'LATE_EARLY_DEPARTURE_HOURS': {
+      // Par défaut, ne pas calculer ce KPI pour un employé lié à un compte
+      // SUPER_ADMIN/ADMIN/MANAGER (paramétrable dans Paramètres).
+      if (uid && !(await latenessIncludesManagementRoles())) {
+        const linkedUser = await db.user.findUnique({ where: { id: uid }, select: { role: true } });
+        if (linkedUser && LATENESS_MANAGEMENT_ROLES.includes(linkedUser.role)) return null;
+      }
+      const minutes = await computeUnjustifiedLatenessMinutes(db, employee.id, start, end);
+      return Math.round((minutes / 60) * 100) / 100; // heures, 2 décimales
+    }
     case 'MANUAL_VALUE':
     default:
       return null;
   }
+}
+
+// ── Retards & Départs précipités ────────────────────────────────────────────
+
+export interface LatenessJustification {
+  id: number;
+  justified: boolean;
+  leaveRequestId: number | null;
+  crmActivityId: number | null;
+  justifiedById: number | null;
+  justifiedAt: Date | null;
+  // Tolérance : marquage manuel SUPER_ADMIN/ADMIN/MANAGER (sans congé ni
+  // activité liée), plafonné par une limite de temps paramétrable. Exclut la
+  // journée du cumul non justifié, comme `justified`.
+  tolerated: boolean;
+  toleratedById: number | null;
+  toleratedAt: Date | null;
+  notes: string | null;
+}
+
+export interface LatenessLine {
+  employeeId: number;
+  date: Date;
+  arrivalTime: Date | null;
+  departureTime: Date | null;
+  lateMinutes: number;
+  earlyMinutes: number;
+  totalMinutes: number;
+  justification: LatenessJustification | null;
+}
+
+/**
+ * Journées de retard d'arrivée / départ anticipé d'un employé sur [start, end[
+ * (uniquement les journées `PRESENT` avec pointage), avec la justification
+ * éventuellement déjà enregistrée. Les seuils (arrivée/départ attendus) sont
+ * ceux paramétrés pour le pointage QR (`attendance.expectedArrival/Departure`).
+ */
+export async function computeLatenessLinesForEmployee(db: Db, employeeId: number, start: Date, end: Date): Promise<LatenessLine[]> {
+  const { expectedArrival, expectedDeparture } = await getAttendanceClockSettings();
+  const arrivalThreshold = thresholdMinutes(expectedArrival);
+  const departureThreshold = thresholdMinutes(expectedDeparture);
+
+  const [records, justifications] = await Promise.all([
+    db.attendanceRecord.findMany({
+      where: { employeeId, date: { gte: start, lt: end }, status: 'PRESENT' },
+      select: { date: true, arrivalTime: true, departureTime: true },
+      orderBy: { date: 'asc' },
+    }),
+    db.attendanceDelayJustification.findMany({
+      where: { employeeId, date: { gte: start, lt: end } },
+      select: {
+        id: true, date: true, justified: true, leaveRequestId: true, crmActivityId: true, justifiedById: true, justifiedAt: true,
+        tolerated: true, toleratedById: true, toleratedAt: true, notes: true,
+      },
+    }),
+  ]);
+  const justByDate = new Map(justifications.map((j) => [j.date.getTime(), j]));
+
+  const lines: LatenessLine[] = [];
+  for (const r of records) {
+    const lateMinutes = r.arrivalTime ? Math.max(0, minutesOfDay(r.arrivalTime) - arrivalThreshold) : 0;
+    const earlyMinutes = r.departureTime ? Math.max(0, departureThreshold - minutesOfDay(r.departureTime)) : 0;
+    const totalMinutes = lateMinutes + earlyMinutes;
+    if (totalMinutes <= 0) continue;
+    const j = justByDate.get(r.date.getTime());
+    lines.push({
+      employeeId,
+      date: r.date,
+      arrivalTime: r.arrivalTime,
+      departureTime: r.departureTime,
+      lateMinutes,
+      earlyMinutes,
+      totalMinutes,
+      justification: j
+        ? {
+            id: j.id, justified: j.justified, leaveRequestId: j.leaveRequestId, crmActivityId: j.crmActivityId,
+            justifiedById: j.justifiedById, justifiedAt: j.justifiedAt,
+            tolerated: j.tolerated, toleratedById: j.toleratedById, toleratedAt: j.toleratedAt,
+            notes: j.notes,
+          }
+        : null,
+    });
+  }
+  return lines;
+}
+
+/**
+ * Cumul (minutes) des journées de retard/départ précipité NON justifiées ET
+ * NON tolérées sur [start, end[ — c'est ce cumul, et lui seul, qui alimente
+ * le KPI `LATE_EARLY_DEPARTURE_HOURS` (les journées tolérées, comme les
+ * journées justifiées, n'y sont jamais comptées).
+ */
+export async function computeUnjustifiedLatenessMinutes(db: Db, employeeId: number, start: Date, end: Date): Promise<number> {
+  const lines = await computeLatenessLinesForEmployee(db, employeeId, start, end);
+  return lines
+    .filter((l) => !l.justification?.justified && !l.justification?.tolerated)
+    .reduce((sum, l) => sum + l.totalMinutes, 0);
+}
+
+/**
+ * Indique si les Retards & Départs précipités des employés liés à un compte
+ * SUPER_ADMIN/ADMIN/MANAGER doivent être pris en compte (calcul + affichage).
+ * Désactivé par défaut (paramétrable dans Paramètres).
+ */
+export async function latenessIncludesManagementRoles(): Promise<boolean> {
+  return (await getSetting(SettingsKeys.latenessIncludeManagementRoles)) === 'true';
+}
+
+/** Identifiants des employés liés à un compte utilisateur SUPER_ADMIN/ADMIN/MANAGER. */
+async function managementLinkedEmployeeIds(db: Db, employees: Array<{ id: number; userId: number | null }>): Promise<Set<number>> {
+  const userIds = employees.map((e) => e.userId).filter((id): id is number => id != null);
+  if (!userIds.length) return new Set();
+  const users = await db.user.findMany({ where: { id: { in: userIds }, role: { in: LATENESS_MANAGEMENT_ROLES as any } }, select: { id: true } });
+  const managementUserIds = new Set(users.map((u) => u.id));
+  return new Set(employees.filter((e) => e.userId != null && managementUserIds.has(e.userId)).map((e) => e.id));
+}
+
+/**
+ * Identifiants des employés dont le poste a une pondération non nulle sur les
+ * KPI `ABSENCE_DAYS` et `ATTENDANCE_RATE` (défaut : poids 1 si aucun profil ou
+ * si le KPI n'y figure pas — cf. `weightsForPoste`). Les employés sans poste
+ * sont inclus par défaut (même convention de repli). Par défaut, les employés
+ * liés à un compte SUPER_ADMIN/ADMIN/MANAGER sont exclus (paramétrable).
+ */
+export async function latenessEligibleEmployeeIds(db: Db): Promise<number[]> {
+  const [absKpi, attKpi, includeManagement] = await Promise.all([
+    db.kpiDefinition.findFirst({ where: { metric: 'ABSENCE_DAYS' }, select: { id: true } }),
+    db.kpiDefinition.findFirst({ where: { metric: 'ATTENDANCE_RATE' }, select: { id: true } }),
+    latenessIncludesManagementRoles(),
+  ]);
+  if (!absKpi || !attKpi) return [];
+  const employees = await db.employee.findMany({ where: { deletedAt: null }, select: { id: true, poste: true, userId: true } });
+  const excludedIds = includeManagement ? new Set<number>() : await managementLinkedEmployeeIds(db, employees);
+  const posteEligibility = new Map<string, boolean>();
+  const result: number[] = [];
+  for (const e of employees) {
+    if (excludedIds.has(e.id)) continue;
+    const key = e.poste ?? '__NO_POSTE__';
+    let eligible = posteEligibility.get(key);
+    if (eligible === undefined) {
+      const weights = await weightsForPoste(db, e.poste);
+      const wAbs = weights.get(absKpi.id) ?? 1;
+      const wAtt = weights.get(attKpi.id) ?? 1;
+      eligible = wAbs !== 0 && wAtt !== 0;
+      posteEligibility.set(key, eligible);
+    }
+    if (eligible) result.push(e.id);
+  }
+  return result;
 }
 
 /** Note absolue d'une valeur au regard d'une cible (0–100, bornée à 100). */
@@ -370,7 +584,7 @@ async function activeEmployees(db: Db, roster?: number[] | null): Promise<Employ
   }) as unknown as Promise<EmployeeRow[]>;
 }
 
-const fullName = (e: { firstName: string; lastName: string }): string => `${e.firstName} ${e.lastName}`.trim();
+const fullName = (e: { firstName: string; lastName: string }): string => `${e.lastName} ${e.firstName}`.trim();
 
 /**
  * Classement fondé sur un score KPI pondéré, normalisé RELATIVEMENT à la cohorte
@@ -509,10 +723,16 @@ export async function seedDefaultKpis(): Promise<void> {
     { code: 'COMMISSION_AMOUNT', label: 'Commissions encaissées', category: 'Commercial', source: 'COMMISSIONS', metric: 'COMMISSION_AMOUNT', unit: 'FCFA', direction: 'HIGHER_BETTER' },
     { code: 'ENCAISSEMENT_AMOUNT', label: 'Chiffre d’affaire réalisé', category: 'Finance', source: 'ACCOUNTING', metric: 'ENCAISSEMENT_AMOUNT', unit: 'FCFA', direction: 'HIGHER_BETTER' },
     { code: 'CRM_ACTIVITIES_DONE', label: 'Activités CRM traitées', category: 'Activité', source: 'CRM', metric: 'CRM_ACTIVITIES_DONE', unit: 'nb', direction: 'HIGHER_BETTER' },
-    { code: 'CRM_VISITS', label: 'Visites réalisées', category: 'Activité', source: 'CRM', metric: 'CRM_VISITS', unit: 'nb', direction: 'HIGHER_BETTER' },
+    { code: 'CRM_VISITS', label: 'Visites, Sorties en Clientèle ou Courses réalisées', category: 'Activité', source: 'CRM', metric: 'CRM_VISITS', unit: 'nb', direction: 'HIGHER_BETTER' },
     { code: 'PROSPECT_CONVERSION_RATE', label: 'Taux de conversion prospects → clients', category: 'Commercial', source: 'PROSPECTS', metric: 'PROSPECT_CONVERSION_RATE', unit: '%', direction: 'HIGHER_BETTER' },
+    { code: 'NEW_POTENTIAL_PROSPECTS', label: 'Nouveaux Clients potentiels', category: 'Commercial', source: 'PROSPECTS', metric: 'NEW_POTENTIAL_PROSPECTS', unit: 'nb', direction: 'HIGHER_BETTER' },
+    { code: 'SOCIAL_PUBLICATIONS_COUNT', label: 'Publications & articles réalisés', category: 'Réseaux sociaux & Web', source: 'SOCIAL', metric: 'SOCIAL_PUBLICATIONS_COUNT', unit: 'nb', direction: 'HIGHER_BETTER' },
+    { code: 'SOCIAL_VIEWS', label: 'Vues générées (réseaux sociaux & web)', category: 'Réseaux sociaux & Web', source: 'SOCIAL', metric: 'SOCIAL_VIEWS', unit: 'vues', direction: 'HIGHER_BETTER' },
+    { code: 'SOCIAL_INTERACTIONS', label: 'Interactions générées (réseaux sociaux & web)', category: 'Réseaux sociaux & Web', source: 'SOCIAL', metric: 'SOCIAL_INTERACTIONS', unit: 'interactions', direction: 'HIGHER_BETTER' },
+    { code: 'SOCIAL_FOLLOWERS_GROWTH', label: 'Croissance du nombre d’abonnés', category: 'Réseaux sociaux & Web', source: 'SOCIAL', metric: 'SOCIAL_FOLLOWERS_GROWTH', unit: 'nb', direction: 'HIGHER_BETTER' },
     { code: 'ATTENDANCE_RATE', label: 'Taux de présence', category: 'Assiduité', source: 'ATTENDANCE', metric: 'ATTENDANCE_RATE', unit: '%', direction: 'HIGHER_BETTER' },
     { code: 'ABSENCE_DAYS', label: 'Jours d’absence', category: 'Assiduité', source: 'ATTENDANCE', metric: 'ABSENCE_DAYS', unit: 'j', direction: 'LOWER_BETTER' },
+    { code: 'LATE_EARLY_DEPARTURE_HOURS', label: 'Taux de retard ou de Départ précipité', category: 'Assiduité', source: 'ATTENDANCE', metric: 'LATE_EARLY_DEPARTURE_HOURS', unit: 'h', direction: 'LOWER_BETTER' },
   ];
   for (const d of defaults) {
     const exists = await db.kpiDefinition.findFirst({ where: { code: d.code }, select: { id: true } });

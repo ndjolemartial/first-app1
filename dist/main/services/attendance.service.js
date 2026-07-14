@@ -4,6 +4,8 @@ exports.getWorkHoursPerDay = getWorkHoursPerDay;
 exports.attendanceMonthSummary = attendanceMonthSummary;
 exports.computeOvertimeAmount = computeOvertimeAmount;
 exports.getAttendanceClockSettings = getAttendanceClockSettings;
+exports.minutesOfDay = minutesOfDay;
+exports.thresholdMinutes = thresholdMinutes;
 exports.recordClock = recordClock;
 const db_service_1 = require("./db.service");
 /**

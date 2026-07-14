@@ -6,7 +6,7 @@ import { canOperateOnLine } from '../services/budget.service';
 import logger from '../utils/logger';
 import { z } from 'zod';
 
-const READ_ROLES = ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ACCOUNTANT', 'READONLY'];
+const READ_ROLES = ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ACCOUNTANT'];
 const WRITE_ROLES = ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ACCOUNTANT'];
 const ADMIN_ROLES = ['SUPER_ADMIN', 'ADMIN'];
 
@@ -15,7 +15,8 @@ const ADMIN_ROLES = ['SUPER_ADMIN', 'ADMIN'];
  *
  * Exception à l'équivalence ACCOUNTANT/MANAGER : ASSISTANTE_DIRECTION, qui
  * hérite normalement des permissions MANAGER, n'a pas accès au module
- * Trésorerie (décision produit).
+ * Trésorerie (décision produit). READONLY n'a pas non plus accès (retiré de
+ * `READ_ROLES` ci-dessus ; aucune équivalence `checkRole` ne le concerne).
  */
 function checkTreasuryRole(session: { role: string }, allowedRoles: string[]): void {
   if (session.role === 'ASSISTANTE_DIRECTION') {

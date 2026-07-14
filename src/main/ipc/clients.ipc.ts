@@ -3,6 +3,14 @@ import { getDb } from '../services/db.service';
 import { getSession, checkRole } from '../services/auth.service';
 import logger from '../utils/logger';
 import { z } from 'zod';
+import {
+  CLIENT_FIELD_LABELS,
+  CLIENT_STATUS_LABELS,
+  buildEntityTimeline,
+  diffChangedFields,
+  recordModification,
+  recordStatusChange,
+} from '../services/timeline.service';
 
 // ── Schéma ───────────────────────────────────────────────────────────────────
 
@@ -269,6 +277,32 @@ export function registerClientsIPC(): void {
     }
   });
 
+  // ── Fiche de suivi chronologique ───────────────────────────────────────────
+  ipcMain.handle('clients:getTimeline', async (_event, { token, id }: any) => {
+    try {
+      const session = getSession(token);
+      if (!session) return { success: false, error: 'Session expirée' };
+      checkRole(session, READ_ROLES);
+      const db = getDb();
+      const client = await db.client.findUnique({
+        where: { id, deletedAt: null },
+        select: { id: true, createdAt: true, assignedToId: true, prospect: { select: { assignedToId: true } } },
+      });
+      if (!client) return { success: false, error: 'Client introuvable' };
+      if (!hasFullView(session.role)) {
+        const visible =
+          client.assignedToId === session.userId ||
+          client.prospect?.assignedToId === session.userId;
+        if (!visible) return { success: false, error: 'Client inaccessible' };
+      }
+      const timeline = await buildEntityTimeline(db, 'CLIENT', id, client.createdAt);
+      return { success: true, data: ser(timeline) };
+    } catch (error: any) {
+      logger.error('clients:getTimeline', error.message);
+      return { success: false, error: error.message };
+    }
+  });
+
   // ── Création ───────────────────────────────────────────────────────────────
   ipcMain.handle('clients:create', async (_event, { token, payload }: any) => {
     try {
@@ -300,9 +334,30 @@ export function registerClientsIPC(): void {
       const parsed = clientUpdateSchema.safeParse(cleaned);
       if (!parsed.success) return { success: false, error: parsed.error.format() };
       const db = getDb();
+      const before = await db.client.findUnique({ where: { id, deletedAt: null } });
+      if (!before) return { success: false, error: 'Client introuvable' };
       const data: any = { ...parsed.data };
       if (data.birthDate) data.birthDate = new Date(data.birthDate);
       const client = await db.client.update({ where: { id, deletedAt: null }, data });
+
+      // Fiche de suivi chronologique : le statut fait l'objet d'un événement
+      // dédié, le reste des champs modifiés d'un événement de synthèse.
+      const { status: newStatus, ...rest } = data;
+      if (newStatus !== undefined) {
+        await recordStatusChange(db, {
+          entityType: 'CLIENT', entityId: id,
+          oldValue: before.status, newValue: newStatus,
+          labels: CLIENT_STATUS_LABELS, userId: session.userId,
+        });
+      }
+      const changedFields = diffChangedFields(before, rest);
+      if (changedFields.length) {
+        await recordModification(db, {
+          entityType: 'CLIENT', entityId: id,
+          changedFields, labels: CLIENT_FIELD_LABELS, userId: session.userId,
+        });
+      }
+
       return { success: true, data: client };
     } catch (error: any) {
       return { success: false, error: error.message };
@@ -337,6 +392,10 @@ export function registerClientsIPC(): void {
         data: { isActive: !client.isActive },
         select: { id: true, isActive: true },
       });
+      await recordModification(db, {
+        entityType: 'CLIENT', entityId: id,
+        changedFields: ['isActive'], labels: CLIENT_FIELD_LABELS, userId: session.userId,
+      });
       return { success: true, data: updated };
     } catch (error: any) {
       return { success: false, error: error.message };
@@ -352,10 +411,16 @@ export function registerClientsIPC(): void {
       const parsed = z.enum(['ACTIF', 'INACTIF', 'VIP', 'SUSPENDU']).safeParse(status);
       if (!parsed.success) return { success: false, error: 'Statut invalide' };
       const db = getDb();
+      const before = await db.client.findUnique({ where: { id, deletedAt: null }, select: { status: true } });
       const updated = await db.client.update({
         where: { id, deletedAt: null },
         data: { status: parsed.data },
         select: { id: true, status: true },
+      });
+      await recordStatusChange(db, {
+        entityType: 'CLIENT', entityId: id,
+        oldValue: before?.status, newValue: parsed.data,
+        labels: CLIENT_STATUS_LABELS, userId: session.userId,
       });
       logger.info(`Client #${id} status updated to ${parsed.data}`);
       return { success: true, data: updated };
@@ -401,6 +466,10 @@ export function registerClientsIPC(): void {
           assignedTo: { select: USER_BRIEF_SELECT },
           referrer:   { select: REFERRER_BRIEF_SELECT },
         },
+      });
+      await recordModification(db, {
+        entityType: 'CLIENT', entityId: id,
+        changedFields: ['assignedToId'], labels: CLIENT_FIELD_LABELS, userId: session.userId,
       });
       logger.info(
         parsedId.data === null
@@ -449,6 +518,10 @@ export function registerClientsIPC(): void {
           assignedTo: { select: USER_BRIEF_SELECT },
           referrer:   { select: REFERRER_BRIEF_SELECT },
         },
+      });
+      await recordModification(db, {
+        entityType: 'CLIENT', entityId: id,
+        changedFields: ['referrerId'], labels: CLIENT_FIELD_LABELS, userId: session.userId,
       });
       logger.info(
         parsedId.data === null

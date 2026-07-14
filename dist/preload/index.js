@@ -36,6 +36,7 @@ const prospects = {
     kanban: (token) => api.invoke('prospects:kanban', { token }),
     assign: (token, id, assignedToId) => api.invoke('prospects:assign', { token, id, assignedToId }),
     listAssignableUsers: (token) => api.invoke('prospects:listAssignableUsers', { token }),
+    getTimeline: (token, id) => api.invoke('prospects:getTimeline', { token, id }),
 };
 // Clients
 const clients = {
@@ -50,6 +51,7 @@ const clients = {
     setReferrer: (token, id, referrerId) => api.invoke('clients:setReferrer', { token, id, referrerId }),
     listAssignableUsers: (token) => api.invoke('clients:listAssignableUsers', { token }),
     listReferrers: (token) => api.invoke('clients:listReferrers', { token }),
+    getTimeline: (token, id) => api.invoke('clients:getTimeline', { token, id }),
 };
 // Owners
 const owners = {
@@ -106,7 +108,7 @@ const attestations = {
     update: (token, id, payload) => api.invoke('attestations:update', { token, id, payload }),
     delete: (token, id) => api.invoke('attestations:delete', { token, id }),
     typeStats: (token, filters) => api.invoke('attestations:typeStats', { token, filters }),
-    getLegacyBalance: (token, clientId, terrainId) => api.invoke('attestations:getLegacyBalance', { token, clientId, terrainId }),
+    getLegacyBalance: (token, clientId, terrainIds) => api.invoke('attestations:getLegacyBalance', { token, clientId, terrainIds }),
 };
 // Devis
 const quotes = {
@@ -122,9 +124,6 @@ const quotes = {
     delete: (token, id) => api.invoke('quotes:delete', { token, id }),
     convert: (token, id, options) => api.invoke('quotes:convert', { token, id, options }),
     listUnits: (token, includeInactive) => api.invoke('quotes:listUnits', { token, includeInactive }),
-    createUnit: (token, payload) => api.invoke('quotes:createUnit', { token, payload }),
-    updateUnit: (token, id, payload) => api.invoke('quotes:updateUnit', { token, id, payload }),
-    deleteUnit: (token, id) => api.invoke('quotes:deleteUnit', { token, id }),
 };
 const quoteTemplates = {
     list: (token, filters, page, limit) => api.invoke('quoteTemplates:list', { token, filters, page, limit }),
@@ -140,6 +139,14 @@ const catalog = {
     create: (token, payload) => api.invoke('catalog:create', { token, payload }),
     update: (token, id, payload) => api.invoke('catalog:update', { token, id, payload }),
     delete: (token, id) => api.invoke('catalog:delete', { token, id }),
+    listUnits: (token, includeInactive) => api.invoke('catalog:listUnits', { token, includeInactive }),
+    createUnit: (token, payload) => api.invoke('catalog:createUnit', { token, payload }),
+    updateUnit: (token, id, payload) => api.invoke('catalog:updateUnit', { token, id, payload }),
+    deleteUnit: (token, id) => api.invoke('catalog:deleteUnit', { token, id }),
+    listCategories: (token, includeInactive) => api.invoke('catalog:listCategories', { token, includeInactive }),
+    createCategory: (token, payload) => api.invoke('catalog:createCategory', { token, payload }),
+    updateCategory: (token, id, payload) => api.invoke('catalog:updateCategory', { token, id, payload }),
+    deleteCategory: (token, id) => api.invoke('catalog:deleteCategory', { token, id }),
 };
 // Accounting
 const accounting = {
@@ -246,6 +253,44 @@ const visitors = {
     updateObject: (token, id, payload) => api.invoke('visitors:updateObject', { token, id, payload }),
     deleteObject: (token, id) => api.invoke('visitors:deleteObject', { token, id }),
 };
+// Gestion des appels (entrants / sortants)
+const calls = {
+    list: (token, filters, page, limit) => api.invoke('calls:list', { token, filters, page, limit }),
+    getById: (token, id) => api.invoke('calls:getById', { token, id }),
+    create: (token, payload) => api.invoke('calls:create', { token, payload }),
+    update: (token, id, payload) => api.invoke('calls:update', { token, id, payload }),
+    delete: (token, id) => api.invoke('calls:delete', { token, id }),
+    stats: (token) => api.invoke('calls:stats', { token }),
+    searchClients: (token, search) => api.invoke('calls:searchClients', { token, search }),
+    searchProspects: (token, search) => api.invoke('calls:searchProspects', { token, search }),
+    phoneLines: {
+        list: (token, includeInactive) => api.invoke('calls:phoneLines:list', { token, includeInactive }),
+        create: (token, payload) => api.invoke('calls:phoneLines:create', { token, payload }),
+        update: (token, id, payload) => api.invoke('calls:phoneLines:update', { token, id, payload }),
+        delete: (token, id) => api.invoke('calls:phoneLines:delete', { token, id }),
+    },
+};
+// Réseaux sociaux & plateformes web
+const socialMedia = {
+    platforms: {
+        list: (token, includeInactive) => api.invoke('socialMedia:listPlatforms', { token, includeInactive }),
+        create: (token, payload) => api.invoke('socialMedia:createPlatform', { token, payload }),
+        update: (token, id, payload) => api.invoke('socialMedia:updatePlatform', { token, id, payload }),
+        delete: (token, id) => api.invoke('socialMedia:deletePlatform', { token, id }),
+    },
+    publications: {
+        list: (token, filters, page, limit) => api.invoke('socialMedia:listPublications', { token, filters, page, limit }),
+        create: (token, payload) => api.invoke('socialMedia:createPublication', { token, payload }),
+        update: (token, id, payload) => api.invoke('socialMedia:updatePublication', { token, id, payload }),
+        delete: (token, id) => api.invoke('socialMedia:deletePublication', { token, id }),
+    },
+    snapshots: {
+        list: (token, platformId, limit) => api.invoke('socialMedia:listSnapshots', { token, platformId, limit }),
+        upsert: (token, payload) => api.invoke('socialMedia:upsertSnapshot', { token, payload }),
+        delete: (token, id) => api.invoke('socialMedia:deleteSnapshot', { token, id }),
+    },
+    dashboard: (token) => api.invoke('socialMedia:dashboard', { token }),
+};
 // Terrains
 const terrains = {
     list: (token, filters, page, limit) => api.invoke('terrains:list', { token, filters, page, limit }),
@@ -310,6 +355,7 @@ const hr = {
         list: (token, filters, page, limit) => api.invoke('hr:payslips:list', { token, filters, page, limit }),
         getById: (token, id) => api.invoke('hr:payslips:getById', { token, id }),
         generate: (token, payload) => api.invoke('hr:payslips:generate', { token, payload }),
+        duplicate: (token, payload) => api.invoke('hr:payslips:duplicate', { token, payload }),
         update: (token, id, payload) => api.invoke('hr:payslips:update', { token, id, payload }),
         updateStatus: (token, id, status, paymentMethod, paidAt, bankAccountId) => api.invoke('hr:payslips:updateStatus', { token, id, status, paymentMethod, paidAt, bankAccountId }),
         updatePayment: (token, id, paidAt, paymentMethod, bankAccountId) => api.invoke('hr:payslips:updatePayment', { token, id, paidAt, paymentMethod, bankAccountId }),
@@ -407,6 +453,15 @@ const hr = {
         summary: (token, employeeId, year, month) => api.invoke('hr:attendance:summary', { token, employeeId, year, month }),
         bulkUpsert: (token, records) => api.invoke('hr:attendance:bulkUpsert', { token, records }),
     },
+    lateness: {
+        list: (token, filters) => api.invoke('hr:lateness:list', { token, ...filters }),
+        linkableLeaveRequests: (token, employeeId, date) => api.invoke('hr:lateness:linkableLeaveRequests', { token, employeeId, date }),
+        linkableActivities: (token, employeeId, date) => api.invoke('hr:lateness:linkableActivities', { token, employeeId, date }),
+        justify: (token, payload) => api.invoke('hr:lateness:justify', { token, payload }),
+        unjustify: (token, employeeId, date) => api.invoke('hr:lateness:unjustify', { token, employeeId, date }),
+        tolerate: (token, payload) => api.invoke('hr:lateness:tolerate', { token, payload }),
+        untolerate: (token, employeeId, date) => api.invoke('hr:lateness:untolerate', { token, employeeId, date }),
+    },
 };
 // Performance — évaluation & gestion des performances du personnel
 const performance = {
@@ -428,7 +483,7 @@ const performance = {
         delete: (token, id) => api.invoke('performance:units:delete', { token, id }),
     },
     employees: {
-        list: (token) => api.invoke('performance:employees:list', { token }),
+        list: (token, scope) => api.invoke('performance:employees:list', { token, scope }),
     },
     objectives: {
         list: (token, filters) => api.invoke('performance:objectives:list', { token, filters }),
@@ -470,7 +525,7 @@ const performance = {
         evaluation: (token, id) => api.invoke('performance:me:evaluation', { token, id }),
         sign: (token, id) => api.invoke('performance:me:sign', { token, id }),
         ranking: (token, periodType, refDate) => api.invoke('performance:me:ranking', { token, periodType, refDate }),
-        manualObjectives: (token) => api.invoke('performance:me:manualObjectives', { token }),
+        objectives: (token) => api.invoke('performance:me:objectives', { token }),
     },
 };
 // Géolocalisation
@@ -548,10 +603,14 @@ const analytics = {
     financial: (token) => api.invoke('analytics:financial', { token }),
     portfolio: (token) => api.invoke('analytics:portfolio', { token }),
     crm: (token) => api.invoke('analytics:crm', { token }),
+    crmDetail: (token, metric, extra, page, limit) => api.invoke('analytics:crmDetail', { token, metric, ...extra, page, limit }),
     charges: (token) => api.invoke('analytics:charges', { token }),
     contracts: (token) => api.invoke('analytics:contracts', { token }),
     risk: (token) => api.invoke('analytics:risk', { token }),
     recommendations: (token) => api.invoke('analytics:recommendations', { token }),
+    followUp: (token) => api.invoke('analytics:followUp', { token }),
+    visitors: (token) => api.invoke('analytics:visitors', { token }),
+    calls: (token) => api.invoke('analytics:calls', { token }),
 };
 // Budgets
 const budget = {
@@ -623,6 +682,8 @@ const settings = {
     updatePayrollAccount: (token, payload) => api.invoke('settings:updatePayrollAccount', { token, payload }),
     getAttendanceQr: (token) => api.invoke('settings:getAttendanceQr', { token }),
     updateAttendanceQr: (token, payload) => api.invoke('settings:updateAttendanceQr', { token, payload }),
+    getLatenessSettings: (token) => api.invoke('settings:getLatenessSettings', { token }),
+    updateLatenessSettings: (token, payload) => api.invoke('settings:updateLatenessSettings', { token, payload }),
     getVisitorQr: (token) => api.invoke('settings:getVisitorQr', { token }),
     updateVisitorQr: (token, payload) => api.invoke('settings:updateVisitorQr', { token, payload }),
     getEmail: (token) => api.invoke('settings:getEmail', { token }),
@@ -689,4 +750,4 @@ const documents = {
     /** Résout le chemin disque d'un fichier sélectionné/déposé (Electron webUtils). */
     pathForFile: (file) => electron_1.webUtils.getPathForFile(file),
 };
-electron_1.contextBridge.exposeInMainWorld('electron', { auth, users, prospects, clients, owners, properties, conventions, conventionTemplates, attestationTemplates, attestations, quotes, quoteTemplates, catalog, accounting, bilan, communication, crm, archiving, documents, documentExport, lotissements, terrains, programmes, projects, hr, performance, visitors, geo, countries, commissions, expenses, analytics, exporter, invoiceTemplates, listExportTemplates, treasury, budget, dashboard, settings, reminders, config });
+electron_1.contextBridge.exposeInMainWorld('electron', { auth, users, prospects, clients, owners, properties, conventions, conventionTemplates, attestationTemplates, attestations, quotes, quoteTemplates, catalog, accounting, bilan, communication, crm, archiving, documents, documentExport, lotissements, terrains, programmes, projects, hr, performance, visitors, calls, socialMedia, geo, countries, commissions, expenses, analytics, exporter, invoiceTemplates, listExportTemplates, treasury, budget, dashboard, settings, reminders, config });

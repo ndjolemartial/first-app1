@@ -159,7 +159,6 @@ function computePayroll(input, rates) {
     const taxablePrime = Math.max(0, round(input.taxablePrime || 0));
     const overtime = Math.max(0, round(input.overtimeAmount || 0));
     const transport = Math.max(0, round(input.transportAllowance || 0));
-    const otherDeductions = Math.max(0, round(input.otherDeductions || 0));
     // Indemnité de transport : exonérée jusqu'au plafond, surplus imposable.
     const transportCeiling = rates.transportExemptCeiling ?? 30_000;
     const transportExempt = Math.min(transport, transportCeiling);
@@ -174,7 +173,7 @@ function computePayroll(input, rates) {
     const ricfMonthly = ricfMonthlyForParts(rates.ricf, input.igrParts ?? 1);
     const its = Math.max(0, itsBareme - ricfMonthly);
     const cmuEmployee = round(rates.cmuEmployee);
-    const totalDeductions = cnpsEmployee + its + cmuEmployee + otherDeductions;
+    const totalDeductions = cnpsEmployee + its + cmuEmployee;
     const netSalary = totalGains - totalDeductions;
     // Charges patronales
     const familyBase = Math.min(grossTaxable, rates.cnpsFamilyCeiling);
@@ -205,8 +204,6 @@ function computePayroll(input, rates) {
     lines.push({ type: 'RETENUE', label: 'CNPS (retraite) — part salarié', base: cnpsBase, rate: rates.cnpsEmployeeRate, amount: cnpsEmployee, order: o++ });
     lines.push({ type: 'RETENUE', label: 'ITS salarié', base: grossTaxable, amount: its, order: o++ });
     lines.push({ type: 'RETENUE', label: 'CMU — part salarié', amount: cmuEmployee, order: o++ });
-    if (otherDeductions > 0)
-        lines.push({ type: 'RETENUE', label: 'Autres retenues', amount: otherDeductions, order: o++ });
     lines.push({ type: 'CHARGE_PATRONALE', label: 'CNPS (retraite) — part employeur', base: cnpsBase, rate: rates.cnpsEmployerRetirementRate, amount: cnpsEmployerRetirement, order: o++ });
     lines.push({ type: 'CHARGE_PATRONALE', label: 'CNPS prestations familiales', base: familyBase, rate: rates.cnpsFamilyRate, amount: cnpsFamily, order: o++ });
     lines.push({ type: 'CHARGE_PATRONALE', label: 'CNPS accident du travail', base: familyBase, rate: rates.cnpsWorkAccidentRate, amount: cnpsWorkAccident, order: o++ });
@@ -215,7 +212,7 @@ function computePayroll(input, rates) {
     lines.push({ type: 'CHARGE_PATRONALE', label: 'FDFP — formation continue', base: grossTaxable, rate: rates.fdfpTrainingRate, amount: fdfpFormation, order: o++ });
     lines.push({ type: 'CHARGE_PATRONALE', label: 'ITS patronale', base: grossTaxable, rate: rates.itsEmployerRate, amount: itsEmployer, order: o++ });
     return {
-        baseSalary, grossTaxable, totalGains, cnpsEmployee, its, cmuEmployee, otherDeductions,
+        baseSalary, grossTaxable, totalGains, cnpsEmployee, its, cmuEmployee,
         totalDeductions, netSalary, employerCharges, employerCost, lines,
     };
 }
@@ -332,6 +329,10 @@ function renderPayslipHtml(payslip, employee, company, template, logoDataUri, co
     const periodStart = new Date(payslip.periodYear, (payslip.periodMonth ?? 1) - 1, 1);
     const periodEnd = new Date(payslip.periodYear, payslip.periodMonth ?? 1, 0); // dernier jour du mois
     const period = `du ${fmtDate(periodStart)} au ${fmtDate(periodEnd)}`;
+    // Mois + année en toutes lettres (ex. « Juillet 2026 »), affiché en gras
+    // entre le titre et la ligne de période détaillée.
+    const periodMonthLabel = periodStart.toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' });
+    const periodMonthYear = periodMonthLabel.charAt(0).toUpperCase() + periodMonthLabel.slice(1);
     const paymentText = payslip.paidAt
         ? `Paiement le ${fmtDate(payslip.paidAt)}${payslip.paymentMethod ? ` par ${String(payslip.paymentMethod).replace(/_/g, ' ')}` : ''}`
         : '';
@@ -459,6 +460,7 @@ function renderPayslipHtml(payslip, employee, company, template, logoDataUri, co
     ${headerHtml}
     <div class="doc">
       <h1>BULLETIN DE PAIE</h1>
+      <div class="period"><strong>${esc(periodMonthYear)}</strong></div>
       <div class="period">Période ${esc(period)}</div>
       ${paymentText ? `<div class="period">${esc(paymentText)}</div>` : ''}
       <div class="lines">${esc(payslip.reference)}</div>

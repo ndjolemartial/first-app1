@@ -32,6 +32,7 @@ const ser = <T>(v: T): T => JSON.parse(JSON.stringify(v));
 const schema = z.object({
   type: z.enum(['PRESTATION', 'PRODUIT']).default('PRESTATION'),
   designation: z.string().min(1, 'Désignation requise'),
+  reference: z.string().nullable().optional(),
   description: z.string().nullable().optional(),
   category: z.string().nullable().optional(),
   unit: z.string().nullable().optional(),
@@ -94,6 +95,7 @@ export function registerCatalogIPC(): void {
         data: {
           type: d.type,
           designation: d.designation,
+          reference: d.reference ?? null,
           description: d.description ?? null,
           category: d.category ?? null,
           unit: d.unit ?? null,
@@ -136,6 +138,149 @@ export function registerCatalogIPC(): void {
       await db.catalogItem.update({ where: { id: Number(id) }, data: { deletedAt: new Date() } });
       return { success: true };
     } catch (error: any) {
+      return { success: false, error: error.message };
+    }
+  });
+
+  /* ─── Unités de mesure (référentiel partagé `KpiUnit`) ──────────────
+   * Réutilise le même référentiel que « Nouvel objectif » et les lignes de
+   * devis, afin que la liste proposée sur les articles du catalogue soit
+   * cohérente avec le reste de l'application. */
+  const labelSchema = z.object({ label: z.string().min(1, 'Libellé requis'), isActive: z.boolean().optional() });
+
+  ipcMain.handle('catalog:listUnits', async (_event, { token, includeInactive }: any) => {
+    try {
+      const session = getSession(token);
+      if (!session) return { success: false, error: 'Session expirée' };
+      checkRole(session, READ_ROLES);
+      const where: any = { deletedAt: null };
+      if (!includeInactive) where.isActive = true;
+      const data = await getDb().kpiUnit.findMany({ where, orderBy: { label: 'asc' } });
+      return { success: true, data: ser(data) };
+    } catch (error: any) {
+      logger.error('catalog:listUnits error', error.message);
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle('catalog:createUnit', async (_event, { token, payload }: any) => {
+    try {
+      const session = getSession(token);
+      if (!session) return { success: false, error: 'Session expirée' };
+      checkCatalogWrite(session);
+      const parsed = labelSchema.safeParse(payload);
+      if (!parsed.success) return { success: false, error: parsed.error.issues[0]?.message ?? 'Données invalides' };
+      const db = getDb();
+      const label = parsed.data.label.trim();
+      const existing = await db.kpiUnit.findUnique({ where: { label } });
+      if (existing) {
+        const data = await db.kpiUnit.update({ where: { id: existing.id }, data: { isActive: true, deletedAt: null } });
+        return { success: true, data: ser(data) };
+      }
+      const data = await db.kpiUnit.create({ data: { label, isActive: parsed.data.isActive ?? true } });
+      return { success: true, data: ser(data) };
+    } catch (error: any) {
+      logger.error('catalog:createUnit error', error.message);
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle('catalog:updateUnit', async (_event, { token, id, payload }: any) => {
+    try {
+      const session = getSession(token);
+      if (!session) return { success: false, error: 'Session expirée' };
+      checkCatalogWrite(session);
+      const parsed = labelSchema.partial().safeParse(payload);
+      if (!parsed.success) return { success: false, error: parsed.error.issues[0]?.message ?? 'Données invalides' };
+      const data: any = { ...parsed.data };
+      if (typeof data.label === 'string') data.label = data.label.trim();
+      const updated = await getDb().kpiUnit.update({ where: { id: Number(id) }, data });
+      return { success: true, data: ser(updated) };
+    } catch (error: any) {
+      logger.error('catalog:updateUnit error', error.message);
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle('catalog:deleteUnit', async (_event, { token, id }: any) => {
+    try {
+      const session = getSession(token);
+      if (!session) return { success: false, error: 'Session expirée' };
+      checkCatalogWrite(session);
+      await getDb().kpiUnit.update({ where: { id: Number(id) }, data: { deletedAt: new Date(), isActive: false } });
+      return { success: true };
+    } catch (error: any) {
+      logger.error('catalog:deleteUnit error', error.message);
+      return { success: false, error: error.message };
+    }
+  });
+
+  /* ─── Catégories (référentiel `CatalogCategory`) ────────────────────
+   * Alimente le sélecteur « Catégorie » du formulaire « Nouvel article »
+   * (avec création à la volée), même principe que le référentiel d'unités. */
+  ipcMain.handle('catalog:listCategories', async (_event, { token, includeInactive }: any) => {
+    try {
+      const session = getSession(token);
+      if (!session) return { success: false, error: 'Session expirée' };
+      checkRole(session, READ_ROLES);
+      const where: any = { deletedAt: null };
+      if (!includeInactive) where.isActive = true;
+      const data = await getDb().catalogCategory.findMany({ where, orderBy: { label: 'asc' } });
+      return { success: true, data: ser(data) };
+    } catch (error: any) {
+      logger.error('catalog:listCategories error', error.message);
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle('catalog:createCategory', async (_event, { token, payload }: any) => {
+    try {
+      const session = getSession(token);
+      if (!session) return { success: false, error: 'Session expirée' };
+      checkCatalogWrite(session);
+      const parsed = labelSchema.safeParse(payload);
+      if (!parsed.success) return { success: false, error: parsed.error.issues[0]?.message ?? 'Données invalides' };
+      const db = getDb();
+      const label = parsed.data.label.trim().toUpperCase();
+      const existing = await db.catalogCategory.findUnique({ where: { label } });
+      if (existing) {
+        const data = await db.catalogCategory.update({ where: { id: existing.id }, data: { isActive: true, deletedAt: null } });
+        return { success: true, data: ser(data) };
+      }
+      const data = await db.catalogCategory.create({ data: { label, isActive: parsed.data.isActive ?? true } });
+      return { success: true, data: ser(data) };
+    } catch (error: any) {
+      logger.error('catalog:createCategory error', error.message);
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle('catalog:updateCategory', async (_event, { token, id, payload }: any) => {
+    try {
+      const session = getSession(token);
+      if (!session) return { success: false, error: 'Session expirée' };
+      checkCatalogWrite(session);
+      const parsed = labelSchema.partial().safeParse(payload);
+      if (!parsed.success) return { success: false, error: parsed.error.issues[0]?.message ?? 'Données invalides' };
+      const data: any = { ...parsed.data };
+      if (typeof data.label === 'string') data.label = data.label.trim().toUpperCase();
+      const updated = await getDb().catalogCategory.update({ where: { id: Number(id) }, data });
+      return { success: true, data: ser(updated) };
+    } catch (error: any) {
+      logger.error('catalog:updateCategory error', error.message);
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle('catalog:deleteCategory', async (_event, { token, id }: any) => {
+    try {
+      const session = getSession(token);
+      if (!session) return { success: false, error: 'Session expirée' };
+      checkCatalogWrite(session);
+      await getDb().catalogCategory.update({ where: { id: Number(id) }, data: { deletedAt: new Date(), isActive: false } });
+      return { success: true };
+    } catch (error: any) {
+      logger.error('catalog:deleteCategory error', error.message);
       return { success: false, error: error.message };
     }
   });

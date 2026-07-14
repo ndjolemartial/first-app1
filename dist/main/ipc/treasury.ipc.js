@@ -11,7 +11,7 @@ const treasury_service_1 = require("../services/treasury.service");
 const budget_service_1 = require("../services/budget.service");
 const logger_1 = __importDefault(require("../utils/logger"));
 const zod_1 = require("zod");
-const READ_ROLES = ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ACCOUNTANT', 'READONLY'];
+const READ_ROLES = ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ACCOUNTANT'];
 const WRITE_ROLES = ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ACCOUNTANT'];
 const ADMIN_ROLES = ['SUPER_ADMIN', 'ADMIN'];
 /**
@@ -19,7 +19,8 @@ const ADMIN_ROLES = ['SUPER_ADMIN', 'ADMIN'];
  *
  * Exception à l'équivalence ACCOUNTANT/MANAGER : ASSISTANTE_DIRECTION, qui
  * hérite normalement des permissions MANAGER, n'a pas accès au module
- * Trésorerie (décision produit).
+ * Trésorerie (décision produit). READONLY n'a pas non plus accès (retiré de
+ * `READ_ROLES` ci-dessus ; aucune équivalence `checkRole` ne le concerne).
  */
 function checkTreasuryRole(session, allowedRoles) {
     if (session.role === 'ASSISTANTE_DIRECTION') {

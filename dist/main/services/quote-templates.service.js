@@ -28,8 +28,7 @@ function buildBody(opts) {
         `<p><strong>Client :</strong> {{client.civilite}} {{client.nomComplet}}{{#si client.telephone}} — {{client.telephone}}{{/si}}{{#si client.email}} — {{client.email}}{{/si}}</p>`,
         `{{#si objet.designation}}<p><strong>Objet :</strong> {{objet.designation}}</p>{{/si}}`,
         `{{devis.lignes}}`,
-        `<table style="width:55%;margin-left:auto;margin-top:8px;border-collapse:collapse;">`
-            + `<tr><td style="padding:3px 8px;">Sous-total</td><td style="padding:3px 8px;text-align:right;">{{devis.sousTotal}}</td></tr>`
+        `<table style="width:55%;margin-left:auto;margin-top:24px;border-collapse:collapse;">`
             + `{{#si devis.remise}}<tr><td style="padding:3px 8px;">Remise</td><td style="padding:3px 8px;text-align:right;">- {{devis.remise}}</td></tr>{{/si}}`
             + `{{#si devis.montantTva}}<tr><td style="padding:3px 8px;">TVA ({{devis.tva}} %)</td><td style="padding:3px 8px;text-align:right;">{{devis.montantTva}}</td></tr>{{/si}}`
             + `<tr><td colspan="2" style="border-top:2px solid ${accent};font-size:0;line-height:0;padding:0;">&nbsp;</td></tr>`

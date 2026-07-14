@@ -282,8 +282,13 @@ function buildHtml(
   const primary  = tpl.accentColor || theme.primary;
   const accent   = tpl.accentColor || theme.accent;
   const muted    = theme.textMuted;
-  const surface  = theme.surface;
-  const border   = theme.border;
+  // Le document exporté reste sur une page blanche quel que soit le thème actif
+  // à l'écran : les teintes « surface »/« border » d'un thème sombre (ex. Dark
+  // Rouge, quasi noires) ne doivent jamais servir de fond de ligne/bordure ici,
+  // sous peine de bandes noires illisibles sur fond blanc. On leur substitue
+  // alors les teintes claires équivalentes du thème par défaut.
+  const surface  = theme.isDark ? '#F1F5F9' : theme.surface;
+  const border   = theme.isDark ? '#E2E8F0' : theme.border;
   const headerHtml = (tpl.headerHtml ?? '').trim();
   const footerHtml = (tpl.footerHtml ?? '').trim();
   const endOfDocument = (tpl.endOfDocument ?? '').trim();

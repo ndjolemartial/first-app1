@@ -50,6 +50,7 @@ const prospects = {
     api.invoke('prospects:assign', { token, id, assignedToId }),
   listAssignableUsers: (token: string) =>
     api.invoke('prospects:listAssignableUsers', { token }),
+  getTimeline: (token: string, id: number) => api.invoke('prospects:getTimeline', { token, id }),
 };
 
 // Clients
@@ -69,6 +70,7 @@ const clients = {
     api.invoke('clients:setReferrer', { token, id, referrerId }),
   listAssignableUsers: (token: string) => api.invoke('clients:listAssignableUsers', { token }),
   listReferrers: (token: string) => api.invoke('clients:listReferrers', { token }),
+  getTimeline: (token: string, id: number) => api.invoke('clients:getTimeline', { token, id }),
 };
 
 // Owners
@@ -147,8 +149,8 @@ const attestations = {
   delete: (token: string, id: number) => api.invoke('attestations:delete', { token, id }),
   typeStats: (token: string, filters?: object) =>
     api.invoke('attestations:typeStats', { token, filters }),
-  getLegacyBalance: (token: string, clientId: number, terrainId: number) =>
-    api.invoke('attestations:getLegacyBalance', { token, clientId, terrainId }),
+  getLegacyBalance: (token: string, clientId: number, terrainIds: number[]) =>
+    api.invoke('attestations:getLegacyBalance', { token, clientId, terrainIds }),
 };
 
 // Devis
@@ -166,9 +168,6 @@ const quotes = {
   delete: (token: string, id: number) => api.invoke('quotes:delete', { token, id }),
   convert: (token: string, id: number, options: object) => api.invoke('quotes:convert', { token, id, options }),
   listUnits: (token: string, includeInactive?: boolean) => api.invoke('quotes:listUnits', { token, includeInactive }),
-  createUnit: (token: string, payload: object) => api.invoke('quotes:createUnit', { token, payload }),
-  updateUnit: (token: string, id: number, payload: object) => api.invoke('quotes:updateUnit', { token, id, payload }),
-  deleteUnit: (token: string, id: number) => api.invoke('quotes:deleteUnit', { token, id }),
 };
 
 const quoteTemplates = {
@@ -187,6 +186,14 @@ const catalog = {
   create: (token: string, payload: object) => api.invoke('catalog:create', { token, payload }),
   update: (token: string, id: number, payload: object) => api.invoke('catalog:update', { token, id, payload }),
   delete: (token: string, id: number) => api.invoke('catalog:delete', { token, id }),
+  listUnits: (token: string, includeInactive?: boolean) => api.invoke('catalog:listUnits', { token, includeInactive }),
+  createUnit: (token: string, payload: object) => api.invoke('catalog:createUnit', { token, payload }),
+  updateUnit: (token: string, id: number, payload: object) => api.invoke('catalog:updateUnit', { token, id, payload }),
+  deleteUnit: (token: string, id: number) => api.invoke('catalog:deleteUnit', { token, id }),
+  listCategories: (token: string, includeInactive?: boolean) => api.invoke('catalog:listCategories', { token, includeInactive }),
+  createCategory: (token: string, payload: object) => api.invoke('catalog:createCategory', { token, payload }),
+  updateCategory: (token: string, id: number, payload: object) => api.invoke('catalog:updateCategory', { token, id, payload }),
+  deleteCategory: (token: string, id: number) => api.invoke('catalog:deleteCategory', { token, id }),
 };
 
 // Accounting
@@ -377,6 +384,49 @@ const visitors = {
   deleteObject: (token: string, id: number) => api.invoke('visitors:deleteObject', { token, id }),
 };
 
+// Gestion des appels (entrants / sortants)
+const calls = {
+  list: (token: string, filters?: object, page?: number, limit?: number) =>
+    api.invoke('calls:list', { token, filters, page, limit }),
+  getById: (token: string, id: number) => api.invoke('calls:getById', { token, id }),
+  create: (token: string, payload: object) => api.invoke('calls:create', { token, payload }),
+  update: (token: string, id: number, payload: object) => api.invoke('calls:update', { token, id, payload }),
+  delete: (token: string, id: number) => api.invoke('calls:delete', { token, id }),
+  stats: (token: string) => api.invoke('calls:stats', { token }),
+  searchClients: (token: string, search?: string) => api.invoke('calls:searchClients', { token, search }),
+  searchProspects: (token: string, search?: string) => api.invoke('calls:searchProspects', { token, search }),
+  phoneLines: {
+    list: (token: string, includeInactive?: boolean) => api.invoke('calls:phoneLines:list', { token, includeInactive }),
+    create: (token: string, payload: object) => api.invoke('calls:phoneLines:create', { token, payload }),
+    update: (token: string, id: number, payload: object) =>
+      api.invoke('calls:phoneLines:update', { token, id, payload }),
+    delete: (token: string, id: number) => api.invoke('calls:phoneLines:delete', { token, id }),
+  },
+};
+
+// Réseaux sociaux & plateformes web
+const socialMedia = {
+  platforms: {
+    list: (token: string, includeInactive?: boolean) => api.invoke('socialMedia:listPlatforms', { token, includeInactive }),
+    create: (token: string, payload: object) => api.invoke('socialMedia:createPlatform', { token, payload }),
+    update: (token: string, id: number, payload: object) => api.invoke('socialMedia:updatePlatform', { token, id, payload }),
+    delete: (token: string, id: number) => api.invoke('socialMedia:deletePlatform', { token, id }),
+  },
+  publications: {
+    list: (token: string, filters?: object, page?: number, limit?: number) =>
+      api.invoke('socialMedia:listPublications', { token, filters, page, limit }),
+    create: (token: string, payload: object) => api.invoke('socialMedia:createPublication', { token, payload }),
+    update: (token: string, id: number, payload: object) => api.invoke('socialMedia:updatePublication', { token, id, payload }),
+    delete: (token: string, id: number) => api.invoke('socialMedia:deletePublication', { token, id }),
+  },
+  snapshots: {
+    list: (token: string, platformId?: number, limit?: number) => api.invoke('socialMedia:listSnapshots', { token, platformId, limit }),
+    upsert: (token: string, payload: object) => api.invoke('socialMedia:upsertSnapshot', { token, payload }),
+    delete: (token: string, id: number) => api.invoke('socialMedia:deleteSnapshot', { token, id }),
+  },
+  dashboard: (token: string) => api.invoke('socialMedia:dashboard', { token }),
+};
+
 // Terrains
 const terrains = {
   list: (token: string, filters?: object, page?: number, limit?: number) =>
@@ -463,6 +513,7 @@ const hr = {
       api.invoke('hr:payslips:list', { token, filters, page, limit }),
     getById: (token: string, id: number) => api.invoke('hr:payslips:getById', { token, id }),
     generate: (token: string, payload: object) => api.invoke('hr:payslips:generate', { token, payload }),
+    duplicate: (token: string, payload: object) => api.invoke('hr:payslips:duplicate', { token, payload }),
     update: (token: string, id: number, payload: object) => api.invoke('hr:payslips:update', { token, id, payload }),
     updateStatus: (token: string, id: number, status: string, paymentMethod?: string, paidAt?: string, bankAccountId?: number) =>
       api.invoke('hr:payslips:updateStatus', { token, id, status, paymentMethod, paidAt, bankAccountId }),
@@ -574,6 +625,20 @@ const hr = {
       api.invoke('hr:attendance:summary', { token, employeeId, year, month }),
     bulkUpsert: (token: string, records: object[]) => api.invoke('hr:attendance:bulkUpsert', { token, records }),
   },
+  lateness: {
+    list: (token: string, filters?: { year?: number; month?: number; employeeId?: number; onlyUnjustified?: boolean }) =>
+      api.invoke('hr:lateness:list', { token, ...filters }),
+    linkableLeaveRequests: (token: string, employeeId: number, date: string) =>
+      api.invoke('hr:lateness:linkableLeaveRequests', { token, employeeId, date }),
+    linkableActivities: (token: string, employeeId: number, date: string) =>
+      api.invoke('hr:lateness:linkableActivities', { token, employeeId, date }),
+    justify: (token: string, payload: object) => api.invoke('hr:lateness:justify', { token, payload }),
+    unjustify: (token: string, employeeId: number, date: string) =>
+      api.invoke('hr:lateness:unjustify', { token, employeeId, date }),
+    tolerate: (token: string, payload: object) => api.invoke('hr:lateness:tolerate', { token, payload }),
+    untolerate: (token: string, employeeId: number, date: string) =>
+      api.invoke('hr:lateness:untolerate', { token, employeeId, date }),
+  },
 };
 
 // Performance — évaluation & gestion des performances du personnel
@@ -596,7 +661,7 @@ const performance = {
     delete: (token: string, id: number) => api.invoke('performance:units:delete', { token, id }),
   },
   employees: {
-    list: (token: string) => api.invoke('performance:employees:list', { token }),
+    list: (token: string, scope?: 'evaluations') => api.invoke('performance:employees:list', { token, scope }),
   },
   objectives: {
     list: (token: string, filters?: object) => api.invoke('performance:objectives:list', { token, filters }),
@@ -638,7 +703,7 @@ const performance = {
     evaluation: (token: string, id: number) => api.invoke('performance:me:evaluation', { token, id }),
     sign: (token: string, id: number) => api.invoke('performance:me:sign', { token, id }),
     ranking: (token: string, periodType: string, refDate?: string) => api.invoke('performance:me:ranking', { token, periodType, refDate }),
-    manualObjectives: (token: string) => api.invoke('performance:me:manualObjectives', { token }),
+    objectives: (token: string) => api.invoke('performance:me:objectives', { token }),
   },
 };
 
@@ -768,10 +833,15 @@ const analytics = {
   financial: (token: string) => api.invoke('analytics:financial', { token }),
   portfolio: (token: string) => api.invoke('analytics:portfolio', { token }),
   crm: (token: string) => api.invoke('analytics:crm', { token }),
+  crmDetail: (token: string, metric: string, extra?: object, page?: number, limit?: number) =>
+    api.invoke('analytics:crmDetail', { token, metric, ...extra, page, limit }),
   charges: (token: string) => api.invoke('analytics:charges', { token }),
   contracts: (token: string) => api.invoke('analytics:contracts', { token }),
   risk: (token: string) => api.invoke('analytics:risk', { token }),
   recommendations: (token: string) => api.invoke('analytics:recommendations', { token }),
+  followUp: (token: string) => api.invoke('analytics:followUp', { token }),
+  visitors: (token: string) => api.invoke('analytics:visitors', { token }),
+  calls: (token: string) => api.invoke('analytics:calls', { token }),
 };
 
 // Budgets
@@ -873,6 +943,10 @@ const settings = {
   getAttendanceQr: (token: string) => api.invoke('settings:getAttendanceQr', { token }),
   updateAttendanceQr: (token: string, payload: object) =>
     api.invoke('settings:updateAttendanceQr', { token, payload }),
+
+  getLatenessSettings: (token: string) => api.invoke('settings:getLatenessSettings', { token }),
+  updateLatenessSettings: (token: string, payload: object) =>
+    api.invoke('settings:updateLatenessSettings', { token, payload }),
 
   getVisitorQr: (token: string) => api.invoke('settings:getVisitorQr', { token }),
   updateVisitorQr: (token: string, payload: object) =>
@@ -984,4 +1058,4 @@ const documents = {
   pathForFile: (file: File) => webUtils.getPathForFile(file),
 };
 
-contextBridge.exposeInMainWorld('electron', { auth, users, prospects, clients, owners, properties, conventions, conventionTemplates, attestationTemplates, attestations, quotes, quoteTemplates, catalog, accounting, bilan, communication, crm, archiving, documents, documentExport, lotissements, terrains, programmes, projects, hr, performance, visitors, geo, countries, commissions, expenses, analytics, exporter, invoiceTemplates, listExportTemplates, treasury, budget, dashboard, settings, reminders, config });
+contextBridge.exposeInMainWorld('electron', { auth, users, prospects, clients, owners, properties, conventions, conventionTemplates, attestationTemplates, attestations, quotes, quoteTemplates, catalog, accounting, bilan, communication, crm, archiving, documents, documentExport, lotissements, terrains, programmes, projects, hr, performance, visitors, calls, socialMedia, geo, countries, commissions, expenses, analytics, exporter, invoiceTemplates, listExportTemplates, treasury, budget, dashboard, settings, reminders, config });

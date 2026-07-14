@@ -19,6 +19,7 @@ const payroll_service_1 = require("../services/payroll.service");
 const hr_templates_service_1 = require("../services/hr-templates.service");
 const leave_service_1 = require("../services/leave.service");
 const attendance_service_1 = require("../services/attendance.service");
+const performance_service_1 = require("../services/performance.service");
 const treasury_service_1 = require("../services/treasury.service");
 const settings_service_1 = require("../services/settings.service");
 const storage_service_1 = require("../services/storage.service");
@@ -50,6 +51,10 @@ const HR_READ_ROLES = [...HR_ADMIN_ROLES, ...HR_SCOPED_ROLES];
 // reste du module RH & Paie. Écriture = admins / RH ; lecture = + MANAGER / AD.
 const ATTENDANCE_WRITE_ROLES = ['SUPER_ADMIN', 'ADMIN', 'RH'];
 const ATTENDANCE_READ_ROLES = [...ATTENDANCE_WRITE_ROLES, ...HR_SCOPED_ROLES];
+// Retards & Départs précipités : réservé à SUPER_ADMIN/ADMIN/MANAGER
+// exclusivement (ni RH, ni ACCOUNTANT, ni ASSISTANTE_DIRECTION). Contrôle de
+// rôle EXACT (checkHrRole), sans équivalence.
+const LATENESS_ROLES = ['SUPER_ADMIN', 'ADMIN', 'MANAGER'];
 // Personnel (détail/écritures), contrats et bulletins de paie : ASSISTANTE_DIRECTION
 // en est EXCLUE (elle ne conserve que Congés & Pointage). Accès : admins, RH,
 // Comptable et MANAGER. (La liste `employees:list` reste ouverte à AD car elle
@@ -525,6 +530,10 @@ function registerHrIPC() {
                     matricule,
                 },
             });
+            // Le matricule de l'utilisateur lié doit toujours refléter celui de l'employé.
+            if (employee.userId != null) {
+                await db.user.update({ where: { id: employee.userId }, data: { matricule } });
+            }
             logger_1.default.info(`Employé créé : ${matricule}`);
             return ser({ success: true, data: employee });
         }
@@ -569,6 +578,10 @@ function registerHrIPC() {
                     return { success: false, error: 'Cet utilisateur est déjà lié à un autre membre du personnel.' };
             }
             const employee = await db.employee.update({ where: { id }, data });
+            // Le matricule de l'utilisateur lié doit toujours refléter celui de l'employé.
+            if (employee.userId != null) {
+                await db.user.update({ where: { id: employee.userId }, data: { matricule: employee.matricule } });
+            }
             logger_1.default.info(`Employé mis à jour : id=${id}`);
             return ser({ success: true, data: employee });
         }
@@ -875,7 +888,6 @@ function registerHrIPC() {
         sursalaire: zod_1.z.coerce.number().nonnegative().optional(),
         taxablePrime: zod_1.z.coerce.number().nonnegative().optional(),
         transportAllowance: zod_1.z.coerce.number().nonnegative().optional(),
-        otherDeductions: zod_1.z.coerce.number().nonnegative().optional(),
         // Inclure automatiquement les heures supplémentaires du pointage du mois.
         includeOvertime: zod_1.z.coerce.boolean().optional(),
     });
@@ -888,6 +900,102 @@ function registerHrIPC() {
         });
         const seq = last ? parseInt(last.reference.split('-')[2], 10) + 1 : 1;
         return `BUL-${year}-${String(seq).padStart(4, '0')}`;
+    }
+    /**
+     * Cœur de la génération d'un bulletin (calcul + création/réutilisation d'un
+     * bulletin archivé de la même période) — factorisé pour être réutilisé par
+     * `hr:payslips:generate` (saisie manuelle) et `hr:payslips:duplicate`
+     * (reprend les entrées ajustables d'un bulletin existant pour une autre
+     * période/un autre employé). Un seul bulletin par employé et par période :
+     * l'appelant doit avoir vérifié l'absence de bulletin existant non supprimé.
+     */
+    async function generatePayslipCore(db, p) {
+        const existing = await db.payslip.findFirst({
+            where: { employeeId: p.employeeId, periodYear: p.periodYear, periodMonth: p.periodMonth },
+        });
+        if (existing && !existing.deletedAt) {
+            return { success: false, error: 'Un bulletin existe déjà pour cet employé sur cette période.' };
+        }
+        const employee = await db.employee.findFirst({
+            where: { id: p.employeeId, deletedAt: null },
+            include: { contracts: { where: { deletedAt: null }, orderBy: { startDate: 'desc' }, take: 1 } },
+        });
+        if (!employee)
+            return { success: false, error: 'Employé introuvable' };
+        const contract = employee.contracts[0];
+        if (!contract)
+            return { success: false, error: "Aucun contrat actif : définissez d'abord un contrat avec un salaire de base." };
+        const rates = await (0, payroll_service_1.getPayrollRates)(db);
+        // Heures supplémentaires : valorisées depuis le pointage du mois (option).
+        let overtimeAmount = 0;
+        if (p.includeOvertime !== false) {
+            const summary = await (0, attendance_service_1.attendanceMonthSummary)(employee.id, p.periodYear, p.periodMonth);
+            overtimeAmount = summary.overtimeAmount;
+        }
+        // Ancienneté figée à la fin de la période de paie (et non à la date du jour).
+        const periodEnd = new Date(p.periodYear, p.periodMonth, 0);
+        const prime = (0, payroll_service_1.computePrimeAnciennete)(Number(contract.baseSalary), employee.hireDate, periodEnd);
+        const result = (0, payroll_service_1.computePayroll)({
+            baseSalary: Number(contract.baseSalary),
+            igrParts: Number(employee.igrParts ?? 1),
+            sursalaire: p.sursalaire,
+            primeAnciennete: prime.amount,
+            senioriteRate: prime.rate,
+            taxablePrime: p.taxablePrime,
+            overtimeAmount,
+            transportAllowance: p.transportAllowance,
+        }, rates);
+        const lineData = result.lines.map((l) => ({
+            type: l.type, label: l.label,
+            base: l.base != null ? l.base : null,
+            rate: l.rate != null ? l.rate : null,
+            amount: l.amount, order: l.order,
+        }));
+        const amounts = {
+            contractId: contract.id,
+            baseSalary: result.baseSalary,
+            grossTaxable: result.grossTaxable,
+            totalGains: result.totalGains,
+            cnpsEmployee: result.cnpsEmployee,
+            its: result.its,
+            cmuEmployee: result.cmuEmployee,
+            totalDeductions: result.totalDeductions,
+            netSalary: result.netSalary,
+            employerCharges: result.employerCharges,
+            employerCost: result.employerCost,
+        };
+        let payslip;
+        if (existing) {
+            // Réutilise le bulletin archivé de la même période : on le réinitialise
+            // (statut, paiement) et on régénère ses lignes.
+            await db.payslipLine.deleteMany({ where: { payslipId: existing.id } });
+            payslip = await db.payslip.update({
+                where: { id: existing.id },
+                data: {
+                    ...amounts,
+                    status: 'BROUILLON', paidAt: null, paymentMethod: null, deletedAt: null,
+                    lines: { create: lineData },
+                },
+                include: { lines: true },
+            });
+            logger_1.default.info(`Bulletin régénéré : ${payslip.reference} (employé ${employee.id}, ${p.periodMonth}/${p.periodYear})`);
+        }
+        else {
+            const reference = await nextPayslipReference(db);
+            payslip = await db.payslip.create({
+                data: {
+                    reference,
+                    employeeId: employee.id,
+                    periodYear: p.periodYear,
+                    periodMonth: p.periodMonth,
+                    ...amounts,
+                    lines: { create: lineData },
+                },
+                include: { lines: true },
+            });
+            logger_1.default.info(`Bulletin généré : ${reference} (employé ${employee.id}, ${p.periodMonth}/${p.periodYear})`);
+        }
+        return { success: true, data: payslip };
     }
     electron_1.ipcMain.handle('hr:payslips:list', async (_event, { token, filters = {}, page = 1, limit = 20 }) => {
         try {
@@ -970,112 +1078,78 @@ function registerHrIPC() {
             const d = parsed.data;
             const db = (0, db_service_1.getDb)();
             await assertEmployeeAccessible(session, db, d.employeeId);
-            // Un seul bulletin par employé et par période. L'index unique
-            // (employeeId, periodYear, periodMonth) ne tient pas compte du soft delete :
-            // on recherche donc aussi les bulletins archivés afin de les réutiliser
-            // (sinon la recréation viole la contrainte d'unicité).
-            const existing = await db.payslip.findFirst({
-                where: { employeeId: d.employeeId, periodYear: d.periodYear, periodMonth: d.periodMonth },
-            });
-            if (existing && !existing.deletedAt) {
-                return { success: false, error: 'Un bulletin existe déjà pour cet employé sur cette période.' };
-            }
-            const employee = await db.employee.findFirst({
-                where: { id: d.employeeId, deletedAt: null },
-                include: { contracts: { where: { deletedAt: null }, orderBy: { startDate: 'desc' }, take: 1 } },
-            });
-            if (!employee)
-                return { success: false, error: 'Employé introuvable' };
-            const contract = employee.contracts[0];
-            if (!contract)
-                return { success: false, error: "Aucun contrat actif : définissez d'abord un contrat avec un salaire de base." };
-            const rates = await (0, payroll_service_1.getPayrollRates)(db);
-            // Heures supplémentaires : valorisées depuis le pointage du mois (option).
-            let overtimeAmount = 0;
-            if (d.includeOvertime !== false) {
-                const summary = await (0, attendance_service_1.attendanceMonthSummary)(employee.id, d.periodYear, d.periodMonth);
-                overtimeAmount = summary.overtimeAmount;
-            }
-            // Ancienneté figée à la fin de la période de paie (et non à la date du jour).
-            const periodEnd = new Date(d.periodYear, d.periodMonth, 0);
-            const prime = (0, payroll_service_1.computePrimeAnciennete)(Number(contract.baseSalary), employee.hireDate, periodEnd);
-            const result = (0, payroll_service_1.computePayroll)({
-                baseSalary: Number(contract.baseSalary),
-                igrParts: Number(employee.igrParts ?? 1),
-                sursalaire: d.sursalaire,
-                primeAnciennete: prime.amount,
-                senioriteRate: prime.rate,
-                taxablePrime: d.taxablePrime,
-                overtimeAmount,
-                transportAllowance: d.transportAllowance,
-                otherDeductions: d.otherDeductions,
-            }, rates);
-            const lineData = result.lines.map((l) => ({
-                type: l.type, label: l.label,
-                base: l.base != null ? l.base : null,
-                rate: l.rate != null ? l.rate : null,
-                amount: l.amount, order: l.order,
-            }));
-            const amounts = {
-                contractId: contract.id,
-                baseSalary: result.baseSalary,
-                grossTaxable: result.grossTaxable,
-                totalGains: result.totalGains,
-                cnpsEmployee: result.cnpsEmployee,
-                its: result.its,
-                cmuEmployee: result.cmuEmployee,
-                otherDeductions: result.otherDeductions,
-                totalDeductions: result.totalDeductions,
-                netSalary: result.netSalary,
-                employerCharges: result.employerCharges,
-                employerCost: result.employerCost,
-            };
-            let payslip;
-            if (existing) {
-                // Réutilise le bulletin archivé de la même période : on le réinitialise
-                // (statut, paiement) et on régénère ses lignes.
-                await db.payslipLine.deleteMany({ where: { payslipId: existing.id } });
-                payslip = await db.payslip.update({
-                    where: { id: existing.id },
-                    data: {
-                        ...amounts,
-                        status: 'BROUILLON', paidAt: null, paymentMethod: null, deletedAt: null,
-                        lines: { create: lineData },
-                    },
-                    include: { lines: true },
-                });
-                logger_1.default.info(`Bulletin régénéré : ${payslip.reference} (employé ${employee.id}, ${d.periodMonth}/${d.periodYear})`);
-            }
-            else {
-                const reference = await nextPayslipReference(db);
-                payslip = await db.payslip.create({
-                    data: {
-                        reference,
-                        employeeId: employee.id,
-                        periodYear: d.periodYear,
-                        periodMonth: d.periodMonth,
-                        ...amounts,
-                        lines: { create: lineData },
-                    },
-                    include: { lines: true },
-                });
-                logger_1.default.info(`Bulletin généré : ${reference} (employé ${employee.id}, ${d.periodMonth}/${d.periodYear})`);
-            }
-            return ser({ success: true, data: payslip });
+            const result = await generatePayslipCore(db, d);
+            return ser(result);
         }
         catch (error) {
             logger_1.default.error('hr:payslips:generate error', error.message);
             return { success: false, error: error.message };
         }
     });
+    const duplicateSchema = zod_1.z.object({
+        sourceId: zod_1.z.coerce.number().int().positive(),
+        employeeId: zod_1.z.coerce.number().int().positive(),
+        periodYear: zod_1.z.coerce.number().int().min(2000).max(2100),
+        periodMonth: zod_1.z.coerce.number().int().min(1).max(12),
+    });
+    /**
+     * Duplique un bulletin existant vers un autre employé et/ou une autre
+     * période : reprend ses entrées ajustables (sursalaire, prime imposable,
+     * indemnité transport, heures supplémentaires incluses ou non) et les
+     * recalcule intégralement (CNPS/ITS/CMU/charges) pour la cible, à partir du
+     * contrat et des taux en vigueur — jamais une simple copie des montants
+     * source, qui seraient faux pour un autre employé/une autre période. Bloqué
+     * si un bulletin existe déjà pour l'employé/la période cible (même règle
+     * que `hr:payslips:generate`, réutilisée par `generatePayslipCore`).
+     */
+    electron_1.ipcMain.handle('hr:payslips:duplicate', async (_event, { token, payload }) => {
+        try {
+            const session = (0, auth_service_1.getSession)(token);
+            if (!session)
+                return { success: false, error: 'Session expirée' };
+            checkHrRole(session, HR_STAFF_WRITE_ROLES);
+            const parsed = duplicateSchema.safeParse(payload);
+            if (!parsed.success) {
+                const msg = parsed.error.issues.map((i) => `${i.path.join('.') || 'champ'} : ${i.message}`).join(' ; ');
+                return { success: false, error: msg };
+            }
+            const d = parsed.data;
+            const db = (0, db_service_1.getDb)();
+            const source = await db.payslip.findFirst({
+                where: { id: d.sourceId, deletedAt: null },
+                include: { lines: true },
+            });
+            if (!source)
+                return { success: false, error: 'Bulletin source introuvable' };
+            await assertEmployeeAccessible(session, db, source.employeeId);
+            await assertEmployeeAccessible(session, db, d.employeeId);
+            const lineAmount = (label) => Number(source.lines.find((l) => l.label === label)?.amount ?? 0);
+            const result = await generatePayslipCore(db, {
+                employeeId: d.employeeId,
+                periodYear: d.periodYear,
+                periodMonth: d.periodMonth,
+                sursalaire: lineAmount('Sursalaire'),
+                taxablePrime: lineAmount('Primes imposables'),
+                transportAllowance: lineAmount('Indemnité de transport (non imposable)') + lineAmount('Indemnité de transport (part imposable)'),
+                includeOvertime: lineAmount('Heures supplémentaires') > 0,
+            });
+            if (result.success) {
+                logger_1.default.info(`Bulletin dupliqué depuis ${source.reference} → ${result.data.reference}`);
+            }
+            return ser(result);
+        }
+        catch (error) {
+            logger_1.default.error('hr:payslips:duplicate error', error.message);
+            return { success: false, error: error.message };
+        }
+    });
     // Modification d'un bulletin encore en BROUILLON : on recalcule à partir des
-    // entrées ajustables (primes, indemnité transport, autres retenues, heures
-    // supplémentaires). L'employé, la période et la référence ne changent pas.
+    // entrées ajustables (primes, indemnité transport, heures supplémentaires).
+    // L'employé, la période et la référence ne changent pas.
     const payslipEditSchema = zod_1.z.object({
         sursalaire: zod_1.z.coerce.number().nonnegative().optional(),
         taxablePrime: zod_1.z.coerce.number().nonnegative().optional(),
         transportAllowance: zod_1.z.coerce.number().nonnegative().optional(),
-        otherDeductions: zod_1.z.coerce.number().nonnegative().optional(),
         includeOvertime: zod_1.z.coerce.boolean().optional(),
     });
     electron_1.ipcMain.handle('hr:payslips:update', async (_event, { token, id, payload }) => {
@@ -1124,7 +1198,6 @@ function registerHrIPC() {
                 taxablePrime: d.taxablePrime,
                 overtimeAmount,
                 transportAllowance: d.transportAllowance,
-                otherDeductions: d.otherDeductions,
             }, rates);
             await db.payslipLine.deleteMany({ where: { payslipId: id } });
             const updated = await db.payslip.update({
@@ -1137,7 +1210,6 @@ function registerHrIPC() {
                     cnpsEmployee: result.cnpsEmployee,
                     its: result.its,
                     cmuEmployee: result.cmuEmployee,
-                    otherDeductions: result.otherDeductions,
                     totalDeductions: result.totalDeductions,
                     netSalary: result.netSalary,
                     employerCharges: result.employerCharges,
@@ -2431,6 +2503,304 @@ function registerHrIPC() {
         }
         catch (error) {
             logger_1.default.error('hr:attendance:bulkUpsert error', error.message);
+            return { success: false, error: error.message };
+        }
+    });
+    /* ─── Retards & Départs précipités ──────────────────────────── */
+    const latenessJustifySchema = zod_1.z.object({
+        employeeId: zod_1.z.coerce.number().int().positive(),
+        date: zod_1.z.string().min(1), // 'YYYY-MM-DD'
+        leaveRequestId: zod_1.z.coerce.number().int().positive().optional(),
+        crmActivityId: zod_1.z.coerce.number().int().positive().optional(),
+        notes: zod_1.z.string().optional().nullable(),
+    }).refine((d) => (d.leaveRequestId != null) !== (d.crmActivityId != null), {
+        message: 'Choisissez soit une demande de congé approuvée, soit une activité (pas les deux).',
+    });
+    const latenessTolerateSchema = zod_1.z.object({
+        employeeId: zod_1.z.coerce.number().int().positive(),
+        date: zod_1.z.string().min(1), // 'YYYY-MM-DD'
+        notes: zod_1.z.string().optional().nullable(),
+    });
+    /** Bornes [start, end[ locales d'un jour 'YYYY-MM-DD'. */
+    function dayBounds(dateStr) {
+        const [y, m, d] = dateStr.split('-').map(Number);
+        return { start: new Date(y, m - 1, d), end: new Date(y, m - 1, d + 1) };
+    }
+    electron_1.ipcMain.handle('hr:lateness:list', async (_event, { token, year, month, employeeId, onlyUnjustified }) => {
+        try {
+            const session = (0, auth_service_1.getSession)(token);
+            if (!session)
+                return { success: false, error: 'Session expirée' };
+            const db = (0, db_service_1.getDb)();
+            const now = new Date();
+            const y = year ? Number(year) : now.getFullYear();
+            const m = month ? Number(month) : now.getMonth() + 1;
+            const start = new Date(y, m - 1, 1);
+            const end = new Date(y, m, 1);
+            let employeeIds;
+            if (LATENESS_ROLES.includes(session.role)) {
+                employeeIds = await (0, performance_service_1.latenessEligibleEmployeeIds)(db);
+                // MANAGER : même périmètre que Pointage (exclut les comptes SUPER_ADMIN/ADMIN).
+                if (session.role === 'MANAGER') {
+                    const excluded = await hrExcludedAttendanceLeave(session, db);
+                    employeeIds = employeeIds.filter((id) => !excluded.includes(id));
+                }
+                if (employeeId)
+                    employeeIds = employeeIds.filter((id) => id === Number(employeeId));
+            }
+            else {
+                // Autres rôles : autoconsultation uniquement (l'employé lié à son
+                // propre compte), sans filtre Collaborateur ni condition d'éligibilité
+                // (celle-ci ne sert qu'à réduire le volume affiché aux admins/managers).
+                const me = await db.employee.findFirst({ where: { userId: session.userId, deletedAt: null }, select: { id: true } });
+                employeeIds = me ? [me.id] : [];
+            }
+            if (!employeeIds.length)
+                return ser({ success: true, data: [] });
+            const employees = await db.employee.findMany({
+                where: { id: { in: employeeIds }, deletedAt: null },
+                select: { id: true, matricule: true, firstName: true, lastName: true, poste: true },
+            });
+            const empById = new Map(employees.map((e) => [e.id, e]));
+            const allLines = [];
+            for (const id of employeeIds) {
+                const emp = empById.get(id);
+                if (!emp)
+                    continue;
+                const lines = await (0, performance_service_1.computeLatenessLinesForEmployee)(db, id, start, end);
+                for (const l of lines) {
+                    if (onlyUnjustified && (l.justification?.justified || l.justification?.tolerated))
+                        continue;
+                    allLines.push({
+                        ...l,
+                        matricule: emp.matricule,
+                        employeeName: `${emp.lastName} ${emp.firstName}`.trim(),
+                        poste: emp.poste,
+                    });
+                }
+            }
+            allLines.sort((a, b) => b.date.getTime() - a.date.getTime());
+            return ser({ success: true, data: allLines });
+        }
+        catch (error) {
+            logger_1.default.error('hr:lateness:list error', error.message);
+            return { success: false, error: error.message };
+        }
+    });
+    electron_1.ipcMain.handle('hr:lateness:linkableLeaveRequests', async (_event, { token, employeeId, date }) => {
+        try {
+            const session = (0, auth_service_1.getSession)(token);
+            if (!session)
+                return { success: false, error: 'Session expirée' };
+            checkHrRole(session, LATENESS_ROLES);
+            const db = (0, db_service_1.getDb)();
+            const { start } = dayBounds(String(date));
+            const data = await db.leaveRequest.findMany({
+                where: {
+                    employeeId: Number(employeeId),
+                    deletedAt: null,
+                    status: 'APPROUVE',
+                    startDate: { lte: start },
+                    endDate: { gte: start },
+                },
+                select: { id: true, reference: true, startDate: true, endDate: true, type: { select: { name: true } } },
+                orderBy: { startDate: 'desc' },
+            });
+            return ser({ success: true, data });
+        }
+        catch (error) {
+            logger_1.default.error('hr:lateness:linkableLeaveRequests error', error.message);
+            return { success: false, error: error.message };
+        }
+    });
+    electron_1.ipcMain.handle('hr:lateness:linkableActivities', async (_event, { token, employeeId, date }) => {
+        try {
+            const session = (0, auth_service_1.getSession)(token);
+            if (!session)
+                return { success: false, error: 'Session expirée' };
+            checkHrRole(session, LATENESS_ROLES);
+            const db = (0, db_service_1.getDb)();
+            const employee = await db.employee.findFirst({ where: { id: Number(employeeId) }, select: { userId: true } });
+            if (!employee?.userId)
+                return ser({ success: true, data: [] });
+            const { start, end } = dayBounds(String(date));
+            const data = await db.crmActivity.findMany({
+                where: {
+                    userId: employee.userId,
+                    type: 'VISITE',
+                    status: 'TRAITE',
+                    completedAt: { gte: start, lt: end },
+                    delayJustification: null, // jamais utilisée pour justifier une autre journée
+                },
+                select: { id: true, subject: true, completedAt: true },
+                orderBy: { completedAt: 'desc' },
+            });
+            return ser({ success: true, data });
+        }
+        catch (error) {
+            logger_1.default.error('hr:lateness:linkableActivities error', error.message);
+            return { success: false, error: error.message };
+        }
+    });
+    // Lie une journée de retard/départ précipité à un justificatif (congé
+    // approuvé ou activité « Visite chantier / Sortie en clientèle / Courses »
+    // traitée) et la marque justifiée par l'administrateur/manager connecté.
+    electron_1.ipcMain.handle('hr:lateness:justify', async (_event, { token, payload }) => {
+        try {
+            const session = (0, auth_service_1.getSession)(token);
+            if (!session)
+                return { success: false, error: 'Session expirée' };
+            checkHrRole(session, LATENESS_ROLES);
+            const parsed = latenessJustifySchema.safeParse(payload);
+            if (!parsed.success)
+                return { success: false, error: parsed.error.issues[0]?.message ?? 'Données invalides' };
+            const d = parsed.data;
+            const db = (0, db_service_1.getDb)();
+            const { start } = dayBounds(d.date);
+            if (d.leaveRequestId != null) {
+                const leave = await db.leaveRequest.findFirst({
+                    where: { id: d.leaveRequestId, employeeId: d.employeeId, deletedAt: null, status: 'APPROUVE', startDate: { lte: start }, endDate: { gte: start } },
+                    select: { id: true },
+                });
+                if (!leave)
+                    return { success: false, error: 'Demande de congé introuvable, non approuvée, ou ne couvrant pas cette journée.' };
+            }
+            if (d.crmActivityId != null) {
+                const activity = await db.crmActivity.findFirst({
+                    where: { id: d.crmActivityId, type: 'VISITE', status: 'TRAITE', delayJustification: null },
+                    select: { id: true },
+                });
+                if (!activity)
+                    return { success: false, error: 'Activité introuvable, non traitée, ou déjà utilisée pour justifier une autre journée.' };
+            }
+            const data = await db.attendanceDelayJustification.upsert({
+                where: { employeeId_date: { employeeId: d.employeeId, date: start } },
+                create: {
+                    employeeId: d.employeeId,
+                    date: start,
+                    leaveRequestId: d.leaveRequestId ?? null,
+                    crmActivityId: d.crmActivityId ?? null,
+                    justified: true,
+                    justifiedById: session.userId,
+                    justifiedAt: new Date(),
+                    notes: d.notes ?? null,
+                },
+                update: {
+                    leaveRequestId: d.leaveRequestId ?? null,
+                    crmActivityId: d.crmActivityId ?? null,
+                    justified: true,
+                    justifiedById: session.userId,
+                    justifiedAt: new Date(),
+                    // Justifier une journée annule une éventuelle tolérance précédente
+                    // (les deux statuts sont mutuellement exclusifs).
+                    tolerated: false,
+                    toleratedById: null,
+                    toleratedAt: null,
+                    notes: d.notes ?? null,
+                },
+            });
+            logger_1.default.info(`Retard/départ précipité justifié : employé #${d.employeeId}, ${d.date}`);
+            return ser({ success: true, data });
+        }
+        catch (error) {
+            logger_1.default.error('hr:lateness:justify error', error.message);
+            return { success: false, error: error.message };
+        }
+    });
+    // Retire la justification d'une journée (retour à l'état « non justifiée »).
+    electron_1.ipcMain.handle('hr:lateness:unjustify', async (_event, { token, employeeId, date }) => {
+        try {
+            const session = (0, auth_service_1.getSession)(token);
+            if (!session)
+                return { success: false, error: 'Session expirée' };
+            checkHrRole(session, LATENESS_ROLES);
+            const db = (0, db_service_1.getDb)();
+            const { start } = dayBounds(String(date));
+            await db.attendanceDelayJustification.deleteMany({ where: { employeeId: Number(employeeId), date: start } });
+            return { success: true };
+        }
+        catch (error) {
+            logger_1.default.error('hr:lateness:unjustify error', error.message);
+            return { success: false, error: error.message };
+        }
+    });
+    /** Limite de tolérance par défaut (minutes) si aucune valeur n'est encore paramétrée. */
+    const DEFAULT_LATENESS_TOLERANCE_MINUTES = 15;
+    /** Limite de tolérance courante (minutes), paramétrable dans Paramètres. */
+    async function latenessToleranceMinutes() {
+        const raw = Number(await (0, settings_service_1.getSetting)(settings_service_1.SettingsKeys.latenessToleranceMinutes));
+        return Number.isFinite(raw) && raw >= 0 ? raw : DEFAULT_LATENESS_TOLERANCE_MINUTES;
+    }
+    // Marque une journée de retard/départ précipité « Tolérée » — réservé à
+    // SUPER_ADMIN/ADMIN/MANAGER, uniquement si le temps de la journée
+    // n'excède pas la limite paramétrée (Paramètres → Retards & Départs
+    // précipités). Contrairement à `justify`, aucun congé ni activité liée.
+    electron_1.ipcMain.handle('hr:lateness:tolerate', async (_event, { token, payload }) => {
+        try {
+            const session = (0, auth_service_1.getSession)(token);
+            if (!session)
+                return { success: false, error: 'Session expirée' };
+            checkHrRole(session, LATENESS_ROLES);
+            const parsed = latenessTolerateSchema.safeParse(payload);
+            if (!parsed.success)
+                return { success: false, error: parsed.error.issues[0]?.message ?? 'Données invalides' };
+            const d = parsed.data;
+            const db = (0, db_service_1.getDb)();
+            const { start, end } = dayBounds(d.date);
+            const lines = await (0, performance_service_1.computeLatenessLinesForEmployee)(db, d.employeeId, start, end);
+            const line = lines.find((l) => l.date.getTime() === start.getTime());
+            if (!line)
+                return { success: false, error: 'Aucun retard ou départ précipité à tolérer pour cette journée.' };
+            const limit = await latenessToleranceMinutes();
+            if (line.totalMinutes > limit) {
+                return { success: false, error: `Le temps de cette journée (${line.totalMinutes} min) dépasse la limite tolérée (${limit} min).` };
+            }
+            const data = await db.attendanceDelayJustification.upsert({
+                where: { employeeId_date: { employeeId: d.employeeId, date: start } },
+                create: {
+                    employeeId: d.employeeId,
+                    date: start,
+                    tolerated: true,
+                    toleratedById: session.userId,
+                    toleratedAt: new Date(),
+                    notes: d.notes ?? null,
+                },
+                update: {
+                    tolerated: true,
+                    toleratedById: session.userId,
+                    toleratedAt: new Date(),
+                    // Tolérer une journée annule une éventuelle justification précédente
+                    // (les deux statuts sont mutuellement exclusifs).
+                    justified: false,
+                    leaveRequestId: null,
+                    crmActivityId: null,
+                    justifiedById: null,
+                    justifiedAt: null,
+                    notes: d.notes ?? null,
+                },
+            });
+            logger_1.default.info(`Retard/départ précipité toléré : employé #${d.employeeId}, ${d.date}`);
+            return ser({ success: true, data });
+        }
+        catch (error) {
+            logger_1.default.error('hr:lateness:tolerate error', error.message);
+            return { success: false, error: error.message };
+        }
+    });
+    // Retire la tolérance d'une journée (retour à l'état « non justifiée »).
+    electron_1.ipcMain.handle('hr:lateness:untolerate', async (_event, { token, employeeId, date }) => {
+        try {
+            const session = (0, auth_service_1.getSession)(token);
+            if (!session)
+                return { success: false, error: 'Session expirée' };
+            checkHrRole(session, LATENESS_ROLES);
+            const db = (0, db_service_1.getDb)();
+            const { start } = dayBounds(String(date));
+            await db.attendanceDelayJustification.deleteMany({ where: { employeeId: Number(employeeId), date: start } });
+            return { success: true };
+        }
+        catch (error) {
+            logger_1.default.error('hr:lateness:untolerate error', error.message);
             return { success: false, error: error.message };
         }
     });

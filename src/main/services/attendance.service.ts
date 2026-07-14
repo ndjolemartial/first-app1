@@ -112,12 +112,12 @@ export async function getAttendanceClockSettings(): Promise<{ expectedArrival: s
 }
 
 /** Minutes depuis minuit pour une date locale donnée. */
-function minutesOfDay(d: Date): number {
+export function minutesOfDay(d: Date): number {
   return d.getHours() * 60 + d.getMinutes();
 }
 
 /** Minutes depuis minuit pour un seuil 'HH:MM'. */
-function thresholdMinutes(hhmm: string): number {
+export function thresholdMinutes(hhmm: string): number {
   const [h, m] = hhmm.split(':').map(Number);
   return h * 60 + m;
 }

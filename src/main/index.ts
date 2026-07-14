@@ -31,6 +31,8 @@ import { registerHrIPC, seedJobPositionsFromEmployees, seedDepartmentsFromEmploy
 import { registerPerformanceIPC } from './ipc/performance.ipc';
 import { seedDefaultKpis, seedKpiUnits } from './services/performance.service';
 import { registerVisitorsIPC } from './ipc/visitors.ipc';
+import { registerCallsIPC } from './ipc/calls.ipc';
+import { registerSocialMediaIPC } from './ipc/social-media.ipc';
 import { registerGeoIPC } from './ipc/geo.ipc';
 import { registerCountriesIPC } from './ipc/countries.ipc';
 import { registerCommissionsIPC } from './ipc/commissions.ipc';
@@ -137,6 +139,8 @@ function registerIPC(): void {
   registerHrIPC();
   registerPerformanceIPC();
   registerVisitorsIPC();
+  registerCallsIPC();
+  registerSocialMediaIPC();
   registerGeoIPC();
   registerCountriesIPC();
   registerCommissionsIPC();

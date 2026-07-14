@@ -59,6 +59,11 @@ const attestationBaseSchema = zod_1.z.object({
     secondaryClientId: zod_1.z.number().int().positive().optional(),
     terrainId: zod_1.z.number().int().positive().optional(),
     propertyId: zod_1.z.number().int().positive().optional(),
+    // Sélection multiple de terrains/biens (ATTRIBUTION / CESSION) — doivent
+    // provenir respectivement d'un même lotissement / d'un même programme
+    // immobilier (cf. assertSingleLotissement / assertSingleProgramme).
+    terrainIds: zod_1.z.array(zod_1.z.number().int().positive()).optional(),
+    propertyIds: zod_1.z.array(zod_1.z.number().int().positive()).optional(),
     conventionId: zod_1.z.number().int().positive().optional(),
     templateId: zod_1.z.number().int().positive().optional(),
     emittedAt: zod_1.z.string().optional(),
@@ -66,10 +71,14 @@ const attestationBaseSchema = zod_1.z.object({
     prixTotalBien: zod_1.z.number().optional(),
     notes: zod_1.z.string().optional(),
 });
+/** Vrai si un terrain ou un bien est renseigné (singulier ou sélection multiple). */
+function hasAsset(d) {
+    return !!d.terrainId || !!d.propertyId || !!(d.terrainIds?.length) || !!(d.propertyIds?.length);
+}
 const attestationSchema = attestationBaseSchema
     .refine((d) => (d.type === 'CESSION' ? !!d.secondaryClientId : true), { message: 'Une attestation de cession nécessite un cédant (client secondaire)' })
     .refine((d) => (d.type === 'CESSION' ? d.clientId !== d.secondaryClientId : true), { message: 'Le cessionnaire et le cédant doivent être deux clients différents' })
-    .refine((d) => (d.type === 'CESSION' ? !!d.terrainId || !!d.propertyId : true), { message: 'Une attestation de cession nécessite un terrain ou un bien immobilier cédé' })
+    .refine((d) => (d.type === 'CESSION' ? hasAsset(d) : true), { message: 'Une attestation de cession nécessite un terrain ou un bien immobilier cédé' })
     .refine((d) => (d.type === 'TRANSFERT_PROPRIETE' ? !!d.secondaryClientId : true), { message: 'Une attestation de transfert de propriété nécessite l\'ancien propriétaire' })
     .refine((d) => (d.type === 'TRANSFERT_PROPRIETE' ? d.clientId !== d.secondaryClientId : true), { message: 'L\'ancien propriétaire et le nouveau bénéficiaire doivent être différents' });
 /**
@@ -82,8 +91,8 @@ const attestationUpdateSchema = attestationBaseSchema.partial()
     .refine((d) => (d.type === 'CESSION' && d.clientId != null && d.secondaryClientId != null
     ? d.clientId !== d.secondaryClientId
     : true), { message: 'Le cessionnaire et le cédant doivent être deux clients différents' })
-    .refine((d) => (d.type === 'CESSION' && ('terrainId' in d || 'propertyId' in d)
-    ? !!d.terrainId || !!d.propertyId
+    .refine((d) => (d.type === 'CESSION' && ('terrainId' in d || 'propertyId' in d || 'terrainIds' in d || 'propertyIds' in d)
+    ? hasAsset(d)
     : true), { message: 'Une attestation de cession nécessite un terrain ou un bien immobilier cédé' })
     .refine((d) => (d.type === 'TRANSFERT_PROPRIETE' && 'secondaryClientId' in d ? !!d.secondaryClientId : true), { message: 'Une attestation de transfert de propriété nécessite l\'ancien propriétaire' })
     .refine((d) => (d.type === 'TRANSFERT_PROPRIETE' && d.clientId != null && d.secondaryClientId != null
@@ -105,6 +114,43 @@ async function nextReference(db) {
     const seq = last ? parseInt(last.reference.split('-')[2], 10) + 1 : 1;
     return `ATT-${year}-${String(seq).padStart(4, '0')}`;
 }
+/**
+ * Vérifie que tous les terrains d'une attestation (sélection multiple)
+ * proviennent du même lotissement — même règle que pour une convention
+ * (cf. `assertSingleLotissement` dans conventions.ipc.ts). Un terrain a
+ * toujours un lotissement (`lotissementId` non nul).
+ */
+async function assertSingleLotissement(db, terrainIds) {
+    if (!terrainIds || terrainIds.length < 2)
+        return;
+    const terrains = await db.terrain.findMany({
+        where: { id: { in: terrainIds } },
+        select: { id: true, lotissementId: true },
+    });
+    const lotIds = new Set(terrains.map((t) => t.lotissementId));
+    if (lotIds.size > 1) {
+        throw new Error('Tous les terrains d\'une attestation doivent provenir du même lotissement.');
+    }
+}
+/**
+ * Vérifie que les biens immobiliers d'une attestation (sélection multiple)
+ * proviennent du même programme immobilier lorsque celui-ci est déterminable.
+ * Seuls les biens ayant effectivement un programme doivent être homogènes
+ * entre eux ; les biens sans programme (`programmeId` null) n'imposent aucune
+ * contrainte (sélection libre dans ce cas).
+ */
+async function assertSingleProgramme(db, propertyIds) {
+    if (!propertyIds || propertyIds.length < 2)
+        return;
+    const properties = await db.property.findMany({
+        where: { id: { in: propertyIds } },
+        select: { id: true, programmeId: true },
+    });
+    const programmeIds = new Set(properties.map((p) => p.programmeId).filter((id) => id != null));
+    if (programmeIds.size > 1) {
+        throw new Error('Tous les biens immobiliers d\'une attestation doivent provenir du même programme immobilier.');
+    }
+}
 const INCLUDE = {
     client: { include: { idType: { select: { id: true, code: true, label: true } } } },
     secondaryClient: { include: { idType: { select: { id: true, code: true, label: true } } } },
@@ -118,6 +164,26 @@ const INCLUDE = {
         },
     },
     property: true,
+    // Sélection multiple de terrains/biens — le champ singulier terrain/property
+    // ci-dessus reste aligné sur le premier élément pour compatibilité.
+    terrains: {
+        orderBy: { order: 'asc' },
+        include: {
+            terrain: {
+                include: {
+                    lotissement: {
+                        include: {
+                            titleType: { select: { id: true, code: true, label: true, documentsLivres: true } },
+                        },
+                    },
+                },
+            },
+        },
+    },
+    properties: {
+        orderBy: { order: 'asc' },
+        include: { property: true },
+    },
     convention: {
         include: {
             _count: { select: { terrains: true } },
@@ -287,31 +353,31 @@ function heritedBalance(c) {
 }
 /**
  * Vérifie qu'une souscription héritée (échéances sans convention) est soldée pour
- * le couple (client, terrain). Le solde = somme des montants restant dus
+ * le couple (client, terrain(s)). Le solde = somme des montants restant dus
  * (`amount − paidAmount`) sur les échéances héritées NON annulées du client
- * rattachées au terrain (via `terrainLinks` ou le champ direct `terrainId`). Il
- * doit être nul pour émettre une attestation de solde.
+ * rattachées à l'un des terrains (via `terrainLinks` ou le champ direct
+ * `terrainId`). Il doit être nul pour émettre une attestation de solde.
  *
  * Lève une `Error` lisible si aucune échéance n'existe pour ce couple ou si le
  * solde reste positif.
  */
-async function assertLegacySubscriptionSettled(db, clientId, terrainId) {
-    // Terrain optionnel : s'il est fourni, on cible la souscription de ce terrain ;
-    // sinon on considère toutes les échéances héritées du client (souscription
-    // héritée sans terrain rattaché).
+async function assertLegacySubscriptionSettled(db, clientId, terrainIds = []) {
+    // Terrain(s) optionnel(s) : s'ils sont fournis, on cible la souscription de
+    // ces terrains ; sinon on considère toutes les échéances héritées du client
+    // (souscription héritée sans terrain rattaché).
     const clientWhere = { conventionId: null, clientId, status: { not: 'ANNULE' } };
     const where = { ...clientWhere };
-    if (terrainId) {
-        where.OR = [{ terrainId }, { terrainLinks: { some: { terrainId } } }];
+    if (terrainIds.length > 0) {
+        where.OR = [{ terrainId: { in: terrainIds } }, { terrainLinks: { some: { terrainId: { in: terrainIds } } } }];
     }
     let installments = await db.saleInstallment.findMany({
         where,
         select: { amount: true, paidAmount: true },
     });
-    // Repli : un terrain a été précisé mais aucune échéance héritée n'y correspond
-    // → on retombe sur l'ensemble des échéances héritées du client (la souscription
-    // héritée peut ne pas être rattachée à ce terrain).
-    if (installments.length === 0 && terrainId) {
+    // Repli : des terrains ont été précisés mais aucune échéance héritée n'y
+    // correspond → on retombe sur l'ensemble des échéances héritées du client
+    // (la souscription héritée peut ne pas être rattachée à ces terrains).
+    if (installments.length === 0 && terrainIds.length > 0) {
         installments = await db.saleInstallment.findMany({
             where: clientWhere,
             select: { amount: true, paidAmount: true },
@@ -331,23 +397,27 @@ async function assertLegacySubscriptionSettled(db, clientId, terrainId) {
 }
 /**
  * Met à jour les champs `numeroAttestationAttribution` / `numeroAttestationCession`
- * sur le terrain rattaché lorsqu'une attestation pertinente est émise.
+ * sur le(s) terrain(s) rattaché(s) lorsqu'une attestation pertinente est émise.
  */
-async function syncTerrainAttestationFields(db, terrainId, type, reference) {
-    if (!terrainId)
+async function syncTerrainAttestationFields(db, terrainIds, type, reference) {
+    if (terrainIds.length === 0)
         return;
     if (type === 'ATTRIBUTION') {
-        await db.terrain.update({
-            where: { id: terrainId },
+        await db.terrain.updateMany({
+            where: { id: { in: terrainIds } },
             data: { numeroAttestationAttribution: reference },
         });
     }
     else if (type === 'CESSION') {
-        await db.terrain.update({
-            where: { id: terrainId },
+        await db.terrain.updateMany({
+            where: { id: { in: terrainIds } },
             data: { numeroAttestationCession: reference },
         });
     }
+}
+/** Déduplique une liste d'identifiants en conservant l'ordre de première apparition. */
+function dedupeIds(ids) {
+    return Array.from(new Set(ids));
 }
 function registerAttestationsIPC() {
     electron_1.ipcMain.handle('attestations:list', async (_event, { token, filters = {}, page = 1, limit = 50 }) => {
@@ -428,17 +498,24 @@ function registerAttestationsIPC() {
             // restreints (admin / manager / comptable, sans assistante de direction)
             // et solde obligatoirement à 0.
             const isLegacySolde = d.type === 'SOLDE' && !d.conventionId;
+            // Sélection multiple de terrains/biens — repli sur le champ singulier
+            // terrainId/propertyId pour compatibilité (anciens payloads mono-bien).
+            const terrainIds = dedupeIds(d.terrainIds?.length ? d.terrainIds : (d.terrainId ? [d.terrainId] : []));
+            const propertyIds = dedupeIds(d.propertyIds?.length ? d.propertyIds : (d.propertyId ? [d.propertyId] : []));
             if (isLegacySolde) {
                 checkLegacySoldeRole(session);
-                // Terrain optionnel : une souscription héritée peut n'être rattachée à
-                // aucun terrain (échéances importées sans terrain).
-                await assertLegacySubscriptionSettled(db, d.clientId, d.terrainId ?? null);
+                // Terrain(s) optionnel(s) : une souscription héritée peut n'être
+                // rattachée à aucun terrain (échéances importées sans terrain).
+                await assertLegacySubscriptionSettled(db, d.clientId, terrainIds);
+                await assertSingleLotissement(db, terrainIds);
             }
             else {
                 checkWriteRole(session, WRITE_ROLES);
                 // Vérifie l'éligibilité de la convention liée (pas d'avenant /
                 // résiliation, et solde = 0 pour SOLDE / TRANSFERT_PROPRIETE).
                 await assertConventionEligibleForAttestation(db, d.conventionId, d.type);
+                await assertSingleLotissement(db, terrainIds);
+                await assertSingleProgramme(db, propertyIds);
             }
             const reference = await nextReference(db);
             const data = {
@@ -446,8 +523,8 @@ function registerAttestationsIPC() {
                 type: d.type,
                 clientId: d.clientId,
                 secondaryClientId: d.secondaryClientId,
-                terrainId: d.terrainId,
-                propertyId: d.propertyId,
+                terrainId: terrainIds[0],
+                propertyId: propertyIds[0],
                 conventionId: d.conventionId,
                 templateId: d.templateId,
                 emittedAt: d.emittedAt ? new Date(d.emittedAt) : new Date(),
@@ -455,9 +532,15 @@ function registerAttestationsIPC() {
                 amount: d.amount,
                 prixTotalBien: d.prixTotalBien,
                 notes: d.notes,
+                terrains: terrainIds.length
+                    ? { create: terrainIds.map((terrainId, order) => ({ terrainId, order })) }
+                    : undefined,
+                properties: propertyIds.length
+                    ? { create: propertyIds.map((propertyId, order) => ({ propertyId, order })) }
+                    : undefined,
             };
             const attestation = await db.attestation.create({ data, include: INCLUDE });
-            await syncTerrainAttestationFields(db, d.terrainId, d.type, reference);
+            await syncTerrainAttestationFields(db, terrainIds, d.type, reference);
             logger_1.default.info(`Attestation created: ${reference} (${d.type})`);
             return { success: true, data: ser(attestation) };
         }
@@ -480,33 +563,58 @@ function registerAttestationsIPC() {
             // pour combler les champs non transmis dans le payload partiel.
             const existing = await db.attestation.findUnique({
                 where: { id },
-                select: { type: true, conventionId: true, clientId: true, terrainId: true },
+                select: {
+                    type: true, conventionId: true, clientId: true, terrainId: true,
+                    terrains: { select: { terrainId: true } },
+                },
             });
             if (!existing)
                 return { success: false, error: 'Attestation introuvable' };
             const effectiveType = d.type ?? existing.type;
             const effectiveConventionId = 'conventionId' in d ? d.conventionId : existing.conventionId;
             const effectiveClientId = d.clientId ?? existing.clientId;
-            const effectiveTerrainId = 'terrainId' in d ? d.terrainId : existing.terrainId;
+            // Sélection multiple de terrains/biens — envoyée intégralement par le
+            // formulaire à chaque enregistrement (pas de fusion delta nécessaire).
+            const terrainIds = d.terrainIds != null ? dedupeIds(d.terrainIds) : undefined;
+            const propertyIds = d.propertyIds != null ? dedupeIds(d.propertyIds) : undefined;
+            const existingTerrainIds = existing.terrains.length
+                ? existing.terrains.map((t) => t.terrainId)
+                : (existing.terrainId ? [existing.terrainId] : []);
+            const effectiveTerrainIds = terrainIds ?? existingTerrainIds;
             // Attestation de solde héritée (cf. handler create) : rôles restreints +
             // solde (client, terrain) à 0.
             const isLegacySolde = effectiveType === 'SOLDE' && !effectiveConventionId;
             if (isLegacySolde) {
                 checkLegacySoldeRole(session);
-                await assertLegacySubscriptionSettled(db, effectiveClientId, effectiveTerrainId ?? null);
+                await assertLegacySubscriptionSettled(db, effectiveClientId, effectiveTerrainIds);
+                await assertSingleLotissement(db, effectiveTerrainIds);
             }
             else {
                 checkWriteRole(session, WRITE_ROLES);
                 await assertConventionEligibleForAttestation(db, effectiveConventionId, effectiveType);
+                await assertSingleLotissement(db, terrainIds);
+                await assertSingleProgramme(db, propertyIds);
             }
             const data = { ...d };
+            delete data.terrainIds;
+            delete data.propertyIds;
             if (d.emittedAt)
                 data.emittedAt = new Date(d.emittedAt);
+            if (terrainIds) {
+                data.terrainId = terrainIds[0] ?? null;
+                data.terrains = { deleteMany: {}, create: terrainIds.map((terrainId, order) => ({ terrainId, order })) };
+            }
+            if (propertyIds) {
+                data.propertyId = propertyIds[0] ?? null;
+                data.properties = { deleteMany: {}, create: propertyIds.map((propertyId, order) => ({ propertyId, order })) };
+            }
             const attestation = await db.attestation.update({
                 where: { id },
                 data,
                 include: INCLUDE,
             });
+            if (terrainIds)
+                await syncTerrainAttestationFields(db, terrainIds, effectiveType, attestation.reference);
             return { success: true, data: ser(attestation) };
         }
         catch (error) {
@@ -558,34 +666,38 @@ function registerAttestationsIPC() {
         }
     });
     /**
-     * Solde d'une souscription héritée pour le couple (client, terrain). Utilisé par
-     * le formulaire d'attestation de solde héritée pour afficher le reste dû et
+     * Solde d'une souscription héritée pour le couple (client, terrain(s)). Utilisé
+     * par le formulaire d'attestation de solde héritée pour afficher le reste dû et
      * n'autoriser l'émission que lorsqu'il est nul. Renvoie le total souscrit, le
      * total encaissé, le solde restant, le nombre d'échéances et un libellé de
      * souscription (détails hérités de la première échéance, si présent).
+     *
+     * `terrainIds` (sélection multiple) est prioritaire sur `terrainId` (compatibilité).
      */
-    electron_1.ipcMain.handle('attestations:getLegacyBalance', async (_event, { token, clientId, terrainId }) => {
+    electron_1.ipcMain.handle('attestations:getLegacyBalance', async (_event, { token, clientId, terrainId, terrainIds }) => {
         try {
             const session = (0, auth_service_1.getSession)(token);
             if (!session)
                 return { success: false, error: 'Session expirée' };
             (0, auth_service_1.checkRole)(session, READ_ROLES);
             const cId = Number(clientId);
-            const tId = Number(terrainId) || 0; // 0/absent = toutes les échéances du client
+            const tIds = Array.isArray(terrainIds) && terrainIds.length
+                ? terrainIds.map(Number).filter(Boolean)
+                : (Number(terrainId) ? [Number(terrainId)] : []); // vide = toutes les échéances du client
             if (!cId)
                 return { success: false, error: 'Client requis' };
             const db = (0, db_service_1.getDb)();
             const clientWhere = { conventionId: null, clientId: cId, status: { not: 'ANNULE' } };
             const where = { ...clientWhere };
-            if (tId)
-                where.OR = [{ terrainId: tId }, { terrainLinks: { some: { terrainId: tId } } }];
+            if (tIds.length)
+                where.OR = [{ terrainId: { in: tIds } }, { terrainLinks: { some: { terrainId: { in: tIds } } } }];
             let installments = await db.saleInstallment.findMany({
                 where,
                 orderBy: { installmentNumber: 'asc' },
                 select: { amount: true, paidAmount: true, detailsSouscription: true },
             });
-            // Repli : terrain précisé sans échéance rattachée → toutes les échéances du client.
-            if (installments.length === 0 && tId) {
+            // Repli : terrain(s) précisé(s) sans échéance rattachée → toutes les échéances du client.
+            if (installments.length === 0 && tIds.length) {
                 installments = await db.saleInstallment.findMany({
                     where: clientWhere,
                     orderBy: { installmentNumber: 'asc' },

@@ -1064,6 +1064,65 @@ function registerSettingsIPC() {
             return { success: false, error: err.message };
         }
     });
+    // ── Retards & Départs précipités ────────────────────────────────────────────
+    /** Limite de tolérance par défaut (minutes) si aucune valeur n'est encore paramétrée. */
+    const DEFAULT_LATENESS_TOLERANCE_MINUTES = 15;
+    // Lecture élargie à MANAGER : la page « Retards & Départs précipités » a
+    // besoin de la limite de tolérance pour proposer l'action « Tolérer »
+    // (réservée à SUPER_ADMIN/ADMIN/MANAGER), même si l'onglet Paramètres reste
+    // masqué pour ce rôle. L'écriture (`updateLatenessSettings`) reste ADMIN_ROLES.
+    const LATENESS_SETTINGS_READ_ROLES = [...ADMIN_ROLES, 'MANAGER'];
+    /** Lit les paramètres de « Retards & Départs précipités » (inclusion management + limite de tolérance). */
+    electron_1.ipcMain.handle('settings:getLatenessSettings', async (_event, { token }) => {
+        try {
+            const session = (0, auth_service_1.getSession)(token);
+            if (!session)
+                return { success: false, error: 'Session expirée' };
+            (0, auth_service_1.checkRole)(session, LATENESS_SETTINGS_READ_ROLES);
+            const map = await (0, settings_service_1.getSettings)([settings_service_1.SettingsKeys.latenessIncludeManagementRoles, settings_service_1.SettingsKeys.latenessToleranceMinutes]);
+            const rawTolerance = Number(map[settings_service_1.SettingsKeys.latenessToleranceMinutes]);
+            return {
+                success: true,
+                data: {
+                    includeManagementRoles: map[settings_service_1.SettingsKeys.latenessIncludeManagementRoles] === 'true',
+                    toleranceMinutes: Number.isFinite(rawTolerance) && rawTolerance >= 0 ? rawTolerance : DEFAULT_LATENESS_TOLERANCE_MINUTES,
+                },
+            };
+        }
+        catch (err) {
+            logger_1.default.error('settings:getLatenessSettings', err.message);
+            return { success: false, error: err.message };
+        }
+    });
+    /**
+     * Met à jour les paramètres de « Retards & Départs précipités » :
+     *  - inclusion des employés liés à un compte SUPER_ADMIN/ADMIN/MANAGER
+     *    (exclus par défaut, aussi bien du calcul que de l'affichage) ;
+     *  - limite de tolérance (minutes) en deçà de laquelle une journée peut être
+     *    marquée « Tolérée » par SUPER_ADMIN/ADMIN/MANAGER.
+     */
+    electron_1.ipcMain.handle('settings:updateLatenessSettings', async (_event, { token, payload }) => {
+        try {
+            const session = (0, auth_service_1.getSession)(token);
+            if (!session)
+                return { success: false, error: 'Session expirée' };
+            (0, auth_service_1.checkRole)(session, ADMIN_ROLES);
+            const schema = zod_1.z.object({ includeManagementRoles: zod_1.z.boolean(), toleranceMinutes: zod_1.z.number().int().min(0).max(1440) });
+            const parsed = schema.safeParse(payload);
+            if (!parsed.success)
+                return { success: false, error: parsed.error.issues.map((i) => i.message).join(', ') };
+            await (0, settings_service_1.setSettings)([
+                { key: settings_service_1.SettingsKeys.latenessIncludeManagementRoles, value: parsed.data.includeManagementRoles ? 'true' : 'false' },
+                { key: settings_service_1.SettingsKeys.latenessToleranceMinutes, value: String(parsed.data.toleranceMinutes) },
+            ]);
+            logger_1.default.info(`Retards & Départs précipités — inclusion SUPER_ADMIN/ADMIN/MANAGER : ${parsed.data.includeManagementRoles}, tolérance : ${parsed.data.toleranceMinutes} min`);
+            return { success: true };
+        }
+        catch (err) {
+            logger_1.default.error('settings:updateLatenessSettings', err.message);
+            return { success: false, error: err.message };
+        }
+    });
     // ── QR Visiteurs (app web autonome) ─────────────────────────────────────────
     /** Lit la configuration du QR Visiteurs (URL de l'app web + rôles + modèle). */
     electron_1.ipcMain.handle('settings:getVisitorQr', async (_event, { token }) => {

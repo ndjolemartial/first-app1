@@ -9,6 +9,9 @@ const db_service_1 = require("../services/db.service");
 const auth_service_1 = require("../services/auth.service");
 const logger_1 = __importDefault(require("../utils/logger"));
 const zod_1 = require("zod");
+const timeline_service_1 = require("../services/timeline.service");
+/** Sérialise pour l'IPC : les Date/Decimal Prisma ne sont pas clonables par Electron. */
+const ser = (v) => JSON.parse(JSON.stringify(v));
 // ── Helpers ──────────────────────────────────────────────────────────────────
 /** Convertit les chaînes vides en undefined pour éviter les échecs Zod sur les enums. */
 function stripEmpty(obj) {
@@ -211,6 +214,31 @@ function registerProspectsIPC() {
             return { success: false, error: error.message };
         }
     });
+    // ── Fiche de suivi chronologique ───────────────────────────────────────────
+    electron_1.ipcMain.handle('prospects:getTimeline', async (_event, { token, id }) => {
+        try {
+            const session = (0, auth_service_1.getSession)(token);
+            if (!session)
+                return { success: false, error: 'Session expirée' };
+            (0, auth_service_1.checkRole)(session, READ_ROLES);
+            const db = (0, db_service_1.getDb)();
+            const prospect = await db.prospect.findUnique({
+                where: { id, deletedAt: null },
+                select: { id: true, createdAt: true, assignedToId: true },
+            });
+            if (!prospect)
+                return { success: false, error: 'Prospect introuvable' };
+            if (!hasFullView(session.role) && prospect.assignedToId !== session.userId) {
+                return { success: false, error: 'Prospect inaccessible' };
+            }
+            const timeline = await (0, timeline_service_1.buildEntityTimeline)(db, 'PROSPECT', id, prospect.createdAt);
+            return { success: true, data: ser(timeline) };
+        }
+        catch (error) {
+            logger_1.default.error('prospects:getTimeline', error.message);
+            return { success: false, error: error.message };
+        }
+    });
     // ── Création ───────────────────────────────────────────────────────────────
     electron_1.ipcMain.handle('prospects:create', async (_event, { token, payload }) => {
         try {
@@ -269,6 +297,9 @@ function registerProspectsIPC() {
                 return { success: false, error: parsed.error.issues.map((i) => i.message).join(', ') };
             }
             const db = (0, db_service_1.getDb)();
+            const before = await db.prospect.findUnique({ where: { id, deletedAt: null } });
+            if (!before)
+                return { success: false, error: 'Prospect introuvable' };
             const data = { ...parsed.data };
             if (data.budget !== undefined)
                 data.budget = String(data.budget);
@@ -283,6 +314,23 @@ function registerProspectsIPC() {
                     createdBy: { select: USER_BRIEF_SELECT },
                 },
             });
+            // Fiche de suivi chronologique : le statut fait l'objet d'un événement
+            // dédié, le reste des champs modifiés d'un événement de synthèse.
+            const { status: newStatus, ...rest } = data;
+            if (newStatus !== undefined) {
+                await (0, timeline_service_1.recordStatusChange)(db, {
+                    entityType: 'PROSPECT', entityId: id,
+                    oldValue: before.status, newValue: newStatus,
+                    labels: timeline_service_1.PROSPECT_STATUS_LABELS, userId: session.userId,
+                });
+            }
+            const changedFields = (0, timeline_service_1.diffChangedFields)(before, rest);
+            if (changedFields.length) {
+                await (0, timeline_service_1.recordModification)(db, {
+                    entityType: 'PROSPECT', entityId: id,
+                    changedFields, labels: timeline_service_1.PROSPECT_FIELD_LABELS, userId: session.userId,
+                });
+            }
             logger_1.default.info(`Prospect mis à jour : #${id}`);
             return { success: true, data: serialize(prospect) };
         }
@@ -319,9 +367,15 @@ function registerProspectsIPC() {
             if (!parsed.success)
                 return { success: false, error: 'Statut invalide' };
             const db = (0, db_service_1.getDb)();
+            const before = await db.prospect.findUnique({ where: { id, deletedAt: null }, select: { status: true } });
             const prospect = await db.prospect.update({
                 where: { id, deletedAt: null },
                 data: { status: parsed.data },
+            });
+            await (0, timeline_service_1.recordStatusChange)(db, {
+                entityType: 'PROSPECT', entityId: id,
+                oldValue: before?.status, newValue: parsed.data,
+                labels: timeline_service_1.PROSPECT_STATUS_LABELS, userId: session.userId,
             });
             return { success: true, data: serialize(prospect) };
         }
@@ -366,6 +420,10 @@ function registerProspectsIPC() {
                     assignedTo: { select: USER_BRIEF_SELECT },
                     createdBy: { select: USER_BRIEF_SELECT },
                 },
+            });
+            await (0, timeline_service_1.recordModification)(db, {
+                entityType: 'PROSPECT', entityId: id,
+                changedFields: ['assignedToId'], labels: timeline_service_1.PROSPECT_FIELD_LABELS, userId: session.userId,
             });
             logger_1.default.info(parsedId.data === null
                 ? `Prospect #${id} désaffecté`
@@ -446,6 +504,11 @@ function registerProspectsIPC() {
                     data: { status: 'CONVERTI', convertedAt: new Date(), clientId: client.id },
                 });
                 return { client, prospect: updated };
+            });
+            await (0, timeline_service_1.recordStatusChange)(db, {
+                entityType: 'PROSPECT', entityId: id,
+                oldValue: prospect.status, newValue: 'CONVERTI',
+                labels: timeline_service_1.PROSPECT_STATUS_LABELS, userId: session.userId,
             });
             logger_1.default.info(`Prospect #${id} converti en client #${result.client.id}`);
             return { success: true, data: { client: result.client, prospect: serialize(result.prospect) } };

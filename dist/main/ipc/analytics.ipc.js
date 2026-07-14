@@ -16,6 +16,11 @@ const logger_1 = __importDefault(require("../utils/logger"));
  * contractuel, risques et recommandations.
  */
 const ADMIN_ROLES = ['SUPER_ADMIN', 'ADMIN'];
+// CRM & Clients, Suivi Prospects & Clients et Statistiques visiteurs sont
+// également ouverts en plein accès au rôle MANAGER (décision produit). Rôle
+// exact (pas `checkRole`) pour éviter que l'équivalence ACCOUNTANT/
+// ASSISTANTE_DIRECTION → MANAGER n'étende cet accès à ces deux rôles.
+const MANAGER_FULL_ACCESS_ROLES = ['SUPER_ADMIN', 'ADMIN', 'MANAGER'];
 const ser = (v) => JSON.parse(JSON.stringify(v));
 const MOIS = ['Jan', 'Fév', 'Mar', 'Avr', 'Mai', 'Juin', 'Juil', 'Août', 'Sep', 'Oct', 'Nov', 'Déc'];
 /** Buckets mensuels [start, end[ sur `count` mois jusqu'au mois courant inclus. */
@@ -100,6 +105,54 @@ function guard(token) {
     (0, auth_service_1.checkRole)(session, ADMIN_ROLES);
     return session;
 }
+/** Vérifie l'accès en plein accès MANAGER (rôle exact, sans équivalence). */
+function guardManagerFullAccess(token) {
+    const session = (0, auth_service_1.getSession)(token);
+    if (!session)
+        throw new Error('Session expirée');
+    if (!MANAGER_FULL_ACCESS_ROLES.includes(session.role))
+        throw new Error('Permission insuffisante');
+    return session;
+}
+// Suivi Prospects & Clients : en plus du plein accès MANAGER, ouvert en accès
+// restreint (périmètre affecté, sans export/impression) à AGENT, AGENT_TECHNIQUE,
+// ACCOUNTANT, ASSISTANTE_DIRECTION et READONLY (décision produit).
+const FOLLOWUP_ROLES = [
+    ...MANAGER_FULL_ACCESS_ROLES,
+    'AGENT', 'AGENT_TECHNIQUE', 'ACCOUNTANT', 'ASSISTANTE_DIRECTION', 'READONLY',
+];
+/** Vérifie l'accès à Suivi Prospects & Clients (rôle exact, sans équivalence). */
+function guardFollowUpAccess(token) {
+    const session = (0, auth_service_1.getSession)(token);
+    if (!session)
+        throw new Error('Session expirée');
+    if (!FOLLOWUP_ROLES.includes(session.role))
+        throw new Error('Permission insuffisante');
+    return session;
+}
+const DAY_MS = 86400000;
+/**
+ * Classe une durée d'inaction (en jours) selon 3 seuils croissants
+ * [t1, t2, t3] : < t1 → Normal, [t1, t2[ → Négligé, [t2, t3[ → Danger de perte,
+ * ≥ t3 → Situation critique.
+ */
+function classifyFollowUp(daysSince, [t1, t2, t3]) {
+    if (daysSince < t1)
+        return 'NORMAL';
+    if (daysSince < t2)
+        return 'NEGLIGE';
+    if (daysSince < t3)
+        return 'DANGER';
+    return 'CRITIQUE';
+}
+// Prospects : Normal < 2 semaines, Négligé jusqu'à 2 mois, Danger de perte
+// jusqu'à 3 mois, Situation critique au-delà (mois comptés sur 30 jours).
+const PROSPECT_THRESHOLDS = [14, 60, 90];
+// Clients : Normal < 3 mois, Négligé jusqu'à 6 mois, Danger de perte jusqu'à
+// 9 mois, Situation critique au-delà de 9 mois (décision produit : le palier
+// à 12 mois initialement évoqué est abandonné pour ne pas laisser la tranche
+// 9-12 mois sans catégorie).
+const CLIENT_THRESHOLDS = [90, 180, 270];
 function registerAnalyticsIPC() {
     /* ─── 1. Tableau de bord exécutif ──────────────────────────────────── */
     electron_1.ipcMain.handle('analytics:executive', async (_event, { token }) => {
@@ -238,7 +291,7 @@ function registerAnalyticsIPC() {
     /* ─── 4. Analyse CRM, souscripteurs & locataires ───────────────────── */
     electron_1.ipcMain.handle('analytics:crm', async (_event, { token }) => {
         try {
-            guard(token);
+            guardManagerFullAccess(token);
             const db = (0, db_service_1.getDb)();
             const now = new Date();
             const [prospectsByStatus, prospectsBySource, prospectsTotal, converted, clientsByType, locataires, souscripteurs, actPending, actOverdue] = await Promise.all([
@@ -267,6 +320,93 @@ function registerAnalyticsIPC() {
         }
         catch (error) {
             logger_1.default.error('analytics:crm error', error.message);
+            return { success: false, error: error.message };
+        }
+    });
+    /* ─── 4bis. Détail (liste) d'un indicateur CRM cliqué ──────────────── */
+    electron_1.ipcMain.handle('analytics:crmDetail', async (_event, { token, metric, source, page = 1, limit = 10 }) => {
+        try {
+            guardManagerFullAccess(token);
+            const db = (0, db_service_1.getDb)();
+            const now = new Date();
+            const skip = (page - 1) * limit;
+            const PROSPECT_SELECT = {
+                id: true, reference: true, firstName: true, lastName: true, status: true, source: true,
+                createdAt: true, convertedAt: true,
+                assignedTo: { select: { firstName: true, lastName: true } },
+            };
+            const CONVENTION_SELECT = {
+                id: true, reference: true, type: true, status: true, saleAmount: true, rentAmount: true,
+                signedAt: true, startDate: true,
+                client: { select: { firstName: true, lastName: true, entreprise: true, type: true } },
+            };
+            const ACTIVITY_SELECT = {
+                id: true, subject: true, type: true, status: true, dueDate: true,
+                user: { select: { firstName: true, lastName: true } },
+            };
+            switch (metric) {
+                case 'prospectsTotal': {
+                    const where = { deletedAt: null };
+                    const [data, total] = await db.$transaction([
+                        db.prospect.findMany({ where, select: PROSPECT_SELECT, skip, take: limit, orderBy: { createdAt: 'desc' } }),
+                        db.prospect.count({ where }),
+                    ]);
+                    return ser({ success: true, entity: 'prospect', data, total });
+                }
+                case 'converted': {
+                    const where = { deletedAt: null, status: 'CONVERTI' };
+                    const [data, total] = await db.$transaction([
+                        db.prospect.findMany({ where, select: PROSPECT_SELECT, skip, take: limit, orderBy: { convertedAt: 'desc' } }),
+                        db.prospect.count({ where }),
+                    ]);
+                    return ser({ success: true, entity: 'prospect', data, total });
+                }
+                case 'prospectsBySource': {
+                    const where = { deletedAt: null, source };
+                    const [data, total] = await db.$transaction([
+                        db.prospect.findMany({ where, select: PROSPECT_SELECT, skip, take: limit, orderBy: { createdAt: 'desc' } }),
+                        db.prospect.count({ where }),
+                    ]);
+                    return ser({ success: true, entity: 'prospect', data, total });
+                }
+                case 'locataires': {
+                    const where = { deletedAt: null, status: 'ACTIVE', type: { in: ['RENTAL_UNFURNISHED', 'RENTAL_FURNISHED', 'COMMERCIAL_LEASE'] } };
+                    const [data, total] = await db.$transaction([
+                        db.convention.findMany({ where, select: CONVENTION_SELECT, skip, take: limit, orderBy: { startDate: 'desc' } }),
+                        db.convention.count({ where }),
+                    ]);
+                    return ser({ success: true, entity: 'convention', data, total });
+                }
+                case 'souscripteurs': {
+                    const where = { deletedAt: null, status: 'ACTIVE', type: { in: ['SALE', 'SOUSCRIPTION'] } };
+                    const [data, total] = await db.$transaction([
+                        db.convention.findMany({ where, select: CONVENTION_SELECT, skip, take: limit, orderBy: { startDate: 'desc' } }),
+                        db.convention.count({ where }),
+                    ]);
+                    return ser({ success: true, entity: 'convention', data, total });
+                }
+                case 'activitiesPending': {
+                    const where = { status: { in: ['EN_ATTENTE', 'EN_TRAITEMENT'] } };
+                    const [data, total] = await db.$transaction([
+                        db.crmActivity.findMany({ where, select: ACTIVITY_SELECT, skip, take: limit, orderBy: { dueDate: 'asc' } }),
+                        db.crmActivity.count({ where }),
+                    ]);
+                    return ser({ success: true, entity: 'activity', data, total });
+                }
+                case 'activitiesOverdue': {
+                    const where = { status: { in: ['EN_ATTENTE', 'EN_TRAITEMENT'] }, dueDate: { lt: now } };
+                    const [data, total] = await db.$transaction([
+                        db.crmActivity.findMany({ where, select: ACTIVITY_SELECT, skip, take: limit, orderBy: { dueDate: 'asc' } }),
+                        db.crmActivity.count({ where }),
+                    ]);
+                    return ser({ success: true, entity: 'activity', data, total });
+                }
+                default:
+                    return { success: false, error: 'Métrique inconnue' };
+            }
+        }
+        catch (error) {
+            logger_1.default.error('analytics:crmDetail error', error.message);
             return { success: false, error: error.message };
         }
     });
@@ -501,6 +641,201 @@ function registerAnalyticsIPC() {
         }
         catch (error) {
             logger_1.default.error('analytics:recommendations error', error.message);
+            return { success: false, error: error.message };
+        }
+    });
+    /* ─── 9. Suivi prospects & clients (fréquence & plan de relance) ───── */
+    electron_1.ipcMain.handle('analytics:followUp', async (_event, { token }) => {
+        try {
+            const session = guardFollowUpAccess(token);
+            const isFullAccess = MANAGER_FULL_ACCESS_ROLES.includes(session.role);
+            const db = (0, db_service_1.getDb)();
+            const now = new Date();
+            // Prospects actifs (hors « Perdu »). Rôles restreints : limité aux
+            // prospects qui leur sont affectés.
+            const prospectWhere = { deletedAt: null, status: { not: 'PERDU' } };
+            if (!isFullAccess)
+                prospectWhere.assignedToId = session.userId;
+            const prospects = await db.prospect.findMany({
+                where: prospectWhere,
+                select: {
+                    id: true, reference: true, firstName: true, lastName: true, status: true, createdAt: true,
+                    assignedToId: true,
+                    assignedTo: { select: { firstName: true, lastName: true } },
+                },
+            });
+            // Clients actifs (hors « Suspendu »). Rôles restreints : limité aux
+            // clients qui leur sont affectés.
+            const clientWhere = { deletedAt: null, status: { not: 'SUSPENDU' } };
+            if (!isFullAccess)
+                clientWhere.assignedToId = session.userId;
+            const clients = await db.client.findMany({
+                where: clientWhere,
+                select: {
+                    id: true, reference: true, firstName: true, lastName: true, entreprise: true, type: true, status: true, createdAt: true,
+                    assignedToId: true,
+                    assignedTo: { select: { firstName: true, lastName: true } },
+                },
+            });
+            const prospectIds = prospects.map((p) => p.id);
+            const clientIds = clients.map((c) => c.id);
+            // Fréquence des actions de suivi (activités CRM) par mois glissant
+            // (12 mois), ventilée prospects / clients. Rôles restreints : limitée
+            // aux activités des prospects/clients de leur périmètre.
+            const buckets = monthBuckets(now, 12);
+            const frequency = [];
+            for (const b of buckets) {
+                const prospectActWhere = { prospectId: { not: null }, createdAt: { gte: b.start, lt: b.end } };
+                const clientActWhere = { clientId: { not: null }, createdAt: { gte: b.start, lt: b.end } };
+                if (!isFullAccess) {
+                    prospectActWhere.prospectId = { in: prospectIds.length ? prospectIds : [-1] };
+                    clientActWhere.clientId = { in: clientIds.length ? clientIds : [-1] };
+                }
+                const [prospectActions, clientActions] = await Promise.all([
+                    db.crmActivity.count({ where: prospectActWhere }),
+                    db.crmActivity.count({ where: clientActWhere }),
+                ]);
+                frequency.push({ label: b.label, prospectActions, clientActions });
+            }
+            // Dernière action CRM connue par prospect / par client.
+            const [prospectLastActions, clientLastActions] = await Promise.all([
+                db.crmActivity.groupBy({ by: ['prospectId'], where: { prospectId: { not: null } }, _max: { createdAt: true } }),
+                db.crmActivity.groupBy({ by: ['clientId'], where: { clientId: { not: null } }, _max: { createdAt: true } }),
+            ]);
+            const prospectLastActionMap = new Map();
+            for (const g of prospectLastActions)
+                if (g.prospectId != null && g._max.createdAt)
+                    prospectLastActionMap.set(g.prospectId, g._max.createdAt);
+            const clientLastActionMap = new Map();
+            for (const g of clientLastActions)
+                if (g.clientId != null && g._max.createdAt)
+                    clientLastActionMap.set(g.clientId, g._max.createdAt);
+            const prospectItems = prospects.map((p) => {
+                const lastActionAt = prospectLastActionMap.get(p.id) ?? p.createdAt;
+                const daysSince = Math.floor((now.getTime() - lastActionAt.getTime()) / DAY_MS);
+                return {
+                    id: p.id, reference: p.reference,
+                    name: `${p.lastName ?? ''} ${p.firstName ?? ''}`.trim(),
+                    status: p.status,
+                    assignedToId: p.assignedToId,
+                    assignedTo: p.assignedTo ? `${p.assignedTo.lastName ?? ''} ${p.assignedTo.firstName ?? ''}`.trim() : null,
+                    lastActionAt, daysSince,
+                    state: classifyFollowUp(daysSince, PROSPECT_THRESHOLDS),
+                };
+            }).sort((a, b) => b.daysSince - a.daysSince);
+            const clientItems = clients.map((c) => {
+                const lastActionAt = clientLastActionMap.get(c.id) ?? c.createdAt;
+                const daysSince = Math.floor((now.getTime() - lastActionAt.getTime()) / DAY_MS);
+                return {
+                    id: c.id, reference: c.reference,
+                    name: c.type === 'ENTREPRISE' ? (c.entreprise ?? '') : `${c.lastName ?? ''} ${c.firstName ?? ''}`.trim(),
+                    status: c.status,
+                    assignedToId: c.assignedToId,
+                    assignedTo: c.assignedTo ? `${c.assignedTo.lastName ?? ''} ${c.assignedTo.firstName ?? ''}`.trim() : null,
+                    lastActionAt, daysSince,
+                    state: classifyFollowUp(daysSince, CLIENT_THRESHOLDS),
+                };
+            }).sort((a, b) => b.daysSince - a.daysSince);
+            const STATES = ['NORMAL', 'NEGLIGE', 'DANGER', 'CRITIQUE'];
+            const countBy = (items) => STATES.map((state) => ({ key: state, count: items.filter((i) => i.state === state).length }));
+            return ser({
+                success: true,
+                data: {
+                    frequency,
+                    prospects: { counts: countBy(prospectItems), items: prospectItems },
+                    clients: { counts: countBy(clientItems), items: clientItems },
+                },
+            });
+        }
+        catch (error) {
+            logger_1.default.error('analytics:followUp error', error.message);
+            return { success: false, error: error.message };
+        }
+    });
+    /* ─── 10. Statistiques visiteurs ────────────────────────────────────── */
+    electron_1.ipcMain.handle('analytics:visitors', async (_event, { token }) => {
+        try {
+            guardManagerFullAccess(token);
+            const db = (0, db_service_1.getDb)();
+            const now = new Date();
+            const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+            const todayEnd = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
+            const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+            const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+            // Courbe d'évolution mensuelle (12 mois glissants), ventilée par source
+            // (QR / Interne) en plus du total.
+            const buckets = monthBuckets(now, 12);
+            const evolution = [];
+            for (const b of buckets) {
+                const [total, qr, interne] = await Promise.all([
+                    db.visitor.count({ where: { deletedAt: null, visitedAt: { gte: b.start, lt: b.end } } }),
+                    db.visitor.count({ where: { deletedAt: null, source: 'QR', visitedAt: { gte: b.start, lt: b.end } } }),
+                    db.visitor.count({ where: { deletedAt: null, source: 'INTERNE', visitedAt: { gte: b.start, lt: b.end } } }),
+                ]);
+                evolution.push({ label: b.label, total, qr, interne });
+            }
+            const [today, month, total, byObjet] = await Promise.all([
+                db.visitor.count({ where: { deletedAt: null, visitedAt: { gte: todayStart, lt: todayEnd } } }),
+                db.visitor.count({ where: { deletedAt: null, visitedAt: { gte: monthStart, lt: monthEnd } } }),
+                db.visitor.count({ where: { deletedAt: null } }),
+                db.visitor.groupBy({ by: ['objet'], where: { deletedAt: null }, _count: { _all: true } }),
+            ]);
+            return ser({
+                success: true,
+                data: {
+                    today, month, total,
+                    evolution,
+                    byObjet: byObjet
+                        .map((g) => ({ key: g.objet, count: g._count._all }))
+                        .sort((a, b) => b.count - a.count)
+                        .slice(0, 10),
+                },
+            });
+        }
+        catch (error) {
+            logger_1.default.error('analytics:visitors error', error.message);
+            return { success: false, error: error.message };
+        }
+    });
+    /* ─── 11. Statistiques appels ───────────────────────────────────────── */
+    electron_1.ipcMain.handle('analytics:calls', async (_event, { token }) => {
+        try {
+            guardManagerFullAccess(token);
+            const db = (0, db_service_1.getDb)();
+            const now = new Date();
+            const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+            const todayEnd = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
+            const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+            const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+            // Courbe d'évolution mensuelle (12 mois glissants), ventilée par sens
+            // (entrant / sortant) en plus du total.
+            const buckets = monthBuckets(now, 12);
+            const evolution = [];
+            for (const b of buckets) {
+                const [total, entrant, sortant] = await Promise.all([
+                    db.phoneCall.count({ where: { deletedAt: null, calledAt: { gte: b.start, lt: b.end } } }),
+                    db.phoneCall.count({ where: { deletedAt: null, direction: 'ENTRANT', calledAt: { gte: b.start, lt: b.end } } }),
+                    db.phoneCall.count({ where: { deletedAt: null, direction: 'SORTANT', calledAt: { gte: b.start, lt: b.end } } }),
+                ]);
+                evolution.push({ label: b.label, total, entrant, sortant });
+            }
+            const [today, month, total, byStatus] = await Promise.all([
+                db.phoneCall.count({ where: { deletedAt: null, calledAt: { gte: todayStart, lt: todayEnd } } }),
+                db.phoneCall.count({ where: { deletedAt: null, calledAt: { gte: monthStart, lt: monthEnd } } }),
+                db.phoneCall.count({ where: { deletedAt: null } }),
+                db.phoneCall.groupBy({ by: ['status'], where: { deletedAt: null }, _count: { _all: true } }),
+            ]);
+            return ser({
+                success: true,
+                data: {
+                    today, month, total,
+                    evolution,
+                    byStatus: byStatus.map((g) => ({ key: g.status, count: g._count._all })),
+                },
+            });
+        }
+        catch (error) {
+            logger_1.default.error('analytics:calls error', error.message);
             return { success: false, error: error.message };
         }
     });

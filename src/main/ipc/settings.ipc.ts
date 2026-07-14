@@ -976,6 +976,64 @@ export function registerSettingsIPC(): void {
     }
   });
 
+  // ── Retards & Départs précipités ────────────────────────────────────────────
+
+  /** Limite de tolérance par défaut (minutes) si aucune valeur n'est encore paramétrée. */
+  const DEFAULT_LATENESS_TOLERANCE_MINUTES = 15;
+  // Lecture élargie à MANAGER : la page « Retards & Départs précipités » a
+  // besoin de la limite de tolérance pour proposer l'action « Tolérer »
+  // (réservée à SUPER_ADMIN/ADMIN/MANAGER), même si l'onglet Paramètres reste
+  // masqué pour ce rôle. L'écriture (`updateLatenessSettings`) reste ADMIN_ROLES.
+  const LATENESS_SETTINGS_READ_ROLES = [...ADMIN_ROLES, 'MANAGER'];
+
+  /** Lit les paramètres de « Retards & Départs précipités » (inclusion management + limite de tolérance). */
+  ipcMain.handle('settings:getLatenessSettings', async (_event, { token }: any) => {
+    try {
+      const session = getSession(token);
+      if (!session) return { success: false, error: 'Session expirée' };
+      checkRole(session, LATENESS_SETTINGS_READ_ROLES);
+      const map = await getSettings([SettingsKeys.latenessIncludeManagementRoles, SettingsKeys.latenessToleranceMinutes]);
+      const rawTolerance = Number(map[SettingsKeys.latenessToleranceMinutes]);
+      return {
+        success: true,
+        data: {
+          includeManagementRoles: map[SettingsKeys.latenessIncludeManagementRoles] === 'true',
+          toleranceMinutes: Number.isFinite(rawTolerance) && rawTolerance >= 0 ? rawTolerance : DEFAULT_LATENESS_TOLERANCE_MINUTES,
+        },
+      };
+    } catch (err: any) {
+      logger.error('settings:getLatenessSettings', err.message);
+      return { success: false, error: err.message };
+    }
+  });
+
+  /**
+   * Met à jour les paramètres de « Retards & Départs précipités » :
+   *  - inclusion des employés liés à un compte SUPER_ADMIN/ADMIN/MANAGER
+   *    (exclus par défaut, aussi bien du calcul que de l'affichage) ;
+   *  - limite de tolérance (minutes) en deçà de laquelle une journée peut être
+   *    marquée « Tolérée » par SUPER_ADMIN/ADMIN/MANAGER.
+   */
+  ipcMain.handle('settings:updateLatenessSettings', async (_event, { token, payload }: any) => {
+    try {
+      const session = getSession(token);
+      if (!session) return { success: false, error: 'Session expirée' };
+      checkRole(session, ADMIN_ROLES);
+      const schema = z.object({ includeManagementRoles: z.boolean(), toleranceMinutes: z.number().int().min(0).max(1440) });
+      const parsed = schema.safeParse(payload);
+      if (!parsed.success) return { success: false, error: parsed.error.issues.map((i) => i.message).join(', ') };
+      await setSettings([
+        { key: SettingsKeys.latenessIncludeManagementRoles, value: parsed.data.includeManagementRoles ? 'true' : 'false' },
+        { key: SettingsKeys.latenessToleranceMinutes, value: String(parsed.data.toleranceMinutes) },
+      ]);
+      logger.info(`Retards & Départs précipités — inclusion SUPER_ADMIN/ADMIN/MANAGER : ${parsed.data.includeManagementRoles}, tolérance : ${parsed.data.toleranceMinutes} min`);
+      return { success: true };
+    } catch (err: any) {
+      logger.error('settings:updateLatenessSettings', err.message);
+      return { success: false, error: err.message };
+    }
+  });
+
   // ── QR Visiteurs (app web autonome) ─────────────────────────────────────────
 
   /** Lit la configuration du QR Visiteurs (URL de l'app web + rôles + modèle). */
