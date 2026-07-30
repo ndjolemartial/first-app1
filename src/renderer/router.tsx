@@ -50,6 +50,10 @@ import AttestationDocumentPage from './modules/conventions/pages/AttestationDocu
 // Devis
 import QuotesListPage from './modules/quotes/pages/QuotesListPage';
 import QuoteFormPage from './modules/quotes/pages/QuoteFormPage';
+import ConstructionProjectsListPage from './modules/construction/pages/ConstructionProjectsListPage';
+import ConstructionProjectFormPage from './modules/construction/pages/ConstructionProjectFormPage';
+import ConstructionProjectDetailPage from './modules/construction/pages/ConstructionProjectDetailPage';
+import ConstructionEstimatePage from './modules/construction/pages/ConstructionEstimatePage';
 import QuoteDetailPage from './modules/quotes/pages/QuoteDetailPage';
 import QuoteDocumentPage from './modules/quotes/pages/QuoteDocumentPage';
 import QuoteTemplateFormPage from './modules/quotes/pages/QuoteTemplateFormPage';
@@ -124,6 +128,8 @@ import SocialMediaDashboardPage from './modules/social-media/pages/SocialMediaDa
 import SocialPublicationsPage from './modules/social-media/pages/SocialPublicationsPage';
 import SocialFollowersPage from './modules/social-media/pages/SocialFollowersPage';
 import SocialPlatformsPage from './modules/social-media/pages/SocialPlatformsPage';
+import ItInnovationsListPage from './modules/it-innovations/pages/ItInnovationsListPage';
+import ItInnovationDetailPage from './modules/it-innovations/pages/ItInnovationDetailPage';
 
 // Projets
 import ProjectsListPage from './modules/projects/pages/ProjectsListPage';
@@ -136,6 +142,8 @@ import CommissionsListPage from './modules/commissions/pages/CommissionsListPage
 import CommissionFormPage from './modules/commissions/pages/CommissionFormPage';
 import BeneficiaryCommissionsPage from './modules/commissions/pages/BeneficiaryCommissionsPage';
 import ReferrersListPage from './modules/commissions/pages/ReferrersListPage';
+import ReferrerDetailPage from './modules/commissions/pages/ReferrerDetailPage';
+import ReferrerTimelinePage from './modules/commissions/pages/ReferrerTimelinePage';
 import ReferrerFormPage from './modules/commissions/pages/ReferrerFormPage';
 import ExpensesListPage from './modules/expenses/pages/ExpensesListPage';
 import ExpenseFormPage from './modules/expenses/pages/ExpenseFormPage';
@@ -223,9 +231,14 @@ export const router = createHashRouter([
           // Paramètres applicatifs — admins (tous les onglets). MANAGER et
           // ACCOUNTANT y accèdent aussi mais ne voient que l'onglet « Catalogue
           // prestations / produits » ; RH ne voit que « Modèles de contrats de
-          // travail » (filtrage par rôle dans SettingsPage).
+          // travail ». Route ouverte à tous les rôles authentifiés car un
+          // utilisateur désigné (n'importe quel rôle, cf. Paramètres → Modèles
+          // de messages → « Gérer les accès ») doit pouvoir atteindre l'onglet
+          // « Modèles email / SMS » ; le filtrage réel par onglet — dont le
+          // repli « aucun accès » pour un rôle sans onglet visible — reste
+          // entièrement géré dans SettingsPage.
           {
-            element: <RoleGuard allowedRoles={['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ACCOUNTANT', 'RH']} />,
+            element: <RoleGuard allowedRoles={['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ACCOUNTANT', 'ASSISTANTE_DIRECTION', 'AGENT', 'AGENT_TECHNIQUE', 'RH', 'READONLY']} />,
             children: [
               { path: 'settings', element: <SettingsPage /> },
             ],
@@ -281,6 +294,21 @@ export const router = createHashRouter([
             children: [
               { path: 'quotes/templates/new', element: <QuoteTemplateFormPage /> },
               { path: 'quotes/templates/:id/edit', element: <QuoteTemplateFormPage /> },
+            ],
+          },
+
+          // Devis construction (Module 17) — consultation : tous les rôles authentifiés (périmètre
+          // par référent commercial appliqué côté IPC pour les rôles hors SUPER_ADMIN/ADMIN/MANAGER/ACCOUNTANT).
+          { path: 'construction', element: <ConstructionProjectsListPage /> },
+          { path: 'construction/projects/:id', element: <ConstructionProjectDetailPage /> },
+          { path: 'construction/estimates/:id', element: <ConstructionEstimatePage /> },
+          // Devis construction — écriture (création / édition) : réservée à SUPER_ADMIN/ADMIN/MANAGER/ACCOUNTANT
+          // (cf. WRITE_ROLES dans construction-projects.ipc.ts — les autres rôles sont en lecture seule).
+          {
+            element: <RoleGuard allowedRoles={['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ACCOUNTANT']} />,
+            children: [
+              { path: 'construction/projects/new', element: <ConstructionProjectFormPage /> },
+              { path: 'construction/projects/:id/edit', element: <ConstructionProjectFormPage /> },
             ],
           },
 
@@ -428,6 +456,19 @@ export const router = createHashRouter([
             ],
           },
 
+          // Innovations IT (Module 16) — création/gestion réservée aux rôles
+          // techniques (rôle exact côté IPC, `checkExactRole` dans
+          // it-innovations.ipc.ts) : AGENT_TECHNIQUE (porteur, restreint à ses
+          // propres innovations) + SUPER_ADMIN/ADMIN/MANAGER/RH (vue complète,
+          // validation des phases réservée à SUPER_ADMIN/ADMIN/MANAGER).
+          {
+            element: <RoleGuard allowedRoles={['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'RH', 'AGENT_TECHNIQUE']} />,
+            children: [
+              { path: 'innovations', element: <ItInnovationsListPage /> },
+              { path: 'innovations/:id', element: <ItInnovationDetailPage /> },
+            ],
+          },
+
           // Programmes immobiliers — réservé aux MANAGER+ (ACCOUNTANT inclus). AGENT/READONLY n'ont pas accès.
           {
             element: <RoleGuard allowedRoles={['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ACCOUNTANT', 'ASSISTANTE_DIRECTION']} />,
@@ -572,13 +613,13 @@ export const router = createHashRouter([
           { path: 'commissions', element: <CommissionsDashboardPage /> },
           { path: 'commissions/all', element: <CommissionsListPage /> },
           { path: 'commissions/beneficiary/:type/:id', element: <BeneficiaryCommissionsPage /> },
-          // Consultation des apporteurs : ouverte aussi à ASSISTANTE_DIRECTION (lecture seule).
-          {
-            element: <RoleGuard allowedRoles={['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ACCOUNTANT', 'ASSISTANTE_DIRECTION']} />,
-            children: [
-              { path: 'commissions/referrers', element: <ReferrersListPage /> },
-            ],
-          },
+          // Consultation des apporteurs : ouverte à tout rôle authentifié — vue
+          // complète pour SUPER_ADMIN/ADMIN/MANAGER/ACCOUNTANT, restreinte aux
+          // apporteurs dont l'utilisateur est le référent pour les autres rôles
+          // (filtrage appliqué côté IPC, cf. commissions.ipc.ts).
+          { path: 'commissions/referrers', element: <ReferrersListPage /> },
+          { path: 'commissions/referrers/:id', element: <ReferrerDetailPage /> },
+          { path: 'commissions/referrers/:id/timeline', element: <ReferrerTimelinePage /> },
           // Création / modification (commissions + apporteurs) : strictement
           // réservée aux ADMIN / SUPER_ADMIN / MANAGER / ACCOUNTANT.
           {

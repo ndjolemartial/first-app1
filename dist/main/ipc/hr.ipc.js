@@ -42,6 +42,11 @@ const HR_SCOPED_ROLES = ['MANAGER', 'ASSISTANTE_DIRECTION'];
 // Écritures « administratives » (configuration : modèles, taux, catégories… et
 // enregistrement du pointage) — réservées aux admins / RH.
 const HR_WRITE_ROLES = [...HR_ADMIN_ROLES];
+// Configuration des « Modèles de contrats de travail » (modèles de contrats,
+// fonctions, fiches de poste) : ACCOUNTANT (Comptable) en est EXCLU, comme
+// MANAGER — malgré son plein accès au reste du module RH & Paie (HR_WRITE_ROLES).
+// Seul le volet « Objectifs assignés » (OBJECTIVE_WRITE_ROLES) leur reste ouvert.
+const CONTRACT_TEMPLATE_CONFIG_ROLES = ['SUPER_ADMIN', 'ADMIN', 'RH'];
 // Écritures opérationnelles (personnel, contrats, bulletins, congés) : admins +
 // rôles restreints (ces derniers filtrés aux employés non-CDI).
 const HR_OPERATIONAL_ROLES = [...HR_ADMIN_ROLES, ...HR_SCOPED_ROLES];
@@ -244,7 +249,7 @@ function renderLeaveRequestHtml(req, emp, company, logo, slogan) {
     <div class="foot">Fait à ${esc(emp?.city || 'Abidjan')}, le ${fmtDate(new Date())}</div>
   </body></html>`;
 }
-const CIVILITE = ['MONSIEUR', 'MADAME', 'MADEMOISELLE'];
+const CIVILITE = ['Monsieur', 'Madame', 'Mademoiselle'];
 const MARITAL = ['CELIBATAIRE', 'MARIEE', 'CONCUBINAGE', 'DIVORCE', 'VEUF'];
 const SEXE = ['MASCULIN', 'FEMININ'];
 const EMPLOYEE_STATUS = ['ACTIF', 'SUSPENDU', 'CONGE', 'SORTI'];
@@ -274,8 +279,14 @@ const employeeSchema = zod_1.z.object({
     cmuNumber: zod_1.z.string().optional().nullable(),
     bankName: zod_1.z.string().optional().nullable(),
     bankRib: zod_1.z.string().optional().nullable(),
+    bankCode: zod_1.z.string().optional().nullable(),
+    bankGuichetCode: zod_1.z.string().optional().nullable(),
+    bankAccountNumber: zod_1.z.string().optional().nullable(),
+    bankRibKey: zod_1.z.string().optional().nullable(),
     poste: zod_1.z.string().optional().nullable(),
     departement: zod_1.z.string().optional().nullable(),
+    // Filière de carrière : un employé n'est rattaché qu'à un seul profil à la fois.
+    careerProfileId: zod_1.z.preprocess(emptyToNull, zod_1.z.coerce.number().int().positive().nullable().optional()),
     userId: zod_1.z.preprocess(emptyToNull, zod_1.z.coerce.number().int().positive().nullable().optional()),
     // Responsable hiérarchique (évaluateur au titre de la gestion de la performance).
     managerId: zod_1.z.preprocess(emptyToNull, zod_1.z.coerce.number().int().positive().nullable().optional()),
@@ -489,6 +500,30 @@ function registerHrIPC() {
         }
         catch (error) {
             logger_1.default.error('hr:employees:linkableUsers error', error.message);
+            return { success: false, error: error.message };
+        }
+    });
+    /**
+     * Filières (profils de carrière actifs) sélectionnables sur la fiche employé —
+     * lecture seule, ouverte à tous les rôles pouvant éditer un employé (contrairement
+     * à `careerProfiles:list`, réservé au paramétrage SUPER_ADMIN/ADMIN).
+     */
+    electron_1.ipcMain.handle('hr:employees:careerProfiles', async (_event, { token }) => {
+        try {
+            const session = (0, auth_service_1.getSession)(token);
+            if (!session)
+                return { success: false, error: 'Session expirée' };
+            checkHrRole(session, HR_STAFF_READ_ROLES);
+            const db = (0, db_service_1.getDb)();
+            const data = await db.careerProfile.findMany({
+                where: { deletedAt: null, isActive: true },
+                select: { id: true, name: true },
+                orderBy: { name: 'asc' },
+            });
+            return { success: true, data };
+        }
+        catch (error) {
+            logger_1.default.error('hr:employees:careerProfiles error', error.message);
             return { success: false, error: error.message };
         }
     });
@@ -953,6 +988,9 @@ function registerHrIPC() {
         }));
         const amounts = {
             contractId: contract.id,
+            // Figé à la génération : un changement ultérieur du nombre de parts
+            // IGR de l'employé ne doit jamais modifier un bulletin déjà émis.
+            igrParts: employee.igrParts,
             baseSalary: result.baseSalary,
             grossTaxable: result.grossTaxable,
             totalGains: result.totalGains,
@@ -1191,7 +1229,10 @@ function registerHrIPC() {
             const prime = (0, payroll_service_1.computePrimeAnciennete)(Number(contract.baseSalary), employee.hireDate, periodEnd);
             const result = (0, payroll_service_1.computePayroll)({
                 baseSalary: Number(contract.baseSalary),
-                igrParts: Number(employee.igrParts ?? 1),
+                // Nombre de parts IGR figé à la génération du bulletin — un recalcul
+                // (brouillon modifié) ne doit pas reprendre la valeur courante,
+                // potentiellement différente, du profil de l'employé.
+                igrParts: Number(payslip.igrParts ?? 1),
                 sursalaire: d.sursalaire,
                 primeAnciennete: prime.amount,
                 senioriteRate: prime.rate,
@@ -1570,7 +1611,7 @@ function registerHrIPC() {
             const session = (0, auth_service_1.getSession)(token);
             if (!session)
                 return { success: false, error: 'Session expirée' };
-            checkHrRole(session, HR_WRITE_ROLES);
+            checkHrRole(session, CONTRACT_TEMPLATE_CONFIG_ROLES);
             const parsed = contractTplSchema.safeParse(payload);
             if (!parsed.success)
                 return { success: false, error: parsed.error.issues.map((i) => i.message).join(' ; ') };
@@ -1591,7 +1632,7 @@ function registerHrIPC() {
             const session = (0, auth_service_1.getSession)(token);
             if (!session)
                 return { success: false, error: 'Session expirée' };
-            checkHrRole(session, HR_WRITE_ROLES);
+            checkHrRole(session, CONTRACT_TEMPLATE_CONFIG_ROLES);
             const parsed = contractTplSchema.partial().safeParse(payload);
             if (!parsed.success)
                 return { success: false, error: parsed.error.issues.map((i) => i.message).join(' ; ') };
@@ -1613,7 +1654,7 @@ function registerHrIPC() {
             const session = (0, auth_service_1.getSession)(token);
             if (!session)
                 return { success: false, error: 'Session expirée' };
-            checkHrRole(session, HR_WRITE_ROLES);
+            checkHrRole(session, CONTRACT_TEMPLATE_CONFIG_ROLES);
             await (0, db_service_1.getDb)().contractTemplate.update({ where: { id }, data: { deletedAt: new Date() } });
             return { success: true };
         }
@@ -1726,7 +1767,7 @@ function registerHrIPC() {
             const session = (0, auth_service_1.getSession)(token);
             if (!session)
                 return { success: false, error: 'Session expirée' };
-            checkHrRole(session, HR_WRITE_ROLES);
+            checkHrRole(session, CONTRACT_TEMPLATE_CONFIG_ROLES);
             const parsed = contractFunctionSchema.safeParse(payload);
             if (!parsed.success)
                 return { success: false, error: parsed.error.issues.map((i) => i.message).join(' ; ') };
@@ -1743,7 +1784,7 @@ function registerHrIPC() {
             const session = (0, auth_service_1.getSession)(token);
             if (!session)
                 return { success: false, error: 'Session expirée' };
-            checkHrRole(session, HR_WRITE_ROLES);
+            checkHrRole(session, CONTRACT_TEMPLATE_CONFIG_ROLES);
             const parsed = contractFunctionSchema.partial().safeParse(payload);
             if (!parsed.success)
                 return { success: false, error: parsed.error.issues.map((i) => i.message).join(' ; ') };
@@ -1760,7 +1801,7 @@ function registerHrIPC() {
             const session = (0, auth_service_1.getSession)(token);
             if (!session)
                 return { success: false, error: 'Session expirée' };
-            checkHrRole(session, HR_WRITE_ROLES);
+            checkHrRole(session, CONTRACT_TEMPLATE_CONFIG_ROLES);
             await (0, db_service_1.getDb)().contractFunction.update({ where: { id }, data: { deletedAt: new Date(), isActive: false } });
             return { success: true };
         }
@@ -2046,7 +2087,7 @@ function registerHrIPC() {
             const session = (0, auth_service_1.getSession)(token);
             if (!session)
                 return { success: false, error: 'Session expirée' };
-            checkHrRole(session, HR_WRITE_ROLES);
+            checkHrRole(session, CONTRACT_TEMPLATE_CONFIG_ROLES);
             const parsed = jobDescTplSchema.safeParse(payload);
             if (!parsed.success)
                 return { success: false, error: parsed.error.issues.map((i) => i.message).join(' ; ') };
@@ -2066,7 +2107,7 @@ function registerHrIPC() {
             const session = (0, auth_service_1.getSession)(token);
             if (!session)
                 return { success: false, error: 'Session expirée' };
-            checkHrRole(session, HR_WRITE_ROLES);
+            checkHrRole(session, CONTRACT_TEMPLATE_CONFIG_ROLES);
             const parsed = jobDescTplSchema.partial().safeParse(payload);
             if (!parsed.success)
                 return { success: false, error: parsed.error.issues.map((i) => i.message).join(' ; ') };
@@ -2086,7 +2127,7 @@ function registerHrIPC() {
             const session = (0, auth_service_1.getSession)(token);
             if (!session)
                 return { success: false, error: 'Session expirée' };
-            checkHrRole(session, HR_WRITE_ROLES);
+            checkHrRole(session, CONTRACT_TEMPLATE_CONFIG_ROLES);
             await (0, db_service_1.getDb)().jobDescriptionTemplate.update({ where: { id }, data: { deletedAt: new Date() } });
             return { success: true };
         }
@@ -2837,6 +2878,54 @@ function registerHrIPC() {
         }
         catch (error) {
             logger_1.default.error('hr:me:overview error', error.message);
+            return { success: false, error: error.message };
+        }
+    });
+    /**
+     * Profil de carrière (filière + étapes ordonnées) de l'employé connecté, avec
+     * le rang correspondant à son poste actuel mis en évidence côté renderer. Un
+     * employé n'appartient qu'à **une seule filière à la fois** : priorité au
+     * rattachement explicite (`Employee.careerProfileId`, fiche personnel) ; à
+     * défaut, repli sur la première filière dont une étape correspond à son poste
+     * (comportement historique, pour les employés pas encore explicitement liés —
+     * arbitraire si plusieurs filières partagent ce poste). `null` si aucun profil
+     * n'est trouvé par ces deux voies, ou s'il n'a pas de poste renseigné.
+     */
+    electron_1.ipcMain.handle('hr:me:careerProfile', async (_event, { token }) => {
+        try {
+            const session = (0, auth_service_1.getSession)(token);
+            if (!session)
+                return { success: false, error: 'Session expirée' };
+            const db = (0, db_service_1.getDb)();
+            const employeeId = await getMyEmployeeId(session, db);
+            if (!employeeId)
+                return ser({ success: true, data: null });
+            const employee = await db.employee.findUnique({
+                where: { id: employeeId },
+                select: { poste: true, careerProfileId: true },
+            });
+            if (!employee)
+                return ser({ success: true, data: null });
+            if (employee.careerProfileId) {
+                const profile = await db.careerProfile.findFirst({
+                    where: { id: employee.careerProfileId, deletedAt: null, isActive: true },
+                    include: { steps: { orderBy: { order: 'asc' } } },
+                });
+                if (profile)
+                    return ser({ success: true, data: { profile, currentPoste: employee.poste } });
+            }
+            if (!employee.poste)
+                return ser({ success: true, data: null });
+            const step = await db.careerProfileStep.findFirst({
+                where: { poste: employee.poste, careerProfile: { deletedAt: null, isActive: true } },
+                include: { careerProfile: { include: { steps: { orderBy: { order: 'asc' } } } } },
+            });
+            if (!step)
+                return ser({ success: true, data: null });
+            return ser({ success: true, data: { profile: step.careerProfile, currentPoste: employee.poste } });
+        }
+        catch (error) {
+            logger_1.default.error('hr:me:careerProfile error', error.message);
             return { success: false, error: error.message };
         }
     });

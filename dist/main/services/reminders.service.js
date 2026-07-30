@@ -41,10 +41,10 @@ const SEED_TEMPLATES = [
     {
         marker: TPL_CODES.UPCOMING_EMAIL,
         channel: 'EMAIL',
-        subject: 'Échéance à venir — convention {{conventionRef}}',
+        subject: 'Échéance à venir — {{conventionRef}}',
         body: `Bonjour {{fullName}},
 
-Nous vous rappelons que l'échéance n° {{installmentNumber}} de votre convention {{conventionRef}} est due le {{dueDate}} pour un montant de {{amount}} F CFA.
+Nous vous rappelons que l'échéance n° {{installmentNumber}} ({{conventionRef}}) est due le {{dueDate}} pour un montant de {{amount}} F CFA.
 
 Merci de prévoir le règlement dans les délais convenus.
 
@@ -59,10 +59,10 @@ Cordialement,
     {
         marker: TPL_CODES.OVERDUE_EMAIL,
         channel: 'EMAIL',
-        subject: 'Échéance impayée — convention {{conventionRef}}',
+        subject: 'Échéance impayée — {{conventionRef}}',
         body: `Bonjour {{fullName}},
 
-Sauf erreur de notre part, l'échéance n° {{installmentNumber}} de votre convention {{conventionRef}}, due le {{dueDate}} pour un montant de {{amount}} F CFA, demeure impayée depuis {{daysLate}} jour(s).
+Sauf erreur de notre part, l'échéance n° {{installmentNumber}} ({{conventionRef}}), due le {{dueDate}} pour un montant de {{amount}} F CFA, demeure impayée depuis {{daysLate}} jour(s).
 
 Nous vous prions de régulariser cette situation sous brefs délais. Si le règlement est en cours, merci de bien vouloir nous en informer.
 
@@ -77,10 +77,10 @@ Cordialement,
     {
         marker: TPL_CODES.OVERDUE_FINAL_EMAIL,
         channel: 'EMAIL',
-        subject: 'Mise en demeure — convention {{conventionRef}}',
+        subject: 'Mise en demeure — {{conventionRef}}',
         body: `Bonjour {{fullName}},
 
-Malgré nos précédents rappels, l'échéance n° {{installmentNumber}} de votre convention {{conventionRef}}, d'un montant de {{amount}} F CFA initialement due le {{dueDate}}, demeure impayée à ce jour ({{daysLate}} jours de retard).
+Malgré nos précédents rappels, l'échéance n° {{installmentNumber}} ({{conventionRef}}), d'un montant de {{amount}} F CFA initialement due le {{dueDate}}, demeure impayée à ce jour ({{daysLate}} jours de retard).
 
 Nous vous mettons en demeure de procéder au règlement intégral sous huit (8) jours. Sans réponse de votre part, nous nous réservons le droit d'engager les procédures contractuelles prévues.
 
@@ -112,7 +112,7 @@ Cordialement,
         marker: TPL_CODES.UPCOMING_WHATSAPP,
         channel: 'WHATSAPP',
         body: `Bonjour {{fullName}},
-Rappel {{companyName}} : votre échéance n° {{installmentNumber}} de la convention {{conventionRef}} est due le {{dueDate}} pour un montant de {{amount}} F CFA.
+Rappel {{companyName}} : votre échéance n° {{installmentNumber}} ({{conventionRef}}) est due le {{dueDate}} pour un montant de {{amount}} F CFA.
 Merci de prévoir le règlement dans les délais convenus.`,
     },
     {
@@ -376,6 +376,46 @@ async function applyReminderRules(opts = {}) {
                         },
                     }, result, bump);
                 }
+                // Échéances héritées de l'ancienne application (souscription sans
+                // convention — cf. SaleInstallment.conventionId/clientId) : même
+                // fenêtre de relance, client rattaché directement (pas de détour par
+                // Convention.client). `detailsSouscription` remplace la référence de
+                // convention dans les variables de message.
+                const legacyInstallments = await db.saleInstallment.findMany({
+                    where: {
+                        conventionId: null,
+                        clientId: { not: null },
+                        dueDate: { gte: pivotStartIso, lte: pivotEnd },
+                        status: { in: overdueStatuses },
+                    },
+                    include: { client: true },
+                });
+                for (const inst of legacyInstallments) {
+                    result.scanned += 1;
+                    await processCandidate(db, {
+                        rule,
+                        companyName,
+                        dedupeKey: `INSTALLMENT_${inst.id}_J${signed(rule.offsetDays)}_${rule.channel}`,
+                        client: inst.client ?? null,
+                        renderVars: {
+                            ...companyVars,
+                            fullName: buildClientName(inst.client ?? { type: 'INDIVIDUEL' }),
+                            firstName: inst.client?.firstName ?? '',
+                            lastName: inst.client?.lastName ?? '',
+                            conventionRef: inst.detailsSouscription ?? '',
+                            installmentNumber: inst.installmentNumber,
+                            dueDate: formatDateFr(inst.dueDate),
+                            amount: formatAmount(inst.amount),
+                            daysLate: rule.offsetDays > 0 ? rule.offsetDays : 0,
+                            companyName,
+                        },
+                        relations: {
+                            clientId: inst.clientId,
+                            conventionId: null,
+                            installmentId: inst.id,
+                        },
+                    }, result, bump);
+                }
             }
             else if (rule.triggerType === 'CONVENTION_EXPIRING') {
                 const conventions = await db.convention.findMany({
@@ -448,7 +488,12 @@ async function processCandidate(db, ctx, result, bump) {
         bump(rule.channel === 'EMAIL' ? 'no_email' : 'no_phone');
         return;
     }
-    // Anti-doublon — unique sur Communication.dedupeKey.
+    // Anti-doublon — unique sur Communication.dedupeKey. Ce contrôle préalable
+    // couvre le cas courant (une seule passe à la fois) ; il reste néanmoins
+    // sujet à une fenêtre de course si deux passes tournent au même instant
+    // (ex. l'app desktop ouverte sur un poste ET le script planifié NAS,
+    // `run-reminders-once.ts`, exécutés à quelques millisecondes d'écart) — la
+    // contrainte unique en base ci-dessous est le garde-fou définitif.
     const already = await db.communication.findUnique({ where: { dedupeKey } });
     if (already) {
         result.skipped += 1;
@@ -457,26 +502,42 @@ async function processCandidate(db, ctx, result, bump) {
     }
     const subject = rule.template.subject ? render(rule.template.subject, renderVars) : null;
     const body = render(rule.template.body, renderVars);
-    const comm = await db.communication.create({
-        data: {
-            channel: rule.channel,
-            direction: 'SORTANT',
-            to: recipient,
-            subject,
-            body,
-            status: 'EN_ATTENTE',
-            templateId: rule.templateId,
-            clientId: relations.clientId,
-            dedupeKey,
-            metadata: {
-                ruleCode: rule.code,
-                triggerType: rule.triggerType,
-                offsetDays: rule.offsetDays,
-                conventionId: relations.conventionId ?? null,
-                installmentId: relations.installmentId ?? null,
+    let comm;
+    try {
+        comm = await db.communication.create({
+            data: {
+                channel: rule.channel,
+                direction: 'SORTANT',
+                to: recipient,
+                subject,
+                body,
+                status: 'EN_ATTENTE',
+                templateId: rule.templateId,
+                clientId: relations.clientId,
+                dedupeKey,
+                metadata: {
+                    ruleCode: rule.code,
+                    triggerType: rule.triggerType,
+                    offsetDays: rule.offsetDays,
+                    conventionId: relations.conventionId ?? null,
+                    installmentId: relations.installmentId ?? null,
+                },
             },
-        },
-    });
+        });
+    }
+    catch (createErr) {
+        if (createErr?.code === 'P2002') {
+            // Une exécution concurrente a créé ce même envoi entre le contrôle
+            // ci-dessus et cette création — dédoublonnage garanti par la
+            // contrainte unique en base (autorité finale, pas seulement le
+            // contrôle applicatif) : on ignore silencieusement, aucun envoi n'a
+            // pu avoir lieu deux fois pour cette même personne.
+            result.skipped += 1;
+            bump('already_sent_race');
+            return;
+        }
+        throw createErr;
+    }
     try {
         if (rule.channel === 'EMAIL') {
             await (0, email_service_1.sendEmail)({ to: recipient, subject: subject ?? '(sans objet)', body });

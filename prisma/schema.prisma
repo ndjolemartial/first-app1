@@ -2,9 +2,10 @@ generator client {
   provider      = "prisma-client-js"
   // Moteurs de requête embarqués pour le packaging multi-plateformes.
   // « native » = OS de build courant ; les autres couvrent les cibles de
-  // distribution. Adapter la cible Linux à la distro visée si besoin
-  // (debian-openssl-1.1.x pour distros anciennes, linux-musl-* pour Alpine).
-  binaryTargets = ["native", "windows", "debian-openssl-3.0.x", "rhel-openssl-3.0.x", "darwin", "darwin-arm64"]
+  // distribution. debian-openssl-1.1.x : requis pour le script autonome de
+  // relances (run-reminders-once.ts) déployé sur un NAS Synology DSM (OpenSSL
+  // 1.1.x sur le paquet Node.js DSM 7.x, distinct du 3.0.x d'un Debian récent).
+  binaryTargets = ["native", "windows", "debian-openssl-3.0.x", "rhel-openssl-3.0.x", "debian-openssl-1.1.x", "darwin", "darwin-arm64"]
 }
 
 datasource db {
@@ -33,8 +34,11 @@ model User {
   // Nom commercial / d'usage affiché sur les documents (devis…) en tant
   // qu'émetteur. À défaut, on retombe sur « nom + prénom ».
   nomCommercial          String?
-  // Signature personnelle (HTML) ajoutée aux messages « personnels » (envoi en
-  // tant que Particulier depuis le module Communication).
+  // Signature personnelle (HTML) ajoutée à tout email envoyé depuis « Envoyer
+  // un message » (module Communication) sans modèle ou avec un modèle de type
+  // « manuel » (CommTemplate.usageType = MANUEL) — quelle que soit l'entité
+  // ciblée. Les modèles « auto » et les relances automatiques conservent la
+  // signature SMTP (AppSetting email.signature).
   messageSignature       String?             @db.Text
   idNumber               String?
   civilite               CiviliteType?
@@ -53,48 +57,53 @@ model User {
   updatedAt              DateTime            @updatedAt
   deletedAt              DateTime?
 
-  activities                 CrmActivity[]                  @relation("ActivityAssignedTo")
-  createdActivities          CrmActivity[]                  @relation("ActivityCreatedBy")
-  conventions                Convention[]                   @relation("AgentConventions")
-  notes                      Note[]
-  timelineEvents             EntityTimelineEvent[]
-  archivedEntities           ArchiveRecord[]                @relation("ArchivedBy")
-  restoredEntities           ArchiveRecord[]                @relation("RestoredBy")
-  commissions                Commission[]                   @relation("UserCommissions")
-  commissionsPaid            Commission[]                   @relation("CommissionPaidBy")
-  commissionsCancelled       Commission[]                   @relation("CommissionCancelledBy")
-  treasuryOperations         TreasuryOperation[]            @relation("TreasuryCreatedBy")
-  linkedBankAccounts         BankAccount[]                  @relation("BankAccountLinkedUser")
-  bankAccountViews           BankAccountViewer[]
-  defaultAccountEntree       BankAccount?                   @relation("UserDefaultEntreeAccount", fields: [defaultAccountEntreeId], references: [id])
-  defaultAccountSortie       BankAccount?                   @relation("UserDefaultSortieAccount", fields: [defaultAccountSortieId], references: [id])
-  uploadedDocuments          Document[]                     @relation("DocumentUploadedBy")
-  linkedDocuments            Document[]                     @relation("DocumentLinkedUser")
-  documentAuditLogs          DocumentAuditLog[]             @relation("DocumentAuditUser")
-  managedBudgetLines         BudgetLine[]                   @relation("BudgetLineManager")
-  closedBudgets              Budget[]                       @relation("BudgetClosedBy")
-  assignedProspects          Prospect[]                     @relation("ProspectAssignedTo")
-  createdProspects           Prospect[]                     @relation("ProspectCreatedBy")
-  assignedClients            Client[]                       @relation("ClientAssignedTo")
-  attestationsEmitted        Attestation[]                  @relation("AttestationEmittedBy")
-  communicationsSent         Communication[]                @relation("CommunicationSentBy")
-  quotesAsAgent              Quote[]                        @relation("QuoteAgent")
-  quotesCreated              Quote[]                        @relation("QuoteCreatedBy")
-  ownedDocumentFolders       DocumentFolder[]               @relation("FolderOwner")
-  documentFolderAccesses     DocumentFolderAccess[]         @relation("FolderAccessUser")
-  employee                   Employee?                      @relation("UserEmployee")
-  leaveDecisions             LeaveRequest[]                 @relation("LeaveDecidedBy")
-  forecastExpensesCreated    ForecastExpense[]              @relation("ForecastExpenseCreatedBy")
-  forecastExpensesSettled    ForecastExpense[]              @relation("ForecastExpenseSettledBy")
-  visitorsCreated            Visitor[]                      @relation("VisitorCreatedBy")
-  callsCreated               PhoneCall[]                    @relation("PhoneCallCreatedBy")
-  perfEvaluationsAsEvaluator PerformanceEvaluation[]        @relation("PerfEvaluator")
-  perfRankingSnapshots       PerformanceRankingSnapshot[]   @relation("PerfRankingGeneratedBy")
-  socialPlatformsResponsible SocialPlatform[]               @relation("SocialPlatformResponsible")
-  socialPublicationsAuthored SocialPublication[]            @relation("SocialPublicationAuthor")
-  socialSnapshotsRecorded    SocialFollowerSnapshot[]       @relation("SocialSnapshotRecordedBy")
-  delayJustificationsMade    AttendanceDelayJustification[] @relation("AttendanceDelayJustifiedBy")
-  delayTolerationsMade       AttendanceDelayJustification[] @relation("AttendanceDelayToleratedBy")
+  activities                  CrmActivity[]                      @relation("ActivityAssignedTo")
+  createdActivities           CrmActivity[]                      @relation("ActivityCreatedBy")
+  conventions                 Convention[]                       @relation("AgentConventions")
+  notes                       Note[]
+  timelineEvents              EntityTimelineEvent[]
+  archivedEntities            ArchiveRecord[]                    @relation("ArchivedBy")
+  restoredEntities            ArchiveRecord[]                    @relation("RestoredBy")
+  commissions                 Commission[]                       @relation("UserCommissions")
+  commissionsPaid             Commission[]                       @relation("CommissionPaidBy")
+  commissionsCancelled        Commission[]                       @relation("CommissionCancelledBy")
+  treasuryOperations          TreasuryOperation[]                @relation("TreasuryCreatedBy")
+  linkedBankAccounts          BankAccount[]                      @relation("BankAccountLinkedUser")
+  bankAccountViews            BankAccountViewer[]
+  defaultAccountEntree        BankAccount?                       @relation("UserDefaultEntreeAccount", fields: [defaultAccountEntreeId], references: [id])
+  defaultAccountSortie        BankAccount?                       @relation("UserDefaultSortieAccount", fields: [defaultAccountSortieId], references: [id])
+  uploadedDocuments           Document[]                         @relation("DocumentUploadedBy")
+  linkedDocuments             Document[]                         @relation("DocumentLinkedUser")
+  documentAuditLogs           DocumentAuditLog[]                 @relation("DocumentAuditUser")
+  managedBudgetLines          BudgetLine[]                       @relation("BudgetLineManager")
+  closedBudgets               Budget[]                           @relation("BudgetClosedBy")
+  assignedProspects           Prospect[]                         @relation("ProspectAssignedTo")
+  createdProspects            Prospect[]                         @relation("ProspectCreatedBy")
+  assignedClients             Client[]                           @relation("ClientAssignedTo")
+  assignedReferrers           BusinessReferrer[]                 @relation("ReferrerAssignedTo")
+  attestationsEmitted         Attestation[]                      @relation("AttestationEmittedBy")
+  communicationsSent          Communication[]                    @relation("CommunicationSentBy")
+  quotesAsAgent               Quote[]                            @relation("QuoteAgent")
+  quotesCreated               Quote[]                            @relation("QuoteCreatedBy")
+  ownedDocumentFolders        DocumentFolder[]                   @relation("FolderOwner")
+  documentFolderAccesses      DocumentFolderAccess[]             @relation("FolderAccessUser")
+  employee                    Employee?                          @relation("UserEmployee")
+  leaveDecisions              LeaveRequest[]                     @relation("LeaveDecidedBy")
+  forecastExpensesCreated     ForecastExpense[]                  @relation("ForecastExpenseCreatedBy")
+  forecastExpensesSettled     ForecastExpense[]                  @relation("ForecastExpenseSettledBy")
+  visitorsCreated             Visitor[]                          @relation("VisitorCreatedBy")
+  callsCreated                PhoneCall[]                        @relation("PhoneCallCreatedBy")
+  perfEvaluationsAsEvaluator  PerformanceEvaluation[]            @relation("PerfEvaluator")
+  perfRankingSnapshots        PerformanceRankingSnapshot[]       @relation("PerfRankingGeneratedBy")
+  socialPlatformsResponsible  SocialPlatform[]                   @relation("SocialPlatformResponsible")
+  socialPublicationsAuthored  SocialPublication[]                @relation("SocialPublicationAuthor")
+  socialSnapshotsRecorded     SocialFollowerSnapshot[]           @relation("SocialSnapshotRecordedBy")
+  delayJustificationsMade     AttendanceDelayJustification[]     @relation("AttendanceDelayJustifiedBy")
+  delayTolerationsMade        AttendanceDelayJustification[]     @relation("AttendanceDelayToleratedBy")
+  constructionProjectsAgent   ConstructionProject[]              @relation("ConstructionProjectAgent")
+  constructionProjectsCreated ConstructionProject[]              @relation("ConstructionProjectCreatedBy")
+  constructionEstimates       ConstructionEstimate[]             @relation("ConstructionEstimateGeneratedBy")
+  constructionPriceChanges    ConstructionResourcePriceHistory[] @relation("ConstructionPriceChangedBy")
 }
 
 enum UserRole {
@@ -117,6 +126,7 @@ model Prospect {
   reference    String         @unique // Ex: PSP-2026-0001
   firstName    String
   lastName     String
+  civilite     CiviliteType?
   email        String?
   phone        String?
   mobile       String?
@@ -132,14 +142,16 @@ model Prospect {
   updatedAt    DateTime       @updatedAt
   deletedAt    DateTime?
 
-  client     Client?       @relation(fields: [clientId], references: [id])
-  assignedTo User?         @relation("ProspectAssignedTo", fields: [assignedToId], references: [id])
-  createdBy  User?         @relation("ProspectCreatedBy", fields: [createdById], references: [id])
-  activities CrmActivity[]
-  tags       ProspectTag[]
-  documents  Document[]
-  quotes     Quote[]
-  calls      PhoneCall[]
+  client               Client?               @relation(fields: [clientId], references: [id])
+  assignedTo           User?                 @relation("ProspectAssignedTo", fields: [assignedToId], references: [id])
+  createdBy            User?                 @relation("ProspectCreatedBy", fields: [createdById], references: [id])
+  activities           CrmActivity[]
+  tags                 ProspectTag[]
+  documents            Document[]
+  quotes               Quote[]
+  calls                PhoneCall[]
+  communications       Communication[]
+  constructionProjects ConstructionProject[]
 }
 
 enum ProspectSource {
@@ -172,7 +184,7 @@ model Client {
   type                 ClientType         @default(INDIVIDUEL)
   firstName            String?
   lastName             String?
-  civilite             CiviliteType       @default(MONSIEUR)
+  civilite             CiviliteType       @default(Monsieur)
   statutConjugal       StatutConjugalType @default(CELIBATAIRE)
   entreprise           String?
   registre_de_commerce String?
@@ -219,24 +231,25 @@ model Client {
   deletedAt            DateTime?
 
   prospect              Prospect?
-  assignedTo            User?             @relation("ClientAssignedTo", fields: [assignedToId], references: [id])
-  referrer              BusinessReferrer? @relation("ClientReferrer", fields: [referrerId], references: [id])
-  idType                IdDocumentType?   @relation("ClientIdType", fields: [idTypeId], references: [id])
-  legalRepIdType        IdDocumentType?   @relation("ClientLegalRepIdType", fields: [legalRepIdTypeId], references: [id])
-  conventions           Convention[]      @relation("ConventionClient")
-  secondaryConventions  Convention[]      @relation("ConventionSecondaryClient")
+  assignedTo            User?                 @relation("ClientAssignedTo", fields: [assignedToId], references: [id])
+  referrer              BusinessReferrer?     @relation("ClientReferrer", fields: [referrerId], references: [id])
+  idType                IdDocumentType?       @relation("ClientIdType", fields: [idTypeId], references: [id])
+  legalRepIdType        IdDocumentType?       @relation("ClientLegalRepIdType", fields: [legalRepIdTypeId], references: [id])
+  conventions           Convention[]          @relation("ConventionClient")
+  secondaryConventions  Convention[]          @relation("ConventionSecondaryClient")
   documents             Document[]
   activities            CrmActivity[]
   invoices              Invoice[]
   installments          SaleInstallment[]
   terrains              Terrain[]
-  properties            Property[]        @relation("ClientProperties")
-  attestations          Attestation[]     @relation("AttestationClient")
-  attestationsSecondary Attestation[]     @relation("AttestationSecondaryClient")
+  properties            Property[]            @relation("ClientProperties")
+  attestations          Attestation[]         @relation("AttestationClient")
+  attestationsSecondary Attestation[]         @relation("AttestationSecondaryClient")
   projects              Project[]
   communications        Communication[]
   quotes                Quote[]
   calls                 PhoneCall[]
+  constructionProjects  ConstructionProject[]
 }
 
 enum ClientType {
@@ -252,9 +265,9 @@ enum ClientStatus {
 }
 
 enum CiviliteType {
-  MONSIEUR
-  MADAME
-  MADEMOISELLE
+  Monsieur
+  Madame
+  Mademoiselle
 }
 
 enum StatutConjugalType {
@@ -268,12 +281,13 @@ enum StatutConjugalType {
 // ── PROPRIÉTAIRES ─────────────────────────────────────────────
 
 model Owner {
-  id                  Int        @id @default(autoincrement())
-  uuid                String     @unique @default(cuid())
-  type                ClientType @default(INDIVIDUEL)
+  id                  Int           @id @default(autoincrement())
+  uuid                String        @unique @default(cuid())
+  type                ClientType    @default(INDIVIDUEL)
   // Particulier
   firstName           String?
   lastName            String?
+  civilite            CiviliteType?
   nationality         String? // Nationalité (particulier)
   idNumber            String? // Numéro pièce d'identité (particulier)
   idTypeId            Int? // Type de pièce d'identité (particulier)
@@ -292,14 +306,14 @@ model Owner {
   address             String?
   city                String?
   postalCode          String?
-  country             String     @default("CI")
+  country             String        @default("CI")
   bankIban            String?
   bankBic             String?
   compte_contribuable String?
-  notes               String?    @db.Text
-  isActive            Boolean    @default(true)
-  createdAt           DateTime   @default(now())
-  updatedAt           DateTime   @updatedAt
+  notes               String?       @db.Text
+  isActive            Boolean       @default(true)
+  createdAt           DateTime      @default(now())
+  updatedAt           DateTime      @updatedAt
   deletedAt           DateTime?
 
   properties     Property[]
@@ -469,6 +483,7 @@ model Terrain {
   projects             Project[]
   quotes               Quote[]
   quoteLinks           QuoteTerrain[]
+  constructionProjects ConstructionProject[]
 }
 
 enum TerrainStatus {
@@ -537,17 +552,17 @@ model Property {
   updatedAt      DateTime           @updatedAt
   deletedAt      DateTime?
 
-  owner           Owner?               @relation(fields: [ownerId], references: [id])
-  programme       ProgrammeImmobilier? @relation(fields: [programmeId], references: [id])
-  client          Client?              @relation("ClientProperties", fields: [clientId], references: [id])
-  conventionLinks   ConventionProperty[]
-  documents         Document[]
-  photos            PropertyPhoto[]
-  activities        CrmActivity[]
-  attestations      Attestation[]
-  attestationLinks  AttestationProperty[]
-  quotes            Quote[]
-  quoteLinks        QuoteProperty[]
+  owner            Owner?                @relation(fields: [ownerId], references: [id])
+  programme        ProgrammeImmobilier?  @relation(fields: [programmeId], references: [id])
+  client           Client?               @relation("ClientProperties", fields: [clientId], references: [id])
+  conventionLinks  ConventionProperty[]
+  documents        Document[]
+  photos           PropertyPhoto[]
+  activities       CrmActivity[]
+  attestations     Attestation[]
+  attestationLinks AttestationProperty[]
+  quotes           Quote[]
+  quoteLinks       QuoteProperty[]
 }
 
 enum PropertyType {
@@ -872,13 +887,13 @@ model Attestation {
   updatedAt         DateTime        @updatedAt
   deletedAt         DateTime?
 
-  client          Client               @relation("AttestationClient", fields: [clientId], references: [id])
-  secondaryClient Client?              @relation("AttestationSecondaryClient", fields: [secondaryClientId], references: [id])
-  terrain         Terrain?             @relation(fields: [terrainId], references: [id])
-  property        Property?            @relation(fields: [propertyId], references: [id])
-  convention      Convention?          @relation(fields: [conventionId], references: [id])
-  template        AttestationTemplate? @relation(fields: [templateId], references: [id])
-  emittedBy       User?                @relation("AttestationEmittedBy", fields: [emittedById], references: [id])
+  client          Client                @relation("AttestationClient", fields: [clientId], references: [id])
+  secondaryClient Client?               @relation("AttestationSecondaryClient", fields: [secondaryClientId], references: [id])
+  terrain         Terrain?              @relation(fields: [terrainId], references: [id])
+  property        Property?             @relation(fields: [propertyId], references: [id])
+  convention      Convention?           @relation(fields: [conventionId], references: [id])
+  template        AttestationTemplate?  @relation(fields: [templateId], references: [id])
+  emittedBy       User?                 @relation("AttestationEmittedBy", fields: [emittedById], references: [id])
   documents       Document[]
   terrains        AttestationTerrain[]
   properties      AttestationProperty[]
@@ -1377,6 +1392,35 @@ enum ListExportOrientation {
   PAYSAGE
 }
 
+// Modèle éditable de l'« Ordre de virement » (Paramètres → Modèles
+// d'imprimés) : fiche paysage à transmettre à la banque, listant les salaires
+// nets à payer du mois avec les références bancaires de chaque employé.
+// Toujours paysage (pas de champ orientation, contrairement à
+// ListExportTemplate) — génération réservée à SUPER_ADMIN/ADMIN.
+model WireTransferTemplate {
+  id             Int      @id @default(autoincrement())
+  uuid           String   @unique @default(cuid())
+  name           String   @default("Modèle par défaut")
+  // Bloc de lignes d'introduction (HTML éditable, texte + formatage par ligne,
+  // nombre de lignes libre — 4 lignes par défaut).
+  introHtml      String?  @db.LongText
+  // Titre du tableau des bénéficiaires (ex. « LISTE DES BÉNÉFICIAIRES »).
+  tableTitle     String   @default("LISTE DES BÉNÉFICIAIRES")
+  // Libellé sous le bloc de signature (ex. « Le Directeur Général »).
+  signatureLabel String   @default("Le Directeur Général")
+  // Nom du signataire, affiché sous la fonction (ex. « M. Jean KOUASSI »).
+  signatureName  String?
+  // Largeurs des 8 colonnes du tableau, en %, dans l'ordre fixe : N°, Nom
+  // complet, Code Bancaire, Code Guichet, Numéro de compte, Clé RIB, Banque,
+  // Montant. `null` = largeurs par défaut appliquées côté serveur.
+  columnWidths   Json?
+  accentColor    String   @default("#1E3A5F")
+  showLogo       Boolean  @default(true)
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+}
+
 // ── CRM & COMMUNICATION ───────────────────────────────────────
 
 model CrmActivity {
@@ -1478,9 +1522,11 @@ model Communication {
   dedupeKey    String?       @unique
   clientId     Int?
   // Rattachements optionnels — utilisés pour l'envoi ciblé depuis l'interface
-  // Communication (Propriétaire / Convention) et la traçabilité.
+  // Communication (Propriétaire / Convention / Apporteur d'affaires / Prospect) et la traçabilité.
   ownerId      Int?
   conventionId Int?
+  referrerId   Int?
+  prospectId   Int?
   // Utilisateur ayant déclenché l'envoi manuel. Null pour les envois
   // systèmes (relances automatiques) — sert au filtrage de visibilité
   // dans l'historique pour les rôles non privilégiés.
@@ -1488,16 +1534,20 @@ model Communication {
   metadata     Json?
   createdAt    DateTime      @default(now())
 
-  template   CommTemplate? @relation(fields: [templateId], references: [id])
-  client     Client?       @relation(fields: [clientId], references: [id])
-  owner      Owner?        @relation(fields: [ownerId], references: [id])
-  convention Convention?   @relation(fields: [conventionId], references: [id])
-  sender     User?         @relation("CommunicationSentBy", fields: [senderId], references: [id])
+  template   CommTemplate?     @relation(fields: [templateId], references: [id])
+  client     Client?           @relation(fields: [clientId], references: [id])
+  owner      Owner?            @relation(fields: [ownerId], references: [id])
+  convention Convention?       @relation(fields: [conventionId], references: [id])
+  referrer   BusinessReferrer? @relation("CommunicationReferrer", fields: [referrerId], references: [id])
+  sender     User?             @relation("CommunicationSentBy", fields: [senderId], references: [id])
+  prospect   Prospect?         @relation(fields: [prospectId], references: [id])
 
   @@index([clientId])
   @@index([ownerId])
   @@index([conventionId])
+  @@index([referrerId])
   @@index([senderId])
+  @@index([prospectId])
 }
 
 model CommTemplate {
@@ -1616,6 +1666,8 @@ model Document {
   treasuryOperationId Int? // Opération de trésorerie rattachée
   crmActivityId       Int? // Activité CRM dont ce document est une pièce jointe
   socialPublicationId Int? // Publication/article (réseaux sociaux & web) dont ce document est une pièce jointe
+  itInnovationId      Int? // Innovation IT dont ce document est une pièce jointe justificative
+  itInnovationPhase   Int? // Phase justifiée par la pièce jointe (1, 2 ou 3)
   uploadedAt          DateTime  @default(now())
   updatedAt           DateTime  @updatedAt
   deletedAt           DateTime?
@@ -1641,6 +1693,7 @@ model Document {
   uploadedBy        User?                @relation("DocumentUploadedBy", fields: [uploadedById], references: [id])
   crmActivity       CrmActivity?         @relation("ActivityAttachments", fields: [crmActivityId], references: [id])
   socialPublication SocialPublication?   @relation("SocialPublicationAttachments", fields: [socialPublicationId], references: [id])
+  itInnovation      ItInnovation?        @relation("ItInnovationAttachments", fields: [itInnovationId], references: [id])
   tags              DocumentTag[]
   auditLogs         DocumentAuditLog[]
   activities        CrmActivity[]        @relation("ActivityLinkedDocument")
@@ -1747,21 +1800,22 @@ model Note {
 }
 
 /// Journal chronologique des changements de statut et modifications de fiche
-/// pour les entités Client / Prospect (fiche de suivi). Alimenté uniquement à
-/// partir de sa mise en place — aucune donnée rétroactive (pas d'historique
-/// avant la création de ce modèle). Même convention entityType/entityId que
-/// `Note` (pas de relation Prisma typée, pour rester générique).
+/// pour les entités Client / Prospect / Apporteur d'affaire (fiche de suivi).
+/// Alimenté uniquement à partir de sa mise en place — aucune donnée
+/// rétroactive (pas d'historique avant la création de ce modèle). Même
+/// convention entityType/entityId que `Note` (pas de relation Prisma typée,
+/// pour rester générique).
 model EntityTimelineEvent {
-  id          Int                @id @default(autoincrement())
-  uuid        String             @unique @default(cuid())
-  entityType  String // "CLIENT" | "PROSPECT"
+  id          Int               @id @default(autoincrement())
+  uuid        String            @unique @default(cuid())
+  entityType  String // "CLIENT" | "PROSPECT" | "REFERRER"
   entityId    Int
   eventType   TimelineEventType
-  description String             @db.Text
+  description String            @db.Text
   oldValue    String?
   newValue    String?
   userId      Int?
-  createdAt   DateTime           @default(now())
+  createdAt   DateTime          @default(now())
 
   user User? @relation(fields: [userId], references: [id])
 
@@ -1918,29 +1972,34 @@ model ArchivePolicy {
 
 // Apporteur d'affaire : référent externe (non-utilisateur de l'application)
 model BusinessReferrer {
-  id          Int       @id @default(autoincrement())
-  uuid        String    @unique @default(cuid())
-  firstName   String
-  lastName    String
-  companyName String?
-  email       String?
-  phone       String?
-  mobile      String?
-  address     String?
-  city        String?
-  country     String    @default("CI")
-  bankIban    String?
-  bankBic     String?
-  notes       String?   @db.Text
-  isActive    Boolean   @default(true)
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
-  deletedAt   DateTime?
+  id           Int           @id @default(autoincrement())
+  uuid         String        @unique @default(cuid())
+  firstName    String
+  lastName     String
+  civilite     CiviliteType?
+  companyName  String?
+  email        String?
+  phone        String?
+  mobile       String?
+  address      String?
+  city         String?
+  country      String        @default("CI")
+  bankIban     String?
+  bankBic      String?
+  notes        String?       @db.Text
+  isActive     Boolean       @default(true)
+  // Utilisateur interne référent de cet apporteur d'affaire (facultatif).
+  assignedToId Int?
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+  deletedAt    DateTime?
 
-  commissions Commission[]
-  clients     Client[]     @relation("ClientReferrer")
-  conventions Convention[] @relation("ConventionReferrer")
-  documents   Document[]   @relation("DocumentReferrer")
+  assignedTo     User?           @relation("ReferrerAssignedTo", fields: [assignedToId], references: [id])
+  commissions    Commission[]
+  clients        Client[]        @relation("ClientReferrer")
+  conventions    Convention[]    @relation("ConventionReferrer")
+  documents      Document[]      @relation("DocumentReferrer")
+  communications Communication[] @relation("CommunicationReferrer")
 }
 
 model Commission {
@@ -2122,6 +2181,10 @@ model TreasuryOperation {
   projectId         Int? // Projet rattaché
   lotissementId     Int? // Lotissement rattaché
   programmeId       Int? // Programme immobilier rattaché
+  // Virement interne compte à compte : regroupe les deux écritures (crédit sur
+  // un compte, débit sur l'autre) générées ensemble pour un même mouvement.
+  // Même valeur sur les deux lignes ; null pour une opération simple.
+  transferGroupId   String?
   createdById       Int?
   notes             String?           @db.Text
   createdAt         DateTime          @default(now())
@@ -2139,6 +2202,8 @@ model TreasuryOperation {
   payslip         Payslip?             @relation(fields: [payslipId], references: [id])
   forecastExpense ForecastExpense?     @relation(fields: [forecastExpenseId], references: [id])
   documents       Document[]
+
+  @@index([transferGroupId])
 }
 
 // Tiers de trésorerie : bénéficiaire (« à destination de ») d'une sortie ou
@@ -2164,6 +2229,7 @@ enum TreasurySource {
   COMMISSION // Générée par le paiement d'une commission
   PAIE // Générée par le paiement d'un bulletin de salaire
   CHARGE // Générée par le règlement d'une charge prévisionnelle
+  TRANSFERT // Virement interne compte à compte (écriture liée par transferGroupId)
 }
 
 // Charge / dépense prévisionnelle : montant à régler à une date prévue, dont
@@ -2321,16 +2387,17 @@ model Project {
   updatedAt      DateTime      @updatedAt
   deletedAt      DateTime?
 
-  type               ProjectType          @relation(fields: [typeId], references: [id])
-  client             Client?              @relation(fields: [clientId], references: [id])
-  owner              Owner?               @relation(fields: [ownerId], references: [id])
-  terrain            Terrain?             @relation(fields: [terrainId], references: [id])
-  lotissement        Lotissement?         @relation(fields: [lotissementId], references: [id])
-  programme          ProgrammeImmobilier? @relation(fields: [programmeId], references: [id])
-  photos             ProjectPhoto[]
-  documents          Document[]
-  activities         CrmActivity[]
-  treasuryOperations TreasuryOperation[]
+  type                 ProjectType           @relation(fields: [typeId], references: [id])
+  client               Client?               @relation(fields: [clientId], references: [id])
+  owner                Owner?                @relation(fields: [ownerId], references: [id])
+  terrain              Terrain?              @relation(fields: [terrainId], references: [id])
+  lotissement          Lotissement?          @relation(fields: [lotissementId], references: [id])
+  programme            ProgrammeImmobilier?  @relation(fields: [programmeId], references: [id])
+  photos               ProjectPhoto[]
+  documents            Document[]
+  activities           CrmActivity[]
+  treasuryOperations   TreasuryOperation[]
+  constructionProjects ConstructionProject[]
 }
 
 enum ProjectStatus {
@@ -2358,52 +2425,61 @@ model ProjectPhoto {
 // personnel et contrats de travail. Les bulletins de paie, congés et pointage
 // sont ajoutés dans les phases suivantes.
 model Employee {
-  id            Int                 @id @default(autoincrement())
-  uuid          String              @unique @default(cuid())
-  matricule     String              @unique // Ex: EMP-2026-0001
+  id                Int                 @id @default(autoincrement())
+  uuid              String              @unique @default(cuid())
+  matricule         String              @unique // Ex: EMP-2026-0001
   // État civil
-  civilite      CiviliteType?
-  firstName     String
-  lastName      String
-  sexe          EmployeeSexe?
-  birthDate     DateTime?
-  birthPlace    String?
-  nationality   String?             @default("CI")
-  maritalStatus StatutConjugalType?
-  childrenCount Int                 @default(0)
-  igrParts      Decimal             @default(1) @db.Decimal(4, 1) // nombre de parts IGR (quotient familial)
+  civilite          CiviliteType?
+  firstName         String
+  lastName          String
+  sexe              EmployeeSexe?
+  birthDate         DateTime?
+  birthPlace        String?
+  nationality       String?             @default("CI")
+  maritalStatus     StatutConjugalType?
+  childrenCount     Int                 @default(0)
+  igrParts          Decimal             @default(1) @db.Decimal(4, 1) // nombre de parts IGR (quotient familial)
   // Coordonnées
-  email         String?
-  phone         String?
-  mobile        String?
-  address       String?
-  city          String?
+  email             String?
+  phone             String?
+  mobile            String?
+  address           String?
+  city              String?
   // Identité & protection sociale
-  idNumber      String? // numéro pièce d'identité
-  cnpsNumber    String? // numéro CNPS (sécurité sociale)
-  cmuNumber     String? // numéro CMU (couverture maladie universelle)
+  idNumber          String? // numéro pièce d'identité
+  cnpsNumber        String? // numéro CNPS (sécurité sociale)
+  cmuNumber         String? // numéro CMU (couverture maladie universelle)
   // Coordonnées bancaires (versement du salaire)
-  bankName      String?
-  bankRib       String?
+  bankName          String?
+  bankRib           String?
+  bankCode          String? // Code Banque
+  bankGuichetCode   String? // Code Guichet
+  bankAccountNumber String? // Numéro de compte
+  bankRibKey        String? // Clé RIB
   // Poste
-  poste         String?
-  departement   String?
+  poste             String?
+  departement       String?
+  // Filière de carrière (profil unique auquel l'employé est explicitement rattaché —
+  // un employé n'appartient qu'à une seule filière à la fois, contrairement à un
+  // poste qui peut figurer dans plusieurs profils de carrière).
+  careerProfileId   Int?
   // Responsable hiérarchique (évaluateur au titre de la gestion de la performance)
-  managerId     Int?
+  managerId         Int?
   // Lien optionnel vers un compte utilisateur de l'application
-  userId        Int?                @unique
+  userId            Int?                @unique
   // Statut emploi
-  status        EmployeeStatus      @default(ACTIF)
-  hireDate      DateTime?
-  exitDate      DateTime?
-  exitReason    String?
-  photo         String?
-  notes         String?             @db.Text
-  createdAt     DateTime            @default(now())
-  updatedAt     DateTime            @updatedAt
-  deletedAt     DateTime?
+  status            EmployeeStatus      @default(ACTIF)
+  hireDate          DateTime?
+  exitDate          DateTime?
+  exitReason        String?
+  photo             String?
+  notes             String?             @db.Text
+  createdAt         DateTime            @default(now())
+  updatedAt         DateTime            @updatedAt
+  deletedAt         DateTime?
 
   user                User?                          @relation("UserEmployee", fields: [userId], references: [id])
+  careerProfile       CareerProfile?                 @relation(fields: [careerProfileId], references: [id])
   manager             Employee?                      @relation("EmployeeManager", fields: [managerId], references: [id])
   subordinates        Employee[]                     @relation("EmployeeManager")
   contracts           EmploymentContract[]           @relation("EmployeeContracts")
@@ -2417,8 +2493,10 @@ model Employee {
   progressPlans       ProgressPlan[]
   perfRankingEntries  PerformanceRankingEntry[]
   delayJustifications AttendanceDelayJustification[]
+  innovations         ItInnovation[]
 
   @@index([managerId])
+  @@index([careerProfileId])
 }
 
 // Contrats signés (fichiers téléversés) rattachés à un employé — consultables
@@ -2578,6 +2656,55 @@ model JobPosition {
   deletedAt DateTime?
 }
 
+// Profil de carrière : filière métier regroupant plusieurs postes (référentiel
+// JobPosition, par libellé) selon un ordre de progression. Paramétrable
+// uniquement par SUPER_ADMIN/ADMIN (career-profiles.ipc.ts), affiché en
+// lecture seule à l'employé dans « Mon espace RH » (poste actuel mis en
+// évidence — hr:me:careerProfile).
+model CareerProfile {
+  id          Int       @id @default(autoincrement())
+  uuid        String    @unique @default(cuid())
+  name        String
+  description String?   @db.Text
+  isActive    Boolean   @default(true)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  deletedAt   DateTime?
+
+  steps     CareerProfileStep[]
+  employees Employee[]
+}
+
+// Étape (niveau) d'un profil de carrière : un poste donné (libellé, comme
+// Employee.poste / JobPosition.label) occupe un rang dans la filière. Un même
+// poste peut appartenir à plusieurs profils de carrière (ex. filières
+// transverses), mais ne peut apparaître qu'une seule fois au sein d'un même
+// profil (@@unique([careerProfileId, poste])).
+model CareerProfileStep {
+  id                  Int      @id @default(autoincrement())
+  careerProfileId     Int
+  poste               String
+  order               Int
+  // Rôle principal (mission essentielle) occupé à ce niveau de la filière.
+  rolePrincipal       String?  @db.Text
+  // Compétences et diplômes requis pour occuper ce poste/niveau.
+  competencesDiplomes String?  @db.Text
+  // Catégorie socio-professionnelle (référentiel EssaiCategory.label).
+  categorieSocioPro   String?
+  // Code exact de la catégorie (ex. « 1A », « 2B » — classification de la convention collective).
+  categorieCode       String?
+  // Avantages liés à ce poste/niveau (primes, véhicule, logement…).
+  avantages           String?  @db.Text
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  careerProfile CareerProfile @relation(fields: [careerProfileId], references: [id], onDelete: Cascade)
+
+  @@unique([careerProfileId, order])
+  @@unique([careerProfileId, poste])
+  @@index([careerProfileId])
+}
+
 // Référentiel « Département / Service » du personnel (liste paramétrable). Même
 // principe que JobPosition : alimente le sélecteur « Département / service » de
 // la fiche employé (avec création à la volée). La valeur retenue est stockée en
@@ -2640,6 +2767,10 @@ model Payslip {
   contractId      Int?
   periodYear      Int
   periodMonth     Int // 1-12
+  // Nombre de parts IGR figé à la génération (celui de l'employé à cet
+  // instant) — l'ITS de ce bulletin en dépend ; un changement ultérieur du
+  // nombre de parts de l'employé ne doit jamais modifier un bulletin déjà émis.
+  igrParts        Decimal        @default(1) @db.Decimal(4, 1)
   // Montants (FCFA)
   baseSalary      Decimal        @db.Decimal(15, 2) // salaire de base
   grossTaxable    Decimal        @db.Decimal(15, 2) // brut imposable
@@ -2989,6 +3120,7 @@ enum KpiSource {
   LEAVE // Congés / absences (LeaveRequest.employeeId)
   PROJECT // Projets (niveau service — pas d'attribution par utilisateur)
   SOCIAL // Réseaux sociaux / site web (SocialPublication.authorId, SocialPlatform.responsibleId)
+  IT_INNOVATION // Innovations IT (ItInnovation.employeeId)
   MANUAL // Saisie manuelle par l'évaluateur
 }
 
@@ -2998,6 +3130,7 @@ enum KpiMetric {
   RESILIATION_COUNT
   COMMISSION_AMOUNT
   ENCAISSEMENT_AMOUNT
+  RECOVERY_RATE
   CRM_ACTIVITIES_DONE
   CRM_VISITS
   CRM_CALLS
@@ -3011,6 +3144,7 @@ enum KpiMetric {
   OVERTIME_HOURS
   ABSENCE_DAYS
   LATE_EARLY_DEPARTURE_HOURS
+  IT_INNOVATIONS_IMPLEMENTED
   MANUAL_VALUE
 }
 
@@ -3363,4 +3497,713 @@ model AttendanceDelayJustification {
 
   @@unique([employeeId, date])
   @@index([employeeId])
+}
+
+// ── INNOVATIONS IT (Module 16) ──────────────────────────────────────────────
+// Fiche d'innovation IT portée par un employé, validée en 3 phases successives
+// (énoncé/description 15% → démonstration/test 35%, cumulé 50% → validation
+// finale/intégration 50%, cumulé 100% = « mise en œuvre »). Alimente le KPI
+// IT_INNOVATIONS_IMPLEMENTED (source IT_INNOVATION, Module 14). Un rejet de
+// phase n'est pas définitif : le porteur corrige et la resoumet.
+model ItInnovation {
+  id          Int    @id @default(autoincrement())
+  uuid        String @unique @default(cuid())
+  reference   String @unique // Ex: INNOV-2026-0001
+  title       String
+  employeeId  Int // porteur de l'innovation
+  createdById Int? // utilisateur ayant créé la fiche (audit, sans relation Prisma)
+
+  status   ItInnovationStatus @default(PHASE1_EN_ATTENTE)
+  progress Int                @default(0) // 0 / 15 / 50 / 100
+
+  // Phase 1 — Énoncé et description (15%)
+  phase1Description     String    @db.Text
+  phase1ValidatedById   Int?
+  phase1ValidatedAt     DateTime?
+  phase1RejectedAt      DateTime?
+  phase1RejectionReason String?   @db.Text
+
+  // Phase 2 — Démonstration et validation de test (+35%, cumulé 50%)
+  phase2Description     String?   @db.Text
+  phase2SubmittedAt     DateTime?
+  phase2ValidatedById   Int?
+  phase2ValidatedAt     DateTime?
+  phase2RejectedAt      DateTime?
+  phase2RejectionReason String?   @db.Text
+
+  // Phase 3 — Validation finale et intégration (+50%, cumulé 100%)
+  phase3Description     String?   @db.Text
+  phase3SubmittedAt     DateTime?
+  phase3ValidatedById   Int?
+  phase3ValidatedAt     DateTime?
+  phase3RejectedAt      DateTime?
+  phase3RejectionReason String?   @db.Text
+
+  notes     String?   @db.Text
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  employee    Employee   @relation(fields: [employeeId], references: [id])
+  attachments Document[] @relation("ItInnovationAttachments")
+
+  @@index([employeeId])
+  @@index([status])
+}
+
+enum ItInnovationStatus {
+  PHASE1_EN_ATTENTE // soumise, en attente de validation phase 1
+  PHASE1_REJETEE // phase 1 rejetée, en révision par le porteur
+  PHASE2_EN_COURS // phase 1 validée (15%), le porteur complète la phase 2
+  PHASE2_EN_ATTENTE // phase 2 soumise, en attente de validation
+  PHASE2_REJETEE // phase 2 rejetée, en révision
+  PHASE3_EN_COURS // phase 2 validée (50%), le porteur complète la phase 3
+  PHASE3_EN_ATTENTE // phase 3 soumise, en attente de validation
+  PHASE3_REJETEE // phase 3 rejetée, en révision
+  VALIDEE // phase 3 validée (100%) = innovation mise en œuvre
+}
+
+// ── MOTEUR DE DEVIS DE CONSTRUCTION (Module 17) ─────────────────────────────
+// Génère un devis quantitatif et estimatif de construction à partir des
+// caractéristiques d'un projet (type de bâtiment, standing, surfaces,
+// pièces…), en faisant correspondre ces caractéristiques à une bibliothèque
+// d'ouvrages (recettes de ressources) regroupés en 22 lots de travaux, via un
+// moteur de coefficients paramétrable par (type de bâtiment × standing).
+// Méthode de prix : déboursé sec → frais de chantier → frais généraux →
+// marge = prix de vente HT (cf. ConstructionEstimate.markupMode). Le prix
+// d'une ressource est lu à chaud à chaque génération (ConstructionResource
+// .unitPrice) — une variation de prix se répercute automatiquement sur tous
+// les ouvrages concernés ; seules les lignes déjà générées (ConstructionEstimateLine
+// / ConstructionEstimateResourceLine) sont des snapshots figés dans le temps.
+// Niveau 2 se convertit en un Quote réel (module Devis existant) : les 22 lots
+// se projettent 1-pour-1 sur QuoteItem.category (regroupement/sous-totaux déjà
+// gérés par quoteTemplate.ts, aucune duplication de cette logique ici).
+// Phase 1 : Niveau 1 (estimation rapide) + Niveau 2 (devis détaillé). Le
+// planning prévisionnel, la courbe de décaissement et la reprise manuelle des
+// quantités (Niveau 3) sont reportés à une phase 2 — les champs nécessaires
+// sont réservés (ConstructionEstimateLine.overriddenQuantity/isOverridden/
+// overrideNote) mais non câblés à l'IU dans cette phase.
+
+enum ConstructionBuildingType {
+  VILLA_BASSE
+  VILLA_DUPLEX
+  VILLA_TRIPLEX
+  MAISON_ECONOMIQUE
+  IMMEUBLE_R_PLUS
+  BUREAU
+  COMMERCE
+  ENTREPOT_HANGAR
+  AUTRE
+}
+
+enum ConstructionStanding {
+  ECONOMIQUE
+  STANDARD
+  MOYEN_STANDING
+  HAUT_STANDING
+  LUXE
+}
+
+enum ConstructionRoofType {
+  DALLE_PLEINE
+  CHARPENTE_BOIS_TOLE
+  CHARPENTE_BOIS_TUILE
+  CHARPENTE_METALLIQUE_BAC
+  MIXTE_DALLE_CHARPENTE
+}
+
+enum ConstructionJoineryType {
+  ALUMINIUM_STANDARD
+  ALUMINIUM_VITRAGE_TEINTE
+  PVC
+  BOIS_MASSIF
+  METALLIQUE
+  MIXTE_ALU_BOIS
+}
+
+enum ConstructionFlooringType {
+  CHAPE_LISSEE
+  CARRELAGE_GRES_STANDARD
+  CARRELAGE_GRES_CERAME
+  GRANITO
+  MARBRE
+  PARQUET_BOIS
+  MIXTE
+}
+
+enum ConstructionAcType {
+  AUCUNE
+  VENTILATION_SEULE
+  SPLIT_PARTIEL
+  SPLIT_TOUTES_PIECES
+  GAINABLE_CENTRALISE
+}
+
+enum ConstructionKitchenType {
+  NUE
+  SIMPLE_PAILLASSE
+  EQUIPEE_STANDARD
+  EQUIPEE_HAUT_DE_GAMME
+}
+
+enum ConstructionTerrainType {
+  PLAT
+  LEGERE_PENTE
+  FORTE_PENTE
+  MARECAGEUX_REMBLAI
+  ROCHEUX
+}
+
+enum ConstructionSanitationType {
+  FOSSE_SEPTIQUE_PUISARD
+  FOSSE_TOUTES_EAUX_EPANDAGE
+  MICRO_STATION
+  RACCORDEMENT_RESEAU_COLLECTIF
+  AUCUN
+}
+
+// Ventilation « Niveau 1 » demandée par l'utilisateur : gros œuvre / second
+// œuvre / électricité / plomberie / finitions / VRD / aménagements.
+enum ConstructionLotPhase {
+  GROS_OEUVRE
+  SECOND_OEUVRE
+  ELECTRICITE
+  PLOMBERIE
+  FINITIONS
+  VRD
+  AMENAGEMENTS
+}
+
+enum ConstructionResourceType {
+  MATERIAU
+  MAIN_OEUVRE
+  TRANSPORT
+  MATERIEL
+  SOUS_TRAITANCE
+}
+
+enum ConstructionPrecisionLevel {
+  NIVEAU_1 // estimation rapide
+  NIVEAU_2 // devis estimatif détaillé
+  NIVEAU_3 // DQE avec reprise manuelle des quantités (phase ultérieure)
+}
+
+enum ConstructionProjectStatus {
+  BROUILLON
+  ESTIME
+  DEVIS_EMIS
+  ARCHIVE
+}
+
+enum ConstructionEstimateStatus {
+  BROUILLON
+  VALIDE
+  CONVERTI
+  OBSOLETE
+}
+
+// CASCADE (défaut, usage BTP) : DS ×(1+frais chantier) ×(1+frais généraux)
+// ×(1+marge). ADDITIF : DS ×(1 + frais chantier + frais généraux + marge).
+enum ConstructionMarkupMode {
+  CASCADE
+  ADDITIF
+}
+
+// ── Référentiels / catalogues ───────────────────────────────────────────────
+
+// Les 22 lots de travaux (chapitres du DQE). `phase` alimente la ventilation
+// du Niveau 1. Se projette 1-pour-1 sur QuoteItem.category à la conversion.
+model ConstructionLot {
+  id          Int                  @id @default(autoincrement())
+  uuid        String               @unique @default(cuid())
+  code        String               @unique // LOT01 … LOT22
+  numero      Int // 1 … 22 (affichage « LOT 05 »)
+  label       String // « Maçonnerie »
+  phase       ConstructionLotPhase @default(GROS_OEUVRE)
+  description String?              @db.Text
+  sortOrder   Int                  @default(0)
+  isActive    Boolean              @default(true)
+  createdAt   DateTime             @default(now())
+  updatedAt   DateTime             @updatedAt
+  deletedAt   DateTime?
+
+  workItems ConstructionWorkItem[]
+
+  @@index([phase])
+  @@index([numero])
+}
+
+// Catalogue des coefficients/ratios utilisés par le registre de formules
+// (construction-formulas.ts). Même principe que KpiDefinition : un nouveau
+// coefficient = une ligne ici + une entrée dans le registre TS, jamais une
+// migration.
+model ConstructionRatioDefinition {
+  id           Int       @id @default(autoincrement())
+  uuid         String    @unique @default(cuid())
+  code         String    @unique // slug stable : COEF_REVETEMENT_SOL, PRISES_PAR_CHAMBRE…
+  label        String
+  category     String? // regroupement d'affichage : « Géométrie », « Électricité »…
+  unit         String? // ratio, %, nb, m, ml, m², m³, kg/m³ (libellé libre)
+  defaultValue Decimal   @default(0) @db.Decimal(12, 4) // valeur de repli si absente du profil
+  minValue     Decimal?  @db.Decimal(12, 4) // garde-fou de saisie
+  maxValue     Decimal?  @db.Decimal(12, 4)
+  description  String?   @db.Text
+  sortOrder    Int       @default(0)
+  isActive     Boolean   @default(true)
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  deletedAt    DateTime?
+
+  values ConstructionRatioValue[]
+
+  @@index([category])
+}
+
+// Référentiel « famille » de ressources (même principe que CatalogCategory) —
+// la valeur retenue est stockée en clair sur ConstructionResource.family.
+model ConstructionResourceFamily {
+  id        Int       @id @default(autoincrement())
+  label     String    @unique // « Ciments & liants », « Aciers », « Main d'œuvre »…
+  isActive  Boolean   @default(true)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+}
+
+// Localité et coefficient de prix générique appliqué aux ressources qui n'ont
+// pas de variante explicite pour cette ville (ConstructionResourcePriceVariant
+// reste la dérogation ponctuelle quand le prix réel est connu).
+model ConstructionLocality {
+  id               Int       @id @default(autoincrement())
+  label            String    @unique // « Abidjan », « Bouaké », « Korhogo »…
+  region           String?
+  priceCoefficient Decimal   @default(1.000) @db.Decimal(6, 3) // 1.000 = référence (Abidjan)
+  isActive         Boolean   @default(true)
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+  deletedAt        DateTime?
+
+  projects      ConstructionProject[]
+  priceVariants ConstructionResourcePriceVariant[]
+}
+
+// ── Bordereau des prix de base (price book) ─────────────────────────────────
+
+// La ressource et son PRIX COURANT — source de vérité unique, lue à chaud par
+// le moteur à chaque génération. Un changement de unitPrice n'affecte aucune
+// estimation déjà générée (snapshot figé dans ConstructionEstimateLine /
+// ConstructionEstimateResourceLine), seulement les générations futures.
+model ConstructionResource {
+  id                Int                      @id @default(autoincrement())
+  uuid              String                   @unique @default(cuid())
+  code              String                   @unique // MAT.CIMENT.CPJ35, MO.MACON, TR.LIVRAISON…
+  label             String // « Ciment CPJ 35 — sac de 50 kg »
+  type              ConstructionResourceType @default(MATERIAU)
+  family            String? // libellé libre (cf. ConstructionResourceFamily)
+  unit              String // sac, m³, kg, u, ml, m², h, t, forfait (cf. KpiUnit)
+  quality           String? // « CPJ 35 », « HA Fe500 », « 1er choix »…
+  unitPrice         Decimal                  @default(0) @db.Decimal(15, 2)
+  priceDate         DateTime? // date de validité du prix courant
+  supplierName      String? // fournisseur de référence du prix courant
+  referenceCity     String? // ville de référence du prix courant (ex: Abidjan)
+  priceIsIndicative Boolean                  @default(true) // prix issu du seed de démarrage, à valider
+  description       String?                  @db.Text
+  notes             String?                  @db.Text
+  isActive          Boolean                  @default(true)
+  createdAt         DateTime                 @default(now())
+  updatedAt         DateTime                 @updatedAt
+  deletedAt         DateTime?
+
+  components    ConstructionWorkItemComponent[]
+  priceVariants ConstructionResourcePriceVariant[]
+  priceHistory  ConstructionResourcePriceHistory[]
+
+  @@index([type])
+  @@index([family])
+  @@index([isActive])
+}
+
+// Dérogation ponctuelle de prix par ville — pas de matrice combinatoire
+// ressource × ville : seules les exceptions connues sont enregistrées ici, le
+// cas général retombe sur ConstructionLocality.priceCoefficient.
+model ConstructionResourcePriceVariant {
+  id           Int       @id @default(autoincrement())
+  resourceId   Int
+  localityId   Int
+  unitPrice    Decimal   @db.Decimal(15, 2)
+  supplierName String?
+  quality      String?
+  priceDate    DateTime?
+  note         String?   @db.Text
+  isActive     Boolean   @default(true)
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  resource ConstructionResource @relation(fields: [resourceId], references: [id], onDelete: Cascade)
+  locality ConstructionLocality @relation(fields: [localityId], references: [id])
+
+  @@unique([resourceId, localityId])
+  @@index([localityId])
+}
+
+// Journal d'audit en ajout seul — jamais lu par le moteur de calcul (P1),
+// uniquement consultatif (« historique du prix », graphique de variation).
+model ConstructionResourcePriceHistory {
+  id            Int      @id @default(autoincrement())
+  resourceId    Int
+  localityId    Int? // null = prix de référence ; sinon variante ville
+  previousPrice Decimal? @db.Decimal(15, 2)
+  unitPrice     Decimal  @db.Decimal(15, 2)
+  variationPct  Decimal? @db.Decimal(8, 2) // calculé à l'écriture, pour les graphiques
+  effectiveDate DateTime @default(now())
+  supplierName  String?
+  quality       String?
+  source        String? // « Relevé fournisseur », « Facture », « Estimation »…
+  note          String?  @db.Text
+  changedById   Int?
+  createdAt     DateTime @default(now())
+
+  resource  ConstructionResource @relation(fields: [resourceId], references: [id], onDelete: Cascade)
+  changedBy User?                @relation("ConstructionPriceChangedBy", fields: [changedById], references: [id])
+
+  @@index([resourceId])
+  @@index([effectiveDate])
+}
+
+// ── Bibliothèque d'ouvrages ──────────────────────────────────────────────────
+
+// L'ouvrage composé (« recette ») — ex : « Mur en agglos de 15 ». Sa quantité
+// pour un projet donné est soit calculée via formulaCode (registre TS), soit
+// fixe (fixedQuantity), soit exprimée en % du total des autres lignes
+// (percentOfTotalPct — utilisé pour les lots « Installation de chantier » et
+// « Nettoyage & réception »).
+model ConstructionWorkItem {
+  id                 Int       @id @default(autoincrement())
+  uuid               String    @unique @default(cuid())
+  code               String    @unique // MAC.MUR.AGGLO15, BA.SEMELLE, REV.CARRELAGE.SOL…
+  lotId              Int
+  designation        String    @db.Text // libellé complet tel qu'affiché sur le devis
+  description        String?   @db.Text
+  unit               String // m², m³, ml, kg, u, forfait (cf. KpiUnit)
+  formulaCode        String? // clé du registre de formules TS ; null → fixedQuantity
+  fixedQuantity      Decimal?  @db.Decimal(12, 3)
+  quantityMultiplier Decimal   @default(1) @db.Decimal(10, 4) // scinde une même formule entre 2 ouvrages
+  applicabilityRule  Json? // règle déclarative d'inclusion conditionnelle (null = toujours applicable)
+  percentOfTotalPct  Decimal?  @db.Decimal(6, 3) // ouvrage tarifé en % du total des autres lignes
+  deboursSecOverride Decimal?  @db.Decimal(15, 4) // court-circuite la recette si renseigné
+  sortOrder          Int       @default(0)
+  isActive           Boolean   @default(true)
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+  deletedAt          DateTime?
+
+  lot        ConstructionLot                 @relation(fields: [lotId], references: [id])
+  components ConstructionWorkItemComponent[]
+
+  @@index([lotId])
+  @@index([formulaCode])
+  @@index([isActive])
+}
+
+// La recette d'un ouvrage : quantité de ressource consommée par unité
+// d'ouvrage, pertes incluses. Somme pondérée par le prix courant de chaque
+// ressource = déboursé sec unitaire de l'ouvrage.
+model ConstructionWorkItemComponent {
+  id              Int      @id @default(autoincrement())
+  workItemId      Int
+  resourceId      Int
+  quantityPerUnit Decimal  @db.Decimal(14, 5) // qté ressource / unité d'ouvrage (ex: 12,5 agglos / m²)
+  wastageRate     Decimal  @default(0) @db.Decimal(5, 2) // % de pertes/casse
+  note            String?
+  sortOrder       Int      @default(0)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  workItem ConstructionWorkItem @relation(fields: [workItemId], references: [id], onDelete: Cascade)
+  resource ConstructionResource @relation(fields: [resourceId], references: [id])
+
+  @@unique([workItemId, resourceId])
+  @@index([resourceId])
+}
+
+// ── Moteur de coefficients ───────────────────────────────────────────────────
+
+// Profil de coefficients par (type de bâtiment × standing) — même mécanique
+// que PerformanceWeightProfile. Pas de soft delete : la contrainte unique sur
+// (buildingType, standing) empêcherait sinon de recréer le couple ; sans
+// risque, les estimations passées conservent un ratioSnapshot JSON figé.
+model ConstructionRatioProfile {
+  id           Int                      @id @default(autoincrement())
+  uuid         String                   @unique @default(cuid())
+  name         String // « Villa basse — Haut standing »
+  buildingType ConstructionBuildingType
+  standing     ConstructionStanding
+  description  String?                  @db.Text
+  isActive     Boolean                  @default(true)
+  createdAt    DateTime                 @default(now())
+  updatedAt    DateTime                 @updatedAt
+
+  values ConstructionRatioValue[]
+
+  @@unique([buildingType, standing])
+  @@index([buildingType])
+}
+
+model ConstructionRatioValue {
+  id                Int     @id @default(autoincrement())
+  profileId         Int
+  ratioDefinitionId Int
+  value             Decimal @db.Decimal(12, 4)
+  note              String?
+
+  profile         ConstructionRatioProfile    @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  ratioDefinition ConstructionRatioDefinition @relation(fields: [ratioDefinitionId], references: [id])
+
+  @@unique([profileId, ratioDefinitionId])
+  @@index([ratioDefinitionId])
+}
+
+// ── Projet & estimations (transactionnel) ───────────────────────────────────
+
+// Les caractéristiques d'un projet de construction, saisies une fois et
+// réutilisées pour générer autant d'estimations (versions) que nécessaire.
+model ConstructionProject {
+  id        Int                       @id @default(autoincrement())
+  uuid      String                    @unique @default(cuid())
+  reference String                    @unique // Ex: PC-2026-0001
+  nom       String
+  status    ConstructionProjectStatus @default(BROUILLON)
+
+  // Rattachements optionnels
+  clientId   Int?
+  prospectId Int?
+  terrainId  Int?
+  projectId  Int? // rattachement au module Projets (opération de chantier)
+  agentId    Int?
+
+  // Caractéristiques du bâtiment
+  buildingType      ConstructionBuildingType @default(VILLA_BASSE)
+  standing          ConstructionStanding     @default(MOYEN_STANDING)
+  levels            Int                      @default(1) // niveaux bâtis, RDC compris (1 = plain-pied)
+  roomCount         Int                      @default(1) // nombre de pièces (« 5 pièces »)
+  livingRoomCount   Int                      @default(1) // séjours / salons
+  bedroomCount      Int                      @default(0) // chambres
+  bathroomCount     Int                      @default(0) // SDB (avec baignoire)
+  showerRoomCount   Int                      @default(0) // SDE (douche)
+  wcCount           Int                      @default(0) // WC indépendants
+  surfaceHabitable  Decimal                  @db.Decimal(10, 2) // surface utile
+  surfaceConstruite Decimal?                 @db.Decimal(10, 2) // si null → dérivée
+  kitchenType       ConstructionKitchenType  @default(EQUIPEE_STANDARD)
+
+  // Second œuvre / finitions
+  roofType            ConstructionRoofType     @default(DALLE_PLEINE)
+  joineryType         ConstructionJoineryType  @default(ALUMINIUM_STANDARD) // menuiserie extérieure
+  interiorJoineryType ConstructionJoineryType? // menuiserie intérieure (null → BOIS_MASSIF)
+  flooringType        ConstructionFlooringType @default(CARRELAGE_GRES_STANDARD)
+  acType              ConstructionAcType       @default(SPLIT_PARTIEL)
+  acRoomCount         Int? // pièces climatisées (null → dérivé de acType)
+  hasFalseCeiling     Boolean                  @default(false)
+
+  // Terrain, localisation, VRD
+  terrainType              ConstructionTerrainType    @default(PLAT)
+  terrainSurface           Decimal?                   @db.Decimal(10, 2)
+  localityId               Int?
+  ville                    String?
+  commune                  String?
+  quartier                 String?
+  sanitationType           ConstructionSanitationType @default(FOSSE_SEPTIQUE_PUISARD)
+  hasWaterConnection       Boolean                    @default(true)
+  hasElectricityConnection Boolean                    @default(true)
+
+  // Extérieurs
+  fenceLength          Decimal? @db.Decimal(10, 2) // clôture (ml)
+  fenceHeight          Decimal? @db.Decimal(5, 2) // hauteur (m), défaut applicatif 2,00
+  gateCount            Int      @default(0) // portails
+  hasPool              Boolean  @default(false)
+  poolSurface          Decimal? @db.Decimal(10, 2)
+  hasExteriorLayout    Boolean  @default(false) // aménagements extérieurs
+  exteriorPavedSurface Decimal? @db.Decimal(10, 2) // dallage / pavage (m²)
+  hasLandscaping       Boolean  @default(false) // espaces verts
+
+  // Paramètres économiques (surcharges facultatives — sinon AppSetting/défaut de code)
+  fraisChantierPct Decimal?                @db.Decimal(5, 2)
+  fraisGenerauxPct Decimal?                @db.Decimal(5, 2)
+  margePct         Decimal?                @db.Decimal(5, 2)
+  tvaPct           Decimal?                @db.Decimal(5, 2)
+  markupMode       ConstructionMarkupMode?
+
+  description String?   @db.Text
+  notes       String?   @db.Text
+  createdById Int?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  deletedAt   DateTime?
+
+  client    Client?                @relation(fields: [clientId], references: [id])
+  prospect  Prospect?              @relation(fields: [prospectId], references: [id])
+  terrain   Terrain?               @relation(fields: [terrainId], references: [id])
+  project   Project?               @relation(fields: [projectId], references: [id])
+  agent     User?                  @relation("ConstructionProjectAgent", fields: [agentId], references: [id])
+  createdBy User?                  @relation("ConstructionProjectCreatedBy", fields: [createdById], references: [id])
+  locality  ConstructionLocality?  @relation(fields: [localityId], references: [id])
+  estimates ConstructionEstimate[]
+
+  @@index([clientId])
+  @@index([prospectId])
+  @@index([status])
+  @@index([buildingType, standing])
+  @@index([createdById])
+}
+
+// Une génération d'estimation = une ligne (versionnée par projet). Fige les
+// paramètres de prix et les totaux du moment ; les lignes détaillées et le
+// quantitatif de ressources sont dans les tables associées.
+model ConstructionEstimate {
+  id             Int                        @id @default(autoincrement())
+  uuid           String                     @unique @default(cuid())
+  reference      String                     @unique // Ex: EST-2026-0001
+  projectId      Int
+  version        Int                        @default(1)
+  precisionLevel ConstructionPrecisionLevel @default(NIVEAU_2)
+  status         ConstructionEstimateStatus @default(BROUILLON)
+  label          String? // « v2 — après arbitrage carrelage »
+
+  // Profil de coefficients utilisé (scalaire, snapshot — pas de FK)
+  ratioProfileId   Int?
+  ratioProfileName String?
+  ratioSnapshot    Json? // { CODE_RATIO: valeur, … } effectivement appliqué
+  localityId       Int? // scalaire — localité de prix retenue
+  localityLabel    String?
+
+  // Paramètres de prix figés
+  markupMode       ConstructionMarkupMode @default(CASCADE)
+  fraisChantierPct Decimal                @default(0) @db.Decimal(5, 2)
+  fraisGenerauxPct Decimal                @default(0) @db.Decimal(5, 2)
+  margePct         Decimal                @default(0) @db.Decimal(5, 2)
+  tvaPct           Decimal                @default(0) @db.Decimal(5, 2)
+  puRoundingStep   Int                    @default(1) // arrondi du PU en FCFA (1, 5, 10, 100)
+
+  // Totaux figés
+  totalDeboursMateriaux  Decimal  @default(0) @db.Decimal(15, 2)
+  totalDeboursMainOeuvre Decimal  @default(0) @db.Decimal(15, 2)
+  totalDeboursTransport  Decimal  @default(0) @db.Decimal(15, 2)
+  totalDeboursAutres     Decimal  @default(0) @db.Decimal(15, 2)
+  totalDeboursSec        Decimal  @default(0) @db.Decimal(15, 2)
+  totalFraisChantier     Decimal  @default(0) @db.Decimal(15, 2)
+  totalFraisGeneraux     Decimal  @default(0) @db.Decimal(15, 2)
+  totalMarge             Decimal  @default(0) @db.Decimal(15, 2)
+  totalHT                Decimal  @default(0) @db.Decimal(15, 2)
+  totalTVA               Decimal  @default(0) @db.Decimal(15, 2)
+  totalTTC               Decimal  @default(0) @db.Decimal(15, 2)
+  prixMoyenM2            Decimal? @db.Decimal(15, 2)
+
+  // Spécifique Niveau 1 (fourchette)
+  toleranceRangePct Decimal? @db.Decimal(5, 2) // ex: 12,00 → ±12 %
+  budgetMin         Decimal? @db.Decimal(15, 2)
+  budgetMax         Decimal? @db.Decimal(15, 2)
+
+  // Qualité du calcul
+  coveragePct Decimal? @db.Decimal(5, 2) // % de lots couverts par la bibliothèque
+  warnings    Json? // string[] : ratios manquants, prix à 0…
+
+  // Conversion en devis (scalaire, sans FK — cf. Quote.convertedConventionId)
+  quoteId        Int?
+  quoteReference String?
+  convertedAt    DateTime?
+
+  generatedById Int?
+  generatedAt   DateTime  @default(now())
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  deletedAt     DateTime?
+
+  project       ConstructionProject                @relation(fields: [projectId], references: [id])
+  generatedBy   User?                              @relation("ConstructionEstimateGeneratedBy", fields: [generatedById], references: [id])
+  lines         ConstructionEstimateLine[]
+  resourceLines ConstructionEstimateResourceLine[]
+
+  @@unique([projectId, version])
+  @@index([projectId])
+  @@index([precisionLevel])
+  @@index([status])
+}
+
+// Le DQE figé — une ligne = un ouvrage instancié pour cette estimation.
+model ConstructionEstimateLine {
+  id         Int @id @default(autoincrement())
+  estimateId Int
+
+  // Lot (figé, scalaire)
+  lotId     Int?
+  lotCode   String
+  lotLabel  String // devient QuoteItem.category à la conversion
+  lotNumero Int                  @default(0)
+  lotPhase  ConstructionLotPhase @default(GROS_OEUVRE)
+
+  // Ouvrage (figé, scalaire — traçabilité seule, pas de FK)
+  workItemId   Int?
+  workItemCode String?
+  designation  String  @db.Text
+  unit         String?
+
+  // Quantités
+  computedQuantity   Decimal  @default(0) @db.Decimal(14, 3) // sortie du moteur
+  overriddenQuantity Decimal? @db.Decimal(14, 3) // réservé Niveau 3 (non câblé en Phase 1)
+  isOverridden       Boolean  @default(false) // réservé Niveau 3
+  overrideNote       String?  @db.Text // réservé Niveau 3
+  quantity           Decimal  @default(0) @db.Decimal(14, 3) // quantité effective retenue
+
+  // Décomposition du prix (figée)
+  deboursMateriaux   Decimal @default(0) @db.Decimal(15, 4)
+  deboursMainOeuvre  Decimal @default(0) @db.Decimal(15, 4)
+  deboursTransport   Decimal @default(0) @db.Decimal(15, 4)
+  deboursAutres      Decimal @default(0) @db.Decimal(15, 4)
+  deboursSecUnitaire Decimal @default(0) @db.Decimal(15, 4)
+  fraisChantierUnit  Decimal @default(0) @db.Decimal(15, 4)
+  fraisGenerauxUnit  Decimal @default(0) @db.Decimal(15, 4)
+  margeUnit          Decimal @default(0) @db.Decimal(15, 4)
+  prixUnitaireHT     Decimal @default(0) @db.Decimal(15, 2)
+  montantHT          Decimal @default(0) @db.Decimal(15, 2)
+
+  // Traçabilité du calcul
+  formulaCode  String?
+  formulaTrace String? @db.Text // « 180,00 m² × 1,10 (COEF_REVETEMENT_SOL) = 198,00 m² »
+
+  order     Int      @default(0)
+  createdAt DateTime @default(now())
+
+  estimate ConstructionEstimate @relation(fields: [estimateId], references: [id], onDelete: Cascade)
+
+  @@index([estimateId])
+  @@index([workItemId])
+  @@index([lotCode])
+}
+
+// Agrégation des besoins en ressources sur l'ensemble de l'estimation — un
+// seul modèle sert les deux livrables « Quantitatif des matériaux »
+// (resourceType = MATERIAU/MATERIEL) et « Besoin en main d'œuvre »
+// (resourceType = MAIN_OEUVRE).
+model ConstructionEstimateResourceLine {
+  id         Int @id @default(autoincrement())
+  estimateId Int
+
+  resourceId    Int? // scalaire, traçabilité seule
+  resourceCode  String
+  resourceLabel String
+  resourceType  ConstructionResourceType @default(MATERIAU)
+  family        String?
+  unit          String?
+
+  quantityNette Decimal @default(0) @db.Decimal(16, 3) // hors pertes
+  quantity      Decimal @default(0) @db.Decimal(16, 3) // pertes incluses
+  unitPrice     Decimal @default(0) @db.Decimal(15, 2) // prix figé au moment du calcul
+  montant       Decimal @default(0) @db.Decimal(15, 2)
+
+  order     Int      @default(0)
+  createdAt DateTime @default(now())
+
+  estimate ConstructionEstimate @relation(fields: [estimateId], references: [id], onDelete: Cascade)
+
+  @@unique([estimateId, resourceCode])
+  @@index([estimateId, resourceType])
 }

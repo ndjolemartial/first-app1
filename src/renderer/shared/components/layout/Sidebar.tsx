@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { NavLink, useLocation } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import { clsx } from 'clsx';
 import {
   LayoutDashboard, Users, UserSearch, UserCheck, Home, Building2,
@@ -7,14 +7,24 @@ import {
   Map, Landmark, Percent, Wallet, Building, PiggyBank, Briefcase, FileSpreadsheet, UserCog, ReceiptText, CalendarDays, Clock,
   BarChart3, ChevronDown, UserPlus, IdCard, Trophy, Gauge, Target, ClipboardCheck, Sliders,
   Share2, PenTool, Users2, AlarmClockOff, TrendingUp, AlertTriangle, Lightbulb, Radar, Phone,
+  Handshake, Rocket, HardHat,
 } from 'lucide-react';
 import { useAuthStore } from '../../stores/auth.store';
+import { roleLabel } from '../../utils/roleLabel';
+import { TABS as SETTINGS_TABS, ADMIN_ROLES as SETTINGS_ADMIN_ROLES } from '../../../modules/settings/pages/SettingsPage';
+import { useMyTemplatePermissions } from '../../../modules/communication/hooks/useCommunication';
 
 interface NavItem {
   label: string;
   to: string;
   icon: React.ReactNode;
   roles?: string[];
+  /**
+   * Sous-chemins de `to` à exclure de la correspondance « actif » — ex :
+   * /commissions/referrers, qui a son propre point d'entrée sous « Tierce
+   * partie » et ne doit donc pas sélectionner aussi le menu « Commissions ».
+   */
+  matchExcludePrefixes?: string[];
 }
 
 interface NavGroup {
@@ -33,14 +43,34 @@ const navItems: NavEntry[] = [
   { label: 'Utilisateurs', to: '/users', icon: <Users className="h-5 w-5" />, roles: ['SUPER_ADMIN', 'ADMIN', 'AGENT_TECHNIQUE'] },
   { label: 'Prospects', to: '/prospects', icon: <UserSearch className="h-5 w-5" /> },
   { label: 'Clients', to: '/clients', icon: <UserCheck className="h-5 w-5" /> },
-  { label: 'Propriétaires', to: '/owners', icon: <Home className="h-5 w-5" />, roles: ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ACCOUNTANT', 'ASSISTANTE_DIRECTION'] },
+  {
+    label: 'Tierce partie',
+    icon: <Handshake className="h-5 w-5" />,
+    // Groupe ouvert à tous : Apporteurs d'affaire est accessible à tout rôle
+    // (vue filtrée pour les rôles non privilégiés) — Propriétaires reste
+    // restreint via son propre `roles`, aligné sur le RoleGuard de /owners.
+    children: [
+      { label: 'Propriétaires', to: '/owners', icon: <Home className="h-5 w-5" />, roles: ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ACCOUNTANT', 'ASSISTANTE_DIRECTION'] },
+      { label: 'Apporteurs d\'affaire', to: '/commissions/referrers', icon: <UserPlus className="h-5 w-5" /> },
+    ],
+  },
   { label: 'Lotissements', to: '/lotissements', icon: <Map className="h-5 w-5" />, roles: ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ACCOUNTANT', 'ASSISTANTE_DIRECTION'] },
   { label: 'Terrains', to: '/terrains', icon: <Landmark className="h-5 w-5" /> },
   { label: 'Programmes immobiliers', to: '/programmes', icon: <Building className="h-5 w-5" />, roles: ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ACCOUNTANT', 'ASSISTANTE_DIRECTION'] },
   { label: 'Biens', to: '/properties', icon: <Building2 className="h-5 w-5" /> },
   { label: 'Devis', to: '/quotes', icon: <FileSpreadsheet className="h-5 w-5" />, roles: ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ACCOUNTANT', 'ASSISTANTE_DIRECTION', 'AGENT', 'AGENT_TECHNIQUE', 'READONLY'] },
+  { label: 'Devis construction', to: '/construction', icon: <HardHat className="h-5 w-5" />, roles: ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ACCOUNTANT', 'ASSISTANTE_DIRECTION', 'AGENT', 'AGENT_TECHNIQUE', 'READONLY'] },
   { label: 'Conventions / Attestations', to: '/conventions', icon: <FileText className="h-5 w-5" />, roles: ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ACCOUNTANT', 'ASSISTANTE_DIRECTION', 'AGENT', 'AGENT_TECHNIQUE'] },
-  { label: 'Commissions', to: '/commissions', icon: <Percent className="h-5 w-5" />, roles: ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ACCOUNTANT', 'ASSISTANTE_DIRECTION', 'AGENT', 'AGENT_TECHNIQUE', 'READONLY'] },
+  {
+    label: 'Commissions', to: '/commissions', icon: <Percent className="h-5 w-5" />,
+    roles: ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ACCOUNTANT', 'ASSISTANTE_DIRECTION', 'AGENT', 'AGENT_TECHNIQUE', 'READONLY'],
+    // Les pages Apporteurs d'affaire sont accessibles sous /commissions/referrers
+    // mais ont leur propre entrée sous « Tierce partie » — elles ne doivent pas
+    // sélectionner aussi « Commissions ». Seul un accès aux commissions d'un
+    // apporteur (ex: /commissions/beneficiary/REFERRER/:id, depuis le bouton
+    // « Commissions » d'une ligne ou de la fiche apporteur) reste couvert.
+    matchExcludePrefixes: ['/commissions/referrers'],
+  },
   { label: 'Comptabilité', to: '/accounting', icon: <Calculator className="h-5 w-5" />, roles: ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ACCOUNTANT'] },
   { label: 'Trésorerie', to: '/treasury', icon: <Wallet className="h-5 w-5" />, roles: ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ACCOUNTANT'] },
   { label: 'Budgets', to: '/budgets', icon: <PiggyBank className="h-5 w-5" />, roles: ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ACCOUNTANT'] },
@@ -59,6 +89,15 @@ const navItems: NavEntry[] = [
       { label: 'Abonnés', to: '/social-media/followers', icon: <Users2 className="h-5 w-5" />, roles: ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ASSISTANTE_DIRECTION', 'AGENT_TECHNIQUE'] },
       { label: 'Plateformes', to: '/social-media/platforms', icon: <Share2 className="h-5 w-5" />, roles: ['SUPER_ADMIN', 'ADMIN', 'MANAGER'] },
     ],
+  },
+  {
+    label: 'Innovations IT',
+    to: '/innovations',
+    icon: <Rocket className="h-5 w-5" />,
+    // Création/gestion réservée aux rôles techniques (mêmes rôles que le
+    // RoleGuard de router.tsx) : AGENT_TECHNIQUE (porteur, restreint à ses
+    // propres innovations) + SUPER_ADMIN/ADMIN/MANAGER/RH (vue complète).
+    roles: ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'RH', 'AGENT_TECHNIQUE'],
   },
   { label: 'Archivage', to: '/archiving', icon: <Archive className="h-5 w-5" /> },
   { label: 'Projets', to: '/projects', icon: <Briefcase className="h-5 w-5" />, roles: ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ACCOUNTANT', 'ASSISTANTE_DIRECTION', 'AGENT_TECHNIQUE'] },
@@ -124,7 +163,11 @@ const navItems: NavEntry[] = [
       { label: 'Recommandations', to: '/analytics/recommendations', icon: <Lightbulb className="h-5 w-5" />, roles: ['SUPER_ADMIN', 'ADMIN'] },
     ],
   },
-  { label: 'Paramètres', to: '/settings', icon: <Settings className="h-5 w-5" />, roles: ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ACCOUNTANT', 'RH'] },
+  // Visibilité calculée dynamiquement dans Sidebar() (hasAnySettingsAccess),
+  // pas par un simple rôle statique : dépend de la liste des onglets visibles
+  // (SettingsPage.TABS) ET de la désignation individuelle éventuelle comme
+  // éditeur de modèles de messages manuels (indépendante du rôle).
+  { label: 'Paramètres', to: '/settings', icon: <Settings className="h-5 w-5" /> },
 ];
 
 /** Style commun aux liens de navigation (NavLink). */
@@ -141,12 +184,23 @@ function itemStyle({ isActive }: { isActive: boolean }) {
   };
 }
 
+/** Correspondance « actif » d'un lien de navigation, avec exclusions optionnelles de sous-chemins. */
+function isNavItemActive(pathname: string, item: NavItem): boolean {
+  const base = item.to.split('?')[0];
+  const matches = pathname === base || pathname.startsWith(`${base}/`);
+  if (!matches) return false;
+  if (item.matchExcludePrefixes?.some((p) => pathname === p || pathname.startsWith(`${p}/`))) return false;
+  return true;
+}
+
 function SidebarLink({ item, nested = false }: { item: NavItem; nested?: boolean }) {
+  const location = useLocation();
+  const isActive = isNavItemActive(location.pathname, item);
   return (
-    <NavLink to={item.to} className={(s) => clsx(itemClass(s), nested && 'pl-10 py-2')} style={itemStyle}>
+    <Link to={item.to} className={clsx(itemClass({ isActive }), nested && 'pl-10 py-2')} style={itemStyle({ isActive })}>
       {item.icon}
       {item.label}
-    </NavLink>
+    </Link>
   );
 }
 
@@ -182,14 +236,26 @@ export default function Sidebar() {
 
   const canSee = (roles?: string[]) => !roles || (!!role && roles.includes(role));
 
-  const visible: NavEntry[] = navItems
+  // « Paramètres » ne doit apparaître que si l'utilisateur a effectivement
+  // accès à au moins un onglet de la page Paramètres : soit un rôle admin,
+  // soit un onglet explicitement ouvert à son rôle (SettingsPage.TABS), soit
+  // une désignation individuelle comme éditeur de modèles de messages manuels
+  // (indépendante du rôle — cf. commTemplates dans SettingsPage.tsx).
+  const { data: templatePermRes } = useMyTemplatePermissions();
+  const isSettingsAdmin = !!role && SETTINGS_ADMIN_ROLES.includes(role);
+  const hasRoleTaggedTab = !!role && SETTINGS_TABS.some((t) => t.roles?.includes(role));
+  const canManageManualTemplates = templatePermRes?.data?.canManageManual ?? false;
+  const hasAnySettingsAccess = isSettingsAdmin || hasRoleTaggedTab || canManageManualTemplates;
+
+  const visible: NavEntry[] = (navItems
     .map((entry) => {
       if (!isGroup(entry)) return canSee(entry.roles) ? entry : null;
       if (!canSee(entry.roles)) return null;
       const children = entry.children.filter((c) => canSee(c.roles));
       return children.length > 0 ? { ...entry, children } : null;
     })
-    .filter(Boolean) as NavEntry[];
+    .filter(Boolean) as NavEntry[])
+    .filter((entry) => isGroup(entry) || entry.to !== '/settings' || hasAnySettingsAccess);
 
   return (
     <aside
@@ -219,7 +285,7 @@ export default function Sidebar() {
           </div>
           <div className="min-w-0">
             <p className="text-sm font-medium text-white truncate">{user?.firstName} {user?.lastName}</p>
-            <p className="text-xs text-slate-400 truncate">{user?.role}</p>
+            <p className="text-xs text-slate-400 truncate">{roleLabel(user?.role)}</p>
           </div>
         </div>
       </div>

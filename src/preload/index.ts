@@ -271,6 +271,8 @@ const communication = {
     api.invoke('communication:updateTemplate', { token, id, payload }),
   deleteTemplate: (token: string, id: number) =>
     api.invoke('communication:deleteTemplate', { token, id }),
+  myTemplatePermissions: (token: string) =>
+    api.invoke('communication:myTemplatePermissions', { token }),
   getHistory: (token: string, filters?: object, page?: number, limit?: number) =>
     api.invoke('communication:getHistory', { token, filters, page, limit }),
   sendEmail: (token: string, payload: object) =>
@@ -427,6 +429,97 @@ const socialMedia = {
   dashboard: (token: string) => api.invoke('socialMedia:dashboard', { token }),
 };
 
+// Innovations IT (Module 16)
+const innovations = {
+  list: (token: string, filters?: object, page?: number, limit?: number) =>
+    api.invoke('innovations:list', { token, filters, page, limit }),
+  getById: (token: string, id: number) => api.invoke('innovations:getById', { token, id }),
+  employees: (token: string) => api.invoke('innovations:employees', { token }),
+  create: (token: string, payload: object) => api.invoke('innovations:create', { token, payload }),
+  update: (token: string, id: number, payload: object) => api.invoke('innovations:update', { token, id, payload }),
+  submitPhase2: (token: string, id: number, payload: object) => api.invoke('innovations:submitPhase2', { token, id, payload }),
+  submitPhase3: (token: string, id: number, payload: object) => api.invoke('innovations:submitPhase3', { token, id, payload }),
+  validatePhase: (token: string, id: number, payload: object) => api.invoke('innovations:validatePhase', { token, id, payload }),
+  delete: (token: string, id: number) => api.invoke('innovations:delete', { token, id }),
+  removeAttachment: (token: string, id: number, documentId: number) =>
+    api.invoke('innovations:removeAttachment', { token, id, documentId }),
+};
+
+// Moteur de devis de construction (Module 17) — bibliothèque technique
+const constructionLibrary = {
+  lots: {
+    list: (token: string, includeInactive?: boolean) => api.invoke('construction:lots:list', { token, includeInactive }),
+    upsert: (token: string, id: number | undefined, payload: object) => api.invoke('construction:lots:upsert', { token, id, payload }),
+    delete: (token: string, id: number) => api.invoke('construction:lots:delete', { token, id }),
+  },
+  resourceFamilies: {
+    list: (token: string, includeInactive?: boolean) => api.invoke('construction:resourceFamilies:list', { token, includeInactive }),
+    create: (token: string, payload: object) => api.invoke('construction:resourceFamilies:create', { token, payload }),
+    delete: (token: string, id: number) => api.invoke('construction:resourceFamilies:delete', { token, id }),
+  },
+  localities: {
+    list: (token: string, includeInactive?: boolean) => api.invoke('construction:localities:list', { token, includeInactive }),
+    upsert: (token: string, id: number | undefined, payload: object) => api.invoke('construction:localities:upsert', { token, id, payload }),
+    delete: (token: string, id: number) => api.invoke('construction:localities:delete', { token, id }),
+  },
+  resources: {
+    list: (token: string, filters?: object, page?: number, limit?: number) => api.invoke('construction:resources:list', { token, filters, page, limit }),
+    getById: (token: string, id: number) => api.invoke('construction:resources:getById', { token, id }),
+    create: (token: string, payload: object) => api.invoke('construction:resources:create', { token, payload }),
+    update: (token: string, id: number, payload: object) => api.invoke('construction:resources:update', { token, id, payload }),
+    updatePrice: (token: string, id: number, payload: object) => api.invoke('construction:resources:updatePrice', { token, id, payload }),
+    priceHistory: (token: string, id: number, limit?: number) => api.invoke('construction:resources:priceHistory', { token, id, limit }),
+    whereUsed: (token: string, id: number) => api.invoke('construction:resources:whereUsed', { token, id }),
+    delete: (token: string, id: number) => api.invoke('construction:resources:delete', { token, id }),
+  },
+  workItems: {
+    list: (token: string, filters?: object) => api.invoke('construction:workItems:list', { token, filters }),
+    getById: (token: string, id: number) => api.invoke('construction:workItems:getById', { token, id }),
+    upsert: (token: string, id: number | undefined, payload: object) => api.invoke('construction:workItems:upsert', { token, id, payload }),
+    duplicate: (token: string, id: number) => api.invoke('construction:workItems:duplicate', { token, id }),
+    delete: (token: string, id: number) => api.invoke('construction:workItems:delete', { token, id }),
+  },
+  ratioDefs: {
+    list: (token: string, includeInactive?: boolean) => api.invoke('construction:ratioDefs:list', { token, includeInactive }),
+    create: (token: string, payload: object) => api.invoke('construction:ratioDefs:create', { token, payload }),
+    update: (token: string, id: number, payload: object) => api.invoke('construction:ratioDefs:update', { token, id, payload }),
+    delete: (token: string, id: number) => api.invoke('construction:ratioDefs:delete', { token, id }),
+  },
+  ratioProfiles: {
+    list: (token: string) => api.invoke('construction:ratioProfiles:list', { token }),
+    getById: (token: string, id: number) => api.invoke('construction:ratioProfiles:getById', { token, id }),
+    upsert: (token: string, id: number | undefined, payload: object) => api.invoke('construction:ratioProfiles:upsert', { token, id, payload }),
+    duplicate: (token: string, id: number, target: object) => api.invoke('construction:ratioProfiles:duplicate', { token, id, target }),
+    delete: (token: string, id: number) => api.invoke('construction:ratioProfiles:delete', { token, id }),
+  },
+  health: (token: string) => api.invoke('construction:library:health', { token }),
+};
+
+// Moteur de devis de construction (Module 17) — projets & estimations
+const construction = {
+  projects: {
+    list: (token: string, filters?: object, page?: number, limit?: number) => api.invoke('construction:projects:list', { token, filters, page, limit }),
+    getById: (token: string, id: number) => api.invoke('construction:projects:getById', { token, id }),
+    create: (token: string, payload: object) => api.invoke('construction:projects:create', { token, payload }),
+    update: (token: string, id: number, payload: object) => api.invoke('construction:projects:update', { token, id, payload }),
+    duplicate: (token: string, id: number) => api.invoke('construction:projects:duplicate', { token, id }),
+    delete: (token: string, id: number) => api.invoke('construction:projects:delete', { token, id }),
+  },
+  quickEstimate: (token: string, args: { projectId?: number; characteristics?: object }) =>
+    api.invoke('construction:quickEstimate', { token, ...args }),
+  generateEstimate: (token: string, payload: object) => api.invoke('construction:generateEstimate', { token, ...payload }),
+  estimates: {
+    list: (token: string, projectId: number) => api.invoke('construction:estimates:list', { token, projectId }),
+    getById: (token: string, id: number) => api.invoke('construction:estimates:getById', { token, id }),
+    summary: (token: string, id: number) => api.invoke('construction:estimates:summary', { token, id }),
+    materials: (token: string, id: number) => api.invoke('construction:estimates:materials', { token, id }),
+    labor: (token: string, id: number) => api.invoke('construction:estimates:labor', { token, id }),
+    toQuote: (token: string, estimateId: number, payload: object) => api.invoke('construction:estimates:toQuote', { token, estimateId, payload }),
+    setStatus: (token: string, id: number, status: string) => api.invoke('construction:estimates:setStatus', { token, id, status }),
+    delete: (token: string, id: number) => api.invoke('construction:estimates:delete', { token, id }),
+  },
+};
+
 // Terrains
 const terrains = {
   list: (token: string, filters?: object, page?: number, limit?: number) =>
@@ -489,6 +582,7 @@ const hr = {
     getById: (token: string, id: number) => api.invoke('hr:employees:getById', { token, id }),
     linkableUsers: (token: string, excludeEmployeeId?: number) =>
       api.invoke('hr:employees:linkableUsers', { token, excludeEmployeeId }),
+    careerProfiles: (token: string) => api.invoke('hr:employees:careerProfiles', { token }),
     create: (token: string, payload: object) => api.invoke('hr:employees:create', { token, payload }),
     update: (token: string, id: number, payload: object) =>
       api.invoke('hr:employees:update', { token, id, payload }),
@@ -582,6 +676,7 @@ const hr = {
   // Espace self-service : mon propre contenu RH & Paie (lecture seule).
   me: {
     overview: (token: string) => api.invoke('hr:me:overview', { token }),
+    careerProfile: (token: string) => api.invoke('hr:me:careerProfile', { token }),
     payslips: (token: string) => api.invoke('hr:me:payslips', { token }),
     payslip: (token: string, id: number) => api.invoke('hr:me:payslip', { token, id }),
     payslipPrint: (token: string, id: number) => api.invoke('hr:me:payslipPrint', { token, id }),
@@ -752,6 +847,20 @@ const documentExport = {
       marginsMm?: { top: number; bottom: number; left: number; right: number };
     },
   ) => api.invoke('documents:printDocument', { token, ...payload }),
+  // Rendu PDF en mémoire (base64), sans dialogue ni fenêtre — pour réutiliser
+  // le PDF comme pièce jointe (ex. convention jointe à un email).
+  renderDocumentPdf: (
+    token: string,
+    payload: {
+      fileName: string;
+      bodyHtml: string;
+      headerTemplate: string;
+      footerTemplate: string;
+      headerMm: number;
+      footerMm: number;
+      marginsMm?: { top: number; bottom: number; left: number; right: number };
+    },
+  ) => api.invoke('documents:renderDocumentPdf', { token, ...payload }),
   exportDocumentDocx: (
     token: string,
     payload: {
@@ -781,6 +890,19 @@ const listExportTemplates = {
     api.invoke('listExportTemplates:update', { token, id, payload }),
 };
 
+// Ordre de virement (bulletins de paie) — modèle éditable + aperçu/export
+const wireTransfer = {
+  getTemplate: (token: string) => api.invoke('wireTransfer:getTemplate', { token }),
+  updateTemplate: (token: string, id: number, payload: object) =>
+    api.invoke('wireTransfer:updateTemplate', { token, id, payload }),
+  print: (token: string, periodYear: number, periodMonth: number) =>
+    api.invoke('wireTransfer:print', { token, periodYear, periodMonth }),
+  exportPdf: (token: string, periodYear: number, periodMonth: number) =>
+    api.invoke('wireTransfer:exportPdf', { token, periodYear, periodMonth }),
+  exportExcel: (token: string, periodYear: number, periodMonth: number) =>
+    api.invoke('wireTransfer:exportExcel', { token, periodYear, periodMonth }),
+};
+
 // Commissions
 const commissions = {
   getDashboard: (token: string) => api.invoke('commissions:getDashboard', { token }),
@@ -800,6 +922,7 @@ const commissions = {
   listReferrers: (token: string, filters?: object, page?: number, limit?: number) =>
     api.invoke('commissions:listReferrers', { token, filters, page, limit }),
   getReferrerById: (token: string, id: number) => api.invoke('commissions:getReferrerById', { token, id }),
+  getReferrerTimeline: (token: string, id: number) => api.invoke('commissions:getReferrerTimeline', { token, id }),
   createReferrer: (token: string, payload: object) => api.invoke('commissions:createReferrer', { token, payload }),
   updateReferrer: (token: string, id: number, payload: object) =>
     api.invoke('commissions:updateReferrer', { token, id, payload }),
@@ -944,6 +1067,11 @@ const settings = {
   updateAttendanceQr: (token: string, payload: object) =>
     api.invoke('settings:updateAttendanceQr', { token, payload }),
 
+  getManualTemplateEditors: (token: string) =>
+    api.invoke('settings:getManualTemplateEditors', { token }),
+  updateManualTemplateEditors: (token: string, userIds: number[]) =>
+    api.invoke('settings:updateManualTemplateEditors', { token, userIds }),
+
   getLatenessSettings: (token: string) => api.invoke('settings:getLatenessSettings', { token }),
   updateLatenessSettings: (token: string, payload: object) =>
     api.invoke('settings:updateLatenessSettings', { token, payload }),
@@ -1058,4 +1186,15 @@ const documents = {
   pathForFile: (file: File) => webUtils.getPathForFile(file),
 };
 
-contextBridge.exposeInMainWorld('electron', { auth, users, prospects, clients, owners, properties, conventions, conventionTemplates, attestationTemplates, attestations, quotes, quoteTemplates, catalog, accounting, bilan, communication, crm, archiving, documents, documentExport, lotissements, terrains, programmes, projects, hr, performance, visitors, calls, socialMedia, geo, countries, commissions, expenses, analytics, exporter, invoiceTemplates, listExportTemplates, treasury, budget, dashboard, settings, reminders, config });
+// Profils de carrière (filières métier par poste) — paramétrage SUPER_ADMIN/ADMIN.
+const careerProfiles = {
+  list: (token: string) => api.invoke('careerProfiles:list', { token }),
+  getById: (token: string, id: number) => api.invoke('careerProfiles:getById', { token, id }),
+  create: (token: string, payload: object) => api.invoke('careerProfiles:create', { token, payload }),
+  update: (token: string, id: number, payload: object) =>
+    api.invoke('careerProfiles:update', { token, id, payload }),
+  delete: (token: string, id: number) => api.invoke('careerProfiles:delete', { token, id }),
+  duplicate: (token: string, id: number) => api.invoke('careerProfiles:duplicate', { token, id }),
+};
+
+contextBridge.exposeInMainWorld('electron', { auth, users, prospects, clients, owners, properties, conventions, conventionTemplates, attestationTemplates, attestations, quotes, quoteTemplates, catalog, accounting, bilan, communication, crm, archiving, documents, documentExport, lotissements, terrains, programmes, projects, hr, careerProfiles, performance, visitors, calls, socialMedia, innovations, constructionLibrary, construction, geo, countries, commissions, expenses, analytics, exporter, invoiceTemplates, listExportTemplates, wireTransfer, treasury, budget, dashboard, settings, reminders, config });

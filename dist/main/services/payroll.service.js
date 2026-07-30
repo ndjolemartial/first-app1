@@ -98,6 +98,8 @@ async function setPayrollRates(rates, db = (0, db_service_1.getDb)()) {
     });
 }
 const round = (n) => Math.round(n);
+/** Arrondit au multiple de 5 FCFA le plus proche (ex. 42 → 40, 43 → 45). */
+const roundToFive = (n) => Math.round(n / 5) * 5;
 /** Calcule l'ITS mensuel selon le barème progressif par tranches. */
 function computeIts(taxable, brackets) {
     let tax = 0;
@@ -174,7 +176,9 @@ function computePayroll(input, rates) {
     const its = Math.max(0, itsBareme - ricfMonthly);
     const cmuEmployee = round(rates.cmuEmployee);
     const totalDeductions = cnpsEmployee + its + cmuEmployee;
-    const netSalary = totalGains - totalDeductions;
+    // Net à payer arrondi au multiple de 5 FCFA le plus proche (usage courant
+    // pour le paiement en espèces — évite les pièces de 1 FCFA).
+    const netSalary = roundToFive(totalGains - totalDeductions);
     // Charges patronales
     const familyBase = Math.min(grossTaxable, rates.cnpsFamilyCeiling);
     const cnpsEmployerRetirement = round((cnpsBase * rates.cnpsEmployerRetirementRate) / 100);
@@ -479,7 +483,7 @@ function renderPayslipHtml(payslip, employee, company, template, logoDataUri, co
     <div style="text-align:right">
       <div>N° CNPS : ${esc(employee.cnpsNumber || '—')}</div>
       <div>N° CMU : ${esc(employee.cmuNumber || '—')}</div>
-      <div>Parts IGR : ${esc(employee.igrParts != null ? Number(employee.igrParts) : 1)}</div>
+      <div>Parts IGR : ${esc(payslip.igrParts != null ? Number(payslip.igrParts) : 1)}</div>
     </div>
   </div>
 

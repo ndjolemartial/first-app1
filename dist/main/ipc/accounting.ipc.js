@@ -1437,6 +1437,11 @@ function registerAccountingIPC() {
             });
             if (!installment)
                 return { success: false, error: 'Échéance introuvable' };
+            // Échéance héritée (souscription sans convention) : l'encaissement est
+            // toujours rattaché à l'objet « VERSEMENT (585) », quel que soit le mode
+            // de paiement choisi — l'objet éventuellement sélectionné dans le
+            // formulaire est ignoré pour ces échéances.
+            const isLegacyInstallment = !installment.conventionId;
             if (installment.status === 'PAYE')
                 return { success: false, error: 'Échéance déjà payée' };
             if (installment.status === 'ANNULE')
@@ -1570,6 +1575,7 @@ function registerAccountingIPC() {
                 const applied = [];
                 let currentUpdated = null;
                 let currentInvoiceId = null;
+                const forcedCategoryId = isLegacyInstallment ? (await (0, treasury_service_1.getOrCreateVersementCategory)(tx)).id : null;
                 for (const p of plan) {
                     const invStatus = p.fullyPaid ? 'PAYEE' : 'PARTIEL';
                     const updated = await tx.saleInstallment.update({
@@ -1655,7 +1661,7 @@ function registerAccountingIPC() {
                             amount: p.apply,
                             label: `Échéance n°${p.installmentNumber} — ${p.label}${p.fullyPaid ? '' : ' (partiel)'}`,
                             operationDate: paidAt,
-                            categoryId: d.categoryId ?? null,
+                            categoryId: isLegacyInstallment ? forcedCategoryId : (d.categoryId ?? null),
                             paymentMethod: d.method,
                             paymentRef: d.paymentRef,
                             source: 'ECHEANCE',

@@ -15,7 +15,7 @@ const clientBaseSchema = zod_1.z.object({
     type: zod_1.z.enum(['INDIVIDUEL', 'ENTREPRISE']).default('INDIVIDUEL'),
     firstName: zod_1.z.string().optional(),
     lastName: zod_1.z.string().optional(),
-    civilite: zod_1.z.enum(['MONSIEUR', 'MADAME', 'MADEMOISELLE']).optional(),
+    civilite: zod_1.z.enum(['Monsieur', 'Madame', 'Mademoiselle']).optional(),
     statutConjugal: zod_1.z.enum(['CELIBATAIRE', 'MARIEE', 'CONCUBINAGE', 'DIVORCE', 'VEUF']).optional(),
     entreprise: zod_1.z.string().optional(),
     registre_de_commerce: zod_1.z.string().optional(),

@@ -11,10 +11,23 @@ exports.getSettings = getSettings;
 exports.setSetting = setSetting;
 exports.setSecret = setSecret;
 exports.setSettings = setSettings;
-const electron_1 = require("electron");
 const crypto_1 = __importDefault(require("crypto"));
 const db_service_1 = require("./db.service");
 const logger_1 = __importDefault(require("../utils/logger"));
+// Import paresseux : le paquet `electron` (binaire complet, ~100-200 Mo) n'a
+// pas besoin d'être présent quand ce module est chargé hors runtime Electron
+// (ex. script autonome de relances déployé sur un serveur/NAS sans le paquet
+// `electron` dans ses node_modules, cf. run-reminders-once.ts). Un import
+// statique échouerait alors dès le chargement du module (`MODULE_NOT_FOUND`),
+// avant même d'atteindre la garde `typeof safeStorage?.isEncryptionAvailable`.
+let safeStorage;
+try {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    safeStorage = require('electron').safeStorage;
+}
+catch {
+    safeStorage = undefined;
+}
 /**
  * Service de paramétrage applicatif.
  *
@@ -102,12 +115,15 @@ function decryptPortable(stored) {
 /** Déchiffre un ancien secret safeStorage (enc:) — ne fonctionne que sur le poste d'origine. */
 function decryptLegacy(stored) {
     try {
-        if (!electron_1.safeStorage.isEncryptionAvailable()) {
+        // `safeStorage` est `undefined` hors runtime Electron (ex. script autonome
+        // exécuté via `node`, cf. src/main/scripts/run-reminders-once.ts) — on ne
+        // suppose jamais sa présence avant de l'appeler.
+        if (typeof safeStorage?.isEncryptionAvailable !== 'function' || !safeStorage.isEncryptionAvailable()) {
             logger_1.default.warn('safeStorage indisponible — ancien secret enc: indéchiffrable sur ce poste');
             return '';
         }
         const buf = Buffer.from(stored.slice(ENC_PREFIX.length), 'base64');
-        return electron_1.safeStorage.decryptString(buf);
+        return safeStorage.decryptString(buf);
     }
     catch (err) {
         logger_1.default.error('safeStorage decryptString error', err.message);
@@ -280,6 +296,10 @@ exports.SettingsKeys = {
     visitorQrBaseUrl: 'visitors.qr.baseUrl', // URL de l'app web visiteurs (ex. http://192.168.1.10/visiteurs/)
     visitorQrAllowedRoles: 'visitors.qr.allowedRoles', // rôles voyant le QR au tableau de bord (JSON array)
     visitorQrModel: 'visitors.qr.model', // modèle visuel du QR ('1' | '2' | '3')
+    // Modèles de messages (Communication) — utilisateurs désignés (en plus de
+    // SUPER_ADMIN/ADMIN, toujours en accès complet) autorisés à consulter et
+    // gérer les modèles de type « manuel » (jamais les modèles « auto »).
+    commTemplateManualEditorIds: 'communication.templates.manualEditorUserIds', // JSON array d'ids User
 };
 /** Liste des clés correspondant à des secrets chiffrés. */
 exports.SECRET_KEYS = new Set([

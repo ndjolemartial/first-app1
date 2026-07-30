@@ -3,6 +3,9 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
+exports.nextReference = nextReference;
+exports.computeTotals = computeTotals;
+exports.resolveQuoteAmounts = resolveQuoteAmounts;
 exports.registerQuotesIPC = registerQuotesIPC;
 const electron_1 = require("electron");
 const db_service_1 = require("../services/db.service");
@@ -147,7 +150,12 @@ async function assertSingleProgramme(db, propertyIds) {
         throw new Error('Tous les biens immobiliers d\'un devis doivent provenir du même programme immobilier.');
     }
 }
-/** Référence auto DEV-YYYY-NNNN (séquence annuelle). */
+/**
+ * Référence auto DEV-YYYY-NNNN (séquence annuelle). Exportée pour être
+ * réutilisée telle quelle par le moteur de devis de construction
+ * (construction-projects.ipc.ts → construction:estimates:toQuote), qui crée
+ * de vrais Quote sans dupliquer cette logique.
+ */
 async function nextReference(db) {
     const year = new Date().getFullYear();
     const last = await db.quote.findFirst({
@@ -557,6 +565,31 @@ function registerQuotesIPC() {
             if (!canAccessQuote(session, existing.createdById))
                 return { success: false, error: 'Devis inaccessible' };
             await db.quote.update({ where: { id: Number(id) }, data: { deletedAt: new Date() } });
+            // ConstructionEstimate.quoteId est un scalaire sans FK Prisma (découplage
+            // volontaire, cf. Module 17) : la suppression du devis ne le nettoie pas
+            // automatiquement. Sans ce rattrapage, l'écran d'une estimation convertie
+            // continuerait d'afficher « Voir le devis » vers un devis supprimé au
+            // lieu de proposer à nouveau « Créer le devis ».
+            const orphanedEstimates = await db.constructionEstimate.findMany({
+                where: { quoteId: Number(id), deletedAt: null },
+                select: { id: true, projectId: true },
+            });
+            if (orphanedEstimates.length) {
+                await db.constructionEstimate.updateMany({
+                    where: { id: { in: orphanedEstimates.map((e) => e.id) } },
+                    data: { quoteId: null, quoteReference: null, convertedAt: null, status: 'BROUILLON' },
+                });
+                const projectIds = [...new Set(orphanedEstimates.map((e) => e.projectId))];
+                for (const projectId of projectIds) {
+                    const stillConverted = await db.constructionEstimate.findFirst({
+                        where: { projectId, deletedAt: null, quoteId: { not: null } },
+                        select: { id: true },
+                    });
+                    if (!stillConverted) {
+                        await db.constructionProject.updateMany({ where: { id: projectId, status: 'DEVIS_EMIS' }, data: { status: 'ESTIME' } });
+                    }
+                }
+            }
             return { success: true };
         }
         catch (error) {

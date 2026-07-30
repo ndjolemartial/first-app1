@@ -55,7 +55,7 @@ const updateProfileSchema = zod_1.z.object({
     mobile: zod_1.z.string().optional(),
     avatar: zod_1.z.string().optional(),
     idNumber: zod_1.z.string().optional(),
-    civilite: zod_1.z.enum(['MONSIEUR', 'MADAME', 'MADEMOISELLE']).optional(),
+    civilite: zod_1.z.enum(['Monsieur', 'Madame', 'Mademoiselle']).optional(),
     statutConjugal: zod_1.z.enum(['CELIBATAIRE', 'MARIEE', 'CONCUBINAGE', 'DIVORCE', 'VEUF']).optional(),
     residence: zod_1.z.string().optional(),
     // Signature personnelle d'envoi de messages (module Communication).

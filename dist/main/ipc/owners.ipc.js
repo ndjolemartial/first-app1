@@ -14,6 +14,7 @@ const ownerBaseSchema = zod_1.z.object({
     // Particulier
     firstName: zod_1.z.string().optional(),
     lastName: zod_1.z.string().optional(),
+    civilite: zod_1.z.preprocess((v) => (v === '' ? null : v), zod_1.z.enum(['Monsieur', 'Madame', 'Mademoiselle']).nullable().optional()),
     nationality: zod_1.z.string().optional(),
     idNumber: zod_1.z.string().optional(),
     idTypeId: zod_1.z.number().int().positive().nullable().optional(),

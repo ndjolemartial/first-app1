@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.PROSPECT_FIELD_LABELS = exports.CLIENT_FIELD_LABELS = exports.PROSPECT_STATUS_LABELS = exports.CLIENT_STATUS_LABELS = void 0;
+exports.REFERRER_FIELD_LABELS = exports.PROSPECT_FIELD_LABELS = exports.CLIENT_FIELD_LABELS = exports.PROSPECT_STATUS_LABELS = exports.CLIENT_STATUS_LABELS = void 0;
 exports.diffChangedFields = diffChangedFields;
 exports.recordStatusChange = recordStatusChange;
 exports.buildEntityTimeline = buildEntityTimeline;
@@ -70,6 +70,22 @@ exports.PROSPECT_FIELD_LABELS = {
     notes: 'Notes',
     assignedToId: 'Utilisateur affecté',
 };
+exports.REFERRER_FIELD_LABELS = {
+    firstName: 'Prénom',
+    lastName: 'Nom',
+    companyName: 'Société',
+    email: 'Email',
+    phone: 'Téléphone 1',
+    mobile: 'Téléphone 2',
+    address: 'Adresse',
+    city: 'Ville',
+    country: 'Pays',
+    bankIban: 'IBAN',
+    bankBic: 'BIC',
+    notes: 'Notes',
+    isActive: 'Fiche active',
+    assignedToId: 'Utilisateur référent',
+};
 /**
  * Détermine les champs réellement modifiés entre l'état précédent (`before`,
  * enregistrement Prisma complet) et les données soumises (`data`, uniquement
@@ -114,19 +130,25 @@ async function recordStatusChange(db, p) {
     });
 }
 const USER_BRIEF = { id: true, firstName: true, lastName: true };
+const CREATION_TITLE = {
+    CLIENT: 'Fiche client créée',
+    PROSPECT: 'Fiche prospect créée',
+    REFERRER: 'Fiche apporteur d\'affaire créée',
+};
 /**
- * Construit la fiche de suivi chronologique d'un Client ou d'un Prospect en
- * agrégeant : les événements de suivi (statut/modifications, depuis leur mise
- * en place), les activités CRM, les documents importés et — pour un Client
- * uniquement — les paiements reçus et les conventions liées (création et
- * signature). Trié du plus récent au plus ancien.
+ * Construit la fiche de suivi chronologique d'un Client, Prospect ou
+ * Apporteur d'affaire en agrégeant : les événements de suivi
+ * (statut/modifications, depuis leur mise en place), les activités CRM (Client
+ * / Prospect uniquement), les documents importés et — selon l'entité — les
+ * paiements reçus et conventions liées (Client) ou les commissions
+ * (Apporteur d'affaire). Trié du plus récent au plus ancien.
  */
 async function buildEntityTimeline(db, entityType, entityId, entityCreatedAt) {
     const items = [
         {
             date: entityCreatedAt.toISOString(),
             category: 'CREATION',
-            title: entityType === 'CLIENT' ? 'Fiche client créée' : 'Fiche prospect créée',
+            title: CREATION_TITLE[entityType],
         },
     ];
     const events = await db.entityTimelineEvent.findMany({
@@ -142,24 +164,29 @@ async function buildEntityTimeline(db, entityType, entityId, entityCreatedAt) {
             user: e.user,
         });
     }
-    const activityWhere = entityType === 'CLIENT' ? { clientId: entityId } : { prospectId: entityId };
-    const activities = await db.crmActivity.findMany({
-        where: activityWhere,
-        include: { user: { select: USER_BRIEF } },
-    });
-    for (const a of activities) {
-        items.push({
-            date: a.createdAt.toISOString(),
-            category: 'CRM_ACTIVITY',
-            title: a.subject,
-            description: a.description,
-            user: a.user,
-            meta: { activityType: a.type, status: a.status, dueDate: a.dueDate, completedAt: a.completedAt },
+    // Les apporteurs d'affaire ne sont pas rattachables à une activité CRM.
+    if (entityType === 'CLIENT' || entityType === 'PROSPECT') {
+        const activityWhere = entityType === 'CLIENT' ? { clientId: entityId } : { prospectId: entityId };
+        const activities = await db.crmActivity.findMany({
+            where: activityWhere,
+            include: { user: { select: USER_BRIEF } },
         });
+        for (const a of activities) {
+            items.push({
+                date: a.createdAt.toISOString(),
+                category: 'CRM_ACTIVITY',
+                title: a.subject,
+                description: a.description,
+                user: a.user,
+                meta: { activityType: a.type, status: a.status, dueDate: a.dueDate, completedAt: a.completedAt },
+            });
+        }
     }
     const docWhere = entityType === 'CLIENT'
         ? { clientId: entityId, deletedAt: null }
-        : { prospectId: entityId, deletedAt: null };
+        : entityType === 'PROSPECT'
+            ? { prospectId: entityId, deletedAt: null }
+            : { referrerId: entityId, deletedAt: null };
     const documents = await db.document.findMany({
         where: docWhere,
         select: { name: true, uploadedAt: true, uploadedBy: { select: USER_BRIEF } },
@@ -171,6 +198,42 @@ async function buildEntityTimeline(db, entityType, entityId, entityCreatedAt) {
             title: `Document ajouté : ${d.name}`,
             user: d.uploadedBy,
         });
+    }
+    if (entityType === 'REFERRER') {
+        const commissions = await db.commission.findMany({
+            where: { referrerId: entityId, deletedAt: null },
+            select: {
+                reference: true, amount: true, status: true, createdAt: true,
+                paidAt: true, cancelledAt: true, cancelReason: true,
+            },
+        });
+        for (const c of commissions) {
+            items.push({
+                date: c.createdAt.toISOString(),
+                category: 'COMMISSION',
+                title: `Commission créée — ${c.reference}`,
+                amount: Number(c.amount),
+                meta: { status: c.status },
+            });
+            if (c.paidAt) {
+                items.push({
+                    date: c.paidAt.toISOString(),
+                    category: 'COMMISSION',
+                    title: `Commission payée — ${c.reference}`,
+                    amount: Number(c.amount),
+                    meta: { status: c.status },
+                });
+            }
+            if (c.cancelledAt) {
+                items.push({
+                    date: c.cancelledAt.toISOString(),
+                    category: 'COMMISSION',
+                    title: `Commission annulée — ${c.reference}`,
+                    description: c.cancelReason,
+                    meta: { status: c.status },
+                });
+            }
+        }
     }
     if (entityType === 'CLIENT') {
         const payments = await db.payment.findMany({

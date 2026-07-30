@@ -1064,6 +1064,62 @@ function registerSettingsIPC() {
             return { success: false, error: err.message };
         }
     });
+    // ── Modèles de messages — utilisateurs désignés (accès manuel) ──────────────
+    /**
+     * Liste des ids d'utilisateurs désignés, en plus de SUPER_ADMIN/ADMIN, pour
+     * consulter/créer/modifier les modèles de messages de type « manuel »
+     * (jamais les modèles « auto ») dans l'interface « Modèles de messages ».
+     * Réservé aux administrateurs (paramétrage).
+     */
+    electron_1.ipcMain.handle('settings:getManualTemplateEditors', async (_event, { token }) => {
+        try {
+            const session = (0, auth_service_1.getSession)(token);
+            if (!session)
+                return { success: false, error: 'Session expirée' };
+            (0, auth_service_1.checkRole)(session, ADMIN_ROLES);
+            const raw = await (0, settings_service_1.getSetting)(settings_service_1.SettingsKeys.commTemplateManualEditorIds);
+            let userIds = [];
+            if (raw) {
+                try {
+                    const p = JSON.parse(raw);
+                    if (Array.isArray(p))
+                        userIds = p.filter((n) => Number.isInteger(n));
+                }
+                catch {
+                    userIds = [];
+                }
+            }
+            return { success: true, data: { userIds } };
+        }
+        catch (err) {
+            logger_1.default.error('settings:getManualTemplateEditors', err.message);
+            return { success: false, error: err.message };
+        }
+    });
+    electron_1.ipcMain.handle('settings:updateManualTemplateEditors', async (_event, { token, userIds }) => {
+        try {
+            const session = (0, auth_service_1.getSession)(token);
+            if (!session)
+                return { success: false, error: 'Session expirée' };
+            (0, auth_service_1.checkRole)(session, ADMIN_ROLES);
+            const ids = Array.isArray(userIds)
+                ? Array.from(new Set(userIds.map((v) => Number(v)).filter((n) => Number.isInteger(n) && n > 0)))
+                : [];
+            const db = (0, db_service_1.getDb)();
+            // Ne conserve que des utilisateurs existants et actifs.
+            const validUsers = ids.length
+                ? await db.user.findMany({ where: { id: { in: ids }, deletedAt: null }, select: { id: true } })
+                : [];
+            const validIds = validUsers.map((u) => u.id);
+            await (0, settings_service_1.setSetting)(settings_service_1.SettingsKeys.commTemplateManualEditorIds, JSON.stringify(validIds));
+            logger_1.default.info(`Utilisateurs désignés (modèles manuels) mis à jour (${validIds.length} utilisateur(s))`);
+            return { success: true, data: { userIds: validIds } };
+        }
+        catch (err) {
+            logger_1.default.error('settings:updateManualTemplateEditors', err.message);
+            return { success: false, error: err.message };
+        }
+    });
     // ── Retards & Départs précipités ────────────────────────────────────────────
     /** Limite de tolérance par défaut (minutes) si aucune valeur n'est encore paramétrée. */
     const DEFAULT_LATENESS_TOLERANCE_MINUTES = 15;

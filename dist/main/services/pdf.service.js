@@ -64,6 +64,8 @@ const PAGE_NUMBER_FOOTER = `
  * @param html      Document HTML complet à imprimer.
  * @param options   `landscape` : orientation paysage (défaut : portrait).
  *                  `pageNumbers` : afficher « Page X / Y » (défaut : true).
+ *                  `margins` : surcharge ponctuelle des marges (in), fusionnée
+ *                  avec les marges par défaut — n'affecte que l'appel courant.
  */
 async function htmlToPdf(html, options = {}) {
     const tmpFile = path_1.default.join(electron_1.app.getPath('temp'), `afrikimmo-pdf-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.html`);
@@ -72,12 +74,13 @@ async function htmlToPdf(html, options = {}) {
     try {
         await win.loadFile(tmpFile);
         const withPageNumbers = options.pageNumbers ?? true;
+        // Marge basse renforcée par défaut (0.55 in ≈ 14 mm) pour le pied de page de numérotation.
+        const defaultMargins = { top: 0.4, bottom: withPageNumbers ? 0.55 : 0.4, left: 0.4, right: 0.4 };
         return await win.webContents.printToPDF({
             landscape: options.landscape ?? false,
             printBackground: true,
             pageSize: 'A4',
-            // Marge basse renforcée (0.55 in ≈ 14 mm) pour le pied de page de numérotation.
-            margins: { top: 0.4, bottom: withPageNumbers ? 0.55 : 0.4, left: 0.4, right: 0.4 },
+            margins: { ...defaultMargins, ...options.margins },
             displayHeaderFooter: withPageNumbers,
             headerTemplate: '<span></span>',
             footerTemplate: withPageNumbers ? PAGE_NUMBER_FOOTER : '<span></span>',

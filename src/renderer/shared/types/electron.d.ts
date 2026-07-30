@@ -167,13 +167,14 @@ interface Window {
       createTemplate: (token: string, payload: object) => Promise<IpcResponse<any>>;
       updateTemplate: (token: string, id: number, payload: object) => Promise<IpcResponse<any>>;
       deleteTemplate: (token: string, id: number) => Promise<IpcResponse>;
+      myTemplatePermissions: (token: string) => Promise<IpcResponse<{ canManageManual: boolean; isPrivileged: boolean }>>;
       getHistory: (token: string, filters?: object, page?: number, limit?: number) => Promise<IpcResponse<any[]>>;
       sendEmail: (token: string, payload: object) => Promise<IpcResponse<any>>;
       sendSms: (token: string, payload: object) => Promise<IpcResponse<any>>;
       sendWhatsapp: (token: string, payload: object) => Promise<IpcResponse<any>>;
       resend: (token: string, id: number) => Promise<IpcResponse<any>>;
       deleteMessage: (token: string, id: number) => Promise<IpcResponse<any>>;
-      resolveTarget: (token: string, payload: object) => Promise<IpcResponse<{ to: string; label: string; targets: { clientId?: number; ownerId?: number; conventionId?: number }; variables?: Record<string, string> }>>;
+      resolveTarget: (token: string, payload: object) => Promise<IpcResponse<{ to: string; label: string; targets: { clientId?: number; ownerId?: number; conventionId?: number; referrerId?: number }; variables?: Record<string, string> }>>;
       shareLocation: (token: string, payload: {
         entityType: 'LOTISSEMENT' | 'TERRAIN' | 'PROPERTY';
         entityId: number;
@@ -317,6 +318,88 @@ interface Window {
         }>;
       }>>;
     };
+    innovations: {
+      list: (token: string, filters?: object, page?: number, limit?: number) => Promise<IpcResponse<any[]>>;
+      getById: (token: string, id: number) => Promise<IpcResponse<any>>;
+      employees: (token: string) => Promise<IpcResponse<any[]>>;
+      create: (token: string, payload: object) => Promise<IpcResponse<any>>;
+      update: (token: string, id: number, payload: object) => Promise<IpcResponse<any>>;
+      submitPhase2: (token: string, id: number, payload: object) => Promise<IpcResponse<any>>;
+      submitPhase3: (token: string, id: number, payload: object) => Promise<IpcResponse<any>>;
+      validatePhase: (token: string, id: number, payload: object) => Promise<IpcResponse<any>>;
+      delete: (token: string, id: number) => Promise<IpcResponse>;
+      removeAttachment: (token: string, id: number, documentId: number) => Promise<IpcResponse>;
+    };
+    constructionLibrary: {
+      lots: {
+        list: (token: string, includeInactive?: boolean) => Promise<IpcResponse<any[]>>;
+        upsert: (token: string, id: number | undefined, payload: object) => Promise<IpcResponse<any>>;
+        delete: (token: string, id: number) => Promise<IpcResponse>;
+      };
+      resourceFamilies: {
+        list: (token: string, includeInactive?: boolean) => Promise<IpcResponse<any[]>>;
+        create: (token: string, payload: object) => Promise<IpcResponse<any>>;
+        delete: (token: string, id: number) => Promise<IpcResponse>;
+      };
+      localities: {
+        list: (token: string, includeInactive?: boolean) => Promise<IpcResponse<any[]>>;
+        upsert: (token: string, id: number | undefined, payload: object) => Promise<IpcResponse<any>>;
+        delete: (token: string, id: number) => Promise<IpcResponse>;
+      };
+      resources: {
+        list: (token: string, filters?: object, page?: number, limit?: number) => Promise<IpcResponse<any[]>>;
+        getById: (token: string, id: number) => Promise<IpcResponse<any>>;
+        create: (token: string, payload: object) => Promise<IpcResponse<any>>;
+        update: (token: string, id: number, payload: object) => Promise<IpcResponse<any>>;
+        updatePrice: (token: string, id: number, payload: object) => Promise<IpcResponse<any>>;
+        priceHistory: (token: string, id: number, limit?: number) => Promise<IpcResponse<any[]>>;
+        whereUsed: (token: string, id: number) => Promise<IpcResponse<any[]>>;
+        delete: (token: string, id: number) => Promise<IpcResponse>;
+      };
+      workItems: {
+        list: (token: string, filters?: object) => Promise<IpcResponse<any[]>>;
+        getById: (token: string, id: number) => Promise<IpcResponse<any>>;
+        upsert: (token: string, id: number | undefined, payload: object) => Promise<IpcResponse<any>>;
+        duplicate: (token: string, id: number) => Promise<IpcResponse<any>>;
+        delete: (token: string, id: number) => Promise<IpcResponse>;
+      };
+      ratioDefs: {
+        list: (token: string, includeInactive?: boolean) => Promise<IpcResponse<any[]>>;
+        create: (token: string, payload: object) => Promise<IpcResponse<any>>;
+        update: (token: string, id: number, payload: object) => Promise<IpcResponse<any>>;
+        delete: (token: string, id: number) => Promise<IpcResponse>;
+      };
+      ratioProfiles: {
+        list: (token: string) => Promise<IpcResponse<any[]>>;
+        getById: (token: string, id: number) => Promise<IpcResponse<any>>;
+        upsert: (token: string, id: number | undefined, payload: object) => Promise<IpcResponse<any>>;
+        duplicate: (token: string, id: number, target: object) => Promise<IpcResponse<any>>;
+        delete: (token: string, id: number) => Promise<IpcResponse>;
+      };
+      health: (token: string) => Promise<IpcResponse<any>>;
+    };
+    construction: {
+      projects: {
+        list: (token: string, filters?: object, page?: number, limit?: number) => Promise<IpcResponse<any[]>>;
+        getById: (token: string, id: number) => Promise<IpcResponse<any>>;
+        create: (token: string, payload: object) => Promise<IpcResponse<any>>;
+        update: (token: string, id: number, payload: object) => Promise<IpcResponse<any>>;
+        duplicate: (token: string, id: number) => Promise<IpcResponse<any>>;
+        delete: (token: string, id: number) => Promise<IpcResponse>;
+      };
+      quickEstimate: (token: string, args: { projectId?: number; characteristics?: object }) => Promise<IpcResponse<any>>;
+      generateEstimate: (token: string, payload: object) => Promise<IpcResponse<any>>;
+      estimates: {
+        list: (token: string, projectId: number) => Promise<IpcResponse<any[]>>;
+        getById: (token: string, id: number) => Promise<IpcResponse<any>>;
+        summary: (token: string, id: number) => Promise<IpcResponse<any>>;
+        materials: (token: string, id: number) => Promise<IpcResponse<any[]>>;
+        labor: (token: string, id: number) => Promise<IpcResponse<any[]>>;
+        toQuote: (token: string, estimateId: number, payload: object) => Promise<IpcResponse<{ id: number; reference: string }>>;
+        setStatus: (token: string, id: number, status: string) => Promise<IpcResponse<any>>;
+        delete: (token: string, id: number) => Promise<IpcResponse>;
+      };
+    };
     terrains: {
       list: (token: string, filters?: object, page?: number, limit?: number) => Promise<IpcResponse<any[]>>;
       getById: (token: string, id: number) => Promise<IpcResponse<any>>;
@@ -359,6 +442,7 @@ interface Window {
         stats: (token: string) => Promise<IpcResponse<Record<string, number>>>;
         getById: (token: string, id: number) => Promise<IpcResponse<any>>;
         linkableUsers: (token: string, excludeEmployeeId?: number) => Promise<IpcResponse<any[]>>;
+        careerProfiles: (token: string) => Promise<IpcResponse<{ id: number; name: string }[]>>;
         create: (token: string, payload: object) => Promise<IpcResponse<any>>;
         update: (token: string, id: number, payload: object) => Promise<IpcResponse<any>>;
         delete: (token: string, id: number) => Promise<IpcResponse>;
@@ -439,6 +523,7 @@ interface Window {
       };
       me: {
         overview: (token: string) => Promise<IpcResponse<{ employee: any | null; leaveBalance: any | null }>>;
+        careerProfile: (token: string) => Promise<IpcResponse<{ profile: any; currentPoste: string | null } | null>>;
         payslips: (token: string) => Promise<IpcResponse<any[]>>;
         payslip: (token: string, id: number) => Promise<IpcResponse<any>>;
         payslipPrint: (token: string, id: number) => Promise<IpcResponse<{ previewing: boolean }>>;
@@ -486,6 +571,14 @@ interface Window {
         tolerate: (token: string, payload: object) => Promise<IpcResponse<any>>;
         untolerate: (token: string, employeeId: number, date: string) => Promise<IpcResponse>;
       };
+    };
+    careerProfiles: {
+      list: (token: string) => Promise<IpcResponse<any[]>>;
+      getById: (token: string, id: number) => Promise<IpcResponse<any>>;
+      create: (token: string, payload: object) => Promise<IpcResponse<any>>;
+      update: (token: string, id: number, payload: object) => Promise<IpcResponse<any>>;
+      delete: (token: string, id: number) => Promise<IpcResponse>;
+      duplicate: (token: string, id: number) => Promise<IpcResponse<any>>;
     };
     performance: {
       kpis: {
@@ -618,6 +711,18 @@ interface Window {
           marginsMm?: { top: number; bottom: number; left: number; right: number };
         },
       ) => Promise<IpcResponse<{ previewing?: boolean }>>;
+      renderDocumentPdf: (
+        token: string,
+        payload: {
+          fileName: string;
+          bodyHtml: string;
+          headerTemplate: string;
+          footerTemplate: string;
+          headerMm: number;
+          footerMm: number;
+          marginsMm?: { top: number; bottom: number; left: number; right: number };
+        },
+      ) => Promise<IpcResponse<{ base64: string }>>;
       exportDocumentDocx: (
         token: string,
         payload: {
@@ -643,6 +748,13 @@ interface Window {
     listExportTemplates: {
       list: (token: string) => Promise<IpcResponse<{ templates: any[] }>>;
       update: (token: string, id: number, payload: object) => Promise<IpcResponse<any>>;
+    };
+    wireTransfer: {
+      getTemplate: (token: string) => Promise<IpcResponse<any>>;
+      updateTemplate: (token: string, id: number, payload: object) => Promise<IpcResponse<any>>;
+      print: (token: string, periodYear: number, periodMonth: number) => Promise<IpcResponse<{ previewing: true }>>;
+      exportPdf: (token: string, periodYear: number, periodMonth: number) => Promise<IpcResponse<{ path?: string; canceled?: boolean }>>;
+      exportExcel: (token: string, periodYear: number, periodMonth: number) => Promise<IpcResponse<{ path?: string; canceled?: boolean }>>;
     };
     accounting: {
       getDashboard: (token: string) => Promise<IpcResponse<any>>;
@@ -749,6 +861,7 @@ interface Window {
       getBeneficiarySummary: (token: string, beneficiaryType: string, beneficiaryId: number) => Promise<IpcResponse<any>>;
       listReferrers: (token: string, filters?: object, page?: number, limit?: number) => Promise<IpcResponse<any[]>>;
       getReferrerById: (token: string, id: number) => Promise<IpcResponse<any>>;
+      getReferrerTimeline: (token: string, id: number) => Promise<IpcResponse<any[]>>;
       createReferrer: (token: string, payload: object) => Promise<IpcResponse<any>>;
       updateReferrer: (token: string, id: number, payload: object) => Promise<IpcResponse<any>>;
       deleteReferrer: (token: string, id: number) => Promise<IpcResponse>;
@@ -830,6 +943,7 @@ interface Window {
             availableProperties: number | null;
             lotissements: number | null;
             programmes: number | null;
+            apporteurs: number | null;
           };
           slideshow: Array<{
             type: 'image' | 'video';
@@ -915,6 +1029,10 @@ interface Window {
         expectedArrival: string;
         expectedDeparture: string;
       }) => Promise<IpcResponse>;
+
+      // Modèles de messages — utilisateurs désignés (accès manuel)
+      getManualTemplateEditors: (token: string) => Promise<IpcResponse<{ userIds: number[] }>>;
+      updateManualTemplateEditors: (token: string, userIds: number[]) => Promise<IpcResponse<{ userIds: number[] }>>;
 
       // Retards & Départs précipités — inclusion des employés liés SUPER_ADMIN/ADMIN/MANAGER
       getLatenessSettings: (token: string) => Promise<IpcResponse<{ includeManagementRoles: boolean; toleranceMinutes: number }>>;

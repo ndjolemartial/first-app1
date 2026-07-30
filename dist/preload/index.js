@@ -186,6 +186,7 @@ const communication = {
     createTemplate: (token, payload) => api.invoke('communication:createTemplate', { token, payload }),
     updateTemplate: (token, id, payload) => api.invoke('communication:updateTemplate', { token, id, payload }),
     deleteTemplate: (token, id) => api.invoke('communication:deleteTemplate', { token, id }),
+    myTemplatePermissions: (token) => api.invoke('communication:myTemplatePermissions', { token }),
     getHistory: (token, filters, page, limit) => api.invoke('communication:getHistory', { token, filters, page, limit }),
     sendEmail: (token, payload) => api.invoke('communication:sendEmail', { token, payload }),
     sendSms: (token, payload) => api.invoke('communication:sendSms', { token, payload }),
@@ -291,6 +292,91 @@ const socialMedia = {
     },
     dashboard: (token) => api.invoke('socialMedia:dashboard', { token }),
 };
+// Innovations IT (Module 16)
+const innovations = {
+    list: (token, filters, page, limit) => api.invoke('innovations:list', { token, filters, page, limit }),
+    getById: (token, id) => api.invoke('innovations:getById', { token, id }),
+    employees: (token) => api.invoke('innovations:employees', { token }),
+    create: (token, payload) => api.invoke('innovations:create', { token, payload }),
+    update: (token, id, payload) => api.invoke('innovations:update', { token, id, payload }),
+    submitPhase2: (token, id, payload) => api.invoke('innovations:submitPhase2', { token, id, payload }),
+    submitPhase3: (token, id, payload) => api.invoke('innovations:submitPhase3', { token, id, payload }),
+    validatePhase: (token, id, payload) => api.invoke('innovations:validatePhase', { token, id, payload }),
+    delete: (token, id) => api.invoke('innovations:delete', { token, id }),
+    removeAttachment: (token, id, documentId) => api.invoke('innovations:removeAttachment', { token, id, documentId }),
+};
+// Moteur de devis de construction (Module 17) — bibliothèque technique
+const constructionLibrary = {
+    lots: {
+        list: (token, includeInactive) => api.invoke('construction:lots:list', { token, includeInactive }),
+        upsert: (token, id, payload) => api.invoke('construction:lots:upsert', { token, id, payload }),
+        delete: (token, id) => api.invoke('construction:lots:delete', { token, id }),
+    },
+    resourceFamilies: {
+        list: (token, includeInactive) => api.invoke('construction:resourceFamilies:list', { token, includeInactive }),
+        create: (token, payload) => api.invoke('construction:resourceFamilies:create', { token, payload }),
+        delete: (token, id) => api.invoke('construction:resourceFamilies:delete', { token, id }),
+    },
+    localities: {
+        list: (token, includeInactive) => api.invoke('construction:localities:list', { token, includeInactive }),
+        upsert: (token, id, payload) => api.invoke('construction:localities:upsert', { token, id, payload }),
+        delete: (token, id) => api.invoke('construction:localities:delete', { token, id }),
+    },
+    resources: {
+        list: (token, filters, page, limit) => api.invoke('construction:resources:list', { token, filters, page, limit }),
+        getById: (token, id) => api.invoke('construction:resources:getById', { token, id }),
+        create: (token, payload) => api.invoke('construction:resources:create', { token, payload }),
+        update: (token, id, payload) => api.invoke('construction:resources:update', { token, id, payload }),
+        updatePrice: (token, id, payload) => api.invoke('construction:resources:updatePrice', { token, id, payload }),
+        priceHistory: (token, id, limit) => api.invoke('construction:resources:priceHistory', { token, id, limit }),
+        whereUsed: (token, id) => api.invoke('construction:resources:whereUsed', { token, id }),
+        delete: (token, id) => api.invoke('construction:resources:delete', { token, id }),
+    },
+    workItems: {
+        list: (token, filters) => api.invoke('construction:workItems:list', { token, filters }),
+        getById: (token, id) => api.invoke('construction:workItems:getById', { token, id }),
+        upsert: (token, id, payload) => api.invoke('construction:workItems:upsert', { token, id, payload }),
+        duplicate: (token, id) => api.invoke('construction:workItems:duplicate', { token, id }),
+        delete: (token, id) => api.invoke('construction:workItems:delete', { token, id }),
+    },
+    ratioDefs: {
+        list: (token, includeInactive) => api.invoke('construction:ratioDefs:list', { token, includeInactive }),
+        create: (token, payload) => api.invoke('construction:ratioDefs:create', { token, payload }),
+        update: (token, id, payload) => api.invoke('construction:ratioDefs:update', { token, id, payload }),
+        delete: (token, id) => api.invoke('construction:ratioDefs:delete', { token, id }),
+    },
+    ratioProfiles: {
+        list: (token) => api.invoke('construction:ratioProfiles:list', { token }),
+        getById: (token, id) => api.invoke('construction:ratioProfiles:getById', { token, id }),
+        upsert: (token, id, payload) => api.invoke('construction:ratioProfiles:upsert', { token, id, payload }),
+        duplicate: (token, id, target) => api.invoke('construction:ratioProfiles:duplicate', { token, id, target }),
+        delete: (token, id) => api.invoke('construction:ratioProfiles:delete', { token, id }),
+    },
+    health: (token) => api.invoke('construction:library:health', { token }),
+};
+// Moteur de devis de construction (Module 17) — projets & estimations
+const construction = {
+    projects: {
+        list: (token, filters, page, limit) => api.invoke('construction:projects:list', { token, filters, page, limit }),
+        getById: (token, id) => api.invoke('construction:projects:getById', { token, id }),
+        create: (token, payload) => api.invoke('construction:projects:create', { token, payload }),
+        update: (token, id, payload) => api.invoke('construction:projects:update', { token, id, payload }),
+        duplicate: (token, id) => api.invoke('construction:projects:duplicate', { token, id }),
+        delete: (token, id) => api.invoke('construction:projects:delete', { token, id }),
+    },
+    quickEstimate: (token, args) => api.invoke('construction:quickEstimate', { token, ...args }),
+    generateEstimate: (token, payload) => api.invoke('construction:generateEstimate', { token, ...payload }),
+    estimates: {
+        list: (token, projectId) => api.invoke('construction:estimates:list', { token, projectId }),
+        getById: (token, id) => api.invoke('construction:estimates:getById', { token, id }),
+        summary: (token, id) => api.invoke('construction:estimates:summary', { token, id }),
+        materials: (token, id) => api.invoke('construction:estimates:materials', { token, id }),
+        labor: (token, id) => api.invoke('construction:estimates:labor', { token, id }),
+        toQuote: (token, estimateId, payload) => api.invoke('construction:estimates:toQuote', { token, estimateId, payload }),
+        setStatus: (token, id, status) => api.invoke('construction:estimates:setStatus', { token, id, status }),
+        delete: (token, id) => api.invoke('construction:estimates:delete', { token, id }),
+    },
+};
 // Terrains
 const terrains = {
     list: (token, filters, page, limit) => api.invoke('terrains:list', { token, filters, page, limit }),
@@ -334,6 +420,7 @@ const hr = {
         stats: (token) => api.invoke('hr:employees:stats', { token }),
         getById: (token, id) => api.invoke('hr:employees:getById', { token, id }),
         linkableUsers: (token, excludeEmployeeId) => api.invoke('hr:employees:linkableUsers', { token, excludeEmployeeId }),
+        careerProfiles: (token) => api.invoke('hr:employees:careerProfiles', { token }),
         create: (token, payload) => api.invoke('hr:employees:create', { token, payload }),
         update: (token, id, payload) => api.invoke('hr:employees:update', { token, id, payload }),
         delete: (token, id) => api.invoke('hr:employees:delete', { token, id }),
@@ -415,6 +502,7 @@ const hr = {
     // Espace self-service : mon propre contenu RH & Paie (lecture seule).
     me: {
         overview: (token) => api.invoke('hr:me:overview', { token }),
+        careerProfile: (token) => api.invoke('hr:me:careerProfile', { token }),
         payslips: (token) => api.invoke('hr:me:payslips', { token }),
         payslip: (token, id) => api.invoke('hr:me:payslip', { token, id }),
         payslipPrint: (token, id) => api.invoke('hr:me:payslipPrint', { token, id }),
@@ -548,6 +636,9 @@ const documentExport = {
     exportDocumentPdf: (token, payload) => api.invoke('documents:exportDocumentPdf', { token, ...payload }),
     // Aperçu avant impression du document (impression directe avec choix d'imprimante).
     printDocument: (token, payload) => api.invoke('documents:printDocument', { token, ...payload }),
+    // Rendu PDF en mémoire (base64), sans dialogue ni fenêtre — pour réutiliser
+    // le PDF comme pièce jointe (ex. convention jointe à un email).
+    renderDocumentPdf: (token, payload) => api.invoke('documents:renderDocumentPdf', { token, ...payload }),
     exportDocumentDocx: (token, payload) => api.invoke('documents:exportDocumentDocx', { token, ...payload }),
 };
 // Modèles de facture
@@ -560,6 +651,14 @@ const invoiceTemplates = {
 const listExportTemplates = {
     list: (token) => api.invoke('listExportTemplates:list', { token }),
     update: (token, id, payload) => api.invoke('listExportTemplates:update', { token, id, payload }),
+};
+// Ordre de virement (bulletins de paie) — modèle éditable + aperçu/export
+const wireTransfer = {
+    getTemplate: (token) => api.invoke('wireTransfer:getTemplate', { token }),
+    updateTemplate: (token, id, payload) => api.invoke('wireTransfer:updateTemplate', { token, id, payload }),
+    print: (token, periodYear, periodMonth) => api.invoke('wireTransfer:print', { token, periodYear, periodMonth }),
+    exportPdf: (token, periodYear, periodMonth) => api.invoke('wireTransfer:exportPdf', { token, periodYear, periodMonth }),
+    exportExcel: (token, periodYear, periodMonth) => api.invoke('wireTransfer:exportExcel', { token, periodYear, periodMonth }),
 };
 // Commissions
 const commissions = {
@@ -575,6 +674,7 @@ const commissions = {
     getBeneficiarySummary: (token, beneficiaryType, beneficiaryId) => api.invoke('commissions:getBeneficiarySummary', { token, beneficiaryType, beneficiaryId }),
     listReferrers: (token, filters, page, limit) => api.invoke('commissions:listReferrers', { token, filters, page, limit }),
     getReferrerById: (token, id) => api.invoke('commissions:getReferrerById', { token, id }),
+    getReferrerTimeline: (token, id) => api.invoke('commissions:getReferrerTimeline', { token, id }),
     createReferrer: (token, payload) => api.invoke('commissions:createReferrer', { token, payload }),
     updateReferrer: (token, id, payload) => api.invoke('commissions:updateReferrer', { token, id, payload }),
     deleteReferrer: (token, id) => api.invoke('commissions:deleteReferrer', { token, id }),
@@ -682,6 +782,8 @@ const settings = {
     updatePayrollAccount: (token, payload) => api.invoke('settings:updatePayrollAccount', { token, payload }),
     getAttendanceQr: (token) => api.invoke('settings:getAttendanceQr', { token }),
     updateAttendanceQr: (token, payload) => api.invoke('settings:updateAttendanceQr', { token, payload }),
+    getManualTemplateEditors: (token) => api.invoke('settings:getManualTemplateEditors', { token }),
+    updateManualTemplateEditors: (token, userIds) => api.invoke('settings:updateManualTemplateEditors', { token, userIds }),
     getLatenessSettings: (token) => api.invoke('settings:getLatenessSettings', { token }),
     updateLatenessSettings: (token, payload) => api.invoke('settings:updateLatenessSettings', { token, payload }),
     getVisitorQr: (token) => api.invoke('settings:getVisitorQr', { token }),
@@ -750,4 +852,13 @@ const documents = {
     /** Résout le chemin disque d'un fichier sélectionné/déposé (Electron webUtils). */
     pathForFile: (file) => electron_1.webUtils.getPathForFile(file),
 };
-electron_1.contextBridge.exposeInMainWorld('electron', { auth, users, prospects, clients, owners, properties, conventions, conventionTemplates, attestationTemplates, attestations, quotes, quoteTemplates, catalog, accounting, bilan, communication, crm, archiving, documents, documentExport, lotissements, terrains, programmes, projects, hr, performance, visitors, calls, socialMedia, geo, countries, commissions, expenses, analytics, exporter, invoiceTemplates, listExportTemplates, treasury, budget, dashboard, settings, reminders, config });
+// Profils de carrière (filières métier par poste) — paramétrage SUPER_ADMIN/ADMIN.
+const careerProfiles = {
+    list: (token) => api.invoke('careerProfiles:list', { token }),
+    getById: (token, id) => api.invoke('careerProfiles:getById', { token, id }),
+    create: (token, payload) => api.invoke('careerProfiles:create', { token, payload }),
+    update: (token, id, payload) => api.invoke('careerProfiles:update', { token, id, payload }),
+    delete: (token, id) => api.invoke('careerProfiles:delete', { token, id }),
+    duplicate: (token, id) => api.invoke('careerProfiles:duplicate', { token, id }),
+};
+electron_1.contextBridge.exposeInMainWorld('electron', { auth, users, prospects, clients, owners, properties, conventions, conventionTemplates, attestationTemplates, attestations, quotes, quoteTemplates, catalog, accounting, bilan, communication, crm, archiving, documents, documentExport, lotissements, terrains, programmes, projects, hr, careerProfiles, performance, visitors, calls, socialMedia, innovations, constructionLibrary, construction, geo, countries, commissions, expenses, analytics, exporter, invoiceTemplates, listExportTemplates, wireTransfer, treasury, budget, dashboard, settings, reminders, config });

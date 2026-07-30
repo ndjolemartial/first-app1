@@ -32,6 +32,10 @@ function clientVisibilityWhere(session) {
         ],
     };
 }
+/** Miroir de la visibilité apporteurs d'affaire (cf. `commissions.ipc.ts` referrerScopeWhere). */
+function referrerVisibilityWhere(session) {
+    return { assignedToId: session.userId };
+}
 const SLIDESHOW_SETTING_KEY = 'dashboard.slideshow';
 const SLIDESHOW_ROLES_SETTING_KEY = 'dashboard.slideshow.allowedRoles';
 const ATT_QR_ENABLED_KEY = 'attendance.qr.enabled';
@@ -83,16 +87,20 @@ function registerDashboardIPC() {
                     db.property.count({ where: { deletedAt: null, status: 'DISPONIBLE' } }),
                     db.lotissement.count({ where: { deletedAt: null } }),
                     db.programmeImmobilier.count({ where: { deletedAt: null } }),
+                    db.businessReferrer.count({ where: { deletedAt: null } }),
                 ])
-                : Promise.resolve([null, null, null, null, null, null]);
+                : Promise.resolve([null, null, null, null, null, null, null]);
             // Rôles restreints (AGENT / AGENT_TECHNIQUE / READONLY) : clients accessibles,
-            // terrains et biens disponibles (que ces rôles peuvent consulter).
+            // terrains et biens disponibles (que ces rôles peuvent consulter), ainsi que
+            // les apporteurs d'affaire dont ils sont l'utilisateur référent (même règle
+            // d'accès que la zone Clients).
             const restrictedPromises = isPrivileged
-                ? Promise.resolve([null, null, null])
+                ? Promise.resolve([null, null, null, null])
                 : Promise.all([
                     db.client.count({ where: { deletedAt: null, ...clientVisibilityWhere(session) } }),
                     db.terrain.count({ where: { deletedAt: null, statut: 'DISPONIBLE' } }),
                     db.property.count({ where: { deletedAt: null, status: 'DISPONIBLE' } }),
+                    db.businessReferrer.count({ where: { deletedAt: null, ...referrerVisibilityWhere(session) } }),
                 ]);
             const slideshowRolesPromise = db.appSetting
                 .findUnique({ where: { key: SLIDESHOW_ROLES_SETTING_KEY } })
@@ -178,8 +186,8 @@ function registerDashboardIPC() {
             // Slideshow visible uniquement si le rôle de l'utilisateur figure dans
             // la liste d'autorisation (vide par défaut = personne).
             const slideshow = slideshowRoles.includes(session.role) ? slideshowItems : [];
-            const [clientsCount, ownersCount, availableTerrainsCount, availablePropertiesCount, lotissementsCount, programmesCount] = privileged;
-            const [restrictedClientsCount, restrictedTerrainsCount, restrictedPropertiesCount] = restricted;
+            const [clientsCount, ownersCount, availableTerrainsCount, availablePropertiesCount, lotissementsCount, programmesCount, apporteursCount] = privileged;
+            const [restrictedClientsCount, restrictedTerrainsCount, restrictedPropertiesCount, restrictedApporteursCount] = restricted;
             return {
                 success: true,
                 data: {
@@ -193,6 +201,7 @@ function registerDashboardIPC() {
                         availableProperties: isPrivileged ? availablePropertiesCount : restrictedPropertiesCount,
                         lotissements: lotissementsCount,
                         programmes: programmesCount,
+                        apporteurs: isPrivileged ? apporteursCount : restrictedApporteursCount,
                     },
                     slideshow,
                     attendanceQr,

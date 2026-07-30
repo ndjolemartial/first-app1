@@ -10,6 +10,12 @@ const auth_service_1 = require("../services/auth.service");
 const crypto_1 = require("../utils/crypto");
 const logger_1 = __importDefault(require("../utils/logger"));
 const zod_1 = require("zod");
+// Sérialise les objets Prisma (Date, Decimal…) en valeurs JSON-safe avant
+// transit IPC — sans cela, un champ Date (ex. hireDate) traverse le pont
+// contextBridge comme une véritable instance `Date`, et le formulaire (qui
+// s'attend à une chaîne ISO pour en extraire les 10 premiers caractères)
+// affiche un résultat incohérent (`String(date)` ≠ ISO 8601).
+const ser = (v) => JSON.parse(JSON.stringify(v));
 const createUserSchema = zod_1.z.object({
     matricule: zod_1.z.string().min(1),
     firstName: zod_1.z.string().min(1),
@@ -23,7 +29,7 @@ const createUserSchema = zod_1.z.object({
     fonction: zod_1.z.string().optional(),
     nomCommercial: zod_1.z.string().optional(),
     idNumber: zod_1.z.string().optional(),
-    civilite: zod_1.z.enum(['MONSIEUR', 'MADAME', 'MADEMOISELLE']).optional(),
+    civilite: zod_1.z.enum(['Monsieur', 'Madame', 'Mademoiselle']).optional(),
     statutConjugal: zod_1.z.enum(['CELIBATAIRE', 'MARIEE', 'CONCUBINAGE', 'DIVORCE', 'VEUF']).optional(),
     hireDate: zod_1.z.string().optional(),
     cnpsNumber: zod_1.z.string().optional(),
@@ -158,7 +164,7 @@ function registerUsersIPC() {
                 }),
                 db.user.count({ where }),
             ]);
-            return { success: true, data, total };
+            return ser({ success: true, data, total });
         }
         catch (error) {
             logger_1.default.error('users:list error', error.message);
@@ -222,7 +228,7 @@ function registerUsersIPC() {
             if (scope === 'limited' && !AGENT_TECHNIQUE_MANAGED_ROLES.includes(user.role)) {
                 return { success: false, error: 'Utilisateur inaccessible' };
             }
-            return { success: true, data: user };
+            return ser({ success: true, data: user });
         }
         catch (error) {
             return { success: false, error: error.message };
@@ -255,7 +261,7 @@ function registerUsersIPC() {
                 },
             });
             logger_1.default.info(`User created: ${user.email}`);
-            return { success: true, data: user };
+            return ser({ success: true, data: user });
         }
         catch (error) {
             logger_1.default.error('users:create error', error.message);
@@ -298,7 +304,7 @@ function registerUsersIPC() {
                     role: true, isActive: true,
                 },
             });
-            return { success: true, data: user };
+            return ser({ success: true, data: user });
         }
         catch (error) {
             logger_1.default.error('users:update error', error.message);

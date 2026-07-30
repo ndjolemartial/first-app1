@@ -105,7 +105,10 @@ function quarterOf(ref) {
  */
 async function computeMetricValue(db, employee, kpi, start, end) {
     const uid = employee.userId;
-    const needsUser = ['SALES', 'COMMISSIONS', 'ACCOUNTING', 'CRM', 'PROSPECTS', 'SOCIAL'].includes(kpi.source);
+    // RECOVERY_RATE est un chiffre global entreprise (aucune attribution
+    // personnelle), à l'inverse des autres métriques de la source ACCOUNTING.
+    const needsUser = kpi.metric !== 'RECOVERY_RATE'
+        && ['SALES', 'COMMISSIONS', 'ACCOUNTING', 'CRM', 'PROSPECTS', 'SOCIAL'].includes(kpi.source);
     if (needsUser && !uid)
         return null;
     switch (kpi.metric) {
@@ -149,6 +152,31 @@ async function computeMetricValue(db, employee, kpi, start, end) {
                 _sum: { amount: true },
             });
             return Number(agg._sum.amount ?? 0);
+        }
+        case 'RECOVERY_RATE': {
+            // Taux de recouvrement — chiffre global entreprise (aucune attribution
+            // personnelle) : sur les factures dont l'échéance (dueDate) tombe dans
+            // la période, part du montant dû effectivement réglée à ce jour (tous
+            // règlements confondus, même postérieurs à la période).
+            const invoices = await db.invoice.findMany({
+                where: {
+                    deletedAt: null,
+                    status: { notIn: ['BROUILLON', 'ANNULEE'] },
+                    dueDate: { gte: start, lt: end },
+                },
+                select: { id: true, total: true },
+            });
+            if (!invoices.length)
+                return null;
+            const totalDue = invoices.reduce((a, inv) => a + Number(inv.total), 0);
+            if (totalDue <= 0)
+                return null;
+            const paidAgg = await db.payment.aggregate({
+                where: { invoiceId: { in: invoices.map((inv) => inv.id) } },
+                _sum: { amount: true },
+            });
+            const totalPaid = Number(paidAgg._sum.amount ?? 0);
+            return Math.round((totalPaid / totalDue) * 1000) / 10; // %
         }
         case 'CRM_ACTIVITIES_DONE': {
             return db.crmActivity.count({
@@ -265,6 +293,18 @@ async function computeMetricValue(db, employee, kpi, start, end) {
             }
             const minutes = await computeUnjustifiedLatenessMinutes(db, employee.id, start, end);
             return Math.round((minutes / 60) * 100) / 100; // heures, 2 décimales
+        }
+        case 'IT_INNOVATIONS_IMPLEMENTED': {
+            // Nombre d'innovations IT dont les 3 phases sont validées (mise en œuvre
+            // complète, 100%) sur la période, datées par la validation de la phase 3.
+            return db.itInnovation.count({
+                where: {
+                    deletedAt: null,
+                    employeeId: employee.id,
+                    status: 'VALIDEE',
+                    phase3ValidatedAt: { gte: start, lt: end },
+                },
+            });
         }
         case 'MANUAL_VALUE':
         default:
@@ -603,6 +643,7 @@ async function seedDefaultKpis() {
         { code: 'RESILIATION_COUNT', label: 'Nombre de conventions résiliées', category: 'Commercial', source: 'SALES', metric: 'RESILIATION_COUNT', unit: 'nb', direction: 'LOWER_BETTER' },
         { code: 'COMMISSION_AMOUNT', label: 'Commissions encaissées', category: 'Commercial', source: 'COMMISSIONS', metric: 'COMMISSION_AMOUNT', unit: 'FCFA', direction: 'HIGHER_BETTER' },
         { code: 'ENCAISSEMENT_AMOUNT', label: 'Chiffre d’affaire réalisé', category: 'Finance', source: 'ACCOUNTING', metric: 'ENCAISSEMENT_AMOUNT', unit: 'FCFA', direction: 'HIGHER_BETTER' },
+        { code: 'RECOVERY_RATE', label: 'Taux de recouvrement', category: 'Finance', source: 'ACCOUNTING', metric: 'RECOVERY_RATE', unit: '%', direction: 'HIGHER_BETTER' },
         { code: 'CRM_ACTIVITIES_DONE', label: 'Activités CRM traitées', category: 'Activité', source: 'CRM', metric: 'CRM_ACTIVITIES_DONE', unit: 'nb', direction: 'HIGHER_BETTER' },
         { code: 'CRM_VISITS', label: 'Visites, Sorties en Clientèle ou Courses réalisées', category: 'Activité', source: 'CRM', metric: 'CRM_VISITS', unit: 'nb', direction: 'HIGHER_BETTER' },
         { code: 'PROSPECT_CONVERSION_RATE', label: 'Taux de conversion prospects → clients', category: 'Commercial', source: 'PROSPECTS', metric: 'PROSPECT_CONVERSION_RATE', unit: '%', direction: 'HIGHER_BETTER' },
@@ -614,6 +655,7 @@ async function seedDefaultKpis() {
         { code: 'ATTENDANCE_RATE', label: 'Taux de présence', category: 'Assiduité', source: 'ATTENDANCE', metric: 'ATTENDANCE_RATE', unit: '%', direction: 'HIGHER_BETTER' },
         { code: 'ABSENCE_DAYS', label: 'Jours d’absence', category: 'Assiduité', source: 'ATTENDANCE', metric: 'ABSENCE_DAYS', unit: 'j', direction: 'LOWER_BETTER' },
         { code: 'LATE_EARLY_DEPARTURE_HOURS', label: 'Taux de retard ou de Départ précipité', category: 'Assiduité', source: 'ATTENDANCE', metric: 'LATE_EARLY_DEPARTURE_HOURS', unit: 'h', direction: 'LOWER_BETTER' },
+        { code: 'IT_INNOVATIONS_IMPLEMENTED', label: 'Nombre d’innovations IT mises en œuvre', category: 'Innovation IT', source: 'IT_INNOVATION', metric: 'IT_INNOVATIONS_IMPLEMENTED', unit: 'nb', direction: 'HIGHER_BETTER' },
     ];
     for (const d of defaults) {
         const exists = await db.kpiDefinition.findFirst({ where: { code: d.code }, select: { id: true } });
