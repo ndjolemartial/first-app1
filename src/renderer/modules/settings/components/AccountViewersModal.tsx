@@ -6,6 +6,7 @@ import Button from '../../../shared/components/ui/Button';
 import Input from '../../../shared/components/ui/Input';
 import { useTreasuryUsers, useSetAccountViewers } from '../../treasury/hooks/useTreasury';
 import { formatPersonName } from '../../../shared/utils/format';
+import { roleLabel } from '../../../shared/utils/roleLabel';
 
 interface Props {
   open: boolean;
@@ -120,7 +121,7 @@ export default function AccountViewersModal({ open, onClose, account }: Props) {
                       </span>
                       {u.matricule && <span className="ml-2 text-xs text-slate-400">{u.matricule}</span>}
                     </span>
-                    <span className="text-xs text-slate-500">{u.role}</span>
+                    <span className="text-xs text-slate-500">{roleLabel(u.role)}</span>
                   </label>
                 </li>
               );

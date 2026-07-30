@@ -18,6 +18,7 @@ import { Save } from 'lucide-react';
 const schema = z.object({
   firstName: z.string().min(1, 'Prénom requis'),
   lastName:  z.string().min(1, 'Nom requis'),
+  civilite:  z.string().optional(),
   email:     z.string().email('Email invalide').optional().or(z.literal('')),
   phone:     z.string().optional(),
   mobile:    z.string().optional(),
@@ -40,6 +41,13 @@ const SOURCE_OPTIONS = [
   { value: 'EMAIL',              label: 'Email' },
   { value: 'CONTACT_PERSONNEL',  label: 'Contact personnel' },
   { value: 'AUTRE',              label: 'Autre' },
+];
+
+const CIVILITE_OPTIONS = [
+  { value: '', label: '— Civilité —' },
+  { value: 'Monsieur', label: 'Monsieur' },
+  { value: 'Madame', label: 'Madame' },
+  { value: 'Mademoiselle', label: 'Mademoiselle' },
 ];
 
 const STATUS_OPTIONS = [
@@ -82,6 +90,7 @@ export default function ProspectFormPage() {
       reset({
         firstName: p.firstName   ?? '',
         lastName:  p.lastName    ?? '',
+        civilite:  p.civilite    ?? '',
         email:     p.email       ?? '',
         phone:     p.phone       ?? '',
         mobile:    p.mobile      ?? '',
@@ -124,6 +133,8 @@ export default function ProspectFormPage() {
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-5">
 
           {/* Identité */}
+          <Select label="Civilité" options={CIVILITE_OPTIONS} {...register('civilite')} />
+
           <div className="grid grid-cols-2 gap-4">
             <Input
               label="Nom"

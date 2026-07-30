@@ -53,7 +53,7 @@ export default function OwnersListPage() {
   return (
     <PageLayout
       title="Gestion des propriétaires"
-      breadcrumbs={[{ label: 'Propriétaires' }]}
+      breadcrumbs={[{ label: 'Tierce partie' }, { label: 'Propriétaires' }]}
       actions={
         <div className="flex gap-2">
           <ExportMenu

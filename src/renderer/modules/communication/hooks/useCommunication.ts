@@ -48,7 +48,17 @@ export function useDeleteTemplate() {
   });
 }
 
-export function useCommunicationHistory(filters: object = {}, page = 1, limit = 30) {
+/** Droits de l'utilisateur connecté sur les modèles de messages (accès manuel désigné). */
+export function useMyTemplatePermissions() {
+  const token = useAuthStore((s) => s.token)!;
+  return useQuery({
+    queryKey: ['comm-templates', 'my-permissions'],
+    queryFn: () => ipc.myTemplatePermissions(token),
+    enabled: !!token,
+  });
+}
+
+export function useCommunicationHistory(filters: object = {}, page = 1, limit = 20) {
   const token = useAuthStore((s) => s.token);
   const userId = useAuthStore((s) => s.user?.id ?? 0);
   return useQuery({

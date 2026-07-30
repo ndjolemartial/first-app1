@@ -306,18 +306,25 @@ export function registerAnalyticsIPC(): void {
       guardManagerFullAccess(token);
       const db = getDb();
       const now = new Date();
+      // Souscripteurs : compte le nombre de terrains/biens souscrits (et non le
+      // nombre de conventions) — un client ayant souscrit 2 terrains dans une
+      // même convention compte pour 2. Le détail (clic) reste au niveau
+      // convention (cf. `analytics:crmDetail`, cas 'souscripteurs').
+      const souscripteursWhere: any = { deletedAt: null, status: 'ACTIVE', type: { in: ['SALE', 'SOUSCRIPTION'] } };
       const [prospectsByStatus, prospectsBySource, prospectsTotal, converted,
-        clientsByType, locataires, souscripteurs, actPending, actOverdue] = await Promise.all([
+        clientsByType, locataires, souscripteursTerrains, souscripteursProperties, actPending, actOverdue] = await Promise.all([
         db.prospect.groupBy({ by: ['status'], where: { deletedAt: null }, _count: { _all: true } }),
         db.prospect.groupBy({ by: ['source'], where: { deletedAt: null }, _count: { _all: true } }),
         db.prospect.count({ where: { deletedAt: null } }),
         db.prospect.count({ where: { deletedAt: null, status: 'CONVERTI' } }),
         db.client.groupBy({ by: ['type'], where: { deletedAt: null }, _count: { _all: true } }),
         db.convention.count({ where: { deletedAt: null, status: 'ACTIVE', type: { in: ['RENTAL_UNFURNISHED', 'RENTAL_FURNISHED', 'COMMERCIAL_LEASE'] } } }),
-        db.convention.count({ where: { deletedAt: null, status: 'ACTIVE', type: { in: ['SALE', 'SOUSCRIPTION'] } } }),
+        db.conventionTerrain.count({ where: { convention: souscripteursWhere } }),
+        db.conventionProperty.count({ where: { convention: souscripteursWhere } }),
         db.crmActivity.count({ where: { status: { in: ['EN_ATTENTE', 'EN_TRAITEMENT'] } } }),
         db.crmActivity.count({ where: { status: { in: ['EN_ATTENTE', 'EN_TRAITEMENT'] }, dueDate: { lt: now } } }),
       ]);
+      const souscripteurs = souscripteursTerrains + souscripteursProperties;
       const conversionRate = prospectsTotal > 0 ? Math.round((converted / prospectsTotal) * 1000) / 10 : 0;
       return ser({
         success: true,
@@ -700,26 +707,56 @@ export function registerAnalyticsIPC(): void {
         },
       });
 
+      // Apporteurs d'affaire actifs. Mêmes règles de fonctionnement et
+      // d'accès que le suivi clients : rôles restreints limités aux
+      // apporteurs dont ils sont l'utilisateur référent (assignedToId).
+      const referrerWhere: any = { deletedAt: null, isActive: true };
+      if (!isFullAccess) referrerWhere.assignedToId = session.userId;
+      const referrers = await db.businessReferrer.findMany({
+        where: referrerWhere,
+        select: {
+          id: true, firstName: true, lastName: true, companyName: true, createdAt: true,
+          assignedToId: true,
+          assignedTo: { select: { firstName: true, lastName: true } },
+        },
+      });
+
       const prospectIds = prospects.map((p) => p.id);
       const clientIds = clients.map((c) => c.id);
+      const referrerIds = referrers.map((r) => r.id);
 
-      // Fréquence des actions de suivi (activités CRM) par mois glissant
-      // (12 mois), ventilée prospects / clients. Rôles restreints : limitée
-      // aux activités des prospects/clients de leur périmètre.
+      // Fréquence des actions de suivi par mois glissant (12 mois), ventilée
+      // prospects / clients / apporteurs. Rôles restreints : limitée aux
+      // entités de leur périmètre. Les apporteurs n'ayant pas d'activité CRM
+      // propre, leurs « actions » agrègent commissions, documents et
+      // événements de la fiche de suivi (cf. commissions:getReferrerTimeline).
       const buckets = monthBuckets(now, 12);
       const frequency = [];
       for (const b of buckets) {
         const prospectActWhere: any = { prospectId: { not: null }, createdAt: { gte: b.start, lt: b.end } };
         const clientActWhere: any = { clientId: { not: null }, createdAt: { gte: b.start, lt: b.end } };
+        const referrerCommissionWhere: any = { referrerId: { not: null }, deletedAt: null, createdAt: { gte: b.start, lt: b.end } };
+        const referrerDocumentWhere: any = { referrerId: { not: null }, deletedAt: null, uploadedAt: { gte: b.start, lt: b.end } };
+        const referrerTimelineWhere: any = { entityType: 'REFERRER', createdAt: { gte: b.start, lt: b.end } };
         if (!isFullAccess) {
           prospectActWhere.prospectId = { in: prospectIds.length ? prospectIds : [-1] };
           clientActWhere.clientId = { in: clientIds.length ? clientIds : [-1] };
+          const scopedReferrerIds = referrerIds.length ? referrerIds : [-1];
+          referrerCommissionWhere.referrerId = { in: scopedReferrerIds };
+          referrerDocumentWhere.referrerId = { in: scopedReferrerIds };
+          referrerTimelineWhere.entityId = { in: scopedReferrerIds };
         }
-        const [prospectActions, clientActions] = await Promise.all([
+        const [prospectActions, clientActions, referrerCommissionActions, referrerDocumentActions, referrerTimelineActions] = await Promise.all([
           db.crmActivity.count({ where: prospectActWhere }),
           db.crmActivity.count({ where: clientActWhere }),
+          db.commission.count({ where: referrerCommissionWhere }),
+          db.document.count({ where: referrerDocumentWhere }),
+          db.entityTimelineEvent.count({ where: referrerTimelineWhere }),
         ]);
-        frequency.push({ label: b.label, prospectActions, clientActions });
+        frequency.push({
+          label: b.label, prospectActions, clientActions,
+          referrerActions: referrerCommissionActions + referrerDocumentActions + referrerTimelineActions,
+        });
       }
 
       // Dernière action CRM connue par prospect / par client.
@@ -731,6 +768,24 @@ export function registerAnalyticsIPC(): void {
       for (const g of prospectLastActions) if (g.prospectId != null && g._max.createdAt) prospectLastActionMap.set(g.prospectId, g._max.createdAt);
       const clientLastActionMap = new Map<number, Date>();
       for (const g of clientLastActions) if (g.clientId != null && g._max.createdAt) clientLastActionMap.set(g.clientId, g._max.createdAt);
+
+      // Dernière action connue par apporteur d'affaire : la plus récente
+      // parmi ses commissions, ses documents et les événements de sa fiche
+      // de suivi.
+      const [referrerCommissionLast, referrerDocumentLast, referrerTimelineLast] = await Promise.all([
+        db.commission.groupBy({ by: ['referrerId'], where: { referrerId: { not: null }, deletedAt: null }, _max: { createdAt: true } }),
+        db.document.groupBy({ by: ['referrerId'], where: { referrerId: { not: null }, deletedAt: null }, _max: { uploadedAt: true } }),
+        db.entityTimelineEvent.groupBy({ by: ['entityId'], where: { entityType: 'REFERRER' }, _max: { createdAt: true } }),
+      ]);
+      const referrerLastActionMap = new Map<number, Date>();
+      const bumpLastAction = (id: number | null | undefined, date: Date | null | undefined) => {
+        if (id == null || !date) return;
+        const current = referrerLastActionMap.get(id);
+        if (!current || date > current) referrerLastActionMap.set(id, date);
+      };
+      for (const g of referrerCommissionLast) bumpLastAction(g.referrerId, g._max.createdAt);
+      for (const g of referrerDocumentLast) bumpLastAction(g.referrerId, g._max.uploadedAt);
+      for (const g of referrerTimelineLast) bumpLastAction(g.entityId, g._max.createdAt);
 
       const prospectItems = prospects.map((p) => {
         const lastActionAt = prospectLastActionMap.get(p.id) ?? p.createdAt;
@@ -760,6 +815,22 @@ export function registerAnalyticsIPC(): void {
         };
       }).sort((a, b) => b.daysSince - a.daysSince);
 
+      // Apporteurs d'affaire : mêmes seuils d'inaction (délais) que les
+      // clients — décision produit explicite, aucun palier dédié.
+      const referrerItems = referrers.map((r) => {
+        const lastActionAt = referrerLastActionMap.get(r.id) ?? r.createdAt;
+        const daysSince = Math.floor((now.getTime() - lastActionAt.getTime()) / DAY_MS);
+        return {
+          id: r.id, reference: `APP-${r.id}`,
+          name: r.companyName || `${r.lastName ?? ''} ${r.firstName ?? ''}`.trim(),
+          status: 'ACTIF',
+          assignedToId: r.assignedToId,
+          assignedTo: r.assignedTo ? `${r.assignedTo.lastName ?? ''} ${r.assignedTo.firstName ?? ''}`.trim() : null,
+          lastActionAt, daysSince,
+          state: classifyFollowUp(daysSince, CLIENT_THRESHOLDS),
+        };
+      }).sort((a, b) => b.daysSince - a.daysSince);
+
       const STATES: FollowUpState[] = ['NORMAL', 'NEGLIGE', 'DANGER', 'CRITIQUE'];
       const countBy = (items: Array<{ state: FollowUpState }>) =>
         STATES.map((state) => ({ key: state, count: items.filter((i) => i.state === state).length }));
@@ -770,6 +841,7 @@ export function registerAnalyticsIPC(): void {
           frequency,
           prospects: { counts: countBy(prospectItems), items: prospectItems },
           clients: { counts: countBy(clientItems), items: clientItems },
+          referrers: { counts: countBy(referrerItems), items: referrerItems },
         },
       });
     } catch (error: any) {

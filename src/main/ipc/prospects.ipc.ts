@@ -105,6 +105,7 @@ const STATUSES = [
 const prospectSchema = z.object({
   firstName:    z.string().min(1, 'Prénom requis'),
   lastName:     z.string().min(1, 'Nom requis'),
+  civilite:     z.preprocess((v) => (v === '' ? null : v), z.enum(['Monsieur', 'Madame', 'Mademoiselle']).nullable().optional()),
   email:        z.string().email('Email invalide').optional(),
   phone:        z.string().optional(),
   mobile:       z.string().optional(),

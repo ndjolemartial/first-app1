@@ -21,6 +21,7 @@ import FundAccountModal from '../../../shared/components/FundAccountModal';
 
 interface FormData {
   bankAccountId: string;
+  linkedAccountId: string;
   direction: string;
   amount: string;
   operationDate: string;
@@ -114,6 +115,7 @@ export default function OperationFormPage() {
   const { register, control, handleSubmit, watch, setValue, formState: { errors, isSubmitting } } = useForm<FormData>({
     defaultValues: {
       bankAccountId: presetAccount,
+      linkedAccountId: '',
       direction: presetDirection || 'SORTIE',
       amount: '',
       operationDate: today(),
@@ -133,17 +135,25 @@ export default function OperationFormPage() {
 
   const direction = watch('direction');
   const watchedAccountId = watch('bankAccountId');
+  const watchedLinkedAccountId = watch('linkedAccountId');
   const watchedAmount = watch('amount');
   // Approvisionnement d'un compte ne couvrant pas le montant avant une SORTIE.
   const [funding, setFunding] = useState(false);
   const selectedAccount = accounts.find((a: any) => String(a.id) === watchedAccountId) ?? null;
+  const linkedAccount = accounts.find((a: any) => String(a.id) === watchedLinkedAccountId) ?? null;
   const accountBalance = selectedAccount ? Number(selectedAccount.balance ?? 0) : null;
   const operationAmount = Number(watchedAmount) || 0;
-  // Sortie dont le compte ne couvre pas le montant : enregistrement bloqué tant
-  // que le compte n'est pas approvisionné à hauteur du montant (solde ≥ montant).
+  // Compte réellement débité par l'opération : le compte principal pour une
+  // SORTIE (« Compte débit »), ou — si un virement interne est renseigné — le
+  // « Compte débit » lié pour une ENTREE (le « Compte crédit » principal n'est
+  // lui que crédité, sans condition de solde).
+  const debitedAccount = direction === 'SORTIE' ? selectedAccount : (watchedLinkedAccountId ? linkedAccount : null);
+  const debitedBalance = debitedAccount ? Number(debitedAccount.balance ?? 0) : null;
+  // Compte débité dont le solde ne couvre pas le montant : enregistrement bloqué
+  // tant qu'il n'est pas approvisionné à hauteur du montant (solde ≥ montant).
   const insufficientFunds =
-    direction === 'SORTIE' && selectedAccount != null && accountBalance != null
-    && operationAmount > 0 && accountBalance < operationAmount;
+    debitedAccount != null && debitedBalance != null
+    && operationAmount > 0 && debitedBalance < operationAmount;
 
   // Préremplit le champ « Compte » selon le sens choisi : compte par défaut
   // « entrée » ou « sortie » configuré sur la fiche de l'utilisateur connecté.
@@ -161,6 +171,14 @@ export default function OperationFormPage() {
       accounts.find((a: any) => a.linkedUserId === currentUser.id);
     setValue('bankAccountId', target ? String(target.id) : '');
   }, [direction, presetAccount, currentUser, accounts, setValue]);
+
+  // Le compte lié (virement interne) doit rester distinct du compte principal :
+  // le désélectionne s'il devient identique suite à un changement du compte principal.
+  useEffect(() => {
+    if (watchedLinkedAccountId && watchedLinkedAccountId === watchedAccountId) {
+      setValue('linkedAccountId', '');
+    }
+  }, [watchedAccountId, watchedLinkedAccountId, setValue]);
 
   const { data: categoriesRes } = useTreasuryCategories({ direction, isActive: 'true' });
   const categories = categoriesRes?.data ?? [];
@@ -186,6 +204,7 @@ export default function OperationFormPage() {
     const programmeId   = data.imputationKind === 'PROGRAMME'   && data.programmeId   ? Number(data.programmeId)   : null;
     const payload = {
       bankAccountId: Number(data.bankAccountId),
+      linkedAccountId: data.linkedAccountId ? Number(data.linkedAccountId) : null,
       direction: data.direction,
       amount: Number(data.amount),
       operationDate: new Date(`${data.operationDate}T12:00:00`).toISOString(),
@@ -231,6 +250,10 @@ export default function OperationFormPage() {
   const imputationKind = watch('imputationKind');
 
   const accountOptions = accounts.map((a: any) => ({ value: String(a.id), label: a.name }));
+  // Second compte d'un virement interne : exclut le compte principal déjà choisi.
+  const linkedAccountOptions = accounts
+    .filter((a: any) => String(a.id) !== watchedAccountId)
+    .map((a: any) => ({ value: String(a.id), label: a.name }));
   const categoryOptions = categories.map((c: any) => ({ value: String(c.id), label: categoryLabel(c) }));
   const thirdPartyOptions = thirdParties.map((t: any) => ({
     value: String(t.id),
@@ -238,6 +261,10 @@ export default function OperationFormPage() {
   }));
   // Libellé du champ tiers selon le sens de l'opération.
   const thirdPartyLabel = direction === 'SORTIE' ? 'À destination de' : 'En provenance de';
+  // Le compte principal est le compte crédité sur une entrée, débité sur une
+  // sortie ; le second compte (virement interne, optionnel) est l'inverse.
+  const primaryAccountLabel = direction === 'ENTREE' ? 'Compte crédit' : 'Compte débit';
+  const linkedAccountLabel  = direction === 'ENTREE' ? 'Compte débit'  : 'Compte crédit';
 
   return (
     <PageLayout
@@ -264,11 +291,11 @@ export default function OperationFormPage() {
                     const reg = register('bankAccountId', { required: true });
                     return (
                       <Select
-                        label="Compte"
+                        label={primaryAccountLabel}
                         required
                         options={accountOptions}
                         placeholder="Choisir un compte"
-                        error={errors.bankAccountId && 'Compte requis'}
+                        error={errors.bankAccountId && `${primaryAccountLabel} requis`}
                         {...reg}
                         onChange={(e) => { accountTouchedRef.current = true; reg.onChange(e); }}
                       />
@@ -276,59 +303,18 @@ export default function OperationFormPage() {
                   })()}
                 </div>
                 <div className="grid grid-cols-2 gap-4">
-                  <Input
-                    label="Montant"
-                    type="number"
-                    step="0.01"
-                    required
-                    error={errors.amount && 'Montant requis'}
-                    {...register('amount', { required: true, validate: (v) => Number(v) > 0 })}
-                  />
-                  <Input label="Date de l'opération" type="date" {...register('operationDate')} />
-                </div>
-
-                {/* Solde du compte + blocage si ≤ 0 pour une SORTIE. */}
-                {direction === 'SORTIE' && selectedAccount && (
-                  <>
-                    <p className="-mt-2 text-xs text-slate-500">
-                      Solde du compte :{' '}
-                      <span className={`font-semibold ${insufficientFunds ? 'text-red-600' : 'text-slate-700'}`}>
-                        {formatCurrency(accountBalance ?? 0)}
-                      </span>
-                    </p>
-                    {insufficientFunds && (
-                      <div className="rounded-lg border border-red-200 bg-red-50 p-3">
-                        <div className="flex items-start gap-2">
-                          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-red-600" />
-                          <div className="flex-1">
-                            <p className="text-sm font-medium text-red-700">Solde insuffisant</p>
-                            <p className="mt-0.5 text-xs text-red-600">
-                              Le solde de ce compte ({formatCurrency(accountBalance ?? 0)}) ne couvre pas le montant de l'opération ({formatCurrency(operationAmount)}). Approvisionnez-le pour pouvoir enregistrer cette sortie.
-                            </p>
-                            <Button size="sm" variant="secondary" type="button" className="mt-2" icon={<Wallet className="h-4 w-4" />}
-                              onClick={() => setFunding(true)}>
-                              Approvisionner le compte
-                            </Button>
-                          </div>
-                        </div>
-                      </div>
-                    )}
-                  </>
-                )}
-
-                <div className="grid grid-cols-2 gap-4">
                   <div>
                     <FormSearchSelect
                       control={control}
-                      name="categoryId"
-                      label="Objet d'opération (compte comptable)"
-                      required
-                      options={categoryOptions}
-                      placeholder="Rechercher un objet…"
-                      rules={{ required: 'Objet requis' }}
+                      name="linkedAccountId"
+                      label={linkedAccountLabel}
+                      options={[{ value: '', label: '— Aucun (opération simple) —' }, ...linkedAccountOptions]}
+                      placeholder="Rechercher un compte…"
                     />
                     <p className="text-xs text-slate-500 mt-1">
-                      Nature de l'opération rattachée à un numéro de compte comptable.
+                      {direction === 'ENTREE'
+                        ? `Si les fonds proviennent d'un autre compte de trésorerie (plutôt que de « ${thirdPartyLabel} »), sélectionnez-le ici : une écriture de débit y sera également passée.`
+                        : `Si les fonds sont transférés vers un autre compte de trésorerie (plutôt que « ${thirdPartyLabel} »), sélectionnez-le ici : une écriture de crédit y sera également passée.`}
                     </p>
                   </div>
                   <div>
@@ -353,6 +339,70 @@ export default function OperationFormPage() {
                       Facultatif — bénéficiaire ou émetteur de l'opération.
                     </p>
                   </div>
+                </div>
+                <div className="border-t border-slate-200 pt-4 space-y-4">
+                  <h3 className="text-sm font-semibold text-slate-700">Règlement</h3>
+                  <div className="grid grid-cols-2 gap-4">
+                    <Input
+                      label="Montant"
+                      type="number"
+                      step="0.01"
+                      required
+                      error={errors.amount && 'Montant requis'}
+                      {...register('amount', { required: true, validate: (v) => Number(v) > 0 })}
+                    />
+                    <Input label="Date de l'opération" type="date" {...register('operationDate')} />
+                  </div>
+
+                  {/* Solde du compte débité (compte principal en SORTIE, ou compte débit
+                      lié en ENTREE) + blocage si insuffisant. */}
+                  {debitedAccount && (
+                    <>
+                      <p className="-mt-2 text-xs text-slate-500">
+                        Solde du compte {debitedAccount.name} :{' '}
+                        <span className={`font-semibold ${insufficientFunds ? 'text-red-600' : 'text-slate-700'}`}>
+                          {formatCurrency(debitedBalance ?? 0)}
+                        </span>
+                      </p>
+                      {insufficientFunds && (
+                        <div className="rounded-lg border border-red-200 bg-red-50 p-3">
+                          <div className="flex items-start gap-2">
+                            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-red-600" />
+                            <div className="flex-1">
+                              <p className="text-sm font-medium text-red-700">Solde insuffisant</p>
+                              <p className="mt-0.5 text-xs text-red-600">
+                                Le solde du compte {debitedAccount.name} ({formatCurrency(debitedBalance ?? 0)}) ne couvre pas le montant de l'opération ({formatCurrency(operationAmount)}). Approvisionnez-le pour pouvoir enregistrer cette opération.
+                              </p>
+                              <Button size="sm" variant="secondary" type="button" className="mt-2" icon={<Wallet className="h-4 w-4" />}
+                                onClick={() => setFunding(true)}>
+                                Approvisionner le compte
+                              </Button>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                    </>
+                  )}
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <Select label="Mode de règlement" options={PAYMENT_METHOD_OPTIONS} {...register('paymentMethod')} />
+                    <Input label="Référence (chèque, virement…)" {...register('paymentRef')} />
+                  </div>
+                </div>
+
+                <div>
+                  <FormSearchSelect
+                    control={control}
+                    name="categoryId"
+                    label="Objet d'opération (compte comptable)"
+                    required
+                    options={categoryOptions}
+                    placeholder="Rechercher un objet…"
+                    rules={{ required: 'Objet requis' }}
+                  />
+                  <p className="text-xs text-slate-500 mt-1">
+                    Nature de l'opération rattachée à un numéro de compte comptable.
+                  </p>
                 </div>
                 <Input
                   label="Libellé"
@@ -441,14 +491,7 @@ export default function OperationFormPage() {
                 )}
               </div>
 
-              <div className="border-t border-slate-200 pt-4 space-y-4">
-                <h3 className="text-sm font-semibold text-slate-700">Règlement</h3>
-                <div className="grid grid-cols-2 gap-4">
-                  <Select label="Mode de règlement" options={PAYMENT_METHOD_OPTIONS} {...register('paymentMethod')} />
-                  <Input label="Référence (chèque, virement…)" {...register('paymentRef')} />
-                </div>
-                <Textarea label="Notes" rows={3} {...register('notes')} />
-              </div>
+              <Textarea label="Notes" rows={3} {...register('notes')} />
 
               {/* ─── Pièces jointes : archivées dans la GED et rattachées à l'opération ─── */}
               <div className="border-t border-slate-200 pt-4 space-y-3">
@@ -532,8 +575,8 @@ export default function OperationFormPage() {
         onCreated={(id) => setValue('thirdPartyId', String(id))}
       />
 
-      {funding && selectedAccount && (
-        <FundAccountModal account={selectedAccount} onClose={() => setFunding(false)} />
+      {funding && debitedAccount && (
+        <FundAccountModal account={debitedAccount} onClose={() => setFunding(false)} />
       )}
     </PageLayout>
   );

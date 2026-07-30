@@ -27,8 +27,8 @@ const BASIS_OPTIONS = [
 
 function rankBadge(rank: number) {
   if (rank === 1) return <Medal className="h-4 w-4 text-amber-500" />;
-  if (rank === 2) return <Medal className="h-4 w-4 text-slate-400" />;
-  if (rank === 3) return <Medal className="h-4 w-4 text-orange-600" />;
+  if (rank === 2) return <Medal className="h-4 w-4 text-orange-600" />;
+  if (rank === 3) return <Medal className="h-4 w-4 text-slate-400" />;
   return <span className="text-slate-500 tabular-nums">{rank}</span>;
 }
 
@@ -60,9 +60,9 @@ function FullscreenRanking({
 
   const PodiumCard = ({ e, place }: { e: RankingEntry; place: 2 | 3 }) => (
     <div className={`flex flex-col items-center rounded-2xl border px-6 py-5 text-center shadow-lg backdrop-blur ${
-      place === 2 ? 'border-slate-300/40 bg-slate-200/10' : 'border-orange-400/30 bg-orange-500/10'
+      place === 2 ? 'border-orange-400/30 bg-orange-500/10' : 'border-slate-300/40 bg-slate-200/10'
     }`}>
-      <Medal className={`h-10 w-10 ${place === 2 ? 'text-slate-300' : 'text-orange-400'}`} />
+      <Medal className={`h-10 w-10 ${place === 2 ? 'text-orange-400' : 'text-slate-300'}`} />
       <div className="mt-2 text-2xl font-bold text-white">{e.rank}<sup>e</sup></div>
       <div className="mt-1 text-lg font-semibold text-white">{e.employeeName}</div>
       <div className="text-sm text-slate-300">{e.poste ?? '—'}</div>

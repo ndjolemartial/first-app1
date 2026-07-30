@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useAuthStore } from '../../../shared/stores/auth.store';
-import { Building2, HardDrive, Database, Mail, MessageSquare, Images, FileText, FileSignature, Award, Briefcase, Tags, Landmark, IdCard, Layers, Bell, BookOpen, ChevronDown, ChevronRight, Inbox, Printer, MapPin, ShoppingBag, QrCode, Clock, AlarmClockOff } from 'lucide-react';
+import { Building2, HardDrive, Database, Mail, MessageSquare, Images, FileText, FileSignature, Award, Briefcase, Tags, Landmark, IdCard, Layers, Bell, BookOpen, ChevronDown, ChevronRight, Inbox, Printer, MapPin, ShoppingBag, QrCode, Clock, AlarmClockOff, TrendingUp, HardHat, Wrench, Sigma, SlidersHorizontal, Calculator } from 'lucide-react';
 import PageLayout from '../../../shared/components/layout/PageLayout';
 import Card from '../../../shared/components/ui/Card';
 import { clsx } from 'clsx';
@@ -13,6 +13,7 @@ import SmsSettingsTab                  from '../components/SmsSettingsTab';
 import SlideshowSettingsTab            from '../components/SlideshowSettingsTab';
 import InvoiceTemplatesSettingsTab     from '../components/InvoiceTemplatesSettingsTab';
 import ListExportTemplatesSettingsTab  from '../components/ListExportTemplatesSettingsTab';
+import WireTransferTemplateSettingsTab from '../components/WireTransferTemplateSettingsTab';
 import ConventionTemplatesSettingsTab  from '../components/ConventionTemplatesSettingsTab';
 import ContractTemplatesSettingsTab   from '../components/ContractTemplatesSettingsTab';
 import EssaiCategoriesSettingsTab      from '../components/EssaiCategoriesSettingsTab';
@@ -33,6 +34,15 @@ import ConditionsParticulieresSettingsTab from '../components/ConditionsParticul
 import AttendanceQrSettingsTab          from '../components/AttendanceQrSettingsTab';
 import VisitorQrSettingsTab             from '../components/VisitorQrSettingsTab';
 import LatenessSettingsTab              from '../components/LatenessSettingsTab';
+import CareerProfilesSettingsTab        from '../components/CareerProfilesSettingsTab';
+import ConstructionLotsSettingsTab      from '../components/ConstructionLotsSettingsTab';
+import ConstructionResourcesSettingsTab from '../components/ConstructionResourcesSettingsTab';
+import ConstructionWorkItemsSettingsTab from '../components/ConstructionWorkItemsSettingsTab';
+import ConstructionRatioDefsSettingsTab from '../components/ConstructionRatioDefsSettingsTab';
+import ConstructionRatioProfilesSettingsTab from '../components/ConstructionRatioProfilesSettingsTab';
+import ConstructionLocalitiesSettingsTab from '../components/ConstructionLocalitiesSettingsTab';
+import ConstructionFormulasSettingsTab from '../components/ConstructionFormulasSettingsTab';
+import { useMyTemplatePermissions }     from '../../communication/hooks/useCommunication';
 
 type TabKey =
   | 'company'
@@ -43,6 +53,7 @@ type TabKey =
   | 'slideshow'
   | 'invoiceTemplates'
   | 'listExportTemplates'
+  | 'wireTransferTemplate'
   | 'conventionTemplates'
   | 'contractTemplates'
   | 'essaiCategories'
@@ -62,9 +73,17 @@ type TabKey =
   | 'attendanceQr'
   | 'visitorQr'
   | 'lateness'
-  | 'conditionsParticulieres';
+  | 'careerProfiles'
+  | 'conditionsParticulieres'
+  | 'constructionLots'
+  | 'constructionResources'
+  | 'constructionWorkItems'
+  | 'constructionRatioDefs'
+  | 'constructionRatioProfiles'
+  | 'constructionLocalities'
+  | 'constructionFormulas';
 
-type GroupKey = 'communication' | 'treasury' | 'printedTemplates';
+type GroupKey = 'communication' | 'treasury' | 'printedTemplates' | 'construction';
 
 interface TabDef {
   key: TabKey;
@@ -76,7 +95,8 @@ interface TabDef {
   roles?: string[];
 }
 
-const ADMIN_ROLES = ['SUPER_ADMIN', 'ADMIN'];
+/** Exporté pour `Sidebar.tsx` : détermine s'il faut afficher l'entrée « Paramètres » du menu. */
+export const ADMIN_ROLES = ['SUPER_ADMIN', 'ADMIN'];
 
 interface GroupDef {
   key: GroupKey;
@@ -88,9 +108,11 @@ const GROUPS: GroupDef[] = [
   { key: 'communication',    label: 'Gestion Mails / SMS / WhatsApp',  icon: <Inbox className="h-4 w-4" /> },
   { key: 'printedTemplates', label: "Modèles d'imprimés",   icon: <Printer className="h-4 w-4" /> },
   { key: 'treasury',         label: 'Opérations bancaires', icon: <Landmark className="h-4 w-4" /> },
+  { key: 'construction',     label: 'Moteur de devis construction', icon: <HardHat className="h-4 w-4" /> },
 ];
 
-const TABS: TabDef[] = [
+/** Exporté pour `Sidebar.tsx` (calcul de `hasAnySettingsAccess`, cf. commentaire ci-dessus). */
+export const TABS: TabDef[] = [
   { key: 'company',              label: 'Entreprise',              icon: <Building2 className="h-4 w-4" /> },
   { key: 'storage',              label: 'Stockage',                icon: <HardDrive className="h-4 w-4" /> },
   { key: 'database',             label: 'Connexion BDD',           icon: <Database className="h-4 w-4" /> },
@@ -105,6 +127,7 @@ const TABS: TabDef[] = [
   // ── Groupe « Modèles d'imprimés » ───────────────────────────
   { key: 'invoiceTemplates',     label: 'Modèles de factures',     icon: <FileText className="h-4 w-4" />,      group: 'printedTemplates' },
   { key: 'listExportTemplates',  label: 'Modèles export de listes', icon: <Printer className="h-4 w-4" />,      group: 'printedTemplates' },
+  { key: 'wireTransferTemplate', label: "Modèle d'ordre de virement", icon: <Landmark className="h-4 w-4" />,   group: 'printedTemplates' },
   { key: 'conventionTemplates',  label: 'Modèles de conventions',  icon: <FileSignature className="h-4 w-4" />, group: 'printedTemplates' },
   { key: 'contractTemplates',    label: 'Modèles de contrats de travail', icon: <Briefcase className="h-4 w-4" />, group: 'printedTemplates', roles: ['SUPER_ADMIN', 'ADMIN', 'RH', 'ACCOUNTANT', 'MANAGER'] },
   { key: 'attestationTemplates', label: "Modèles d'attestations",  icon: <Award className="h-4 w-4" />,         group: 'printedTemplates' },
@@ -124,6 +147,16 @@ const TABS: TabDef[] = [
   { key: 'attendanceQr',         label: 'Pointage QR (personnel)', icon: <QrCode className="h-4 w-4" /> },
   { key: 'visitorQr',            label: 'QR Visiteurs',            icon: <QrCode className="h-4 w-4" /> },
   { key: 'lateness',             label: 'Retards & Départs précipités', icon: <AlarmClockOff className="h-4 w-4" /> },
+  { key: 'careerProfiles',       label: 'Profils de carrière',      icon: <TrendingUp className="h-4 w-4" /> },
+  // ── Groupe « Moteur de devis construction » (Module 17) — admin uniquement
+  { key: 'constructionLots',            label: 'Lots de travaux',         icon: <Layers className="h-4 w-4" />,             group: 'construction', roles: ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ACCOUNTANT'] },
+  { key: 'constructionResources',       label: 'Bordereau des prix',      icon: <Wrench className="h-4 w-4" />,             group: 'construction', roles: ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ACCOUNTANT'] },
+  { key: 'constructionWorkItems',       label: "Bibliothèque d'ouvrages", icon: <HardHat className="h-4 w-4" />,            group: 'construction' },
+  { key: 'constructionRatioDefs',       label: 'Catalogue des coefficients', icon: <Sigma className="h-4 w-4" />,           group: 'construction' },
+  { key: 'constructionRatioProfiles',   label: 'Profils de coefficients', icon: <SlidersHorizontal className="h-4 w-4" />, group: 'construction' },
+  { key: 'constructionLocalities',      label: 'Localités',               icon: <MapPin className="h-4 w-4" />,             group: 'construction', roles: ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ACCOUNTANT'] },
+  { key: 'constructionFormulas',        label: 'Formules de calcul',      icon: <Calculator className="h-4 w-4" />,         group: 'construction' },
+  // ─────────────────────────────────────────────────────────────
 ];
 
 export default function SettingsPage() {
@@ -131,12 +164,19 @@ export default function SettingsPage() {
   const initialTab = searchParams.get('tab');
   const role = useAuthStore((s) => s.user?.role) ?? '';
   const isAdmin = ADMIN_ROLES.includes(role);
+  // Utilisateur désigné (Paramètres → Modèles de messages → « Gérer les
+  // accès ») : accès à l'onglet « Modèles email / SMS » indépendamment du rôle.
+  const { data: templatePermRes } = useMyTemplatePermissions();
+  const canManageManualTemplates = templatePermRes?.data?.canManageManual ?? false;
   // Onglets visibles selon le rôle : les admins voient tout ; les autres rôles
   // ne voient que les onglets explicitement autorisés (ex. Catalogue pour
-  // MANAGER / ACCOUNTANT).
+  // MANAGER / ACCOUNTANT), plus « Modèles email / SMS » pour un utilisateur
+  // désigné.
   const visibleTabs = useMemo(
-    () => TABS.filter((t) => isAdmin || (t.roles ?? []).includes(role)),
-    [isAdmin, role],
+    () => TABS.filter((t) => isAdmin
+      || (t.roles ?? []).includes(role)
+      || (t.key === 'commTemplates' && canManageManualTemplates)),
+    [isAdmin, role, canManageManualTemplates],
   );
   const visibleKeys = useMemo(() => visibleTabs.map((t) => t.key) as TabKey[], [visibleTabs]);
   const defaultTab: TabKey = visibleKeys.includes('company') ? 'company' : (visibleKeys[0] ?? 'company');
@@ -272,6 +312,9 @@ export default function SettingsPage() {
 
         {/* Contenu de l'onglet actif */}
         <div className="flex-1 min-w-0">
+          {!visibleKeys.includes(active) ? (
+            <Card><p className="py-12 text-center text-slate-400">Aucun paramètre accessible avec votre rôle actuel.</p></Card>
+          ) : <>
           {active === 'company'              && <CompanySettingsTab />}
           {active === 'storage'              && <StorageSettingsTab />}
           {active === 'database'             && <DatabaseSettingsTab />}
@@ -281,8 +324,17 @@ export default function SettingsPage() {
           {active === 'attendanceQr'         && <AttendanceQrSettingsTab />}
           {active === 'visitorQr'            && <VisitorQrSettingsTab />}
           {active === 'lateness'             && <LatenessSettingsTab />}
+          {active === 'careerProfiles'       && <CareerProfilesSettingsTab />}
+          {active === 'constructionLots'          && <ConstructionLotsSettingsTab />}
+          {active === 'constructionResources'     && <ConstructionResourcesSettingsTab />}
+          {active === 'constructionWorkItems'     && <ConstructionWorkItemsSettingsTab />}
+          {active === 'constructionRatioDefs'     && <ConstructionRatioDefsSettingsTab />}
+          {active === 'constructionRatioProfiles' && <ConstructionRatioProfilesSettingsTab />}
+          {active === 'constructionLocalities'    && <ConstructionLocalitiesSettingsTab />}
+          {active === 'constructionFormulas'      && <ConstructionFormulasSettingsTab />}
           {active === 'invoiceTemplates'     && <InvoiceTemplatesSettingsTab />}
           {active === 'listExportTemplates'  && <ListExportTemplatesSettingsTab />}
+          {active === 'wireTransferTemplate' && <WireTransferTemplateSettingsTab />}
           {active === 'conventionTemplates'  && <ConventionTemplatesSettingsTab />}
           {active === 'contractTemplates'    && <ContractTemplatesSettingsTab />}
           {active === 'essaiCategories'      && <EssaiCategoriesSettingsTab />}
@@ -300,6 +352,7 @@ export default function SettingsPage() {
           {active === 'commTemplates'        && <CommTemplatesSettingsTab />}
           {active === 'shareLocation'        && <ShareLocationSettingsTab />}
           {active === 'conditionsParticulieres' && <ConditionsParticulieresSettingsTab />}
+          </>}
         </div>
       </div>
     </PageLayout>

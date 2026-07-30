@@ -748,6 +748,8 @@ const FOLLOWUP_STATE_VARIANT: Record<string, 'success' | 'warning' | 'purple' | 
   CRITIQUE: 'danger',
 };
 const FOLLOWUP_STATES = ['NORMAL', 'NEGLIGE', 'DANGER', 'CRITIQUE'] as const;
+/** Valeur sentinelle du filtre « Non assigné », distincte de '' (placeholder « Tous »). */
+const UNASSIGNED_VALUE = '__unassigned__';
 
 interface FollowUpItem {
   id: number;
@@ -770,10 +772,10 @@ const FOLLOWUP_EXPORT_COLUMNS: ExportColumn<FollowUpItem>[] = [
   { header: 'État', cell: (i) => FOLLOWUP_STATE_LABEL[i.state] ?? i.state },
 ];
 
-// Rôles autorisés à exporter/imprimer les listes de suivi (plein accès).
-// Les rôles restreints (AGENT, AGENT_TECHNIQUE, ACCOUNTANT, ASSISTANTE_
-// DIRECTION, READONLY) consultent leur périmètre affecté sans cette
-// possibilité.
+// Rôles à vue complète des listes de suivi : seuls eux peuvent exporter/
+// imprimer ET filtrer par utilisateur assigné (ce filtre n'a pas d'intérêt
+// pour les rôles restreints, qui ne consultent déjà que leur propre périmètre
+// affecté — AGENT, AGENT_TECHNIQUE, ACCOUNTANT, ASSISTANTE_DIRECTION, READONLY).
 const FOLLOWUP_EXPORT_ROLES = ['SUPER_ADMIN', 'ADMIN', 'MANAGER'];
 
 function FollowUpBlock({
@@ -783,7 +785,7 @@ function FollowUpBlock({
   entityLabel: string;
   items: FollowUpItem[];
   counts: { key: string; count: number }[];
-  basePath: '/prospects' | '/clients';
+  basePath: '/prospects' | '/clients' | '/commissions/referrers';
 }) {
   const navigate = useNavigate();
   const token = useAuthStore((s) => s.token)!;
@@ -796,9 +798,12 @@ function FollowUpBlock({
 
   // Utilisateurs assignés effectivement présents dans la liste (dont « Non
   // assigné »), pour alimenter le filtre sans appel serveur supplémentaire.
+  // « Non assigné » utilise une valeur sentinelle distincte de la chaîne vide
+  // (réservée au placeholder « Tous les utilisateurs ») pour éviter toute
+  // collision entre « aucun filtre » et « filtrer sur les non-assignés ».
   const userOptions = Array.from(
     new Map(
-      items.map((i) => [String(i.assignedToId ?? ''), i.assignedTo ?? 'Non assigné']),
+      items.map((i) => [i.assignedToId != null ? String(i.assignedToId) : UNASSIGNED_VALUE, i.assignedTo ?? 'Non assigné']),
     ).entries(),
   )
     .sort((a, b) => a[1].localeCompare(b[1]))
@@ -806,7 +811,11 @@ function FollowUpBlock({
 
   const filtered = items
     .filter((i) => !filter || i.state === filter)
-    .filter((i) => !userFilter || String(i.assignedToId ?? '') === userFilter);
+    .filter((i) => {
+      if (!userFilter) return true;
+      if (userFilter === UNASSIGNED_VALUE) return i.assignedToId == null;
+      return String(i.assignedToId) === userFilter;
+    });
 
   const fileName = `suivi-${entityLabel}s`.replace(/\s+/g, '-').toLowerCase();
 
@@ -851,17 +860,17 @@ function FollowUpBlock({
           ))}
         </div>
       </div>
-      <div className="mb-3 flex flex-wrap items-end justify-between gap-3">
-        <div className="w-56">
-          <Select
-            label="Filtrer par utilisateur assigné"
-            placeholder="Tous les utilisateurs"
-            options={userOptions}
-            value={userFilter}
-            onChange={(e) => setUserFilter(e.target.value)}
-          />
-        </div>
-        {canExport && (
+      {canExport && (
+        <div className="mb-3 flex flex-wrap items-end justify-between gap-3">
+          <div className="w-56">
+            <Select
+              label="Filtrer par utilisateur assigné"
+              placeholder="Tous les utilisateurs"
+              options={userOptions}
+              value={userFilter}
+              onChange={(e) => setUserFilter(e.target.value)}
+            />
+          </div>
           <div className="flex gap-2">
             <ExportMenu
               fileName={fileName}
@@ -873,8 +882,8 @@ function FollowUpBlock({
               Imprimer
             </Button>
           </div>
-        )}
-      </div>
+        </div>
+      )}
       {filtered.length === 0 ? (
         <p className="text-sm text-slate-500">Aucun {entityLabel} dans cette catégorie.</p>
       ) : (
@@ -960,6 +969,34 @@ export function ClientFollowUpTab() {
         items={d.clients.items}
         counts={d.clients.counts}
         basePath="/clients"
+      />
+    </div>
+  );
+}
+
+export function ReferrerFollowUpTab() {
+  const { data } = useFollowUpAnalytics();
+  if (!data?.success) return <Loading />;
+  const d = data.data;
+  return (
+    <div className="space-y-4">
+      <ChartCard title="Fréquence des actions de suivi sur apporteurs d'affaire (12 mois)">
+        <ResponsiveContainer width="100%" height={260}>
+          <LineChart data={d.frequency} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
+            <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+            <XAxis dataKey="label" tick={{ fontSize: 11 }} />
+            <YAxis tick={{ fontSize: 11 }} allowDecimals={false} />
+            <Tooltip />
+            <Line type="monotone" dataKey="referrerActions" stroke="#059669" strokeWidth={2} name="Actions sur apporteurs" dot={false} />
+          </LineChart>
+        </ResponsiveContainer>
+      </ChartCard>
+      <FollowUpBlock
+        title="Apporteurs d'affaire — plan de suivi (hors inactifs)"
+        entityLabel="apporteur d'affaire"
+        items={d.referrers.items}
+        counts={d.referrers.counts}
+        basePath="/commissions/referrers"
       />
     </div>
   );

@@ -1,7 +1,20 @@
-import { safeStorage } from 'electron';
 import crypto from 'crypto';
 import { getDb } from './db.service';
 import logger from '../utils/logger';
+
+// Import paresseux : le paquet `electron` (binaire complet, ~100-200 Mo) n'a
+// pas besoin d'être présent quand ce module est chargé hors runtime Electron
+// (ex. script autonome de relances déployé sur un serveur/NAS sans le paquet
+// `electron` dans ses node_modules, cf. run-reminders-once.ts). Un import
+// statique échouerait alors dès le chargement du module (`MODULE_NOT_FOUND`),
+// avant même d'atteindre la garde `typeof safeStorage?.isEncryptionAvailable`.
+let safeStorage: typeof import('electron').safeStorage | undefined;
+try {
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  safeStorage = require('electron').safeStorage;
+} catch {
+  safeStorage = undefined;
+}
 
 /**
  * Service de paramétrage applicatif.
@@ -92,7 +105,10 @@ function decryptPortable(stored: string): string {
 /** Déchiffre un ancien secret safeStorage (enc:) — ne fonctionne que sur le poste d'origine. */
 function decryptLegacy(stored: string): string {
   try {
-    if (!safeStorage.isEncryptionAvailable()) {
+    // `safeStorage` est `undefined` hors runtime Electron (ex. script autonome
+    // exécuté via `node`, cf. src/main/scripts/run-reminders-once.ts) — on ne
+    // suppose jamais sa présence avant de l'appeler.
+    if (typeof safeStorage?.isEncryptionAvailable !== 'function' || !safeStorage.isEncryptionAvailable()) {
       logger.warn('safeStorage indisponible — ancien secret enc: indéchiffrable sur ce poste');
       return '';
     }
@@ -288,6 +304,11 @@ export const SettingsKeys = {
   visitorQrBaseUrl:     'visitors.qr.baseUrl',        // URL de l'app web visiteurs (ex. http://192.168.1.10/visiteurs/)
   visitorQrAllowedRoles:'visitors.qr.allowedRoles',   // rôles voyant le QR au tableau de bord (JSON array)
   visitorQrModel:       'visitors.qr.model',          // modèle visuel du QR ('1' | '2' | '3')
+
+  // Modèles de messages (Communication) — utilisateurs désignés (en plus de
+  // SUPER_ADMIN/ADMIN, toujours en accès complet) autorisés à consulter et
+  // gérer les modèles de type « manuel » (jamais les modèles « auto »).
+  commTemplateManualEditorIds: 'communication.templates.manualEditorUserIds', // JSON array d'ids User
 } as const;
 
 /** Liste des clés correspondant à des secrets chiffrés. */

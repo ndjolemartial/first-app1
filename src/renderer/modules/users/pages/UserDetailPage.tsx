@@ -18,6 +18,9 @@ const ROLE_VARIANT: Record<string, any> = {
   AGENT: 'success', AGENT_TECHNIQUE: 'success', READONLY: 'default',
 };
 
+// Libellé affiché — la valeur technique du rôle (READONLY) reste inchangée.
+const ROLE_LABEL: Record<string, string> = { READONLY: 'WELCOME' };
+
 export default function UserDetailPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
@@ -69,7 +72,7 @@ export default function UserDetailPage() {
                     {user.reference}
                   </span>
                 )}
-                <Badge variant={ROLE_VARIANT[user.role]}>{user.role}</Badge>
+                <Badge variant={ROLE_VARIANT[user.role]}>{ROLE_LABEL[user.role] ?? user.role}</Badge>
                 <Badge variant={user.isActive ? 'success' : 'danger'}>{user.isActive ? 'Actif' : 'Inactif'}</Badge>
               </div>
               <p className="text-slate-500 mt-1">{user.email}</p>

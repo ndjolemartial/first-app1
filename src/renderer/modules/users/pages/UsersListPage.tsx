@@ -13,6 +13,7 @@ import ConfirmDialog from '../../../shared/components/ui/ConfirmDialog';
 import { useUsers, useToggleUserActive, useDeleteUser } from '../hooks/useUsers';
 import { useAuthStore } from '../../../shared/stores/auth.store';
 import { formatDate } from '../../../shared/utils/format';
+import { roleLabel } from '../../../shared/utils/roleLabel';
 import { UserPlus, Search, Edit, Power, Trash2 } from 'lucide-react';
 
 const ROLE_OPTIONS = [
@@ -25,7 +26,7 @@ const ROLE_OPTIONS = [
   { value: 'AGENT_TECHNIQUE', label: 'Agent Technique' },
   { value: 'AGENT', label: 'Agent' },
   { value: 'RH', label: 'RH / Paie' },
-  { value: 'READONLY', label: 'Lecture seule' },
+  { value: 'READONLY', label: 'WELCOME' },
 ];
 
 const ROLE_VARIANT: Record<string, any> = {
@@ -137,7 +138,7 @@ export default function UsersListPage() {
                     </td>
                     <td className="px-4 py-3 text-slate-600">{user.matricule}</td>
                     <td className="px-4 py-3">
-                      <Badge variant={ROLE_VARIANT[user.role] ?? 'default'}>{user.role}</Badge>
+                      <Badge variant={ROLE_VARIANT[user.role] ?? 'default'}>{roleLabel(user.role)}</Badge>
                     </td>
                     <td className="px-4 py-3">
                       <Badge variant={user.isActive ? 'success' : 'danger'}>

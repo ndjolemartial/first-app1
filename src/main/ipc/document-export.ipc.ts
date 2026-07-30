@@ -95,6 +95,35 @@ export function registerDocumentExportIPC(): void {
   });
 
   /**
+   * Rendu PDF en mémoire (base64), sans boîte de dialogue ni fenêtre d'aperçu —
+   * destiné à être réutilisé comme pièce jointe (ex. convention jointe à un
+   * envoi email depuis « Envoyer un message »), pas à une consultation directe.
+   */
+  ipcMain.handle('documents:renderDocumentPdf', async (_event, payload: any) => {
+    try {
+      const parsed = payloadSchema.safeParse(payload);
+      if (!parsed.success) {
+        return { success: false, error: parsed.error.issues.map((i) => i.message).join(', ') };
+      }
+      const session = getSession(parsed.data.token);
+      if (!session) return { success: false, error: 'Session expirée' };
+
+      const pdf = await htmlToPdfWithTemplates(
+        parsed.data.bodyHtml,
+        parsed.data.headerTemplate,
+        parsed.data.footerTemplate,
+        parsed.data.headerMm,
+        parsed.data.footerMm,
+        parsed.data.marginsMm,
+      );
+      return { success: true, data: { base64: pdf.toString('base64') } };
+    } catch (err: any) {
+      logger.error('documents:renderDocumentPdf', err.message);
+      return { success: false, error: err.message };
+    }
+  });
+
+  /**
    * Export Word (.docx) du même document, avec en-tête et pied de page
    * répétés sur chaque page via `html-to-docx`.
    */

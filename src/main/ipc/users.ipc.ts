@@ -5,6 +5,13 @@ import { hashPassword } from '../utils/crypto';
 import logger from '../utils/logger';
 import { z } from 'zod';
 
+// Sérialise les objets Prisma (Date, Decimal…) en valeurs JSON-safe avant
+// transit IPC — sans cela, un champ Date (ex. hireDate) traverse le pont
+// contextBridge comme une véritable instance `Date`, et le formulaire (qui
+// s'attend à une chaîne ISO pour en extraire les 10 premiers caractères)
+// affiche un résultat incohérent (`String(date)` ≠ ISO 8601).
+const ser = <T>(v: T): T => JSON.parse(JSON.stringify(v));
+
 const createUserSchema = z.object({
   matricule: z.string().min(1),
   firstName: z.string().min(1),
@@ -18,7 +25,7 @@ const createUserSchema = z.object({
   fonction: z.string().optional(),
   nomCommercial: z.string().optional(),
   idNumber: z.string().optional(),
-  civilite: z.enum(['MONSIEUR', 'MADAME', 'MADEMOISELLE']).optional(),
+  civilite: z.enum(['Monsieur', 'Madame', 'Mademoiselle']).optional(),
   statutConjugal: z.enum(['CELIBATAIRE', 'MARIEE', 'CONCUBINAGE', 'DIVORCE', 'VEUF']).optional(),
   hireDate: z.string().optional(),
   cnpsNumber: z.string().optional(),
@@ -153,7 +160,7 @@ export function registerUsersIPC(): void {
         }),
         db.user.count({ where }),
       ]);
-      return { success: true, data, total };
+      return ser({ success: true, data, total });
     } catch (error: any) {
       logger.error('users:list error', error.message);
       return { success: false, error: error.message };
@@ -213,7 +220,7 @@ export function registerUsersIPC(): void {
       if (scope === 'limited' && !AGENT_TECHNIQUE_MANAGED_ROLES.includes(user.role)) {
         return { success: false, error: 'Utilisateur inaccessible' };
       }
-      return { success: true, data: user };
+      return ser({ success: true, data: user });
     } catch (error: any) {
       return { success: false, error: error.message };
     }
@@ -244,7 +251,7 @@ export function registerUsersIPC(): void {
         },
       });
       logger.info(`User created: ${user.email}`);
-      return { success: true, data: user };
+      return ser({ success: true, data: user });
     } catch (error: any) {
       logger.error('users:create error', error.message);
       return { success: false, error: friendlyUserError(error) };
@@ -283,7 +290,7 @@ export function registerUsersIPC(): void {
           role: true, isActive: true,
         },
       });
-      return { success: true, data: user };
+      return ser({ success: true, data: user });
     } catch (error: any) {
       logger.error('users:update error', error.message);
       return { success: false, error: friendlyUserError(error) };

@@ -22,6 +22,7 @@ const schema = z.object({
   // Particulier
   firstName: z.string().optional(),
   lastName: z.string().optional(),
+  civilite: z.string().optional(),
   nationality: z.string().optional(),
   idNumber: z.string().optional(),
   idTypeId: z.string().optional(),
@@ -67,8 +68,31 @@ const schema = z.object({
 
 type FormData = z.infer<typeof schema>;
 
+const CIVILITE_OPTIONS = [
+  { value: '', label: '— Civilité —' },
+  { value: 'Monsieur', label: 'Monsieur' },
+  { value: 'Madame', label: 'Madame' },
+  { value: 'Mademoiselle', label: 'Mademoiselle' },
+];
+
 const ACCEPTED_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'application/pdf'];
 const MAX_MB = 10;
+
+/**
+ * Convertit chaque valeur `null` d'un objet en chaîne vide — les champs texte
+ * optionnels (companyName, legalRep*, email…) sont `null` en base quand non
+ * renseignés, mais le schéma Zod du formulaire (`z.string().optional()`)
+ * n'accepte que `string | undefined` et rejette `null`, ce qui bloquait
+ * silencieusement la soumission (aucun message affiché) dès qu'un champ était
+ * vide en base. Les tableaux/objets (relations) ne sont pas concernés.
+ */
+function emptyIfNull<T extends Record<string, any>>(obj: T): T {
+  const out: any = {};
+  for (const [k, v] of Object.entries(obj)) {
+    out[k] = v === null ? '' : v;
+  }
+  return out;
+}
 
 function formatBytes(bytes: number) {
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} Ko`;
@@ -182,7 +206,7 @@ export default function OwnerFormPage() {
       const o = res.data;
       // Coercer les FK numériques en chaînes pour les Select.
       reset({
-        ...o,
+        ...emptyIfNull(o),
         idTypeId:         o.idTypeId         != null ? String(o.idTypeId)         : '',
         legalRepIdTypeId: o.legalRepIdTypeId != null ? String(o.legalRepIdTypeId) : '',
       });
@@ -292,7 +316,7 @@ export default function OwnerFormPage() {
   return (
     <PageLayout
       title={isEdit ? 'Modifier le propriétaire' : 'Nouveau propriétaire'}
-      breadcrumbs={[{ label: 'Propriétaires', to: '/owners' }, { label: isEdit ? 'Modifier' : 'Nouveau' }]}
+      breadcrumbs={[{ label: 'Tierce partie' }, { label: 'Propriétaires', to: '/owners' }, { label: isEdit ? 'Modifier' : 'Nouveau' }]}
     >
       <div className="max-w-2xl mx-auto space-y-6">
         <Card>
@@ -308,6 +332,7 @@ export default function OwnerFormPage() {
             {/* ── Particulier ── */}
             {type === 'INDIVIDUEL' && (
               <div className="space-y-4">
+                <Select label="Civilité" options={CIVILITE_OPTIONS} {...register('civilite')} />
                 <div className="grid grid-cols-2 gap-4">
                   <Input label="Nom" {...upperField(register('lastName'))} />
                   <Input label="Prénom" {...upperField(register('firstName'))} />

@@ -88,9 +88,9 @@ const schema = z.object({
 type FormData = z.infer<typeof schema>;
 
 const CIVILITE_OPTIONS = [
-  { value: 'MONSIEUR', label: 'Monsieur' },
-  { value: 'MADAME', label: 'Madame' },
-  { value: 'MADEMOISELLE', label: 'Mademoiselle' },
+  { value: 'Monsieur', label: 'Monsieur' },
+  { value: 'Madame', label: 'Madame' },
+  { value: 'Mademoiselle', label: 'Mademoiselle' },
 ];
 
 const STATUT_CONJUGAL_OPTIONS = [
@@ -225,7 +225,7 @@ export default function ClientFormPage() {
     resolver: zodResolver(schema),
     defaultValues: {
       type: 'INDIVIDUEL', country: 'CI', status: 'ACTIF',
-      civilite: 'MONSIEUR', statutConjugal: 'CELIBATAIRE',
+      civilite: 'Monsieur', statutConjugal: 'CELIBATAIRE',
       assignedToId: '', referrerId: '',
     },
   });
@@ -264,7 +264,7 @@ export default function ClientFormPage() {
         type:                 c.type ?? 'INDIVIDUEL',
         firstName:            c.firstName ?? '',
         lastName:             c.lastName ?? '',
-        civilite:             c.civilite ?? 'MONSIEUR',
+        civilite:             c.civilite ?? 'Monsieur',
         statutConjugal:       c.statutConjugal ?? 'CELIBATAIRE',
         entreprise:           c.entreprise ?? '',
         registre_de_commerce: c.registre_de_commerce ?? '',

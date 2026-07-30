@@ -15,6 +15,13 @@ interface ModalProps {
    */
   size?: 'sm' | 'md' | 'lg' | 'xl' | 'content';
   footer?: React.ReactNode;
+  /**
+   * Centre la boîte de dialogue dans la zone de contenu (à droite de la
+   * sidebar de 240px) au lieu de la fenêtre entière — évite qu'une modale
+   * large (xl) ne chevauche visuellement la sidebar sur les écrans étroits.
+   * Sans effet sur `size="content"`, déjà cantonnée à cette zone.
+   */
+  sidebarSafe?: boolean;
 }
 
 const sizes = {
@@ -24,7 +31,7 @@ const sizes = {
   xl: 'max-w-4xl',
 };
 
-export default function Modal({ open, onClose, title, children, size = 'md', footer }: ModalProps) {
+export default function Modal({ open, onClose, title, children, size = 'md', footer, sidebarSafe }: ModalProps) {
   const overlayRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -43,10 +50,13 @@ export default function Modal({ open, onClose, title, children, size = 'md', foo
       className={clsx(
         'fixed z-50 bg-black/50',
         // Mode 'content' : commence après la sidebar (w-60 = 240px) pour
-        // ne couvrir que la zone blanche du dashboard.
+        // ne couvrir que la zone blanche du dashboard. `sidebarSafe` reprend
+        // le même décalage mais garde une boîte centrée (pas étirée).
         isContent
           ? 'top-0 right-0 bottom-0 left-60 flex items-stretch justify-stretch p-0'
-          : 'inset-0 flex items-center justify-center p-4',
+          : sidebarSafe
+            ? 'top-0 right-0 bottom-0 left-60 flex items-center justify-center p-4'
+            : 'inset-0 flex items-center justify-center p-4',
       )}
       onClick={(e) => { if (e.target === overlayRef.current) onClose(); }}
     >

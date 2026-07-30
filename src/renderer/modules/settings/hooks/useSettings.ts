@@ -151,6 +151,32 @@ export function useUpdateAttendanceQr() {
   });
 }
 
+// ── Modèles de messages — utilisateurs désignés (accès manuel) ──────────────
+
+export function useManualTemplateEditors() {
+  const token = useAuthStore((s) => s.token)!;
+  return useQuery({
+    queryKey: ['settings', 'manualTemplateEditors'],
+    queryFn:  () => ipc().getManualTemplateEditors(token),
+    enabled:  !!token,
+  });
+}
+
+export function useUpdateManualTemplateEditors() {
+  const token = useAuthStore((s) => s.token)!;
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (userIds: number[]) => ipc().updateManualTemplateEditors(token, userIds),
+    onSuccess:  (res) => {
+      if (res.success) {
+        qc.invalidateQueries({ queryKey: ['settings', 'manualTemplateEditors'] });
+        qc.invalidateQueries({ queryKey: ['comm-templates', 'my-permissions'] });
+        toast.success('Utilisateurs autorisés enregistrés');
+      } else toast.error(String(res.error));
+    },
+  });
+}
+
 // ── Retards & Départs précipités ─────────────────────────────────────────────
 
 export function useLatenessSettings() {

@@ -57,7 +57,10 @@ export default function PublicationModal({ open, onClose, editing, defaultPlatfo
   const qc = useQueryClient();
   const { data: platRes } = usePlatforms(false);
   const platforms = platRes?.success ? platRes.data ?? [] : [];
-  const { data: usersRes } = useCrmAssignees(open);
+  // La liste des auteurs sélectionnables (crm:listAssignees) est réservée à la
+  // vue complète CRM : on ne l'interroge que pour les rôles pleinement
+  // habilités, sous peine d'erreur de permission pour les autres.
+  const { data: usersRes } = useCrmAssignees(open && hasFullView);
   const users: Array<{ id: number; firstName: string; lastName: string }> = usersRes?.success ? usersRes.data ?? [] : [];
 
   const create = useCreatePublication();
@@ -179,10 +182,14 @@ export default function PublicationModal({ open, onClose, editing, defaultPlatfo
         <div className="grid grid-cols-2 gap-3">
           <Input label="Date de publication" type="date" required value={form.publishedAt}
             onChange={(e) => setForm((f) => ({ ...f, publishedAt: e.target.value }))} />
-          <Select label="Auteur" placeholder="Non renseigné" disabled={!hasFullView}
-            options={users.map((u) => ({ value: String(u.id), label: `${u.lastName} ${u.firstName}` }))}
-            value={form.authorId}
-            onChange={(e) => setForm((f) => ({ ...f, authorId: e.target.value }))} />
+          {hasFullView ? (
+            <Select label="Auteur" placeholder="Non renseigné"
+              options={users.map((u) => ({ value: String(u.id), label: `${u.lastName} ${u.firstName}` }))}
+              value={form.authorId}
+              onChange={(e) => setForm((f) => ({ ...f, authorId: e.target.value }))} />
+          ) : (
+            <Input label="Auteur" value={currentUser ? `${currentUser.lastName} ${currentUser.firstName}` : ''} disabled />
+          )}
         </div>
         <Input label="URL" value={form.url}
           onChange={(e) => setForm((f) => ({ ...f, url: e.target.value }))}

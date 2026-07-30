@@ -12,14 +12,15 @@ import Modal from '../../../shared/components/ui/Modal';
 import { useAuthStore } from '../../../shared/stores/auth.store';
 import {
   useMyHrOverview, useMyPayslips, useMyAttendance, useMyLeaveRequests, useMyReglementInterieur, useMySignedContracts,
+  useMyCareerProfile,
 } from '../hooks/useHr';
 import { CONTRACT_TYPE_LABEL } from '../types/hr.types';
 import { formatDate, formatCurrency } from '../../../shared/utils/format';
-import { FileText, ClipboardList, Printer, IdCard, ReceiptText, CalendarDays, Clock, BookOpen, Eye, Trophy, Target, Check } from 'lucide-react';
+import { FileText, ClipboardList, Printer, IdCard, ReceiptText, CalendarDays, Clock, BookOpen, Eye, Trophy, Target, Check, TrendingUp, Briefcase, GraduationCap, Gift, Award, X, Crown, MapPin, ChevronRight } from 'lucide-react';
 import { useMyPerformance, useMySignEvaluation } from '../../performance/hooks/usePerformance';
 import { EVAL_STATUS_LABEL, EVAL_STATUS_VARIANT, OBJECTIVE_STATUS_LABEL, OBJECTIVE_STATUS_VARIANT, type Evaluation, type Objective } from '../../performance/types/performance.types';
 
-type Tab = 'profil' | 'bulletins' | 'conges' | 'pointage' | 'performances' | 'reglement';
+type Tab = 'profil' | 'bulletins' | 'conges' | 'pointage' | 'performances' | 'carriere' | 'reglement';
 
 const LEAVE_STATUS: Record<string, { label: string; variant: any }> = {
   EN_ATTENTE: { label: 'En attente', variant: 'warning' },
@@ -66,6 +67,7 @@ export default function MyHrPage() {
     { key: 'conges', label: 'Congés & absences', icon: <CalendarDays className="h-4 w-4" /> },
     { key: 'pointage', label: 'Pointage', icon: <Clock className="h-4 w-4" /> },
     { key: 'performances', label: 'Performances', icon: <Trophy className="h-4 w-4" /> },
+    { key: 'carriere', label: 'Profil de carrière', icon: <TrendingUp className="h-4 w-4" /> },
     { key: 'reglement', label: 'Règlement intérieur', icon: <BookOpen className="h-4 w-4" /> },
   ];
 
@@ -86,6 +88,7 @@ export default function MyHrPage() {
       {tab === 'conges' && <CongesTab balance={leaveBalance} />}
       {tab === 'pointage' && <PointageTab />}
       {tab === 'performances' && <PerformancesTab />}
+      {tab === 'carriere' && <CarriereTab />}
       {tab === 'reglement' && <ReglementTab />}
     </PageLayout>
   );
@@ -314,6 +317,240 @@ function ProfilTab({ employee }: { employee: any }) {
 
       <MySignedContractsCard />
     </div>
+  );
+}
+
+/* ─── Profil de carrière rattaché à mon poste ─────────────────── */
+
+function CarriereTab() {
+  const { data: res, isLoading } = useMyCareerProfile();
+  const [zoomStep, setZoomStep] = useState<{ step: any; index: number } | null>(null);
+
+  if (isLoading) return <Card><SkeletonTable rows={3} /></Card>;
+
+  const data = res?.data;
+  // Un employé n'appartient qu'à une seule filière à la fois (rattachement
+  // explicite sur sa fiche, à défaut repli sur son poste actuel côté IPC).
+  const profile: any = data?.profile ?? null;
+  const currentPoste: string | null | undefined = data?.currentPoste;
+  const steps: any[] = profile?.steps ?? [];
+  const currentIndex = steps.findIndex((s) => s.poste === currentPoste);
+
+  return (
+    <>
+    <div className="relative overflow-hidden rounded-xl border border-amber-500/40 bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 px-5 py-4 shadow-lg mb-4">
+      <div className="absolute -right-8 -top-10 h-32 w-32 rounded-full bg-amber-400/10" />
+      <div className="absolute -left-6 -bottom-8 h-24 w-24 rounded-full bg-amber-400/10" />
+      <div className="relative flex items-start gap-3">
+        <Crown className="mt-0.5 h-5 w-5 shrink-0 text-amber-400" />
+        <p className="bg-gradient-to-r from-amber-200 via-yellow-300 to-amber-200 bg-clip-text text-sm font-semibold leading-relaxed text-transparent">
+          Les promotions dans l'entreprise prennent en compte plusieurs paramètres que sont : Ancienneté + compétences +
+          performances/KPI + niveau d'autonomie + responsabilités + capacité managériale + formation/diplôme.
+        </p>
+      </div>
+    </div>
+
+    {!profile ? (
+      <Card>
+        <EmptyState
+          title="Aucun profil de carrière"
+          description="Vous n'êtes rattaché à aucune filière de carrière pour le moment."
+        />
+      </Card>
+    ) : (
+      <Card padding={false} className="overflow-hidden">
+        {/* En-tête de la filière */}
+        <div className="relative overflow-hidden bg-gradient-to-br from-slate-600 via-slate-700 to-slate-800 px-5 py-5 text-white">
+          <div className="absolute -right-8 -top-10 h-32 w-32 rounded-full bg-white/10" />
+          <div className="absolute -left-6 -bottom-10 h-28 w-28 rounded-full bg-white/10" />
+          <div className="relative flex items-start gap-3">
+            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-white/20 backdrop-blur-sm">
+              <TrendingUp className="h-5 w-5" />
+            </div>
+            <div className="min-w-0 flex-1">
+              <h3 className="text-base font-semibold leading-tight">{profile.name}</h3>
+              {profile.description && <p className="mt-1 text-sm text-white/80">{profile.description}</p>}
+              <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
+                <span className="inline-flex items-center gap-1 rounded-full bg-white/15 px-2.5 py-0.5 text-xs font-medium backdrop-blur-sm">
+                  {steps.length} niveau{steps.length > 1 ? 'x' : ''}
+                </span>
+                {currentIndex >= 0 && (
+                  <span className="inline-flex items-center gap-1 rounded-full bg-emerald-400/90 px-2.5 py-0.5 text-xs font-semibold text-emerald-950">
+                    <MapPin className="h-3 w-3" /> Niveau {currentIndex + 1} / {steps.length}
+                  </span>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Étapes de la filière, présentées en frise verticale */}
+        <div className="px-5 py-5">
+          <ol>
+            {steps.map((s, idx) => {
+              const isCurrent = s.poste === currentPoste;
+              const isPast = currentIndex >= 0 && idx < currentIndex;
+              const isLast = idx === steps.length - 1;
+              return (
+                <li key={s.id} className="relative">
+                  {!isLast && (
+                    <span
+                      aria-hidden
+                      className={`absolute left-4 top-9 h-[calc(100%-0.5rem)] w-px ${
+                        isPast || isCurrent ? 'bg-blue-300' : 'bg-slate-200'
+                      }`}
+                    />
+                  )}
+                  <div
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => setZoomStep({ step: s, index: idx })}
+                    onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setZoomStep({ step: s, index: idx }); } }}
+                    className={`group relative mb-3 flex items-start gap-3 rounded-xl border p-3.5 cursor-pointer transition-all hover:shadow-md ${
+                      isCurrent
+                        ? 'border-2 border-blue-400 bg-blue-100/70 shadow-lg shadow-blue-200/60 ring-2 ring-blue-300 ring-offset-2 ring-offset-white'
+                        : isPast
+                          ? 'border-slate-200 bg-slate-50/70 hover:border-blue-200'
+                          : 'border-slate-200 bg-white hover:border-blue-200 hover:bg-blue-50/40'
+                    }`}
+                  >
+                    {isCurrent && (
+                      <span aria-hidden className="absolute -left-1.5 top-1/2 h-4 w-4 -translate-y-1/2 animate-pulse rounded-full bg-blue-500 ring-4 ring-blue-100" />
+                    )}
+                    <span
+                      className={`relative z-10 mt-0.5 flex shrink-0 items-center justify-center rounded-full font-bold ring-4 ring-white ${
+                        isCurrent ? 'h-9 w-9 bg-blue-600 text-sm text-white' : isPast ? 'h-8 w-8 bg-blue-100 text-xs text-blue-700' : 'h-8 w-8 bg-slate-100 text-xs text-slate-500'
+                      }`}
+                    >
+                      {isPast ? <Check className="h-3.5 w-3.5" /> : idx + 1}
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className={isCurrent ? 'text-base font-bold text-blue-900' : 'font-semibold text-slate-800'}>{s.poste}</span>
+                        {isCurrent && (
+                          <span className="inline-flex items-center gap-1 rounded-full bg-blue-600 px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-white shadow-sm">
+                            <MapPin className="h-3 w-3" /> Vous êtes ici
+                          </span>
+                        )}
+                        {s.categorieSocioPro && (
+                          <Badge variant="default">
+                            {s.categorieSocioPro}
+                            {s.categorieCode ? ` (Catégorie ${s.categorieCode})` : ''}
+                          </Badge>
+                        )}
+                      </div>
+                      {s.rolePrincipal && <p className="mt-1 line-clamp-2 text-sm text-slate-500">{s.rolePrincipal}</p>}
+                      {(s.competencesDiplomes || s.avantages) && (
+                        <div className="mt-2 flex flex-wrap items-center gap-3 text-xs text-slate-400">
+                          {s.competencesDiplomes && (
+                            <span className="inline-flex items-center gap-1">
+                              <GraduationCap className="h-3.5 w-3.5" /> Compétences & diplômes
+                            </span>
+                          )}
+                          {s.avantages && (
+                            <span className="inline-flex items-center gap-1">
+                              <Gift className="h-3.5 w-3.5" /> Avantages
+                            </span>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                    <ChevronRight className="mt-1 h-4 w-4 shrink-0 text-slate-300 transition-transform group-hover:translate-x-0.5 group-hover:text-blue-400" />
+                  </div>
+                </li>
+              );
+            })}
+          </ol>
+        </div>
+      </Card>
+    )}
+
+    <Modal
+      open={!!zoomStep}
+      onClose={() => setZoomStep(null)}
+      size="md"
+    >
+      {zoomStep && (
+        <div className="-mx-6 -mt-4">
+          {/* Bandeau d'en-tête coloré */}
+          <div className="relative overflow-hidden rounded-t-xl bg-gradient-to-br from-indigo-600 via-blue-600 to-sky-500 px-6 py-5 text-white">
+            <div className="absolute -right-6 -top-8 h-28 w-28 rounded-full bg-white/10" />
+            <div className="absolute -right-2 bottom-0 h-16 w-16 rounded-full bg-white/10" />
+            <div className="relative flex items-start gap-3">
+              <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-white/20 text-lg font-bold backdrop-blur-sm">
+                {zoomStep.index + 1}
+              </span>
+              <div className="min-w-0 pr-8">
+                <h3 className="text-lg font-semibold leading-tight">{zoomStep.step.poste}</h3>
+                <div className="mt-1.5 flex flex-wrap gap-1.5">
+                  {zoomStep.step.poste === currentPoste && (
+                    <span className="inline-flex items-center gap-1 rounded-full bg-emerald-400/90 px-2.5 py-0.5 text-xs font-medium text-emerald-950">
+                      <Check className="h-3 w-3" /> Poste actuel
+                    </span>
+                  )}
+                  {zoomStep.step.categorieSocioPro && (
+                    <span className="inline-flex items-center gap-1 rounded-full bg-white/20 px-2.5 py-0.5 text-xs font-medium text-white backdrop-blur-sm">
+                      <Award className="h-3 w-3" />
+                      {zoomStep.step.categorieSocioPro}
+                      {zoomStep.step.categorieCode ? ` (Catégorie ${zoomStep.step.categorieCode})` : ''}
+                    </span>
+                  )}
+                </div>
+              </div>
+            </div>
+            {/* Rendu après le contenu pour rester au-dessus du conteneur flex
+                pleine largeur (sinon sa zone vide capte le clic à sa place). */}
+            <button
+              onClick={() => setZoomStep(null)}
+              className="absolute right-4 top-4 rounded-lg p-1 text-white/80 transition-colors hover:bg-white/15 hover:text-white"
+            >
+              <X className="h-5 w-5" />
+            </button>
+          </div>
+
+          {/* Contenu détaillé en cartes colorées */}
+          <div className="space-y-3 px-6 py-5">
+            {zoomStep.step.rolePrincipal && (
+              <div className="flex gap-3 rounded-xl border border-blue-100 bg-blue-50/70 p-3.5">
+                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-blue-500 text-white">
+                  <Briefcase className="h-4 w-4" />
+                </div>
+                <div className="min-w-0">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-blue-700">Rôle principal</p>
+                  <p className="mt-0.5 whitespace-pre-wrap text-sm text-slate-700">{zoomStep.step.rolePrincipal}</p>
+                </div>
+              </div>
+            )}
+            {zoomStep.step.competencesDiplomes && (
+              <div className="flex gap-3 rounded-xl border border-violet-100 bg-violet-50/70 p-3.5">
+                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-violet-500 text-white">
+                  <GraduationCap className="h-4 w-4" />
+                </div>
+                <div className="min-w-0">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-violet-700">Compétences et diplômes requis</p>
+                  <p className="mt-0.5 whitespace-pre-wrap text-sm text-slate-700">{zoomStep.step.competencesDiplomes}</p>
+                </div>
+              </div>
+            )}
+            {zoomStep.step.avantages && (
+              <div className="flex gap-3 rounded-xl border border-emerald-100 bg-emerald-50/70 p-3.5">
+                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-emerald-500 text-white">
+                  <Gift className="h-4 w-4" />
+                </div>
+                <div className="min-w-0">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-emerald-700">Avantages</p>
+                  <p className="mt-0.5 whitespace-pre-wrap text-sm text-slate-700">{zoomStep.step.avantages}</p>
+                </div>
+              </div>
+            )}
+            {!zoomStep.step.rolePrincipal && !zoomStep.step.competencesDiplomes && !zoomStep.step.avantages && (
+              <p className="text-sm text-slate-400">Aucune information complémentaire renseignée pour ce poste.</p>
+            )}
+          </div>
+        </div>
+      )}
+    </Modal>
+    </>
   );
 }
 

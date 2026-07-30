@@ -1,4 +1,4 @@
-import { FilePlus, RefreshCw, Pencil, CheckSquare, Banknote, FileText } from 'lucide-react';
+import { FilePlus, RefreshCw, Pencil, CheckSquare, Banknote, FileText, Percent } from 'lucide-react';
 import Card from './ui/Card';
 import Badge from './ui/Badge';
 import EmptyState from './ui/EmptyState';
@@ -6,7 +6,7 @@ import { formatDateTime, formatCurrency } from '../utils/format';
 
 export interface TimelineItem {
   date: string;
-  category: 'CREATION' | 'STATUS_CHANGE' | 'MODIFICATION' | 'CRM_ACTIVITY' | 'PAYMENT' | 'CONVENTION' | 'DOCUMENT';
+  category: 'CREATION' | 'STATUS_CHANGE' | 'MODIFICATION' | 'CRM_ACTIVITY' | 'PAYMENT' | 'CONVENTION' | 'DOCUMENT' | 'COMMISSION';
   title: string;
   description?: string | null;
   amount?: number | null;
@@ -22,6 +22,7 @@ const CATEGORY_ICON: Record<string, React.ReactNode> = {
   PAYMENT: <Banknote className="h-4 w-4" />,
   CONVENTION: <FileText className="h-4 w-4" />,
   DOCUMENT: <FileText className="h-4 w-4" />,
+  COMMISSION: <Percent className="h-4 w-4" />,
 };
 
 const CATEGORY_ICON_BG: Record<string, string> = {
@@ -32,6 +33,7 @@ const CATEGORY_ICON_BG: Record<string, string> = {
   PAYMENT: 'bg-green-100 text-green-600',
   CONVENTION: 'bg-indigo-100 text-indigo-600',
   DOCUMENT: 'bg-slate-100 text-slate-600',
+  COMMISSION: 'bg-green-100 text-green-600',
 };
 
 const CATEGORY_BADGE_VARIANT: Record<string, 'default' | 'info' | 'warning' | 'purple' | 'success'> = {
@@ -42,6 +44,7 @@ const CATEGORY_BADGE_VARIANT: Record<string, 'default' | 'info' | 'warning' | 'p
   PAYMENT: 'success',
   CONVENTION: 'info',
   DOCUMENT: 'default',
+  COMMISSION: 'success',
 };
 
 export const CATEGORY_LABEL: Record<string, string> = {
@@ -52,6 +55,7 @@ export const CATEGORY_LABEL: Record<string, string> = {
   PAYMENT: 'Paiement',
   CONVENTION: 'Convention',
   DOCUMENT: 'Document',
+  COMMISSION: 'Commission',
 };
 
 interface Props {

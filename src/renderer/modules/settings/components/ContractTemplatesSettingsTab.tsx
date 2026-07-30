@@ -35,9 +35,11 @@ export default function ContractTemplatesSettingsTab() {
   const [searchParams] = useSearchParams();
   const subParam = searchParams.get('sub');
   const role = useAuthStore((s) => s.user?.role) ?? '';
-  // MANAGER n'accède qu'au référentiel « Objectifs assignés » ; la configuration
-  // des contrats (modèles, fonctions, fiches de poste) reste réservée admins/RH.
-  const canManageContractConfig = ['SUPER_ADMIN', 'ADMIN', 'RH', 'ACCOUNTANT'].includes(role);
+  // MANAGER et ACCOUNTANT (Comptable) n'accèdent qu'au référentiel « Objectifs
+  // assignés » ; la configuration des contrats (modèles, fonctions, fiches de
+  // poste) reste réservée aux admins et RH (même liste que côté IPC,
+  // `CONTRACT_TEMPLATE_CONFIG_ROLES` dans `hr.ipc.ts`).
+  const canManageContractConfig = ['SUPER_ADMIN', 'ADMIN', 'RH'].includes(role);
   const initial: SubView = !canManageContractConfig
     ? 'objectives'
     : subParam === 'fonctions' ? 'functions'

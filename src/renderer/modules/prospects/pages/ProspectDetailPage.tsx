@@ -12,6 +12,7 @@ import {
 } from '../hooks/useProspects';
 import { useAuthStore } from '../../../shared/stores/auth.store';
 import { formatDate, formatCurrency } from '../../../shared/utils/format';
+import { roleLabel } from '../../../shared/utils/roleLabel';
 import { Edit, Trash2, UserCheck, History } from 'lucide-react';
 import EntityDocumentsCard from '../../archiving/components/EntityDocumentsCard';
 
@@ -219,7 +220,7 @@ export default function ProspectDetailPage() {
                   <option value="">Non alloué</option>
                   {(assignableUsers ?? []).map((u) => (
                     <option key={u.id} value={u.id}>
-                      {formatUserName(u)} {u.role ? `— ${u.role}` : ''}
+                      {formatUserName(u)} {u.role ? `— ${roleLabel(u.role)}` : ''}
                     </option>
                   ))}
                 </select>

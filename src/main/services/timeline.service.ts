@@ -1,13 +1,14 @@
 /**
- * Fiche de suivi chronologique (Client / Prospect) — journalisation des
- * changements de statut et des modifications de fiche, à partir de sa mise
- * en place (pas d'historique rétroactif : aucune donnée n'existait avant).
+ * Fiche de suivi chronologique (Client / Prospect / Apporteur d'affaire) —
+ * journalisation des changements de statut et des modifications de fiche, à
+ * partir de sa mise en place (pas d'historique rétroactif : aucune donnée
+ * n'existait avant).
  */
 import { getDb } from './db.service';
 
 type Db = ReturnType<typeof getDb>;
 
-export type TimelineEntityType = 'CLIENT' | 'PROSPECT';
+export type TimelineEntityType = 'CLIENT' | 'PROSPECT' | 'REFERRER';
 
 export const CLIENT_STATUS_LABELS: Record<string, string> = {
   ACTIF: 'Actif',
@@ -78,6 +79,23 @@ export const PROSPECT_FIELD_LABELS: Record<string, string> = {
   assignedToId: 'Utilisateur affecté',
 };
 
+export const REFERRER_FIELD_LABELS: Record<string, string> = {
+  firstName: 'Prénom',
+  lastName: 'Nom',
+  companyName: 'Société',
+  email: 'Email',
+  phone: 'Téléphone 1',
+  mobile: 'Téléphone 2',
+  address: 'Adresse',
+  city: 'Ville',
+  country: 'Pays',
+  bankIban: 'IBAN',
+  bankBic: 'BIC',
+  notes: 'Notes',
+  isActive: 'Fiche active',
+  assignedToId: 'Utilisateur référent',
+};
+
 /**
  * Détermine les champs réellement modifiés entre l'état précédent (`before`,
  * enregistrement Prisma complet) et les données soumises (`data`, uniquement
@@ -129,7 +147,7 @@ export async function recordStatusChange(
 
 export interface TimelineItem {
   date: string;
-  category: 'STATUS_CHANGE' | 'MODIFICATION' | 'CRM_ACTIVITY' | 'PAYMENT' | 'CONVENTION' | 'DOCUMENT' | 'CREATION';
+  category: 'STATUS_CHANGE' | 'MODIFICATION' | 'CRM_ACTIVITY' | 'PAYMENT' | 'CONVENTION' | 'DOCUMENT' | 'COMMISSION' | 'CREATION';
   title: string;
   description?: string | null;
   amount?: number | null;
@@ -139,12 +157,19 @@ export interface TimelineItem {
 
 const USER_BRIEF = { id: true, firstName: true, lastName: true } as const;
 
+const CREATION_TITLE: Record<TimelineEntityType, string> = {
+  CLIENT: 'Fiche client créée',
+  PROSPECT: 'Fiche prospect créée',
+  REFERRER: 'Fiche apporteur d\'affaire créée',
+};
+
 /**
- * Construit la fiche de suivi chronologique d'un Client ou d'un Prospect en
- * agrégeant : les événements de suivi (statut/modifications, depuis leur mise
- * en place), les activités CRM, les documents importés et — pour un Client
- * uniquement — les paiements reçus et les conventions liées (création et
- * signature). Trié du plus récent au plus ancien.
+ * Construit la fiche de suivi chronologique d'un Client, Prospect ou
+ * Apporteur d'affaire en agrégeant : les événements de suivi
+ * (statut/modifications, depuis leur mise en place), les activités CRM (Client
+ * / Prospect uniquement), les documents importés et — selon l'entité — les
+ * paiements reçus et conventions liées (Client) ou les commissions
+ * (Apporteur d'affaire). Trié du plus récent au plus ancien.
  */
 export async function buildEntityTimeline(
   db: Db,
@@ -156,7 +181,7 @@ export async function buildEntityTimeline(
     {
       date: entityCreatedAt.toISOString(),
       category: 'CREATION',
-      title: entityType === 'CLIENT' ? 'Fiche client créée' : 'Fiche prospect créée',
+      title: CREATION_TITLE[entityType],
     },
   ];
 
@@ -174,25 +199,30 @@ export async function buildEntityTimeline(
     });
   }
 
-  const activityWhere = entityType === 'CLIENT' ? { clientId: entityId } : { prospectId: entityId };
-  const activities = await db.crmActivity.findMany({
-    where: activityWhere,
-    include: { user: { select: USER_BRIEF } },
-  });
-  for (const a of activities) {
-    items.push({
-      date: a.createdAt.toISOString(),
-      category: 'CRM_ACTIVITY',
-      title: a.subject,
-      description: a.description,
-      user: a.user,
-      meta: { activityType: a.type, status: a.status, dueDate: a.dueDate, completedAt: a.completedAt },
+  // Les apporteurs d'affaire ne sont pas rattachables à une activité CRM.
+  if (entityType === 'CLIENT' || entityType === 'PROSPECT') {
+    const activityWhere = entityType === 'CLIENT' ? { clientId: entityId } : { prospectId: entityId };
+    const activities = await db.crmActivity.findMany({
+      where: activityWhere,
+      include: { user: { select: USER_BRIEF } },
     });
+    for (const a of activities) {
+      items.push({
+        date: a.createdAt.toISOString(),
+        category: 'CRM_ACTIVITY',
+        title: a.subject,
+        description: a.description,
+        user: a.user,
+        meta: { activityType: a.type, status: a.status, dueDate: a.dueDate, completedAt: a.completedAt },
+      });
+    }
   }
 
   const docWhere = entityType === 'CLIENT'
     ? { clientId: entityId, deletedAt: null }
-    : { prospectId: entityId, deletedAt: null };
+    : entityType === 'PROSPECT'
+      ? { prospectId: entityId, deletedAt: null }
+      : { referrerId: entityId, deletedAt: null };
   const documents = await db.document.findMany({
     where: docWhere,
     select: { name: true, uploadedAt: true, uploadedBy: { select: USER_BRIEF } },
@@ -204,6 +234,43 @@ export async function buildEntityTimeline(
       title: `Document ajouté : ${d.name}`,
       user: d.uploadedBy,
     });
+  }
+
+  if (entityType === 'REFERRER') {
+    const commissions = await db.commission.findMany({
+      where: { referrerId: entityId, deletedAt: null },
+      select: {
+        reference: true, amount: true, status: true, createdAt: true,
+        paidAt: true, cancelledAt: true, cancelReason: true,
+      },
+    });
+    for (const c of commissions) {
+      items.push({
+        date: c.createdAt.toISOString(),
+        category: 'COMMISSION',
+        title: `Commission créée — ${c.reference}`,
+        amount: Number(c.amount),
+        meta: { status: c.status },
+      });
+      if (c.paidAt) {
+        items.push({
+          date: c.paidAt.toISOString(),
+          category: 'COMMISSION',
+          title: `Commission payée — ${c.reference}`,
+          amount: Number(c.amount),
+          meta: { status: c.status },
+        });
+      }
+      if (c.cancelledAt) {
+        items.push({
+          date: c.cancelledAt.toISOString(),
+          category: 'COMMISSION',
+          title: `Commission annulée — ${c.reference}`,
+          description: c.cancelReason,
+          meta: { status: c.status },
+        });
+      }
+    }
   }
 
   if (entityType === 'CLIENT') {

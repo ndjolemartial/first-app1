@@ -14,9 +14,9 @@ import { useCountries } from '../../../shared/hooks/useCountries';
 import { mergeTemplate } from '../utils/conventionTemplate';
 import { footerTextColor, isTransparentFooter, resolveFooterBg } from '../utils/footerColor';
 import {
-  pxToMm, buildHeaderTemplate, buildFooterTemplate, buildEndOfDocumentHtml,
   buildHeaderDocxHtml, buildFooterDocxHtml,
 } from '../../../shared/utils/documentZones';
+import { filterDefaultConventionTemplates, buildConventionDocumentHtml, conventionExportFileName } from '../utils/conventionDocument';
 import { Printer, FileText, FileType2 } from 'lucide-react';
 
 export default function ConventionDocumentPage() {
@@ -45,17 +45,7 @@ export default function ConventionDocumentPage() {
 
   // On n'affiche que le modèle par défaut correspondant exactement au type et
   // à la nature (avenant ou souscription) de la convention en cours.
-  const templates: any[] = (templatesRes?.data ?? []).filter((t: any) => {
-    if (t.type !== convention.type) return false;
-    if (!t.isDefault) return false;
-    if (convention.type === 'AVENANT' && convention.amendmentType) {
-      if (t.amendmentType !== convention.amendmentType) return false;
-    }
-    if (convention.type === 'SOUSCRIPTION' && convention.souscriptionType) {
-      if (t.souscriptionType !== convention.souscriptionType) return false;
-    }
-    return true;
-  });
+  const templates: any[] = filterDefaultConventionTemplates(templatesRes?.data ?? [], convention);
   const selected = templates.find((t) => t.id === templateId) ?? templates[0];
 
   const mergedHeader = mergeTemplate(selected?.header, convention, countriesMap);
@@ -72,28 +62,13 @@ export default function ConventionDocumentPage() {
   const endOfDocumentHeight = selected?.endOfDocumentHeight ?? 140;
   const endOfDocumentBgColor: string | null = selected?.endOfDocumentBgColor ?? null;
 
-  // Le corps du document est rendu sans en-tête / pied de page : ceux-ci sont
-  // injectés par Chromium dans les marges de chaque page via les templates.
-  const headerMm = pxToMm(headerHeight);
-  const footerMm = pxToMm(footerHeight);
-  const endOfDocBlock = buildEndOfDocumentHtml(
-    mergedEndOfDocument, endOfDocumentWidth, endOfDocumentHeight, endOfDocumentBgColor,
-  );
-  const documentBodyHtml = `<div class="doc-body">${mergedBody}${endOfDocBlock}</div>`;
-  const headerTemplate = buildHeaderTemplate(mergedHeader, headerWidth, headerMm);
-  const footerTemplate = buildFooterTemplate(mergedFooter, footerWidth, footerMm, footerBgColor);
+  // Document complet (en-tête/pied de page en templates Chromium + corps) pour
+  // l'export PDF/impression — même logique que la pièce jointe convention de
+  // « Envoyer un message », factorisée dans conventionDocument.ts.
+  const { bodyHtml: documentBodyHtml, headerTemplate, footerTemplate, headerMm, footerMm } =
+    buildConventionDocumentHtml(convention, selected ?? null, countriesMap);
 
-  // Nom de fichier exporté : référence + nom du client. Pour un particulier on
-  // privilégie « NOM Prénom », pour une entreprise la raison sociale. Les
-  // caractères interdits par Windows (\ / : * ? " < > |) sont remplacés.
-  const sanitizeFileName = (s: string) => s.replace(/[\\/:*?"<>|]/g, '').replace(/\s+/g, ' ').trim();
-  const clientLabel = convention.client?.type === 'INDIVIDUEL'
-    ? `${convention.client?.lastName ?? ''} ${convention.client?.firstName ?? ''}`
-    : (convention.client?.entreprise ?? '');
-  const sanitizedClient = sanitizeFileName(clientLabel);
-  const exportFileName = sanitizedClient
-    ? `${convention.reference}-${sanitizedClient}`
-    : convention.reference;
+  const exportFileName = conventionExportFileName(convention);
 
   const handleExportPdf = async () => {
     const token = useAuthStore.getState().token;

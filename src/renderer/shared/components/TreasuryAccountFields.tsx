@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useAuthStore } from '../stores/auth.store';
 
@@ -74,6 +74,10 @@ export default function TreasuryAccountFields({ register, direction, watch, setV
 
   // Mode de paiement courant — suivi pour appliquer les valeurs par défaut.
   const method = watch ? watch('method') : undefined;
+  // Id de l'objet d'opération que CE composant a lui-même présélectionné en
+  // dernier — pour ne jamais écraser un choix fait par l'utilisateur, et pour
+  // pouvoir l'effacer si le mode de paiement change vers un mode sans défaut.
+  const lastAutoCategoryId = useRef<string | null>(null);
 
   // Pré-sélectionne le compte et l'objet d'opération par défaut selon le mode de paiement.
   useEffect(() => {
@@ -84,14 +88,25 @@ export default function TreasuryAccountFields({ register, direction, watch, setV
       const match = accounts.find((a: any) => String(a.name).toUpperCase().includes(accountKeyword));
       if (match) setValue('bankAccountId', String(match.id));
     }
-    // Objet d'opération par défaut.
+    // Objet d'opération par défaut. Plusieurs objets peuvent partager le même
+    // numéro de compte comptable (ex. « APPRO CAISSE » et « VERSEMENT »
+    // portent tous deux le 585) — on cherche donc d'abord une correspondance
+    // exacte de libellé, le code comptable ne servant qu'en repli.
     const categoryTarget = DEFAULT_CATEGORY_BY_METHOD[method];
     if (categoryTarget) {
-      const match = categories.find((c: any) =>
-        String(c.accountingCode ?? '') === categoryTarget.code ||
-        String(c.label).toUpperCase().includes(categoryTarget.label),
-      );
-      if (match) setValue('categoryId', String(match.id));
+      const match =
+        categories.find((c: any) => String(c.label).toUpperCase() === categoryTarget.label) ??
+        categories.find((c: any) => String(c.accountingCode ?? '') === categoryTarget.code);
+      if (match) {
+        setValue('categoryId', String(match.id));
+        lastAutoCategoryId.current = String(match.id);
+      }
+    } else if (lastAutoCategoryId.current && watch('categoryId') === lastAutoCategoryId.current) {
+      // Le nouveau mode de paiement n'a pas de défaut, et l'objet en place est
+      // toujours celui qu'on avait nous-mêmes présélectionné (l'utilisateur ne
+      // l'a pas changé depuis) : on l'efface plutôt que de le laisser périmé.
+      setValue('categoryId', '');
+      lastAutoCategoryId.current = null;
     }
   }, [method, accounts, categories, direction, watch, setValue]);
 

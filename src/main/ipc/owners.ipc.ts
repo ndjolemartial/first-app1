@@ -9,6 +9,7 @@ const ownerBaseSchema = z.object({
   // Particulier
   firstName: z.string().optional(),
   lastName: z.string().optional(),
+  civilite: z.preprocess((v) => (v === '' ? null : v), z.enum(['Monsieur', 'Madame', 'Mademoiselle']).nullable().optional()),
   nationality: z.string().optional(),
   idNumber: z.string().optional(),
   idTypeId: z.number().int().positive().nullable().optional(),

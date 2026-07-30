@@ -15,6 +15,7 @@ import {
   COMMISSION_STATUS_LABEL, transactionLabel, commissionTotals,
 } from '../utils/commissions.utils';
 import { formatCurrency } from '../../../shared/utils/format';
+import { roleLabel } from '../../../shared/utils/roleLabel';
 import ExportMenu, { ExportColumn } from '../../../shared/components/ExportMenu';
 import { Wallet, CheckCircle, Ban, Printer } from 'lucide-react';
 
@@ -152,7 +153,7 @@ export default function BeneficiaryCommissionsPage() {
                 <div className="text-sm text-slate-500 space-y-0.5">
                   {isUser ? (
                     <>
-                      <p>Rôle : {beneficiary.role} · Matricule : {beneficiary.matricule ?? '—'}</p>
+                      <p>Rôle : {roleLabel(beneficiary.role)} · Matricule : {beneficiary.matricule ?? '—'}</p>
                       <p>{beneficiary.email ?? '—'} · {beneficiary.phone || beneficiary.mobile || '—'}</p>
                     </>
                   ) : (

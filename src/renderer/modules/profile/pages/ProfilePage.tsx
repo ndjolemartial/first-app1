@@ -45,9 +45,9 @@ type PasswordFormData = z.infer<typeof passwordSchema>;
 
 const CIVILITE_OPTIONS = [
   { value: '', label: '— Civilité —' },
-  { value: 'MONSIEUR', label: 'Monsieur' },
-  { value: 'MADAME', label: 'Madame' },
-  { value: 'MADEMOISELLE', label: 'Mademoiselle' },
+  { value: 'Monsieur', label: 'Monsieur' },
+  { value: 'Madame', label: 'Madame' },
+  { value: 'Mademoiselle', label: 'Mademoiselle' },
 ];
 
 const STATUT_CONJUGAL_OPTIONS = [
@@ -68,7 +68,7 @@ const ROLE_LABELS: Record<string, string> = {
   AGENT: 'Agent',
   AGENT_TECHNIQUE: 'Agent Technique',
   RH: 'RH / Paie',
-  READONLY: 'Lecture seule',
+  READONLY: 'WELCOME',
 };
 
 export default function ProfilePage() {
@@ -254,7 +254,7 @@ export default function ProfilePage() {
             <div>
               <label className="text-sm font-medium text-slate-700">Signature des messages personnels</label>
               <p className="text-xs text-slate-400 mt-0.5 mb-2">
-                Mise en forme HTML. Ajoutée automatiquement à vos envois en tant que Particulier (module Communication).
+                Mise en forme HTML. Ajoutée automatiquement à tout email envoyé depuis « Envoyer un message » (module Communication) sans modèle ou avec un modèle « manuel » — quelle que soit l'entité ciblée. Les modèles « auto » conservent la signature SMTP.
               </p>
               <Controller
                 control={profileForm.control}

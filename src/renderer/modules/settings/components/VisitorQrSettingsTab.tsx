@@ -31,7 +31,7 @@ const ROLE_OPTIONS: Array<{ value: string; label: string }> = [
   { value: 'RH',                   label: 'Ressources humaines' },
   { value: 'AGENT_TECHNIQUE',      label: 'Agent Technique' },
   { value: 'AGENT',                label: 'Agent' },
-  { value: 'READONLY',             label: 'Lecture seule' },
+  { value: 'READONLY',             label: 'WELCOME' },
 ];
 
 export default function VisitorQrSettingsTab() {

@@ -29,6 +29,14 @@ export function useLinkableUsers(excludeEmployeeId?: number) {
   });
 }
 
+/** Filières (profils de carrière actifs) sélectionnables sur la fiche employé. */
+export function useEmployeeCareerProfiles() {
+  return useQuery({
+    queryKey: ['hr-employee-career-profiles'],
+    queryFn: () => ipc().employees.careerProfiles(token()),
+  });
+}
+
 export function useEmployeesStats() {
   return useQuery({
     queryKey: ['employees', 'stats'],
@@ -700,6 +708,11 @@ export function useUntolerateLateness() {
 
 export function useMyHrOverview() {
   return useQuery({ queryKey: ['my-hr-overview'], queryFn: () => ipc().me.overview(token()) });
+}
+
+/** Profil de carrière rattaché au poste actuel de l'employé connecté (self-service). */
+export function useMyCareerProfile() {
+  return useQuery({ queryKey: ['my-career-profile'], queryFn: () => ipc().me.careerProfile(token()) });
 }
 
 export function useMyPayslips() {

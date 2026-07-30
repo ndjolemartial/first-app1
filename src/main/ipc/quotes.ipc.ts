@@ -158,8 +158,13 @@ async function assertSingleProgramme(db: ReturnType<typeof getDb>, propertyIds: 
   }
 }
 
-/** Référence auto DEV-YYYY-NNNN (séquence annuelle). */
-async function nextReference(db: ReturnType<typeof getDb>): Promise<string> {
+/**
+ * Référence auto DEV-YYYY-NNNN (séquence annuelle). Exportée pour être
+ * réutilisée telle quelle par le moteur de devis de construction
+ * (construction-projects.ipc.ts → construction:estimates:toQuote), qui crée
+ * de vrais Quote sans dupliquer cette logique.
+ */
+export async function nextReference(db: ReturnType<typeof getDb>): Promise<string> {
   const year = new Date().getFullYear();
   const last = await db.quote.findFirst({
     where: { reference: { startsWith: `DEV-${year}-` } },
@@ -195,7 +200,7 @@ async function nextInvoiceRef(db: ReturnType<typeof getDb>): Promise<string> {
 }
 
 /** Calcule les totaux d'un devis à partir des lignes, de la remise et de la TVA. */
-function computeTotals(
+export function computeTotals(
   items: Array<{ quantity: number; unitPrice: number }>,
   discountAmount: number,
   taxRate: number,
@@ -215,7 +220,7 @@ function computeTotals(
  * Le montant absolu reste la source de vérité stockée et utilisée par les
  * documents ; le pourcentage n'est qu'un mode de saisie.
  */
-function resolveQuoteAmounts(
+export function resolveQuoteAmounts(
   items: Array<{ quantity: number; unitPrice: number }>,
   d: {
     discountAmount?: number; discountIsPercent?: boolean; discountPercent?: number | null;
@@ -579,6 +584,33 @@ export function registerQuotesIPC(): void {
       if (!existing || existing.deletedAt) return { success: false, error: 'Devis introuvable' };
       if (!canAccessQuote(session, existing.createdById)) return { success: false, error: 'Devis inaccessible' };
       await db.quote.update({ where: { id: Number(id) }, data: { deletedAt: new Date() } });
+
+      // ConstructionEstimate.quoteId est un scalaire sans FK Prisma (découplage
+      // volontaire, cf. Module 17) : la suppression du devis ne le nettoie pas
+      // automatiquement. Sans ce rattrapage, l'écran d'une estimation convertie
+      // continuerait d'afficher « Voir le devis » vers un devis supprimé au
+      // lieu de proposer à nouveau « Créer le devis ».
+      const orphanedEstimates = await db.constructionEstimate.findMany({
+        where: { quoteId: Number(id), deletedAt: null },
+        select: { id: true, projectId: true },
+      });
+      if (orphanedEstimates.length) {
+        await db.constructionEstimate.updateMany({
+          where: { id: { in: orphanedEstimates.map((e) => e.id) } },
+          data: { quoteId: null, quoteReference: null, convertedAt: null, status: 'BROUILLON' },
+        });
+        const projectIds = [...new Set(orphanedEstimates.map((e) => e.projectId))];
+        for (const projectId of projectIds) {
+          const stillConverted = await db.constructionEstimate.findFirst({
+            where: { projectId, deletedAt: null, quoteId: { not: null } },
+            select: { id: true },
+          });
+          if (!stillConverted) {
+            await db.constructionProject.updateMany({ where: { id: projectId, status: 'DEVIS_EMIS' }, data: { status: 'ESTIME' } });
+          }
+        }
+      }
+
       return { success: true };
     } catch (error: any) {
       return { success: false, error: error.message };

@@ -4,20 +4,22 @@ import Button from '../../../shared/components/ui/Button';
 import { useAuthStore } from '../../../shared/stores/auth.store';
 import { makeEntitySearch } from '../../../shared/utils/entitySearch';
 import { useClients } from '../../clients/hooks/useClients';
+import { useProspects } from '../../prospects/hooks/useProspects';
 import { useOwners } from '../../owners/hooks/useOwners';
 import { useConventions } from '../../conventions/hooks/useConventions';
-import { X, User, Building2, FileText, UserRound } from 'lucide-react';
+import { useReferrers } from '../../commissions/hooks/useCommissions';
+import { X, User, UserPlus, Handshake, Building2, FileText, UserRound } from 'lucide-react';
 
 /**
  * Cible d'un envoi de message — entité rattachée + destinataire résolu côté
  * serveur. La résolution (et donc le `to` final) est volontairement déléguée
  * à l'IPC `communication:resolveTarget` pour garantir la cohérence
- * (clientId/ownerId/conventionId stampés sur Communication).
+ * (clientId/ownerId/conventionId/referrerId stampés sur Communication).
  */
 export interface MessageTarget {
   to:      string;
   label:   string;
-  targets: { clientId?: number; ownerId?: number; conventionId?: number };
+  targets: { clientId?: number; ownerId?: number; conventionId?: number; referrerId?: number; prospectId?: number };
   /**
    * Valeurs des variables ({{firstName}}, {{conventionRef}}…) résolues côté
    * serveur pour l'entité ciblée. Utilisées pour substituer immédiatement les
@@ -34,12 +36,23 @@ interface Props {
   onParticulierChange?: (isParticulier: boolean) => void;
 }
 
-type EntityKind = 'CLIENT' | 'OWNER' | 'CONVENTION' | 'PARTICULIER';
+type EntityKind = 'CLIENT' | 'PROSPECT' | 'REFERRER' | 'OWNER' | 'CONVENTION' | 'PARTICULIER';
 
 // Onglet « Client » : visible par TOUS les rôles. Pour les rôles non privilégiés,
 // la liste des clients est restreinte côté IPC à ceux dont l'utilisateur est le
 // référent (clients:list → filtre de visibilité par assignedToId).
 const CLIENT_TAB: { kind: EntityKind; label: string; icon: any } = { kind: 'CLIENT', label: 'Client', icon: User };
+
+// Onglet « Prospect » : mêmes règles que l'onglet Client — visible par TOUS
+// les rôles, liste restreinte côté IPC (prospects:list) à ceux dont
+// l'utilisateur est le référent pour les rôles non privilégiés.
+const PROSPECT_TAB: { kind: EntityKind; label: string; icon: any } = { kind: 'PROSPECT', label: 'Prospect', icon: UserPlus };
+
+// Onglet « Apporteur d'affaires » : mêmes règles de gestion, d'accès et
+// d'affichage que l'onglet Client — visible par TOUS les rôles, liste
+// restreinte côté IPC (referrerScopeWhere) à l'apporteur dont l'utilisateur
+// est le référent pour les rôles non privilégiés.
+const REFERRER_TAB: { kind: EntityKind; label: string; icon: any } = { kind: 'REFERRER', label: "Apporteur d'affaires", icon: Handshake };
 
 // Onglets de ciblage Propriétaire / Convention — réservés aux rôles privilégiés.
 const PRIVILEGED_ENTITY_TABS: Array<{ kind: EntityKind; label: string; icon: any }> = [
@@ -58,6 +71,12 @@ function clientLabel(c: any): string {
   if (c.type === 'ENTREPRISE') return c.entreprise || `Client #${c.id}`;
   return `${c.firstName ?? ''} ${c.lastName ?? ''}`.trim() || `Client #${c.id}`;
 }
+function prospectLabel(p: any): string {
+  return `${p.firstName ?? ''} ${p.lastName ?? ''}`.trim() || `Prospect #${p.id}`;
+}
+function referrerLabel(r: any): string {
+  return r.companyName || `${r.firstName ?? ''} ${r.lastName ?? ''}`.trim() || `Apporteur #${r.id}`;
+}
 function ownerLabel(o: any): string {
   if (o.type === 'ENTREPRISE') return o.companyName || `Propriétaire #${o.id}`;
   return `${o.firstName ?? ''} ${o.lastName ?? ''}`.trim() || `Propriétaire #${o.id}`;
@@ -71,11 +90,13 @@ function conventionLabel(c: any): string {
 export default function TargetSelector({ channel, value, onChange, onParticulierChange }: Props) {
   const role = useAuthStore((s) => s.user?.role) ?? '';
   const canTargetEntities = ENTITY_TARGET_ROLES.includes(role);
-  // Onglets visibles : Client (tous les rôles) + Propriétaire/Convention (privilégiés)
-  // + Particulier (tous). Les rôles non privilégiés voient donc Client + Particulier.
+  // Onglets visibles : Client + Prospect + Apporteur d'affaires (tous les
+  // rôles) + Propriétaire/Convention (privilégiés) + Particulier (tous). Les
+  // rôles non privilégiés voient donc Client + Prospect + Apporteur
+  // d'affaires + Particulier.
   const tabs = canTargetEntities
-    ? [CLIENT_TAB, ...PRIVILEGED_ENTITY_TABS, PARTICULIER_TAB]
-    : [CLIENT_TAB, PARTICULIER_TAB];
+    ? [CLIENT_TAB, PROSPECT_TAB, REFERRER_TAB, ...PRIVILEGED_ENTITY_TABS, PARTICULIER_TAB]
+    : [CLIENT_TAB, PROSPECT_TAB, REFERRER_TAB, PARTICULIER_TAB];
 
   const [kind, setKind] = useState<EntityKind>('CLIENT');
   const [resolving, setResolving] = useState(false);
@@ -89,6 +110,8 @@ export default function TargetSelector({ channel, value, onChange, onParticulier
 
   // Charge un large pool d'entités pour le combobox — la recherche est locale.
   const { data: clientsRes }     = useClients({},     1, 1000);
+  const { data: prospectsRes }   = useProspects({},   1, 1000);
+  const { data: referrersRes }   = useReferrers({},   1, 1000);
   const { data: ownersRes }      = useOwners({},      1, 1000);
   const { data: conventionsRes } = useConventions({}, 1, 1000);
 
@@ -97,6 +120,18 @@ export default function TargetSelector({ channel, value, onChange, onParticulier
       return (clientsRes?.data ?? []).map((c: any) => ({
         value: String(c.id),
         label: clientLabel(c),
+      }));
+    }
+    if (kind === 'PROSPECT') {
+      return (prospectsRes?.data ?? []).map((p: any) => ({
+        value: String(p.id),
+        label: prospectLabel(p),
+      }));
+    }
+    if (kind === 'REFERRER') {
+      return (referrersRes?.data ?? []).map((r: any) => ({
+        value: String(r.id),
+        label: referrerLabel(r),
       }));
     }
     if (kind === 'OWNER') {
@@ -109,14 +144,29 @@ export default function TargetSelector({ channel, value, onChange, onParticulier
       value: String(c.id),
       label: conventionLabel(c),
     }));
-  }, [kind, clientsRes, ownersRes, conventionsRes]);
+  }, [kind, clientsRes, prospectsRes, referrersRes, ownersRes, conventionsRes]);
 
-  // Recherche côté serveur pour les entités à fort volume (Client / Propriétaire).
-  // Le `toOption` réplique exactement le format de libellé des préchargements ci-dessus.
+  // Recherche côté serveur pour les entités à fort volume (Client / Apporteur
+  // d'affaires / Propriétaire). Le `toOption` réplique exactement le format de
+  // libellé des préchargements ci-dessus.
   const searchClients = useMemo(
     () => makeEntitySearch(
       (filters, page, limit) => window.electron.clients.list(token!, filters, page, limit),
       (c: any) => ({ value: String(c.id), label: clientLabel(c) }),
+    ),
+    [token],
+  );
+  const searchProspects = useMemo(
+    () => makeEntitySearch(
+      (filters, page, limit) => window.electron.prospects.list(token!, filters, page, limit),
+      (p: any) => ({ value: String(p.id), label: prospectLabel(p) }),
+    ),
+    [token],
+  );
+  const searchReferrers = useMemo(
+    () => makeEntitySearch(
+      (filters, page, limit) => window.electron.commissions.listReferrers(token!, filters, page, limit),
+      (r: any) => ({ value: String(r.id), label: referrerLabel(r) }),
     ),
     [token],
   );
@@ -130,9 +180,11 @@ export default function TargetSelector({ channel, value, onChange, onParticulier
   // Sélection dynamique selon l'onglet courant ; les conventions restent en
   // filtrage local (hors périmètre de la recherche serveur demandée).
   const onSearch =
-    kind === 'CLIENT' ? searchClients
-  : kind === 'OWNER'  ? searchOwners
-                      : undefined;
+    kind === 'CLIENT'   ? searchClients
+  : kind === 'PROSPECT' ? searchProspects
+  : kind === 'REFERRER' ? searchReferrers
+  : kind === 'OWNER'    ? searchOwners
+                        : undefined;
 
   const handleSelect = async (idStr: string) => {
     if (!idStr) { onChange(null); return; }
@@ -209,6 +261,8 @@ export default function TargetSelector({ channel, value, onChange, onParticulier
           disabled={resolving}
           placeholder={
             kind === 'CLIENT'     ? 'Rechercher un client…'
+          : kind === 'PROSPECT'   ? 'Rechercher un prospect…'
+          : kind === 'REFERRER'   ? "Rechercher un apporteur d'affaires…"
           : kind === 'OWNER'      ? 'Rechercher un propriétaire…'
                                   : 'Rechercher une convention…'
           }

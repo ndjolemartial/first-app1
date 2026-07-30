@@ -90,8 +90,9 @@ export default function ConventionDetailPage() {
 
   const handleDelete = async () => {
     const r = await deleteConvention.mutateAsync(Number(id));
-    if (r.success) navigate('/conventions');
     setShowDelete(false);
+    if (r.success) navigate('/conventions');
+    else toast.error(typeof r.error === 'string' ? r.error : 'Échec de la suppression de la convention');
   };
 
   const handleGenerateInstallments = async () => {

@@ -33,7 +33,7 @@ export default function OwnerDetailPage() {
   const portfolio = portfolioRes?.data;
   if (isLoading) {
     return (
-      <PageLayout title="Chargement…" breadcrumbs={[{ label: 'Propriétaires', to: '/owners' }, { label: '…' }]}>
+      <PageLayout title="Chargement…" breadcrumbs={[{ label: 'Tierce partie' }, { label: 'Propriétaires', to: '/owners' }, { label: '…' }]}>
         <Card><p className="text-sm text-slate-500">Chargement de la fiche…</p></Card>
       </PageLayout>
     );
@@ -43,7 +43,7 @@ export default function OwnerDetailPage() {
       ? (typeof res.error === 'string' ? res.error : 'Fiche inaccessible')
       : 'Propriétaire introuvable';
     return (
-      <PageLayout title="Fiche propriétaire" breadcrumbs={[{ label: 'Propriétaires', to: '/owners' }, { label: 'Erreur' }]}>
+      <PageLayout title="Fiche propriétaire" breadcrumbs={[{ label: 'Tierce partie' }, { label: 'Propriétaires', to: '/owners' }, { label: 'Erreur' }]}>
         <Card>
           <p className="text-sm text-red-600">{errMsg}</p>
           <button className="mt-3 text-sm text-blue-600 hover:underline" onClick={() => navigate('/owners')}>
@@ -66,7 +66,7 @@ export default function OwnerDetailPage() {
   return (
     <PageLayout
       title={displayName}
-      breadcrumbs={[{ label: 'Propriétaires', to: '/owners' }, { label: displayName }]}
+      breadcrumbs={[{ label: 'Tierce partie' }, { label: 'Propriétaires', to: '/owners' }, { label: displayName }]}
       actions={
         <div className="flex gap-2">
           <Button variant="secondary" icon={<Edit className="h-4 w-4" />}

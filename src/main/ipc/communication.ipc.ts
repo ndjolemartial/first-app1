@@ -27,6 +27,17 @@ const FULL_HISTORY_ROLES = ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ACCOUNTANT', 'AS
 // ASSISTANTE_DIRECTION est volontairement exclue (restreinte à ses clients).
 const CLIENT_FULL_VIEW_ROLES = ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ACCOUNTANT'];
 
+// Ciblage « Prospect » : mêmes règles d'accès que le ciblage Client (onglet
+// visible par tous les rôles, liste restreinte côté IPC — prospects:list — et
+// vérification de visibilité ci-dessous pour les rôles non privilégiés).
+const PROSPECT_FULL_VIEW_ROLES = CLIENT_FULL_VIEW_ROLES;
+
+// Rôles qui peuvent cibler n'importe quel apporteur d'affaires — mêmes règles
+// d'accès que le ciblage Client (cf. CLIENT_FULL_VIEW_ROLES / REFERRERS_FULL_
+// VIEW_ROLES dans commissions.ipc.ts). Les autres rôles ne peuvent cibler que
+// l'apporteur dont ils sont l'utilisateur référent.
+const REFERRER_FULL_VIEW_ROLES = ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ACCOUNTANT'];
+
 const templateSchema = z.object({
   name: z.string().min(1),
   channel: z.enum(['EMAIL', 'SMS', 'WHATSAPP']),
@@ -41,6 +52,34 @@ const templateSchema = z.object({
 // Rôles voyant tous les modèles (auto + manuel). Les autres ne voient que les
 // modèles « manuel » dans l'envoi de message. Test de rôle exact (ASSISTANTE_DIRECTION exclue).
 const TEMPLATE_FULL_ACCESS_ROLES = ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ACCOUNTANT'];
+// Rôles disposant déjà, par eux-mêmes, d'un accès complet (lecture + écriture,
+// tous types) à l'interface « Modèles de messages ». Rôle EXACT (pas de
+// `checkRole`) : MANAGER (et donc ses équivalents ACCOUNTANT/ASSISTANTE_
+// DIRECTION) n'y ont plus accès — seul un utilisateur individuellement
+// désigné (Paramètres → Modèles de messages → « Gérer les accès ») peut
+// encore y accéder, et uniquement aux modèles « manuel ».
+const TEMPLATE_ADMIN_ROLES = ['SUPER_ADMIN', 'ADMIN'];
+
+/** Vrai si `checkRole` autoriserait la session pour ces rôles, sans lever d'exception. */
+function hasRole(session: { role: string }, roles: string[]): boolean {
+  try { checkRole(session as any, roles); return true; } catch { return false; }
+}
+
+/**
+ * Ids des utilisateurs désignés (Paramètres → Modèles de messages) autorisés,
+ * en plus de SUPER_ADMIN/ADMIN/MANAGER (et équivalents), à consulter et gérer
+ * les modèles de type « manuel » uniquement — jamais les modèles « auto ».
+ */
+async function manualTemplateEditorIds(db: ReturnType<typeof getDb>): Promise<number[]> {
+  const raw = await getSetting(SettingsKeys.commTemplateManualEditorIds);
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed.filter((n: any) => Number.isInteger(n)) : [];
+  } catch {
+    return [];
+  }
+}
 
 // Cibles entité optionnelles — passées par le formulaire d'envoi ciblé pour
 // stamper Communication.{clientId, ownerId, conventionId}. Quand l'envoi se
@@ -49,6 +88,8 @@ const targetFields = {
   clientId:     z.number().int().positive().optional(),
   ownerId:      z.number().int().positive().optional(),
   conventionId: z.number().int().positive().optional(),
+  referrerId:   z.number().int().positive().optional(),
+  prospectId:   z.number().int().positive().optional(),
 };
 
 const sendEmailSchema = z.object({
@@ -58,8 +99,9 @@ const sendEmailSchema = z.object({
   templateId: z.number().int().positive().optional(),
   metadata: z.record(z.string(), z.unknown()).optional(),
   // Envoi « en tant que » l'utilisateur connecté (mode Particulier) : l'adresse
-  // d'envoi et le nom d'expéditeur deviennent ceux de l'utilisateur, et sa
-  // signature personnelle est ajoutée au message.
+  // d'envoi et le nom d'expéditeur deviennent ceux de l'utilisateur. La
+  // signature personnelle, elle, est ajoutée dès que `templateId` est absent
+  // (voir plus bas), indépendamment de ce mode.
   senderSelf: z.boolean().optional(),
   // Pièces jointes (mode Particulier) : chemins de fichiers locaux à joindre.
   attachments: z.array(z.object({
@@ -69,6 +111,12 @@ const sendEmailSchema = z.object({
   // Destinataires en copie (CC) / copie cachée (BCC) — listes séparées par , ; ou espace.
   cc: z.string().optional(),
   bcc: z.string().optional(),
+  // Pièce jointe PDF de la convention ciblée (générée côté renderer et transmise
+  // en mémoire, base64) — cf. TargetSelector, cible « Convention ».
+  conventionAttachment: z.object({
+    name: z.string().min(1),
+    base64: z.string().min(1),
+  }).optional(),
   ...targetFields,
 });
 
@@ -99,7 +147,7 @@ const sendWhatsappSchema = z.object({
 });
 
 const resolveTargetSchema = z.object({
-  entityType: z.enum(['CLIENT', 'OWNER', 'CONVENTION']),
+  entityType: z.enum(['CLIENT', 'PROSPECT', 'REFERRER', 'OWNER', 'CONVENTION']),
   entityId:   z.number().int().positive(),
   channel:    z.enum(['EMAIL', 'SMS', 'WHATSAPP']),
 });
@@ -395,11 +443,15 @@ export function registerCommunicationIPC(): void {
     try {
       const session = getSession(token);
       if (!session) return { success: false, error: 'Session expirée' };
-      checkRole(session, READ_ROLES);
       const db = getDb();
+      if (!hasRole(session, READ_ROLES)) {
+        const editorIds = await manualTemplateEditorIds(db);
+        if (!editorIds.includes(session.userId)) checkRole(session, READ_ROLES);
+      }
       const where: any = {};
       if (channel) where.channel = channel;
-      // Les rôles non privilégiés ne voient que les modèles « manuel ».
+      // Les rôles non privilégiés (et les utilisateurs désignés sans rôle
+      // privilégié) ne voient que les modèles « manuel ».
       if (!TEMPLATE_FULL_ACCESS_ROLES.includes(session.role)) where.usageType = 'MANUEL';
       const data = await db.commTemplate.findMany({
         where,
@@ -416,10 +468,17 @@ export function registerCommunicationIPC(): void {
     try {
       const session = getSession(token);
       if (!session) return { success: false, error: 'Session expirée' };
-      checkRole(session, READ_ROLES);
       const db = getDb();
+      const isPrivileged = hasRole(session, READ_ROLES);
+      if (!isPrivileged) {
+        const editorIds = await manualTemplateEditorIds(db);
+        if (!editorIds.includes(session.userId)) checkRole(session, READ_ROLES);
+      }
       const template = await db.commTemplate.findUnique({ where: { id } });
       if (!template) return { success: false, error: 'Template introuvable' };
+      if (!isPrivileged && template.usageType !== 'MANUEL') {
+        return { success: false, error: 'Permission insuffisante' };
+      }
       return { success: true, data: template };
     } catch (error: any) {
       return { success: false, error: error.message };
@@ -430,11 +489,18 @@ export function registerCommunicationIPC(): void {
     try {
       const session = getSession(token);
       if (!session) return { success: false, error: 'Session expirée' };
-      checkRole(session, ['SUPER_ADMIN', 'ADMIN', 'MANAGER']);
+      const db = getDb();
+      const isPrivileged = hasRole(session, TEMPLATE_ADMIN_ROLES);
+      if (!isPrivileged) {
+        const editorIds = await manualTemplateEditorIds(db);
+        if (!editorIds.includes(session.userId)) checkRole(session, TEMPLATE_ADMIN_ROLES);
+      }
       const parsed = templateSchema.safeParse(payload);
       if (!parsed.success) return { success: false, error: parsed.error.format() };
-      const db = getDb();
       const d = parsed.data;
+      // Utilisateur désigné (sans rôle privilégié) : ne peut créer que des
+      // modèles de type « manuel », quoi que le formulaire indique.
+      const usageType = isPrivileged ? d.usageType : 'MANUEL';
       const template = await db.commTemplate.create({
         data: {
           name: d.name,
@@ -442,7 +508,7 @@ export function registerCommunicationIPC(): void {
           subject: d.subject,
           body: d.body,
           variables: d.variables ? (d.variables as any) : undefined,
-          usageType: d.usageType,
+          usageType,
           isActive: d.isActive,
         },
       });
@@ -457,14 +523,48 @@ export function registerCommunicationIPC(): void {
     try {
       const session = getSession(token);
       if (!session) return { success: false, error: 'Session expirée' };
-      checkRole(session, ['SUPER_ADMIN', 'ADMIN', 'MANAGER']);
+      const db = getDb();
+      const isPrivileged = hasRole(session, TEMPLATE_ADMIN_ROLES);
+      if (!isPrivileged) {
+        const editorIds = await manualTemplateEditorIds(db);
+        if (!editorIds.includes(session.userId)) checkRole(session, TEMPLATE_ADMIN_ROLES);
+        const existing = await db.commTemplate.findUnique({ where: { id }, select: { usageType: true } });
+        if (!existing) return { success: false, error: 'Modèle introuvable' };
+        if (existing.usageType !== 'MANUEL') {
+          return { success: false, error: 'Seuls les modèles de type manuel sont modifiables.' };
+        }
+      }
       const parsed = templateSchema.partial().safeParse(payload);
       if (!parsed.success) return { success: false, error: parsed.error.format() };
-      const db = getDb();
       const d = parsed.data as any;
       if (d.variables !== undefined) d.variables = d.variables;
+      // Ne peut pas faire passer un modèle en type « auto ».
+      if (!isPrivileged) d.usageType = 'MANUEL';
       const template = await db.commTemplate.update({ where: { id }, data: d });
       return { success: true, data: template };
+    } catch (error: any) {
+      return { success: false, error: error.message };
+    }
+  });
+
+  /**
+   * Indique à l'utilisateur connecté s'il peut gérer les modèles de type
+   * « manuel » (consultation/création/modification) — utilisé côté renderer
+   * pour afficher (ou non) l'onglet « Modèles de messages » et ses actions.
+   * `isPrivileged` = accès complet (auto + manuel) via le rôle.
+   */
+  ipcMain.handle('communication:myTemplatePermissions', async (_event, { token }: any) => {
+    try {
+      const session = getSession(token);
+      if (!session) return { success: false, error: 'Session expirée' };
+      const db = getDb();
+      const isPrivileged = hasRole(session, TEMPLATE_ADMIN_ROLES);
+      let canManageManual = isPrivileged;
+      if (!canManageManual) {
+        const editorIds = await manualTemplateEditorIds(db);
+        canManageManual = editorIds.includes(session.userId);
+      }
+      return { success: true, data: { canManageManual, isPrivileged } };
     } catch (error: any) {
       return { success: false, error: error.message };
     }
@@ -485,7 +585,7 @@ export function registerCommunicationIPC(): void {
 
   // ── Historique des communications ──────────────────────────────────────────
 
-  ipcMain.handle('communication:getHistory', async (_event, { token, filters = {}, page = 1, limit = 30 }: any) => {
+  ipcMain.handle('communication:getHistory', async (_event, { token, filters = {}, page = 1, limit = 20 }: any) => {
     try {
       const session = getSession(token);
       if (!session) return { success: false, error: 'Session expirée' };
@@ -504,7 +604,9 @@ export function registerCommunicationIPC(): void {
       }
       // Visibilité restreinte pour les rôles non privilégiés : ne montrer
       // que les messages envoyés par l'utilisateur lui-même OU adressés à
-      // un client qui lui est rattaché (Client.assignedToId).
+      // un client qui lui est rattaché (Client.assignedToId) OU à un
+      // apporteur d'affaires dont il est l'utilisateur référent (mêmes
+      // règles d'accès que le ciblage Client).
       if (!FULL_HISTORY_ROLES.includes(session.role)) {
         where.AND = [
           ...(where.AND ?? []),
@@ -512,6 +614,7 @@ export function registerCommunicationIPC(): void {
             OR: [
               { senderId: session.userId },
               { client: { assignedToId: session.userId } },
+              { referrer: { assignedToId: session.userId } },
             ],
           },
         ];
@@ -570,17 +673,29 @@ export function registerCommunicationIPC(): void {
       if (!session) return { success: false, error: 'Session expirée' };
       checkRole(session, WRITE_ROLES);
       const parsed = sendEmailSchema.safeParse(payload);
-      if (!parsed.success) return { success: false, error: parsed.error.format() };
+      if (!parsed.success) return { success: false, error: parsed.error.issues.map((i) => i.message).join(' ; ') };
       const db = getDb();
       const d = parsed.data;
 
       // Envoi « en tant que » l'utilisateur connecté (mode Particulier) :
-      // adresse + nom d'expéditeur de l'utilisateur, et sa signature personnelle
-      // (HTML, avec logo optionnel) ajoutée au corps du message.
+      // adresse + nom d'expéditeur de l'utilisateur.
       let fromOverride: { fromName?: string; fromAddress?: string } = {};
       let bodyWithSignature = d.body;
-      let senderSelfHtml = false;
-      if (d.senderSelf) {
+      let personalSignatureHtml = false;
+
+      // Signature personnelle : ajoutée à tout envoi sans modèle, ainsi qu'aux
+      // envois basés sur un modèle de type « manuel » (CommTemplate.usageType
+      // = MANUEL) — quelle que soit l'entité ciblée (Particulier ou non). Seuls
+      // les modèles de type « auto » (utilisés aussi par les relances,
+      // reminders.service.ts, non concerné par ce handler) conservent le
+      // comportement existant (signature SMTP via le jeton {{signature}}).
+      const template = d.templateId
+        ? await db.commTemplate.findUnique({ where: { id: d.templateId }, select: { usageType: true } })
+        : null;
+      const usePersonalSignature = !d.templateId || template?.usageType === 'MANUEL';
+
+      const needsUserInfo = d.senderSelf || usePersonalSignature;
+      if (needsUserInfo) {
         const me = await db.user.findUnique({
           where: { id: session.userId },
           select: {
@@ -589,15 +704,19 @@ export function registerCommunicationIPC(): void {
           },
         });
         if (me) {
-          const senderName = (me.nomCommercial || `${me.firstName ?? ''} ${me.lastName ?? ''}`.trim()) || undefined;
-          fromOverride = { fromName: senderName, fromAddress: me.email };
-          // Signature HTML personnelle.
-          const sigHtml = (me.messageSignature ?? '').trim();
-          if (sigHtml) {
-            // Le corps (provenant de l'éditeur riche) est déjà du HTML : on
-            // assemble corps + signature en HTML et on enverra en HTML.
-            bodyWithSignature = `${d.body}<br><br>${sigHtml}`;
-            senderSelfHtml = true;
+          if (d.senderSelf) {
+            const senderName = (me.nomCommercial || `${me.firstName ?? ''} ${me.lastName ?? ''}`.trim()) || undefined;
+            fromOverride = { fromName: senderName, fromAddress: me.email };
+          }
+          if (usePersonalSignature) {
+            // Signature HTML personnelle.
+            const sigHtml = (me.messageSignature ?? '').trim();
+            if (sigHtml) {
+              // Le corps (provenant de l'éditeur riche) est déjà du HTML : on
+              // assemble corps + signature en HTML et on enverra en HTML.
+              bodyWithSignature = `${d.body}<br><br>${sigHtml}`;
+              personalSignatureHtml = true;
+            }
           }
         }
       }
@@ -612,14 +731,22 @@ export function registerCommunicationIPC(): void {
 
       // Pièces jointes (mode Particulier) : valide l'existence et la taille totale
       // (≤ 25 Mo), puis prépare les attachements Nodemailer (lecture par chemin).
-      let mailAttachments: Array<{ filename: string; path: string }> | undefined;
+      let mailAttachments: Array<{ filename: string; path: string } | { filename: string; content: Buffer }> | undefined;
       if (d.attachments && d.attachments.length) {
         let totalBytes = 0;
         for (const att of d.attachments) {
-          if (!fs.existsSync(att.path)) {
-            return { success: false, error: `Pièce jointe introuvable : ${att.name}` };
+          let stat: ReturnType<typeof fs.statSync>;
+          try {
+            stat = fs.statSync(att.path);
+          } catch {
+            // Fichier absent, lecteur réseau déconnecté, permission refusée,
+            // ou fichier cloud (OneDrive…) non encore téléchargé sur le poste.
+            return { success: false, error: `Pièce jointe introuvable ou inaccessible : ${att.name}` };
           }
-          totalBytes += fs.statSync(att.path).size;
+          if (!stat.isFile() || stat.size === 0) {
+            return { success: false, error: `Pièce jointe illisible ou vide : ${att.name}` };
+          }
+          totalBytes += stat.size;
         }
         if (totalBytes > MAX_ATTACHMENTS_BYTES) {
           return { success: false, error: 'Pièces jointes : taille totale supérieure à 25 Mo.' };
@@ -630,6 +757,19 @@ export function registerCommunicationIPC(): void {
         }));
       }
 
+      // PDF de la convention ciblée (cible « Convention », généré côté
+      // renderer via documentExport.renderDocumentPdf puis transmis en base64) :
+      // ajouté aux pièces jointes existantes, quel que soit le mode d'envoi.
+      if (d.conventionAttachment) {
+        const buffer = Buffer.from(d.conventionAttachment.base64, 'base64');
+        if (buffer.length > 0) {
+          mailAttachments = [
+            ...(mailAttachments ?? []),
+            { filename: d.conventionAttachment.name, content: buffer },
+          ];
+        }
+      }
+
       // Résout les variables d'entreprise ({{companyName}}, {{companyPhoneFixed}}, …)
       // côté serveur — les valeurs ne transitent pas par le renderer.
       const rendered = await renderMessage(
@@ -638,10 +778,10 @@ export function registerCommunicationIPC(): void {
       );
       const finalSubject = rendered.subject ?? d.subject;
       const finalBody    = rendered.body;
-      // Corps historisé : en mode senderSelf, le HTML peut contenir un logo en
-      // base64 (volumineux) → on stocke une version texte pour rester sous la
-      // limite de la colonne et garder l'historique lisible.
-      const storedBody  = senderSelfHtml ? htmlToPlainText(finalBody) : finalBody;
+      // Corps historisé : quand une signature personnelle HTML est ajoutée, le
+      // corps peut devenir volumineux (logo éventuel…) → on stocke une version
+      // texte pour rester sous la limite de la colonne et garder l'historique lisible.
+      const storedBody  = personalSignatureHtml ? htmlToPlainText(finalBody) : finalBody;
 
       const comm = await db.communication.create({
         data: {
@@ -656,6 +796,8 @@ export function registerCommunicationIPC(): void {
           clientId:     d.clientId ?? null,
           ownerId:      d.ownerId ?? null,
           conventionId: d.conventionId ?? null,
+          referrerId:   d.referrerId ?? null,
+          prospectId:   d.prospectId ?? null,
           metadata: d.metadata ? (d.metadata as any) : undefined,
         },
       });
@@ -672,9 +814,9 @@ export function registerCommunicationIPC(): void {
           to: d.to,
           subject: finalSubject,
           body: storedBody,
-          // Signature HTML : on fournit explicitement le HTML (corps + signature
-          // + logo) pour un rendu fidèle, sinon comportement par défaut.
-          ...(senderSelfHtml ? { html: finalBody } : {}),
+          // Signature HTML : on fournit explicitement le HTML (corps + signature)
+          // pour un rendu fidèle, sinon comportement par défaut.
+          ...(personalSignatureHtml ? { html: finalBody } : {}),
           ...(mailAttachments ? { attachments: mailAttachments } : {}),
           ...(cc.list.length ? { cc: cc.list } : {}),
           ...(bcc.list.length ? { bcc: bcc.list } : {}),
@@ -730,6 +872,8 @@ export function registerCommunicationIPC(): void {
           clientId:     d.clientId ?? null,
           ownerId:      d.ownerId ?? null,
           conventionId: d.conventionId ?? null,
+          referrerId:   d.referrerId ?? null,
+          prospectId:   d.prospectId ?? null,
           metadata: d.metadata ? (d.metadata as any) : undefined,
         },
       });
@@ -783,6 +927,8 @@ export function registerCommunicationIPC(): void {
           clientId:     d.clientId ?? null,
           ownerId:      d.ownerId ?? null,
           conventionId: d.conventionId ?? null,
+          referrerId:   d.referrerId ?? null,
+          prospectId:   d.prospectId ?? null,
           metadata: d.metadata ? (d.metadata as any) : undefined,
         },
       });
@@ -923,6 +1069,47 @@ export function registerCommunicationIPC(): void {
         const label = c.type === 'ENTREPRISE' ? (c.entreprise ?? `Client #${c.id}`) : `${c.firstName ?? ''} ${c.lastName ?? ''}`.trim();
         const variables = { ...commonVars, ...recipientVariables(c) };
         return { success: true, data: { to, label, targets: { clientId: c.id }, variables } };
+      }
+
+      if (entityType === 'PROSPECT') {
+        const p = await db.prospect.findUnique({
+          where: { id: entityId },
+          select: { id: true, civilite: true, firstName: true, lastName: true, email: true, phone: true, mobile: true, deletedAt: true, assignedToId: true },
+        });
+        if (!p || p.deletedAt) return { success: false, error: 'Prospect introuvable' };
+        // Visibilité restreinte : mêmes règles que le ciblage Client — hors
+        // rôles à vue complète, on ne peut cibler qu'un prospect dont on est
+        // l'utilisateur référent.
+        if (!PROSPECT_FULL_VIEW_ROLES.includes(session.role)) {
+          if (p.assignedToId !== session.userId) return { success: false, error: 'Prospect inaccessible' };
+        }
+        const to = pickRecipient(p);
+        if (!to) return { success: false, error: `Le prospect n'a pas de ${channel === 'EMAIL' ? 'email' : 'numéro mobile/téléphone'} renseigné` };
+        const label = `${p.firstName ?? ''} ${p.lastName ?? ''}`.trim() || `Prospect #${p.id}`;
+        const variables = { ...commonVars, ...recipientVariables(p) };
+        return { success: true, data: { to, label, targets: { prospectId: p.id }, variables } };
+      }
+
+      if (entityType === 'REFERRER') {
+        const r = await db.businessReferrer.findUnique({
+          where: { id: entityId },
+          select: { id: true, firstName: true, lastName: true, companyName: true, email: true, phone: true, mobile: true, deletedAt: true, assignedToId: true },
+        });
+        if (!r || r.deletedAt) return { success: false, error: "Apporteur d'affaires introuvable" };
+        // Visibilité restreinte : mêmes règles d'accès que le ciblage Client —
+        // hors rôles à vue complète, on ne peut cibler qu'un apporteur dont on
+        // est l'utilisateur référent.
+        if (!REFERRER_FULL_VIEW_ROLES.includes(session.role)) {
+          if (r.assignedToId !== session.userId) return { success: false, error: "Apporteur d'affaires inaccessible" };
+        }
+        const to = pickRecipient(r);
+        if (!to) return { success: false, error: `L'apporteur d'affaires n'a pas de ${channel === 'EMAIL' ? 'email' : 'numéro mobile/téléphone'} renseigné` };
+        const label = r.companyName ?? `${r.firstName ?? ''} ${r.lastName ?? ''}`.trim();
+        const variables = {
+          ...commonVars,
+          ...recipientVariables({ ...r, type: r.companyName ? 'ENTREPRISE' : undefined, entreprise: r.companyName }),
+        };
+        return { success: true, data: { to, label, targets: { referrerId: r.id }, variables } };
       }
 
       if (entityType === 'OWNER') {

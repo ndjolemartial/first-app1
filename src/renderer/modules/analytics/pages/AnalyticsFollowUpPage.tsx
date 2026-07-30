@@ -1,10 +1,11 @@
 import { useState } from 'react';
 import PageLayout from '../../../shared/components/layout/PageLayout';
-import { ProspectFollowUpTab, ClientFollowUpTab } from '../components/AnalyticsSections';
+import { ProspectFollowUpTab, ClientFollowUpTab, ReferrerFollowUpTab } from '../components/AnalyticsSections';
 
 const SUB_TABS = [
   { key: 'prospects', label: 'Suivi prospects' },
   { key: 'clients', label: 'Suivi clients' },
+  { key: 'referrers', label: "Suivi Apporteurs d'affaires" },
 ] as const;
 
 export default function AnalyticsFollowUpPage() {
@@ -29,7 +30,7 @@ export default function AnalyticsFollowUpPage() {
           </button>
         ))}
       </div>
-      {active === 'prospects' ? <ProspectFollowUpTab /> : <ClientFollowUpTab />}
+      {active === 'prospects' ? <ProspectFollowUpTab /> : active === 'clients' ? <ClientFollowUpTab /> : <ReferrerFollowUpTab />}
     </PageLayout>
   );
 }

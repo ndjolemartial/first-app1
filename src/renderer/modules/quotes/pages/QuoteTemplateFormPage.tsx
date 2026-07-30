@@ -51,7 +51,7 @@ const SAMPLE_QUOTE: any = {
   reference: 'DEV-2026-0001', issueDate: '2026-06-11T00:00:00Z', validUntil: '2026-07-11T00:00:00Z',
   type: 'PRESTATION', subtotal: 650000, discountAmount: 50000, taxRate: 18, taxAmount: 108000, total: 708000,
   paymentModalites: 'SUR_6_MOIS', depositExpected: 200000, conditions: 'Devis valable 30 jours.',
-  client: { type: 'INDIVIDUEL', firstName: 'Awa', lastName: 'KONE', civilite: 'MADAME', phone: '+225 07 00 00 00', email: 'awa@example.ci', city: 'Abidjan' },
+  client: { type: 'INDIVIDUEL', firstName: 'Awa', lastName: 'KONE', civilite: 'Madame', phone: '+225 07 00 00 00', email: 'awa@example.ci', city: 'Abidjan' },
   agent: { firstName: 'Jean', lastName: 'BAMBA' },
   items: [
     { id: 1, category: 'Bornage', designation: 'Bornage de parcelle', quantity: 1, unitPrice: 300000, total: 300000 },

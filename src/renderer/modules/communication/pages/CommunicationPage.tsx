@@ -55,7 +55,7 @@ export default function CommunicationPage() {
   const [channel, setChannel] = useState('');
   const [status, setStatus] = useState('');
   const [page, setPage] = useState(1);
-  const limit = 30;
+  const limit = 20;
 
   const filters: any = {};
   if (channel) filters.channel = channel;

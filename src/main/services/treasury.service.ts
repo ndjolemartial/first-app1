@@ -6,7 +6,7 @@ type Db = ReturnType<typeof getDb>;
 type DbOrTx = Db | Prisma.TransactionClient;
 
 export type TreasuryDirection = 'ENTREE' | 'SORTIE';
-export type TreasurySource = 'MANUEL' | 'FACTURE' | 'ECHEANCE' | 'COMMISSION' | 'PAIE' | 'CHARGE';
+export type TreasurySource = 'MANUEL' | 'FACTURE' | 'ECHEANCE' | 'COMMISSION' | 'PAIE' | 'CHARGE' | 'TRANSFERT';
 
 /**
  * Génère la prochaine référence d'opération de trésorerie : OPT-YYYY-NNNN
@@ -46,6 +46,9 @@ export interface RecordOperationParams {
   programmeId?: number | null;
   createdById?: number | null;
   notes?: string | null;
+  // Virement interne compte à compte : identifiant partagé par les deux
+  // écritures liées (crédit + débit). Null pour une opération simple.
+  transferGroupId?: string | null;
 }
 
 /**
@@ -81,7 +84,57 @@ export async function recordTreasuryOperation(db: DbOrTx, params: RecordOperatio
       programmeId: params.programmeId ?? null,
       createdById: params.createdById ?? null,
       notes: params.notes ?? null,
+      transferGroupId: params.transferGroupId ?? null,
     },
+  });
+}
+
+/**
+ * Retrouve (ou crée) l'objet d'opération par défaut de l'écriture miroir d'un
+ * virement interne — jamais choisi par l'utilisateur mais toujours renseigné,
+ * afin que la colonne « Objet » ne reste pas vide sur le compte crédité/débité
+ * en contrepartie. Inactif (`isActive: false`) pour ne pas polluer le
+ * sélecteur « Objet d'opération » des opérations manuelles.
+ *
+ * Le nom du compte d'origine ne figure plus dans l'objet (qui reste générique,
+ * « CREDIT AUTOMATIQUE » / « DEBIT AUTOMATIQUE ») mais dans le libellé de
+ * l'écriture miroir (cf. appelant, `treasury:createOperation`).
+ */
+export async function getOrCreateTransferCategory(
+  db: DbOrTx,
+  direction: TreasuryDirection,
+): Promise<{ id: number }> {
+  const label = direction === 'ENTREE' ? 'CREDIT AUTOMATIQUE' : 'DEBIT AUTOMATIQUE';
+  const existing = await db.treasuryCategory.findFirst({
+    where: { deletedAt: null, direction, label },
+    select: { id: true },
+  });
+  if (existing) return existing;
+  return db.treasuryCategory.create({
+    data: { label, direction, isActive: false },
+    select: { id: true },
+  });
+}
+
+/** Libellé et code comptable de l'objet d'encaissement d'une échéance héritée. */
+const VERSEMENT_LABEL = 'VERSEMENT';
+const VERSEMENT_CODE = '585';
+
+/**
+ * Retrouve (ou crée) l'objet d'opération « VERSEMENT » (585, sens ENTREE),
+ * imposé pour tout encaissement d'une échéance héritée (souscription sans
+ * convention) — quel que soit le mode de paiement choisi, et sans dépendre de
+ * l'objet éventuellement sélectionné dans le formulaire.
+ */
+export async function getOrCreateVersementCategory(db: DbOrTx): Promise<{ id: number }> {
+  const existing = await db.treasuryCategory.findFirst({
+    where: { deletedAt: null, direction: 'ENTREE', label: VERSEMENT_LABEL },
+    select: { id: true },
+  });
+  if (existing) return existing;
+  return db.treasuryCategory.create({
+    data: { label: VERSEMENT_LABEL, direction: 'ENTREE', accountingCode: VERSEMENT_CODE, isActive: true },
+    select: { id: true },
   });
 }
 

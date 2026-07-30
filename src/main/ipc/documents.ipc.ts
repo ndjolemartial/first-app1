@@ -254,6 +254,8 @@ const importSchema = z.object({
   treasuryOperationId: z.number().int().positive().optional(),
   crmActivityId: z.number().int().positive().optional(),
   socialPublicationId: z.number().int().positive().optional(),
+  itInnovationId: z.number().int().positive().optional(),
+  itInnovationPhase: z.number().int().min(1).max(3).optional(),
 });
 
 const updateGedSchema = z.object({
@@ -707,6 +709,8 @@ export function registerDocumentsIPC(): void {
             treasuryOperationId: d.treasuryOperationId ?? null,
             crmActivityId: d.crmActivityId ?? null,
             socialPublicationId: d.socialPublicationId ?? null,
+            itInnovationId: d.itInnovationId ?? null,
+            itInnovationPhase: d.itInnovationPhase ?? null,
             tags: d.tagIds && d.tagIds.length
               ? { create: d.tagIds.map((tagId) => ({ tagId })) }
               : undefined,

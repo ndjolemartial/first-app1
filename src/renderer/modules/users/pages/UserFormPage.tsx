@@ -47,7 +47,7 @@ const ROLE_OPTIONS = [
   { value: 'AGENT_TECHNIQUE', label: 'Agent Technique' },
   { value: 'AGENT', label: 'Agent' },
   { value: 'RH', label: 'RH / Paie' },
-  { value: 'READONLY', label: 'Lecture seule' },
+  { value: 'READONLY', label: 'WELCOME' },
 ];
 
 // Rôles qu'un AGENT_TECHNIQUE peut attribuer (création / modification).
@@ -55,9 +55,9 @@ const AGENT_TECHNIQUE_MANAGED_ROLES = ['AGENT', 'AGENT_TECHNIQUE', 'READONLY'];
 
 const CIVILITE_OPTIONS = [
   { value: '', label: '— Civilité —' },
-  { value: 'MONSIEUR', label: 'Monsieur' },
-  { value: 'MADAME', label: 'Madame' },
-  { value: 'MADEMOISELLE', label: 'Mademoiselle' },
+  { value: 'Monsieur', label: 'Monsieur' },
+  { value: 'Madame', label: 'Madame' },
+  { value: 'Mademoiselle', label: 'Mademoiselle' },
 ];
 
 const STATUT_CONJUGAL_OPTIONS = [

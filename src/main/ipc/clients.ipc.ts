@@ -18,7 +18,7 @@ const clientBaseSchema = z.object({
   type: z.enum(['INDIVIDUEL', 'ENTREPRISE']).default('INDIVIDUEL'),
   firstName: z.string().optional(),
   lastName: z.string().optional(),
-  civilite: z.enum(['MONSIEUR', 'MADAME', 'MADEMOISELLE']).optional(),
+  civilite: z.enum(['Monsieur', 'Madame', 'Mademoiselle']).optional(),
   statutConjugal: z.enum(['CELIBATAIRE', 'MARIEE', 'CONCUBINAGE', 'DIVORCE', 'VEUF']).optional(),
   entreprise: z.string().optional(),
   registre_de_commerce: z.string().optional(),

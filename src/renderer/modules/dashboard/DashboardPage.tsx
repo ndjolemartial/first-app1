@@ -8,6 +8,7 @@ import {
   Building2,
   Map,
   Building,
+  Handshake,
 } from 'lucide-react';
 import PageLayout from '../../shared/components/layout/PageLayout';
 import Card from '../../shared/components/ui/Card';
@@ -27,6 +28,7 @@ interface DashboardData {
     availableProperties: number | null;
     lotissements: number | null;
     programmes: number | null;
+    apporteurs: number | null;
   };
   slideshow: SlideshowItem[];
   attendanceQr: { url: string; model: string } | null;
@@ -141,6 +143,15 @@ export default function DashboardPage() {
           to: '/programmes',
           icon: <Building className="h-6 w-6 text-indigo-600" />,
           iconBg: 'bg-indigo-50',
+          privileged: true,
+        },
+        {
+          key: 'apporteurs',
+          label: "Apporteurs d'affaire",
+          value: data.counts.apporteurs,
+          to: '/commissions/referrers',
+          icon: <Handshake className="h-6 w-6 text-teal-600" />,
+          iconBg: 'bg-teal-50',
           privileged: true,
         },
       ]

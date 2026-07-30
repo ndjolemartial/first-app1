@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useMemo } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -12,7 +12,13 @@ import VariablePicker from '../components/VariablePicker';
 import TargetSelector, { MessageTarget } from '../components/TargetSelector';
 import { useAuthStore } from '../../../shared/stores/auth.store';
 import { COMM_VARIABLE_GROUPS_FOR_EDITOR } from '../utils/variables';
-import { Mail, MessageSquare, Send, Paperclip, X } from 'lucide-react';
+import { useConvention } from '../../conventions/hooks/useConventions';
+import { useConventionTemplates } from '../../conventions/hooks/useConventionTemplates';
+import { useCountries } from '../../../shared/hooks/useCountries';
+import {
+  filterDefaultConventionTemplates, buildConventionDocumentHtml, conventionExportFileName,
+} from '../../conventions/utils/conventionDocument';
+import { Mail, MessageSquare, Send, Paperclip, X, Info } from 'lucide-react';
 
 /** Taille totale maximale des pièces jointes (25 Mo). */
 const MAX_ATTACH_BYTES = 25 * 1024 * 1024;
@@ -56,6 +62,10 @@ function EmailForm({ target, setTarget, onSuccess }: {
   // Onglet « Particulier » (saisie libre) : pas d'entité → on masque l'insertion
   // de variables (sujet et corps), aucune variable ne pouvant être résolue.
   const [isParticulier, setIsParticulier] = useState(false);
+  // Modèle appliqué (« Utiliser un modèle ») — transmis au serveur pour qu'il
+  // sache que le message est issu d'un modèle (conserve alors la signature
+  // SMTP existante au lieu de la signature personnelle, cf. communication.ipc.ts).
+  const [templateId, setTemplateId] = useState<number | null>(null);
   // En mode Particulier, l'envoi se fait « en tant que » l'utilisateur connecté.
   const me = useAuthStore((s) => s.user);
   const senderName = (me?.nomCommercial || `${me?.firstName ?? ''} ${me?.lastName ?? ''}`.trim()) || '—';
@@ -64,9 +74,29 @@ function EmailForm({ target, setTarget, onSuccess }: {
   const [files, setFiles] = useState<File[]>([]);
   const totalBytes = files.reduce((s, f) => s + f.size, 0);
   const tooBig = totalBytes > MAX_ATTACH_BYTES;
+  // Force le remontage de l'input fichier natif à chaque sélection (cf. son
+  // onChange) plutôt que de compter sur la seule réinitialisation de `value`.
+  const [fileInputKey, setFileInputKey] = useState(0);
+  // Erreur de résolution du chemin disque d'une pièce jointe (voir onSubmit) —
+  // distincte de l'erreur d'envoi renvoyée par l'IPC.
+  const [attachError, setAttachError] = useState<string | null>(null);
   // Copie (CC) / copie cachée (BCC) — mode Particulier uniquement.
   const [cc, setCc] = useState('');
   const [bcc, setBcc] = useState('');
+  const token = useAuthStore((s) => s.token);
+
+  // Cible « Convention » : le PDF du document est joint automatiquement à
+  // l'email (mêmes modèle/variables que « Conventions → Document »).
+  const conventionId = target?.targets?.conventionId;
+  const { data: conventionRes } = useConvention(conventionId ?? 0);
+  const { data: conventionTemplatesRes } = useConventionTemplates();
+  const { data: countriesRes } = useCountries();
+  const countriesMap = useMemo<Record<string, string>>(() => {
+    const list = (countriesRes?.data ?? []) as Array<{ isoCode: string; name: string }>;
+    const map: Record<string, string> = {};
+    for (const c of list) map[c.isoCode] = c.name;
+    return map;
+  }, [countriesRes]);
 
   const { register, handleSubmit, setValue, getValues, control, formState: { errors, isSubmitting } } = useForm({
     resolver: zodResolver(emailSchema),
@@ -100,19 +130,61 @@ function EmailForm({ target, setTarget, onSuccess }: {
     const vars = target?.variables;
     if (t.subject) setValue('subject', vars ? substituteVariables(t.subject, vars) : t.subject);
     setValue('body', vars ? substituteVariables(t.body, vars) : t.body);
+    setTemplateId(t.id);
   };
 
   const onSubmit = async (data: any) => {
     if (tooBig) return;
-    // Pièces jointes transmises par chemin de fichier local.
-    const attachments = files.length
-      ? files.map((f) => ({ path: window.electron.documents.pathForFile(f), name: f.name }))
-      : undefined;
+    setAttachError(null);
+    // Pièces jointes transmises par chemin de fichier local. `pathForFile`
+    // (Electron webUtils) peut renvoyer une chaîne vide si le fichier n'est
+    // pas réellement présent sur le disque (ex. sélection non aboutie) —
+    // on bloque l'envoi plutôt que de transmettre un chemin invalide.
+    let attachments: { path: string; name: string }[] | undefined;
+    if (files.length) {
+      attachments = files.map((f) => ({ path: window.electron.documents.pathForFile(f), name: f.name }));
+      const unresolved = attachments.find((a) => !a.path);
+      if (unresolved) {
+        setAttachError(`Impossible de localiser le fichier « ${unresolved.name} » sur le disque. Retirez-le puis rajoutez-le.`);
+        return;
+      }
+    }
+
+    // Cible « Convention » : génère le PDF du document (même modèle/variables
+    // que « Conventions → Document ») et le joint à l'email.
+    let conventionAttachment: { name: string; base64: string } | undefined;
+    if (conventionId) {
+      const convention = conventionRes?.data;
+      if (!convention) {
+        setAttachError("Convention introuvable — impossible de générer la pièce jointe.");
+        return;
+      }
+      const candidateTemplates = filterDefaultConventionTemplates(conventionTemplatesRes?.data ?? [], convention);
+      const conventionTemplate = candidateTemplates[0] ?? null;
+      if (!conventionTemplate) {
+        setAttachError("Aucun modèle par défaut n'est défini pour cette convention — configurez-en un (Conventions → Modèles) pour pouvoir joindre le document.");
+        return;
+      }
+      const { bodyHtml, headerTemplate, footerTemplate, headerMm, footerMm } =
+        buildConventionDocumentHtml(convention, conventionTemplate, countriesMap);
+      const fileName = conventionExportFileName(convention);
+      const rendered = await window.electron.documentExport.renderDocumentPdf(token!, {
+        fileName, bodyHtml, headerTemplate, footerTemplate, headerMm, footerMm,
+      });
+      if (!rendered.success || !rendered.data) {
+        setAttachError(`Échec de la génération du PDF de la convention : ${String(rendered.error ?? 'erreur inconnue')}`);
+        return;
+      }
+      conventionAttachment = { name: `${fileName}.pdf`, base64: rendered.data.base64 };
+    }
+
     const r = await sendEmail.mutateAsync({
       ...data,
       ...(target ? target.targets : {}),
+      ...(conventionAttachment ? { conventionAttachment } : {}),
       // Particulier : envoi avec l'identité (email + nom commercial) de l'utilisateur.
       ...(isParticulier ? { senderSelf: true } : {}),
+      ...(templateId ? { templateId } : {}),
       ...(attachments ? { attachments } : {}),
       ...(cc.trim() ? { cc } : {}),
       ...(bcc.trim() ? { bcc } : {}),
@@ -128,6 +200,12 @@ function EmailForm({ target, setTarget, onSuccess }: {
         onChange={setTarget}
         onParticulierChange={setIsParticulier}
       />
+      {conventionId && (
+        <p className="flex items-center gap-1.5 text-xs text-indigo-600 bg-indigo-50 px-3 py-2 rounded-lg">
+          <Paperclip className="h-3.5 w-3.5 shrink-0" />
+          Le document PDF de la convention sera joint automatiquement à l'email.
+        </p>
+      )}
       {isParticulier && (
         <div>
           <label className="block text-xs font-medium text-slate-700 mb-1">Expéditeur</label>
@@ -226,20 +304,25 @@ function EmailForm({ target, setTarget, onSuccess }: {
             <Paperclip className="h-4 w-4" />
             Ajouter des fichiers
             <input
+              key={fileInputKey}
               type="file"
               multiple
               tabIndex={-1}
               className="hidden"
               onChange={(e) => {
                 if (e.target.files?.length) setFiles((prev) => [...prev, ...Array.from(e.target.files!)]);
-                e.target.value = '';
+                // Remonte un input natif « vierge » plutôt que de réinitialiser
+                // `e.target.value` : après un retrait de fichier (bouton
+                // Retirer), l'ancien input pouvait rester bloqué (le dialogue
+                // de sélection ne se rouvrait plus) sans rafraîchir la page.
+                setFileInputKey((k) => k + 1);
               }}
             />
           </label>
           {files.length > 0 && (
             <div className="mt-2 space-y-1">
               {files.map((f, i) => (
-                <div key={`${f.name}-${i}`} className="flex items-center gap-2 rounded-md border border-slate-100 px-2 py-1.5 text-sm">
+                <div key={`${f.name}-${f.size}-${i}`} className="flex items-center gap-2 rounded-md border border-slate-100 px-2 py-1.5 text-sm">
                   <Paperclip className="h-3.5 w-3.5 shrink-0 text-slate-400" />
                   <span className="flex-1 truncate text-slate-700">{f.name}</span>
                   <span className="text-xs text-slate-400">{formatBytes(f.size)}</span>
@@ -259,6 +342,9 @@ function EmailForm({ target, setTarget, onSuccess }: {
             <p className="text-xs text-red-500 mt-1">La taille totale des pièces jointes dépasse 25 Mo.</p>
           )}
       </div>
+      {attachError && (
+        <p className="text-sm text-red-600 bg-red-50 px-3 py-2 rounded-lg">{attachError}</p>
+      )}
       {sendEmail.data && !sendEmail.data.success && (
         <p className="text-sm text-red-600 bg-red-50 px-3 py-2 rounded-lg">{String(sendEmail.data.error)}</p>
       )}
@@ -332,6 +418,12 @@ function PhoneForm({ kind, target, setTarget, onSuccess }: {
   return (
     <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
       <TargetSelector channel={kind} value={target} onChange={setTarget} onParticulierChange={setIsParticulier} />
+      {kind === 'WHATSAPP' && target?.targets?.conventionId && (
+        <p className="flex items-center gap-1.5 text-xs text-amber-700 bg-amber-50 px-3 py-2 rounded-lg">
+          <Info className="h-3.5 w-3.5 shrink-0" />
+          Le document PDF de la convention n'est pas encore joint aux envois WhatsApp (nécessite un hébergement public des fichiers, non disponible actuellement) — seul le message sera envoyé.
+        </p>
+      )}
       {!isParticulier && templates.length > 0 && (
         <div>
           <label className="block text-xs font-medium text-slate-700 mb-1">Utiliser un modèle</label>

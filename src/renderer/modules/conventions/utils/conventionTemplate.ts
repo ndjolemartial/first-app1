@@ -543,8 +543,8 @@ export function resolveConventionVariables(
  *
  * Les blocs conditionnels `{{#si …}}…{{/si}}` sont résolus avant la
  * substitution des variables. Les comparaisons se font sur les valeurs
- * brutes (ex. « MONSIEUR »), tandis que la substitution finale affiche les
- * civilités formatées (« Monsieur »).
+ * brutes stockées en base (ex. « Monsieur »), identiques au format affiché
+ * après substitution (formatCivilite est désormais idempotent sur ce format).
  */
 export function mergeTemplate(
   html: string | null | undefined,

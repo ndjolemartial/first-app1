@@ -33,7 +33,7 @@ const ROLE_OPTIONS: Array<{ value: string; label: string }> = [
   { value: 'ASSISTANTE_DIRECTION', label: 'Assistante de direction' },
   { value: 'AGENT_TECHNIQUE',      label: 'Agent Technique' },
   { value: 'AGENT',                label: 'Agent' },
-  { value: 'READONLY',             label: 'Lecture seule' },
+  { value: 'READONLY',             label: 'WELCOME' },
 ];
 
 /** Composant d'aperçu d'un média stocké localement (chargement base64 via IPC). */

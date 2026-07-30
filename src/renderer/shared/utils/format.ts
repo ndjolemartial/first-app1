@@ -29,9 +29,10 @@ export function formatCurrency(
 }
 
 /**
- * Formate une valeur de civilité stockée en majuscules (`MONSIEUR`,
- * `MADAME`, `MADEMOISELLE`) pour l'affichage : première lettre en majuscule,
- * reste en minuscules (« Monsieur », « Madame », « Mademoiselle »).
+ * Formate une valeur de civilité pour l'affichage : première lettre en
+ * majuscule, reste en minuscules (« Monsieur », « Madame », « Mademoiselle »).
+ * Les valeurs sont déjà stockées sous ce format en base — cette fonction reste
+ * idempotente et sert surtout de filet pour d'anciennes données/saisies libres.
  * Retourne une chaîne vide pour une valeur absente.
  */
 export function formatCivilite(value?: string | null): string {

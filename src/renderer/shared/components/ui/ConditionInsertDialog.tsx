@@ -119,7 +119,7 @@ export default function ConditionInsertDialog({
 
         <Input
           label="Valeur attendue"
-          placeholder="Ex : MADAME, ENTREPRISE, SOLDE…"
+          placeholder="Ex : Madame, ENTREPRISE, SOLDE…"
           value={expected}
           onChange={(e) => setExpected(e.target.value)}
         />
@@ -128,7 +128,7 @@ export default function ConditionInsertDialog({
           (ex. 0 ou 1500000) : la comparaison est numérique et ignore le
           formatage (« 0 F CFA »). Pour les énumérations (civilité, type
           d'attestation…), la comparaison est du texte sensible à la casse —
-          utilisez la valeur exacte (ex. MADAME et non « Madame »).
+          utilisez la valeur exacte (ex. Madame et non « MADAME »).
         </p>
 
         <div>

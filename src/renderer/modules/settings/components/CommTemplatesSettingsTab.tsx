@@ -13,10 +13,15 @@ import {
   useCreateTemplate,
   useUpdateTemplate,
   useDeleteTemplate,
+  useMyTemplatePermissions,
 } from '../../communication/hooks/useCommunication';
 import VariablePicker from '../../communication/components/VariablePicker';
 import { COMM_VARIABLE_GROUPS_FOR_EDITOR } from '../../communication/utils/variables';
-import { Mail, MessageSquare, Plus, Edit, Trash2, Save, X } from 'lucide-react';
+import { useAuthStore } from '../../../shared/stores/auth.store';
+import ManualTemplateEditorsModal from './ManualTemplateEditorsModal';
+import { Mail, MessageSquare, Plus, Edit, Trash2, Save, X, Users } from 'lucide-react';
+
+const SETTINGS_ADMIN_ROLES = ['SUPER_ADMIN', 'ADMIN'];
 
 const schema = z.object({
   name: z.string().min(1, 'Nom requis'),
@@ -34,11 +39,14 @@ function TemplateForm({
   onSave,
   onCancel,
   loading,
+  manualOnly,
 }: {
   initial?: any;
   onSave: (data: any) => void;
   onCancel: () => void;
   loading: boolean;
+  /** Utilisateur désigné sans rôle privilégié : le type est verrouillé sur « manuel ». */
+  manualOnly?: boolean;
 }) {
   const { register, handleSubmit, watch, setValue, getValues, control, formState: { errors } } = useForm<z.input<typeof schema>, any, FormData>({
     resolver: zodResolver(schema),
@@ -118,16 +126,36 @@ function TemplateForm({
       </div>
       <div>
         <label className="block text-xs font-medium text-slate-700 mb-1">Type de modèle *</label>
-        <select
-          {...register('usageType')}
-          className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
-        >
-          <option value="MANUEL">Type manuel — envois manuels</option>
-          <option value="AUTO">Type auto — relances automatiques</option>
-        </select>
-        <p className="text-xs text-slate-400 mt-1">
-          Les modèles « Type auto » ne sont proposés dans l'envoi manuel qu'aux rôles SUPER ADMIN, ADMIN, MANAGER et Comptable.
-        </p>
+        {manualOnly ? (
+          <>
+            <input
+              type="hidden"
+              {...register('usageType')}
+              value="MANUEL"
+            />
+            <input
+              disabled
+              value="Type manuel — envois manuels"
+              className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm bg-slate-50 text-slate-500"
+            />
+            <p className="text-xs text-slate-400 mt-1">
+              Votre accès est limité aux modèles de type manuel.
+            </p>
+          </>
+        ) : (
+          <>
+            <select
+              {...register('usageType')}
+              className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            >
+              <option value="MANUEL">Type manuel — envois manuels</option>
+              <option value="AUTO">Type auto — relances automatiques</option>
+            </select>
+            <p className="text-xs text-slate-400 mt-1">
+              Les modèles « Type auto » ne sont proposés dans l'envoi manuel qu'aux rôles SUPER ADMIN, ADMIN, MANAGER et Comptable.
+            </p>
+          </>
+        )}
       </div>
       {channel === 'EMAIL' && (
         <div>
@@ -214,6 +242,16 @@ export default function CommTemplatesSettingsTab() {
   const [editing, setEditing] = useState<any>(null);
   const [creating, setCreating] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<any>(null);
+  const [managingAccess, setManagingAccess] = useState(false);
+
+  const role = useAuthStore((s) => s.user?.role) ?? '';
+  const isSettingsAdmin = SETTINGS_ADMIN_ROLES.includes(role);
+  const { data: permRes } = useMyTemplatePermissions();
+  // isPrivileged : accès complet (auto + manuel) via le rôle (SUPER_ADMIN/ADMIN/
+  // MANAGER et équivalents). canManageManual : peut consulter/créer/modifier
+  // les modèles manuels — vrai aussi pour un utilisateur désigné sans rôle privilégié.
+  const isPrivileged = permRes?.data?.isPrivileged ?? isSettingsAdmin;
+  const canManageManual = permRes?.data?.canManageManual ?? isSettingsAdmin;
 
   const { data: res, isLoading } = useTemplates(channelFilter || undefined);
   const templates = res?.data ?? [];
@@ -247,9 +285,22 @@ export default function CommTemplatesSettingsTab() {
             Les variables <span className="font-mono text-xs">{'{{firstName}}'}</span>, <span className="font-mono text-xs">{'{{dueDate}}'}</span>… sont remplacées à l'envoi.
           </p>
         </div>
-        <Button icon={<Plus className="h-4 w-4" />} onClick={() => setCreating(true)}>
-          Nouveau modèle
-        </Button>
+        <div className="flex gap-2 shrink-0">
+          {isSettingsAdmin && (
+            <Button
+              variant="secondary"
+              icon={<Users className="h-4 w-4" />}
+              onClick={() => setManagingAccess(true)}
+            >
+              Gérer les accès
+            </Button>
+          )}
+          {canManageManual && (
+            <Button icon={<Plus className="h-4 w-4" />} onClick={() => setCreating(true)}>
+              Nouveau modèle
+            </Button>
+          )}
+        </div>
       </div>
 
       {/* Filtre canal */}
@@ -277,6 +328,7 @@ export default function CommTemplatesSettingsTab() {
             onSave={handleCreate}
             onCancel={() => setCreating(false)}
             loading={createTemplate.isPending}
+            manualOnly={!isPrivileged}
           />
         </Card>
       )}
@@ -299,6 +351,7 @@ export default function CommTemplatesSettingsTab() {
                     onSave={handleUpdate}
                     onCancel={() => setEditing(null)}
                     loading={updateTemplate.isPending}
+                    manualOnly={!isPrivileged}
                   />
                 </>
               ) : (
@@ -332,10 +385,14 @@ export default function CommTemplatesSettingsTab() {
                     )}
                   </div>
                   <div className="flex gap-2 shrink-0">
-                    <Button variant="secondary" size="sm" icon={<Edit className="h-4 w-4" />} onClick={() => setEditing(t)}>
-                      Modifier
-                    </Button>
-                    <Button variant="danger" size="sm" icon={<Trash2 className="h-4 w-4" />} onClick={() => setDeleteTarget(t)} />
+                    {(isPrivileged || (canManageManual && t.usageType === 'MANUEL')) && (
+                      <Button variant="secondary" size="sm" icon={<Edit className="h-4 w-4" />} onClick={() => setEditing(t)}>
+                        Modifier
+                      </Button>
+                    )}
+                    {isPrivileged && (
+                      <Button variant="danger" size="sm" icon={<Trash2 className="h-4 w-4" />} onClick={() => setDeleteTarget(t)} />
+                    )}
                   </div>
                 </div>
               )}
@@ -351,6 +408,10 @@ export default function CommTemplatesSettingsTab() {
         onConfirm={handleDelete}
         onClose={() => setDeleteTarget(null)}
       />
+
+      {isSettingsAdmin && (
+        <ManualTemplateEditorsModal open={managingAccess} onClose={() => setManagingAccess(false)} />
+      )}
     </div>
   );
 }

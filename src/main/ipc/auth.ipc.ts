@@ -17,7 +17,7 @@ const updateProfileSchema = z.object({
   mobile: z.string().optional(),
   avatar: z.string().optional(),
   idNumber: z.string().optional(),
-  civilite: z.enum(['MONSIEUR', 'MADAME', 'MADEMOISELLE']).optional(),
+  civilite: z.enum(['Monsieur', 'Madame', 'Mademoiselle']).optional(),
   statutConjugal: z.enum(['CELIBATAIRE', 'MARIEE', 'CONCUBINAGE', 'DIVORCE', 'VEUF']).optional(),
   residence: z.string().optional(),
   // Signature personnelle d'envoi de messages (module Communication).

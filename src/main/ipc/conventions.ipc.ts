@@ -951,7 +951,7 @@ export function registerConventionsIPC(): void {
     try {
       const session = getSession(token);
       if (!session) return { success: false, error: 'Session expirée' };
-      checkRole(session, ['SUPER_ADMIN', 'ADMIN']);
+      checkWriteRole(session, WRITE_ROLES);
       const db = getDb();
       await db.$transaction(async (tx) => {
         const invoices = await tx.invoice.findMany({ where: { conventionId: id }, select: { id: true } });

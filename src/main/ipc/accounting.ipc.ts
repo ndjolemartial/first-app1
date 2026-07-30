@@ -6,7 +6,7 @@ import { getSession, checkRole } from '../services/auth.service';
 import { htmlToPdf, openPrintPreview } from '../services/pdf.service';
 import { resolveInvoiceTemplate } from './invoice-templates.ipc';
 import { getSettings, SettingsKeys } from '../services/settings.service';
-import { recordTreasuryOperation } from '../services/treasury.service';
+import { recordTreasuryOperation, getOrCreateVersementCategory } from '../services/treasury.service';
 import { getDefaultRates, commissionTypeAndRate, accrueCollectionCommission } from '../services/commission.service';
 import logger from '../utils/logger';
 import { z } from 'zod';
@@ -1468,6 +1468,11 @@ export function registerAccountingIPC(): void {
         },
       });
       if (!installment) return { success: false, error: 'Échéance introuvable' };
+      // Échéance héritée (souscription sans convention) : l'encaissement est
+      // toujours rattaché à l'objet « VERSEMENT (585) », quel que soit le mode
+      // de paiement choisi — l'objet éventuellement sélectionné dans le
+      // formulaire est ignoré pour ces échéances.
+      const isLegacyInstallment = !installment.conventionId;
       if (installment.status === 'PAYE') return { success: false, error: 'Échéance déjà payée' };
       if (installment.status === 'ANNULE') return { success: false, error: 'Échéance annulée' };
       // Statuts de convention bloquant l'encaissement d'une échéance :
@@ -1612,6 +1617,7 @@ export function registerAccountingIPC(): void {
         const applied: Array<{ installmentId: number; newPaid: number; fullyPaid: boolean; invoiceId: number }> = [];
         let currentUpdated: any = null;
         let currentInvoiceId: number | null = null;
+        const forcedCategoryId = isLegacyInstallment ? (await getOrCreateVersementCategory(tx)).id : null;
 
         for (const p of plan) {
           const invStatus = p.fullyPaid ? 'PAYEE' : 'PARTIEL';
@@ -1697,7 +1703,7 @@ export function registerAccountingIPC(): void {
               amount: p.apply,
               label: `Échéance n°${p.installmentNumber} — ${p.label}${p.fullyPaid ? '' : ' (partiel)'}`,
               operationDate: paidAt,
-              categoryId: d.categoryId ?? null,
+              categoryId: isLegacyInstallment ? forcedCategoryId : (d.categoryId ?? null),
               paymentMethod: d.method,
               paymentRef: d.paymentRef,
               source: 'ECHEANCE',

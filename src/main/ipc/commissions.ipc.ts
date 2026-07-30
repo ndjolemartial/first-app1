@@ -9,6 +9,12 @@ import {
   computeCommissionAmount,
 } from '../services/commission.service';
 import { recordTreasuryOperation } from '../services/treasury.service';
+import {
+  REFERRER_FIELD_LABELS,
+  buildEntityTimeline,
+  diffChangedFields,
+  recordModification,
+} from '../services/timeline.service';
 import logger from '../utils/logger';
 import { z } from 'zod';
 
@@ -23,14 +29,35 @@ const ADMIN_ROLES = ['SUPER_ADMIN', 'ADMIN'];
 /** Rôles disposant d'une vue globale des commissions (toutes, sans filtre). */
 const FULL_VIEW_ROLES = ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ACCOUNTANT'];
 
-/**
- * Rôles autorisés à consulter l'interface Apporteurs d'affaire.
- * ASSISTANTE_DIRECTION peut consulter (lecture seule) mais pas créer/modifier
- * — les handlers d'écriture restent passés par `checkCommissionWriteRole`.
- */
-const REFERRERS_VIEW_ROLES = ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ACCOUNTANT', 'ASSISTANTE_DIRECTION'];
 function hasFullView(role: string): boolean {
   return FULL_VIEW_ROLES.includes(role);
+}
+
+/**
+ * Apporteurs d'affaire — permissions dédiées, distinctes de celles des
+ * commissions elles-mêmes. Vue complète (liste/fiche non filtrée) et
+ * modification : SUPER_ADMIN, ADMIN, MANAGER, ACCOUNTANT. Suppression :
+ * SUPER_ADMIN, ADMIN, MANAGER uniquement (ACCOUNTANT en est exclu). Tous les
+ * autres rôles (dont ASSISTANTE_DIRECTION) n'ont accès qu'aux apporteurs dont
+ * ils sont l'utilisateur référent (`assignedToId`), en lecture seule — cf.
+ * `referrerScopeWhere`. Contrôlé par rôle exact (`checkExactRole`), sans
+ * l'équivalence ACCOUNTANT/ASSISTANTE_DIRECTION → MANAGER de `checkRole`
+ * (qui accorderait sinon la suppression à ACCOUNTANT et la vue complète à
+ * ASSISTANTE_DIRECTION).
+ */
+const REFERRERS_FULL_VIEW_ROLES = ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ACCOUNTANT'];
+const REFERRERS_WRITE_ROLES = REFERRERS_FULL_VIEW_ROLES;
+const REFERRERS_DELETE_ROLES = ['SUPER_ADMIN', 'ADMIN', 'MANAGER'];
+
+/** Vérifie un rôle exact, sans l'équivalence ACCOUNTANT/ASSISTANTE_DIRECTION → MANAGER de `checkRole`. */
+function checkExactRole(session: { role: string }, allowed: string[]): void {
+  if (!allowed.includes(session.role)) throw new Error('Permission insuffisante');
+}
+
+/** Restreint la liste/fiche des apporteurs aux rôles sans vue complète : uniquement ceux dont ils sont l'utilisateur référent. */
+function referrerScopeWhere(session: { userId: number; role: string }): any {
+  if (REFERRERS_FULL_VIEW_ROLES.includes(session.role)) return {};
+  return { assignedToId: session.userId };
 }
 
 /**
@@ -109,6 +136,7 @@ const updateCommissionSchema = z.object({
 const referrerSchema = z.object({
   firstName: z.string().min(1, 'Prénom requis'),
   lastName: z.string().min(1, 'Nom requis'),
+  civilite: z.preprocess((v) => (v === '' ? null : v), z.enum(['Monsieur', 'Madame', 'Mademoiselle']).nullable().optional()),
   companyName: z.string().optional(),
   email: z.string().email('Email invalide').optional().or(z.literal('')),
   phone: z.string().optional(),
@@ -120,7 +148,14 @@ const referrerSchema = z.object({
   bankBic: z.string().optional(),
   notes: z.string().optional(),
   isActive: z.boolean().optional(),
+  // Utilisateur interne référent de cet apporteur (facultatif).
+  assignedToId: z.number().int().positive().nullable().optional(),
 });
+
+// Sélection légère pour la relation utilisateur référent incluse.
+const USER_BRIEF_SELECT = {
+  id: true, firstName: true, lastName: true, email: true, role: true,
+} as const;
 
 const settingsSchema = z.object({
   saleRate: z.number().min(0).max(100),
@@ -790,6 +825,12 @@ export function registerCommissionsIPC(): void {
       if (beneficiaryType !== 'USER' && beneficiaryType !== 'REFERRER') {
         return { success: false, error: 'Type de bénéficiaire invalide' };
       }
+      // Commissions d'un apporteur d'affaire : réservées à la vue complète des
+      // apporteurs (SUPER_ADMIN/ADMIN/MANAGER/ACCOUNTANT) — les autres rôles,
+      // même s'ils sont l'utilisateur référent de l'apporteur, n'y ont pas accès.
+      if (beneficiaryType === 'REFERRER') {
+        checkExactRole(session, REFERRERS_FULL_VIEW_ROLES);
+      }
       const db = getDb();
 
       let beneficiary: any = null;
@@ -834,11 +875,11 @@ export function registerCommissionsIPC(): void {
     try {
       const session = getSession(token);
       if (!session) return { success: false, error: 'Session expirée' };
-      // Consultation des apporteurs : ADMIN, SUPER_ADMIN, MANAGER, ACCOUNTANT,
-      // ASSISTANTE_DIRECTION. AGENT et READONLY restent exclus.
-      checkRole(session, REFERRERS_VIEW_ROLES);
+      // Consultation ouverte à tous les rôles authentifiés : vue complète pour
+      // REFERRERS_FULL_VIEW_ROLES, restreinte aux apporteurs dont l'utilisateur
+      // est le référent pour les autres (cf. referrerScopeWhere).
       const db = getDb();
-      const where: any = { deletedAt: null };
+      const where: any = { deletedAt: null, ...referrerScopeWhere(session) };
       if (filters.isActive !== undefined && filters.isActive !== '') where.isActive = filters.isActive === true || filters.isActive === 'true';
       if (filters.search) {
         where.OR = [
@@ -855,7 +896,10 @@ export function registerCommissionsIPC(): void {
           skip: (page - 1) * limit,
           take: limit,
           orderBy: { createdAt: 'desc' },
-          include: { _count: { select: { commissions: true } } },
+          include: {
+            _count: { select: { commissions: true } },
+            assignedTo: { select: USER_BRIEF_SELECT },
+          },
         }),
         db.businessReferrer.count({ where }),
       ]);
@@ -870,17 +914,43 @@ export function registerCommissionsIPC(): void {
     try {
       const session = getSession(token);
       if (!session) return { success: false, error: 'Session expirée' };
-      checkRole(session, REFERRERS_VIEW_ROLES);
       const db = getDb();
       const referrer = await db.businessReferrer.findUnique({
         where: { id },
         include: {
           documents: { where: { deletedAt: null }, orderBy: { uploadedAt: 'desc' } },
+          assignedTo: { select: USER_BRIEF_SELECT },
+          _count: { select: { commissions: true } },
         },
       });
       if (!referrer || referrer.deletedAt) return { success: false, error: 'Apporteur d\'affaire introuvable' };
+      if (!REFERRERS_FULL_VIEW_ROLES.includes(session.role) && referrer.assignedToId !== session.userId) {
+        return { success: false, error: 'Apporteur d\'affaire inaccessible' };
+      }
       return ser({ success: true, data: referrer });
     } catch (error: any) {
+      return { success: false, error: error.message };
+    }
+  });
+
+  // ── Fiche de suivi chronologique ────────────────────────────────────
+  ipcMain.handle('commissions:getReferrerTimeline', async (_event, { token, id }: any) => {
+    try {
+      const session = getSession(token);
+      if (!session) return { success: false, error: 'Session expirée' };
+      const db = getDb();
+      const referrer = await db.businessReferrer.findUnique({
+        where: { id, deletedAt: null },
+        select: { id: true, createdAt: true, assignedToId: true },
+      });
+      if (!referrer) return { success: false, error: 'Apporteur d\'affaire introuvable' };
+      if (!REFERRERS_FULL_VIEW_ROLES.includes(session.role) && referrer.assignedToId !== session.userId) {
+        return { success: false, error: 'Apporteur d\'affaire inaccessible' };
+      }
+      const timeline = await buildEntityTimeline(db, 'REFERRER', id, referrer.createdAt);
+      return { success: true, data: ser(timeline) };
+    } catch (error: any) {
+      logger.error('commissions:getReferrerTimeline error', error.message);
       return { success: false, error: error.message };
     }
   });
@@ -889,7 +959,7 @@ export function registerCommissionsIPC(): void {
     try {
       const session = getSession(token);
       if (!session) return { success: false, error: 'Session expirée' };
-      checkCommissionWriteRole(session, WRITE_ROLES);
+      checkExactRole(session, REFERRERS_WRITE_ROLES);
       const parsed = referrerSchema.safeParse(payload);
       if (!parsed.success) return { success: false, error: parsed.error.format() };
       const db = getDb();
@@ -909,14 +979,23 @@ export function registerCommissionsIPC(): void {
     try {
       const session = getSession(token);
       if (!session) return { success: false, error: 'Session expirée' };
-      checkCommissionWriteRole(session, WRITE_ROLES);
+      checkExactRole(session, REFERRERS_WRITE_ROLES);
       const parsed = referrerSchema.partial().safeParse(payload);
       if (!parsed.success) return { success: false, error: parsed.error.format() };
       const db = getDb();
+      const before = await db.businessReferrer.findUnique({ where: { id } });
+      if (!before) return { success: false, error: 'Apporteur d\'affaire introuvable' };
       const d = parsed.data;
       const data: any = { ...d };
       if (d.email !== undefined) data.email = d.email || null;
       const referrer = await db.businessReferrer.update({ where: { id }, data });
+      const changedFields = diffChangedFields(before, data);
+      if (changedFields.length) {
+        await recordModification(db, {
+          entityType: 'REFERRER', entityId: id,
+          changedFields, labels: REFERRER_FIELD_LABELS, userId: session.userId,
+        });
+      }
       return ser({ success: true, data: referrer });
     } catch (error: any) {
       logger.error('commissions:updateReferrer error', error.message);
@@ -928,7 +1007,7 @@ export function registerCommissionsIPC(): void {
     try {
       const session = getSession(token);
       if (!session) return { success: false, error: 'Session expirée' };
-      checkCommissionWriteRole(session, ADMIN_ROLES);
+      checkExactRole(session, REFERRERS_DELETE_ROLES);
       const db = getDb();
       const activeCommissions = await db.commission.count({
         where: { referrerId: id, deletedAt: null, status: { not: 'ANNULEE' } },

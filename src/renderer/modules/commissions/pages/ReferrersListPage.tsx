@@ -4,13 +4,13 @@ import PageLayout from '../../../shared/components/layout/PageLayout';
 import Button from '../../../shared/components/ui/Button';
 import Badge from '../../../shared/components/ui/Badge';
 import Select from '../../../shared/components/ui/Select';
-import ConfirmDialog from '../../../shared/components/ui/ConfirmDialog';
 import { SkeletonTable } from '../../../shared/components/ui/Skeleton';
 import { useAuthStore } from '../../../shared/stores/auth.store';
-import { useReferrers, useDeleteReferrer } from '../hooks/useCommissions';
-import { referrerName, COMMISSION_WRITE_ROLES, COMMISSION_ADMIN_ROLES } from '../utils/commissions.utils';
+import { useReferrers } from '../hooks/useCommissions';
+import { referrerName, COMMISSION_WRITE_ROLES, COMMISSION_REFERRERS_FULL_VIEW_ROLES, COMMISSION_REFERRERS_EXPORT_ROLES } from '../utils/commissions.utils';
+import { formatPersonName } from '../../../shared/utils/format';
 import ExportMenu, { ExportColumn } from '../../../shared/components/ExportMenu';
-import { Plus, Search, Pencil, Trash2, Receipt } from 'lucide-react';
+import { Plus, Search, Eye, Receipt } from 'lucide-react';
 
 const ACTIVE_OPTIONS = [
   { value: '', label: 'Tous' },
@@ -19,28 +19,27 @@ const ACTIVE_OPTIONS = [
 ];
 
 const EXPORT_COLUMNS: ExportColumn[] = [
-  { header: 'Apporteur',   cell: (r) => referrerName(r) },
-  { header: 'Email',       cell: (r) => r.email },
-  { header: 'Téléphone 1', cell: (r) => r.phone },
-  { header: 'Téléphone 2', cell: (r) => r.mobile },
-  { header: 'Ville',       cell: (r) => r.city },
-  { header: 'Commissions', cell: (r) => r._count?.commissions ?? 0 },
-  { header: 'Statut',      cell: (r) => (r.isActive ? 'Actif' : 'Inactif') },
+  { header: 'Apporteur',            cell: (r) => referrerName(r) },
+  { header: 'Email',                cell: (r) => r.email },
+  { header: 'Téléphone 1',          cell: (r) => r.phone },
+  { header: 'Téléphone 2',          cell: (r) => r.mobile },
+  { header: 'Ville',                cell: (r) => r.city },
+  { header: 'Utilisateur référent', cell: (r) => (r.assignedTo ? formatPersonName(r.assignedTo) : '—') },
+  { header: 'Commissions',          cell: (r) => r._count?.commissions ?? 0 },
+  { header: 'Statut',               cell: (r) => (r.isActive ? 'Actif' : 'Inactif') },
 ];
 
 export default function ReferrersListPage() {
   const navigate = useNavigate();
   const role = useAuthStore((s) => s.user?.role ?? '');
   const canManage = COMMISSION_WRITE_ROLES.includes(role);
-  const canDelete = COMMISSION_ADMIN_ROLES.includes(role);
+  const canViewCommissions = COMMISSION_REFERRERS_FULL_VIEW_ROLES.includes(role);
+  const canExport = COMMISSION_REFERRERS_EXPORT_ROLES.includes(role);
 
   const [search, setSearch] = useState('');
   const [active, setActive] = useState('');
   const [page, setPage] = useState(1);
   const limit = 20;
-
-  const [deleteTarget, setDeleteTarget] = useState<any>(null);
-  const deleteReferrer = useDeleteReferrer();
 
   const token = useAuthStore((s) => s.token)!;
 
@@ -58,30 +57,24 @@ export default function ReferrersListPage() {
   const total = res?.total ?? 0;
   const totalPages = Math.ceil(total / limit);
 
-  const handleDelete = async () => {
-    if (!deleteTarget) return;
-    const r = await deleteReferrer.mutateAsync(deleteTarget.id);
-    if (r.success) setDeleteTarget(null);
-  };
-
-  const deleteError = deleteReferrer.data && !deleteReferrer.data.success ? deleteReferrer.data.error : null;
-
   return (
     <PageLayout
       title="Apporteurs d'affaire"
-      breadcrumbs={[{ label: 'Commissions', to: '/commissions' }, { label: 'Apporteurs d\'affaire' }]}
+      breadcrumbs={[{ label: 'Tierce partie' }, { label: 'Apporteurs d\'affaire' }]}
       actions={
         <div className="flex gap-2">
-          <ExportMenu
-            fileName="apporteurs-affaire"
-            title="Liste des apporteurs d'affaire"
-            subtitle={filterSummary}
-            columns={EXPORT_COLUMNS}
-            fetchRows={async () => {
-              const r = await window.electron.commissions.listReferrers(token, filters, 1, 100000);
-              return r.success ? r.data ?? [] : [];
-            }}
-          />
+          {canExport && (
+            <ExportMenu
+              fileName="apporteurs-affaire"
+              title="Liste des apporteurs d'affaire"
+              subtitle={filterSummary}
+              columns={EXPORT_COLUMNS}
+              fetchRows={async () => {
+                const r = await window.electron.commissions.listReferrers(token, filters, 1, 100000);
+                return r.success ? r.data ?? [] : [];
+              }}
+            />
+          )}
           {canManage && (
             <Button icon={<Plus className="h-4 w-4" />} onClick={() => navigate('/commissions/referrers/new')}>
               Nouvel apporteur
@@ -120,6 +113,7 @@ export default function ReferrersListPage() {
                 <th className="text-left px-4 py-3 font-medium text-slate-600">Apporteur</th>
                 <th className="text-left px-4 py-3 font-medium text-slate-600">Contact</th>
                 <th className="text-left px-4 py-3 font-medium text-slate-600">Ville</th>
+                <th className="text-left px-4 py-3 font-medium text-slate-600">Utilisateur référent</th>
                 <th className="text-right px-4 py-3 font-medium text-slate-600">Commissions</th>
                 <th className="text-left px-4 py-3 font-medium text-slate-600">Statut</th>
                 <th className="px-4 py-3" />
@@ -128,10 +122,10 @@ export default function ReferrersListPage() {
             <tbody className="divide-y divide-slate-100">
               {referrers.map((r: any) => (
                 <tr key={r.id} className="hover:bg-slate-50">
-                  <td className="px-4 py-3">
+                  <td className="px-4 py-3 text-left">
                     <button
-                      className="font-medium text-indigo-600 hover:underline"
-                      onClick={() => navigate(`/commissions/beneficiary/REFERRER/${r.id}`)}
+                      className="font-medium text-indigo-600 hover:underline text-left"
+                      onClick={() => navigate(`/commissions/referrers/${r.id}`)}
                     >
                       {referrerName(r)}
                     </button>
@@ -144,6 +138,7 @@ export default function ReferrersListPage() {
                     <p className="text-slate-400">{r.phone || r.mobile || '—'}</p>
                   </td>
                   <td className="px-4 py-3 text-slate-500">{r.city ?? '—'}</td>
+                  <td className="px-4 py-3 text-slate-500">{r.assignedTo ? formatPersonName(r.assignedTo) : '—'}</td>
                   <td className="px-4 py-3 text-right text-slate-600">{r._count?.commissions ?? 0}</td>
                   <td className="px-4 py-3">
                     <Badge variant={r.isActive ? 'success' : 'default'}>
@@ -152,29 +147,20 @@ export default function ReferrersListPage() {
                   </td>
                   <td className="px-4 py-3">
                     <div className="flex justify-end gap-1">
-                      <Button
-                        size="sm" variant="ghost"
-                        icon={<Receipt className="h-4 w-4" />}
-                        onClick={() => navigate(`/commissions/beneficiary/REFERRER/${r.id}`)}
-                      >
-                        Commissions
-                      </Button>
-                      {canManage && (
+                      {canViewCommissions && (
                         <Button
                           size="sm" variant="ghost"
-                          icon={<Pencil className="h-4 w-4" />}
-                          onClick={() => navigate(`/commissions/referrers/${r.id}/edit`)}
+                          icon={<Receipt className="h-4 w-4" />}
+                          onClick={() => navigate(`/commissions/beneficiary/REFERRER/${r.id}`)}
                         >
-                          Modifier
+                          Commissions
                         </Button>
                       )}
-                      {canDelete && (
-                        <Button
-                          size="sm" variant="ghost"
-                          icon={<Trash2 className="h-4 w-4 text-red-500" />}
-                          onClick={() => { deleteReferrer.reset(); setDeleteTarget(r); }}
-                        />
-                      )}
+                      <Button
+                        size="sm" variant="ghost"
+                        icon={<Eye className="h-4 w-4" />}
+                        onClick={() => navigate(`/commissions/referrers/${r.id}`)}
+                      />
                     </div>
                   </td>
                 </tr>
@@ -199,20 +185,6 @@ export default function ReferrersListPage() {
           </div>
         </div>
       )}
-
-      <ConfirmDialog
-        open={!!deleteTarget}
-        onClose={() => setDeleteTarget(null)}
-        onConfirm={handleDelete}
-        title="Supprimer l'apporteur d'affaire"
-        message={
-          deleteError && typeof deleteError === 'string'
-            ? deleteError
-            : `Supprimer « ${deleteTarget ? referrerName(deleteTarget) : ''} » ? Cette action est irréversible.`
-        }
-        confirmLabel="Supprimer"
-        loading={deleteReferrer.isPending}
-      />
     </PageLayout>
   );
 }

@@ -11,14 +11,22 @@ import { upperField } from '../../../shared/utils/uppercase';
 import Select from '../../../shared/components/ui/Select';
 import { FormSearchSelect } from '../../../shared/components/ui/SearchSelect';
 import Textarea from '../../../shared/components/ui/Textarea';
-import { useReferrer, useCreateReferrer, useUpdateReferrer } from '../hooks/useCommissions';
+import { useReferrer, useCreateReferrer, useUpdateReferrer, useCommissionUsers } from '../hooks/useCommissions';
 import { useCountries } from '../../../shared/hooks/useCountries';
 import { Save } from 'lucide-react';
 import EntityDocumentsCard from '../../archiving/components/EntityDocumentsCard';
 
+const CIVILITE_OPTIONS = [
+  { value: '', label: '— Civilité —' },
+  { value: 'Monsieur', label: 'Monsieur' },
+  { value: 'Madame', label: 'Madame' },
+  { value: 'Mademoiselle', label: 'Mademoiselle' },
+];
+
 const schema = z.object({
   firstName: z.string().min(1, 'Prénom requis'),
   lastName: z.string().min(1, 'Nom requis'),
+  civilite: z.string().optional(),
   companyName: z.string().optional(),
   email: z.string().email('Email invalide').optional().or(z.literal('')),
   phone: z.string().optional(),
@@ -30,6 +38,7 @@ const schema = z.object({
   bankBic: z.string().optional(),
   notes: z.string().optional(),
   isActive: z.string().optional(),
+  assignedToId: z.string().optional(),
 });
 
 type FormData = z.infer<typeof schema>;
@@ -51,11 +60,21 @@ export default function ReferrerFormPage() {
   const { data: countriesRes } = useCountries();
   const countryOptions = (countriesRes?.data ?? []).map((c) => ({ value: c.isoCode, label: c.name }));
 
+  const { data: usersRes } = useCommissionUsers();
+  const userOptions = [
+    { value: '', label: '— Aucun —' },
+    ...((usersRes?.data ?? []) as any[]).map((u) => ({
+      value: String(u.id),
+      label: `${u.lastName ?? ''} ${u.firstName ?? ''}`.trim() || u.email,
+    })),
+  ];
+
   useEffect(() => {
     if (isEdit && res?.data) {
       reset({
         firstName: res.data.firstName ?? '',
         lastName: res.data.lastName ?? '',
+        civilite: res.data.civilite ?? '',
         companyName: res.data.companyName ?? '',
         email: res.data.email ?? '',
         phone: res.data.phone ?? '',
@@ -67,6 +86,7 @@ export default function ReferrerFormPage() {
         bankBic: res.data.bankBic ?? '',
         notes: res.data.notes ?? '',
         isActive: String(res.data.isActive),
+        assignedToId: res.data.assignedToId != null ? String(res.data.assignedToId) : '',
       });
     }
   }, [res, isEdit, reset]);
@@ -76,7 +96,9 @@ export default function ReferrerFormPage() {
     : null;
 
   const onSubmit = async (data: FormData) => {
-    const payload = { ...data, isActive: data.isActive !== 'false' };
+    const { assignedToId, ...rest } = data;
+    const payload: any = { ...rest, isActive: data.isActive !== 'false' };
+    payload.assignedToId = assignedToId ? Number(assignedToId) : null;
     const r = isEdit
       ? await update.mutateAsync({ id: Number(id), payload })
       : await create.mutateAsync(payload);
@@ -87,7 +109,7 @@ export default function ReferrerFormPage() {
     <PageLayout
       title={isEdit ? 'Modifier l\'apporteur d\'affaire' : 'Nouvel apporteur d\'affaire'}
       breadcrumbs={[
-        { label: 'Commissions', to: '/commissions' },
+        { label: 'Tierce partie' },
         { label: 'Apporteurs d\'affaire', to: '/commissions/referrers' },
         { label: isEdit ? 'Modifier' : 'Nouveau' },
       ]}
@@ -99,6 +121,7 @@ export default function ReferrerFormPage() {
             {/* Identité */}
             <div className="space-y-4">
               <h3 className="text-sm font-semibold text-slate-700">Identité</h3>
+              <Select label="Civilité" options={CIVILITE_OPTIONS} {...register('civilite')} />
               <div className="grid grid-cols-2 gap-4">
                 <Input label="Prénom" required error={errors.firstName?.message} {...upperField(register('firstName'))} />
                 <Input label="Nom" required error={errors.lastName?.message} {...upperField(register('lastName'))} />
@@ -128,6 +151,16 @@ export default function ReferrerFormPage() {
                 <Input label="IBAN" placeholder="CI xx xxxx" {...register('bankIban')} />
                 <Input label="BIC / SWIFT" {...register('bankBic')} />
               </div>
+            </div>
+
+            <div className="border-t border-slate-200 pt-4 space-y-4">
+              <h3 className="text-sm font-semibold text-slate-700">Affectation</h3>
+              <FormSearchSelect
+                control={control}
+                name="assignedToId"
+                label="Utilisateur référent"
+                options={userOptions}
+              />
             </div>
 
             <div className="border-t border-slate-200 pt-4 space-y-4">

@@ -123,6 +123,16 @@ export function useReferrer(id: number) {
   });
 }
 
+/** Fiche de suivi chronologique de l'apporteur d'affaire (modifications, documents, commissions). */
+export function useReferrerTimeline(id: number) {
+  const token = useAuthStore((s) => s.token)!;
+  return useQuery({
+    queryKey: ['commissions', 'referrer', id, 'timeline'],
+    queryFn: () => ipc.getReferrerTimeline(token, id),
+    enabled: id > 0,
+  });
+}
+
 export function useCreateReferrer() {
   const token = useAuthStore((s) => s.token)!;
   const qc = useQueryClient();

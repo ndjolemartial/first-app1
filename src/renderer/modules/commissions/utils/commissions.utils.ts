@@ -5,10 +5,21 @@ import { formatPersonName } from '../../../shared/utils/format';
 // Écriture commissions : AD est explicitement exclue (consultation de ses propres commissions uniquement).
 export const COMMISSION_WRITE_ROLES = ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ACCOUNTANT'];
 
-/** Rôles autorisés à consulter l'interface Apporteurs d'affaire (AD incluse en lecture). */
-export const COMMISSION_REFERRERS_VIEW_ROLES = ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ACCOUNTANT', 'ASSISTANTE_DIRECTION'];
+/**
+ * Rôles disposant de la vue complète (non filtrée) de la liste des apporteurs
+ * d'affaire — coïncide avec `COMMISSION_WRITE_ROLES` (droits de modification).
+ * Les autres rôles n'accèdent, en lecture seule, qu'aux apporteurs dont ils
+ * sont l'utilisateur référent (filtrage appliqué côté IPC).
+ */
+export const COMMISSION_REFERRERS_FULL_VIEW_ROLES = COMMISSION_WRITE_ROLES;
 
-/** Rôles autorisés à gérer les paramètres et supprimer un apporteur. */
+/** Rôles autorisés à supprimer un apporteur d'affaire (ACCOUNTANT en est exclu). */
+export const COMMISSION_REFERRERS_DELETE_ROLES = ['SUPER_ADMIN', 'ADMIN', 'MANAGER'];
+
+/** Rôles autorisés à exporter / imprimer la liste des apporteurs d'affaire (ACCOUNTANT en est exclu). */
+export const COMMISSION_REFERRERS_EXPORT_ROLES = ['SUPER_ADMIN', 'ADMIN', 'MANAGER'];
+
+/** Rôles autorisés à gérer les paramètres de commission (taux par défaut). */
 export const COMMISSION_ADMIN_ROLES = ['SUPER_ADMIN', 'ADMIN'];
 
 export const COMMISSION_STATUS_LABEL: Record<string, string> = {

@@ -13,11 +13,11 @@ import CommissionTable from '../components/CommissionTable';
 import ExportMenu, { ExportColumn } from '../../../shared/components/ExportMenu';
 import {
   BENEFICIARY_TYPE_LABEL, COMMISSION_ADMIN_ROLES,
-  COMMISSION_WRITE_ROLES, COMMISSION_REFERRERS_VIEW_ROLES,
+  COMMISSION_WRITE_ROLES,
   COMMISSION_STATUS_LABEL, transactionLabel, beneficiaryName,
 } from '../utils/commissions.utils';
 import { formatCurrency } from '../../../shared/utils/format';
-import { Plus, Users, Wallet, CheckCircle, Ban, Settings, Percent } from 'lucide-react';
+import { Plus, Wallet, CheckCircle, Ban, Settings, Percent } from 'lucide-react';
 
 /** Colonnes d'export pour la liste des commissions (PDF / Excel). */
 const EXPORT_COLUMNS: ExportColumn[] = [
@@ -116,7 +116,6 @@ export default function CommissionsDashboardPage() {
   const token = useAuthStore((s) => s.token)!;
   const isAdmin = COMMISSION_ADMIN_ROLES.includes(role);
   const canManage = COMMISSION_WRITE_ROLES.includes(role);
-  const canViewReferrers = COMMISSION_REFERRERS_VIEW_ROLES.includes(role);
   const [showSettings, setShowSettings] = useState(false);
 
   const { data: res, isLoading } = useCommissionsDashboard();
@@ -140,11 +139,6 @@ export default function CommissionsDashboardPage() {
           {isAdmin && (
             <Button variant="secondary" icon={<Settings className="h-4 w-4" />} onClick={() => setShowSettings(true)}>
               Taux par défaut
-            </Button>
-          )}
-          {canViewReferrers && (
-            <Button variant="secondary" icon={<Users className="h-4 w-4" />} onClick={() => navigate('/commissions/referrers')}>
-              Apporteurs d'affaire
             </Button>
           )}
           {canManage && (

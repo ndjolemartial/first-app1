@@ -9,6 +9,7 @@ import Input from '../../../shared/components/ui/Input';
 import Select from '../../../shared/components/ui/Select';
 import Textarea from '../../../shared/components/ui/Textarea';
 import { formatPersonName } from '../../../shared/utils/format';
+import { roleLabel } from '../../../shared/utils/roleLabel';
 import {
   useBudget, useBudgetLine, useCreateBudgetLine, useUpdateBudgetLine, useEligibleManagers,
 } from '../hooks/useBudget';
@@ -69,7 +70,7 @@ export default function BudgetLineFormPage() {
     { value: '', label: '— Aucun gestionnaire —' },
     ...managers.map((u: any) => ({
       value: String(u.id),
-      label: `${formatPersonName(u)} (${u.role})`,
+      label: `${formatPersonName(u)} (${roleLabel(u.role)})`,
     })),
   ];
 

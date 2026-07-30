@@ -1,7 +1,8 @@
 import { ipcMain } from 'electron';
+import crypto from 'crypto';
 import { getDb } from '../services/db.service';
 import { getSession, checkRole } from '../services/auth.service';
-import { recordTreasuryOperation, computeBalances } from '../services/treasury.service';
+import { recordTreasuryOperation, computeBalances, getOrCreateTransferCategory } from '../services/treasury.service';
 import { canOperateOnLine } from '../services/budget.service';
 import logger from '../utils/logger';
 import { z } from 'zod';
@@ -119,6 +120,12 @@ const operationSchema = z
     budgetLineId: z.number().int().positive().nullable().optional(),
     // Tiers (bénéficiaire d'une sortie / émetteur d'une entrée). Facultatif.
     thirdPartyId: z.number().int().positive().nullable().optional(),
+    // Second compte d'un virement interne : « Compte débit » sur une opération
+    // ENTREE (le compte principal étant alors le « Compte crédit »), ou
+    // « Compte crédit » sur une opération SORTIE (le compte principal étant
+    // alors le « Compte débit »). Quand renseigné, une écriture miroir (sens
+    // opposé, même montant) est posée dessus.
+    linkedAccountId: z.number().int().positive().nullable().optional(),
     // Imputation analytique exclusive : au plus un seul des trois.
     projectId: z.number().int().positive().nullable().optional(),
     lotissementId: z.number().int().positive().nullable().optional(),
@@ -586,25 +593,76 @@ export function registerTreasuryIPC(): void {
         }
       }
 
-      const operation = await recordTreasuryOperation(db, {
-        bankAccountId: d.bankAccountId,
-        direction: d.direction,
-        amount: d.amount,
-        label: effectiveLabel,
-        operationDate: d.operationDate ? new Date(d.operationDate) : new Date(),
-        categoryId: d.categoryId ?? null,
-        paymentMethod: d.paymentMethod,
-        paymentRef: d.paymentRef,
-        source: 'MANUEL',
-        budgetLineId: d.budgetLineId ?? null,
-        thirdPartyId: d.thirdPartyId ?? null,
-        projectId: d.projectId ?? null,
-        lotissementId: d.lotissementId ?? null,
-        programmeId: d.programmeId ?? null,
-        createdById: session.userId,
-        notes: d.notes,
+      // Virement interne compte à compte : « Compte débit » (sur une entrée) ou
+      // « Compte crédit » (sur une sortie). Valide le second compte et pose,
+      // dans la même transaction, une écriture miroir de sens opposé dessus.
+      let linkedAccount: { id: number; linkedUserId: number | null } | null = null;
+      if (d.linkedAccountId != null) {
+        if (d.linkedAccountId === d.bankAccountId) {
+          return { success: false, error: 'Le compte débit et le compte crédit doivent être différents' };
+        }
+        const acc = await db.bankAccount.findUnique({ where: { id: d.linkedAccountId } });
+        if (!acc || acc.deletedAt) {
+          return { success: false, error: (d.direction === 'ENTREE' ? 'Compte débit introuvable' : 'Compte crédit introuvable') };
+        }
+        if (!canAccessAccount(session, acc)) {
+          return { success: false, error: 'Vous n\'avez pas accès à ce compte de trésorerie' };
+        }
+        linkedAccount = acc;
+      }
+
+      const source = linkedAccount ? 'TRANSFERT' : 'MANUEL';
+      const transferGroupId = linkedAccount ? crypto.randomUUID() : null;
+      const mirrorDirection = d.direction === 'ENTREE' ? 'SORTIE' : 'ENTREE';
+
+      const operation = await db.$transaction(async (tx) => {
+        const op = await recordTreasuryOperation(tx, {
+          bankAccountId: d.bankAccountId,
+          direction: d.direction,
+          amount: d.amount,
+          label: effectiveLabel,
+          operationDate: d.operationDate ? new Date(d.operationDate) : new Date(),
+          categoryId: d.categoryId ?? null,
+          paymentMethod: d.paymentMethod,
+          paymentRef: d.paymentRef,
+          source,
+          budgetLineId: d.budgetLineId ?? null,
+          thirdPartyId: d.thirdPartyId ?? null,
+          projectId: d.projectId ?? null,
+          lotissementId: d.lotissementId ?? null,
+          programmeId: d.programmeId ?? null,
+          createdById: session.userId,
+          notes: d.notes,
+          transferGroupId,
+        });
+        if (linkedAccount) {
+          // Écriture miroir : même montant, sens opposé, sur le second compte.
+          // Ni tiers, ni imputation budgétaire/analytique — ce n'est pas la
+          // même opération « métier », seulement le contrepoint comptable du
+          // virement. L'objet n'étant pas choisi par l'utilisateur, on lui
+          // affecte par défaut un objet générique « CREDIT AUTOMATIQUE » /
+          // « DEBIT AUTOMATIQUE », et son libellé est complété par le nom du
+          // compte d'origine (ex. « APPRO CAISSE – CAISSE DMC ») pour que la
+          // provenance reste identifiable sans surcharger l'objet.
+          const mirrorCategory = await getOrCreateTransferCategory(tx, mirrorDirection);
+          await recordTreasuryOperation(tx, {
+            bankAccountId: linkedAccount.id,
+            direction: mirrorDirection,
+            amount: d.amount,
+            label: `${effectiveLabel} – ${account.name}`,
+            operationDate: op.operationDate,
+            categoryId: mirrorCategory.id,
+            paymentMethod: d.paymentMethod,
+            paymentRef: d.paymentRef,
+            source,
+            createdById: session.userId,
+            notes: d.notes,
+            transferGroupId,
+          });
+        }
+        return op;
       });
-      logger.info(`Opération de trésorerie créée: ${operation.reference} (${d.direction} ${d.amount})`);
+      logger.info(`Opération de trésorerie créée: ${operation.reference} (${d.direction} ${d.amount})${linkedAccount ? ` — virement lié au compte #${linkedAccount.id}` : ''}`);
       return ser({ success: true, data: operation });
     } catch (error: any) {
       logger.error('treasury:createOperation error', error.message);
