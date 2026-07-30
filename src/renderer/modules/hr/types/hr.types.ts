@@ -86,9 +86,9 @@ export interface CommissionActivityOption {
 
 export const CIVILITE_OPTIONS = [
   { value: '', label: '—' },
-  { value: 'MONSIEUR', label: 'Monsieur' },
-  { value: 'MADAME', label: 'Madame' },
-  { value: 'MADEMOISELLE', label: 'Mademoiselle' },
+  { value: 'Monsieur', label: 'Monsieur' },
+  { value: 'Madame', label: 'Madame' },
+  { value: 'Mademoiselle', label: 'Mademoiselle' },
 ];
 
 export const SEXE_OPTIONS = [

@@ -10,10 +10,11 @@ import { FormSearchSelect } from '../../../shared/components/ui/SearchSelect';
 import JobPositionModal from '../components/JobPositionModal';
 import DepartmentModal from '../components/DepartmentModal';
 import { Save, Plus } from 'lucide-react';
-import { useEmployee, useCreateEmployee, useUpdateEmployee, useLinkableUsers, useEmployees, useJobPositions, useDepartments } from '../hooks/useHr';
+import { useEmployee, useCreateEmployee, useUpdateEmployee, useLinkableUsers, useEmployees, useJobPositions, useDepartments, useEmployeeCareerProfiles } from '../hooks/useHr';
 import {
   CIVILITE_OPTIONS, SEXE_OPTIONS, MARITAL_OPTIONS, EMPLOYEE_STATUS_OPTIONS,
 } from '../types/hr.types';
+import { roleLabel } from '../../../shared/utils/roleLabel';
 
 const toDateInput = (v?: string | null) => (v ? String(v).slice(0, 10) : '');
 
@@ -39,8 +40,13 @@ interface FormData {
   cmuNumber: string;
   bankName: string;
   bankRib: string;
+  bankCode: string;
+  bankGuichetCode: string;
+  bankAccountNumber: string;
+  bankRibKey: string;
   poste: string;
   departement: string;
+  careerProfileId: string;
   managerId: string;
   userId: string;
   status: string;
@@ -54,7 +60,8 @@ const EMPTY: FormData = {
   matricule: '', civilite: '', firstName: '', lastName: '', sexe: '', birthDate: '', birthPlace: '',
   nationality: 'CI', maritalStatus: '', childrenCount: 0, igrParts: 1, email: '', phone: '', mobile: '',
   address: '', city: '', idNumber: '', cnpsNumber: '', cmuNumber: '', bankName: '', bankRib: '',
-  poste: '', departement: '', managerId: '', userId: '', status: 'ACTIF', hireDate: '', exitDate: '', exitReason: '', notes: '',
+  bankCode: '', bankGuichetCode: '', bankAccountNumber: '', bankRibKey: '',
+  poste: '', departement: '', careerProfileId: '', managerId: '', userId: '', status: 'ACTIF', hireDate: '', exitDate: '', exitReason: '', notes: '',
 };
 
 export default function EmployeeFormPage() {
@@ -82,7 +89,7 @@ export default function EmployeeFormPage() {
       value: String(u.id),
       label: `${u.lastName ?? ''} ${u.firstName ?? ''}`.trim()
         + (u.matricule ? ` (${u.matricule})` : '')
-        + (u.role ? ` — ${u.role}` : ''),
+        + (u.role ? ` — ${roleLabel(u.role)}` : ''),
     }))),
   ];
 
@@ -92,6 +99,7 @@ export default function EmployeeFormPage() {
 
   const { data: postesRes } = useJobPositions();
   const { data: deptsRes } = useDepartments();
+  const { data: careerProfilesRes } = useEmployeeCareerProfiles();
   const [posteModalOpen, setPosteModalOpen] = useState(false);
   const [deptModalOpen, setDeptModalOpen] = useState(false);
   const posteOptions = [
@@ -101,6 +109,10 @@ export default function EmployeeFormPage() {
   const deptOptions = [
     { value: '', label: '— Aucun —' },
     ...((deptsRes?.success && deptsRes.data ? deptsRes.data : []).map((d: any) => ({ value: d.label, label: d.label }))),
+  ];
+  const careerProfileOptions = [
+    { value: '', label: '— Aucune —' },
+    ...((careerProfilesRes?.success && careerProfilesRes.data ? careerProfilesRes.data : []).map((p: any) => ({ value: String(p.id), label: p.name }))),
   ];
 
   useEffect(() => {
@@ -129,8 +141,13 @@ export default function EmployeeFormPage() {
         cmuNumber: e.cmuNumber ?? '',
         bankName: e.bankName ?? '',
         bankRib: e.bankRib ?? '',
+        bankCode: e.bankCode ?? '',
+        bankGuichetCode: e.bankGuichetCode ?? '',
+        bankAccountNumber: e.bankAccountNumber ?? '',
+        bankRibKey: e.bankRibKey ?? '',
         poste: e.poste ?? '',
         departement: e.departement ?? '',
+        careerProfileId: e.careerProfileId != null ? String(e.careerProfileId) : '',
         managerId: e.managerId != null ? String(e.managerId) : '',
         userId: e.userId != null ? String(e.userId) : '',
         status: e.status ?? 'ACTIF',
@@ -187,13 +204,17 @@ export default function EmployeeFormPage() {
         </Card>
 
         <Card>
-          <h3 className="mb-3 text-sm font-semibold text-slate-800">Identité & protection sociale</h3>
+          <h3 className="mb-3 text-sm font-semibold text-slate-800">Identité, protection sociale & référence bancaires</h3>
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
             <Input label="N° pièce d'identité" {...register('idNumber')} />
             <Input label="N° CNPS" {...register('cnpsNumber')} />
             <Input label="N° CMU" {...register('cmuNumber')} />
             <Input label="Banque" {...register('bankName')} />
             <Input label="RIB / IBAN" className="sm:col-span-2" {...register('bankRib')} />
+            <Input label="Code Banque" {...register('bankCode')} />
+            <Input label="Code Guichet" {...register('bankGuichetCode')} />
+            <Input label="Numéro compte" {...register('bankAccountNumber')} />
+            <Input label="Clé RIB" {...register('bankRibKey')} />
           </div>
         </Card>
 
@@ -233,6 +254,7 @@ export default function EmployeeFormPage() {
               </div>
               <FormSearchSelect control={control} name="departement" options={deptOptions} placeholder="Rechercher un département…" />
             </div>
+            <Select label="Filière de carrière" options={careerProfileOptions} {...register('careerProfileId')} />
             <Select label="Responsable hiérarchique" options={managerOptions} {...register('managerId')} />
             <Select label="Statut" options={EMPLOYEE_STATUS_OPTIONS} {...register('status')} />
             <Input label="Date d'embauche" type="date" {...register('hireDate')} />

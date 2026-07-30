@@ -12,6 +12,7 @@ import ConfirmDialog from '../../../shared/components/ui/ConfirmDialog';
 import { SkeletonTable } from '../../../shared/components/ui/Skeleton';
 import { useAuthStore } from '../../../shared/stores/auth.store';
 import { formatDate, formatCurrency } from '../../../shared/utils/format';
+import { roleLabel } from '../../../shared/utils/roleLabel';
 import { Edit, PlusCircle, FileText, Trash2, Printer, ClipboardList, Upload, ExternalLink } from 'lucide-react';
 import { toast } from '../../../shared/components/ui/Toast';
 import {
@@ -486,7 +487,7 @@ export default function EmployeeDetailPage() {
             <Field label="Date d'embauche" value={e.hireDate ? formatDate(e.hireDate) : null} />
             <Field
               label="Compte utilisateur lié"
-              value={e.user ? `${e.user.lastName ?? ''} ${e.user.firstName ?? ''}`.trim() + (e.user.role ? ` · ${e.user.role}` : '') : null}
+              value={e.user ? `${e.user.lastName ?? ''} ${e.user.firstName ?? ''}`.trim() + (e.user.role ? ` · ${roleLabel(e.user.role)}` : '') : null}
             />
           </dl>
         </Card>

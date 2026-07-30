@@ -14,9 +14,10 @@ import EmptyState from '../../../shared/components/ui/EmptyState';
 import { useAuthStore } from '../../../shared/stores/auth.store';
 import { formatCurrency } from '../../../shared/utils/format';
 import ExportMenu, { ExportColumn } from '../../../shared/components/ExportMenu';
-import { PlusCircle, Eye, Printer, Settings, FileText, Copy } from 'lucide-react';
-import { usePayslips, useEmployees, useGeneratePayslip, usePrintPayslip } from '../hooks/useHr';
+import { PlusCircle, Eye, Printer, Settings, FileText, Copy, Landmark, CheckCircle2 } from 'lucide-react';
+import { usePayslips, useEmployees, useGeneratePayslip, usePrintPayslip, useUpdatePayslipStatus } from '../hooks/useHr';
 import DuplicatePayslipModal from '../components/DuplicatePayslipModal';
+import WireTransferOrderModal from '../components/WireTransferOrderModal';
 import {
   PAYSLIP_STATUS_LABEL, PAYSLIP_STATUS_VARIANT, PAYSLIP_STATUS_OPTIONS,
   MONTH_OPTIONS, MONTH_LABEL, type Payslip, type Employee,
@@ -43,6 +44,8 @@ const EXPORT_COLUMNS: ExportColumn[] = [
 const WRITE_ROLES = new Set(['SUPER_ADMIN', 'ADMIN', 'RH', 'ACCOUNTANT', 'MANAGER']);
 // Configuration (modèles de bulletins, paramètres de paie) : admins et RH uniquement.
 const CONFIG_ROLES = new Set(['SUPER_ADMIN', 'ADMIN', 'RH', 'ACCOUNTANT']);
+// Ordre de virement : réservé aux Super Admin / Admin.
+const WIRE_TRANSFER_ROLES = new Set(['SUPER_ADMIN', 'ADMIN']);
 const now = new Date();
 const YEAR_OPTIONS = Array.from({ length: 6 }, (_, i) => {
   const y = now.getFullYear() - i;
@@ -119,6 +122,7 @@ export default function PayslipsListPage() {
   const role = useAuthStore((s) => s.user?.role) ?? '';
   const canWrite = WRITE_ROLES.has(role);
   const canConfig = CONFIG_ROLES.has(role);
+  const canWireTransfer = WIRE_TRANSFER_ROLES.has(role);
 
   const [page, setPage] = useState(1);
   const [year, setYear] = useState(String(now.getFullYear()));
@@ -126,6 +130,7 @@ export default function PayslipsListPage() {
   const [status, setStatus] = useState('');
   const [showGenerate, setShowGenerate] = useState(false);
   const [duplicateSource, setDuplicateSource] = useState<Payslip | null>(null);
+  const [showWireTransfer, setShowWireTransfer] = useState(false);
 
   const filters = {
     periodYear: year || undefined,
@@ -134,6 +139,7 @@ export default function PayslipsListPage() {
   };
   const { data, isLoading } = usePayslips(filters, page, 20);
   const printPayslip = usePrintPayslip();
+  const updateStatus = useUpdatePayslipStatus();
 
   const payslips: Payslip[] = data?.data ?? [];
   const total: number = data?.total ?? 0;
@@ -184,6 +190,17 @@ export default function PayslipsListPage() {
           <Select label="Statut" options={[{ value: '', label: 'Tous' }, ...PAYSLIP_STATUS_OPTIONS]} value={status}
             onChange={(e) => { setStatus(e.target.value); setPage(1); }} />
         </div>
+        {canWireTransfer && (
+          <Button
+            variant="danger"
+            icon={<Landmark className="h-4 w-4" />}
+            disabled={!year || !month}
+            title={!year || !month ? 'Sélectionnez une année et un mois' : undefined}
+            onClick={() => setShowWireTransfer(true)}
+          >
+            Ordre de virement
+          </Button>
+        )}
       </Card>
 
       <Card padding={false}>
@@ -228,6 +245,11 @@ export default function PayslipsListPage() {
                         <Button variant="ghost" size="sm" title="Aperçu / Imprimer" icon={<Printer className="h-4 w-4" />}
                           loading={printPayslip.isPending && printPayslip.variables === p.id}
                           onClick={() => printPayslip.mutate(p.id)} />
+                        {canWrite && p.status === 'BROUILLON' && (
+                          <Button variant="ghost" size="sm" title="Valider" icon={<CheckCircle2 className="h-4 w-4" />}
+                            loading={updateStatus.isPending && updateStatus.variables?.id === p.id}
+                            onClick={() => updateStatus.mutate({ id: p.id, status: 'VALIDE' })} />
+                        )}
                         {canWrite && (
                           <Button variant="ghost" size="sm" title="Dupliquer" icon={<Copy className="h-4 w-4" />}
                             onClick={() => setDuplicateSource(p)} />
@@ -247,6 +269,13 @@ export default function PayslipsListPage() {
 
       {showGenerate && <GenerateModal onClose={() => setShowGenerate(false)} />}
       {duplicateSource && <DuplicatePayslipModal source={duplicateSource} onClose={() => setDuplicateSource(null)} />}
+      {showWireTransfer && year && month && (
+        <WireTransferOrderModal
+          periodYear={Number(year)}
+          periodMonth={Number(month)}
+          onClose={() => setShowWireTransfer(false)}
+        />
+      )}
     </PageLayout>
   );
 }
