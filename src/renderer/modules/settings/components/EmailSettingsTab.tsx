@@ -5,7 +5,7 @@ import Button from '../../../shared/components/ui/Button';
 import Card from '../../../shared/components/ui/Card';
 import Input from '../../../shared/components/ui/Input';
 import RichTextEditor from '../../../shared/components/ui/RichTextEditor';
-import { useEmailSettings, useUpdateEmail, useTestEmail } from '../hooks/useSettings';
+import { useEmailSettings, useUpdateEmail, useTestEmail, useImapSettings, useUpdateImap, useTestImap } from '../hooks/useSettings';
 import { useAuthStore } from '../../../shared/stores/auth.store';
 import { toast } from '../../../shared/components/ui/Toast';
 
@@ -134,8 +134,109 @@ export default function EmailSettingsTab() {
         </div>
       </Card>
 
+      <ImapSettingsCard />
       <EmailTrackingCard />
     </div>
+  );
+}
+
+interface ImapFormData {
+  host: string;
+  port: number;
+  secure: boolean;
+  user: string;
+  password: string;
+  folder: string;
+  isActive: boolean;
+}
+
+/**
+ * Réception (IMAP) — boîte système partagée, interrogée pour récupérer les
+ * réponses aux emails de rappel/relance envoyés automatiquement
+ * (cf. mailbox-poller.service.ts). Distincte des boîtes personnelles
+ * (self-service, réglées par chaque utilisateur dans son profil).
+ */
+function ImapSettingsCard() {
+  const { data: res, isLoading } = useImapSettings();
+  const update = useUpdateImap();
+  const testImap = useTestImap();
+
+  const { register, handleSubmit, reset, formState: { isSubmitting } } = useForm<ImapFormData>({
+    defaultValues: { host: '', port: 993, secure: true, user: '', password: '', folder: 'INBOX', isActive: true },
+  });
+
+  useEffect(() => {
+    if (res?.success && res.data) {
+      reset({
+        host:     res.data.host ?? '',
+        port:     res.data.port ?? 993,
+        secure:   res.data.secure ?? true,
+        user:     res.data.user ?? '',
+        password: res.data.passwordSet ? SECRET_MASK : '',
+        folder:   res.data.folder ?? 'INBOX',
+        isActive: res.data.isActive ?? true,
+      });
+    }
+  }, [res, reset]);
+
+  const onSubmit = handleSubmit((data) => update.mutate({
+    host:     data.host,
+    port:     Number(data.port),
+    secure:   Boolean(data.secure),
+    user:     data.user,
+    password: data.password === SECRET_MASK ? undefined : data.password,
+    folder:   data.folder,
+    isActive: Boolean(data.isActive),
+  }));
+
+  if (isLoading) return <Card>Chargement…</Card>;
+
+  return (
+    <Card>
+      <h3 className="font-semibold text-slate-700 mb-1">Réception (IMAP) — boîte de relances</h3>
+      <p className="text-sm text-slate-500 mb-4">
+        Boîte mail interrogée périodiquement pour récupérer les réponses aux emails de rappel/relance envoyés
+        automatiquement. Chaque utilisateur peut par ailleurs connecter sa propre boîte personnelle depuis son profil,
+        pour recevoir les réponses aux emails qu'il envoie en tant que lui-même.
+      </p>
+      <form onSubmit={onSubmit} className="space-y-4">
+        <div className="grid grid-cols-3 gap-4">
+          <div className="col-span-2">
+            <Input label="Serveur IMAP" placeholder="imap.exemple.com" {...register('host')} />
+          </div>
+          <Input label="Port" type="number" min="1" max="65535" {...register('port', { valueAsNumber: true })} />
+        </div>
+        <label className="flex items-center gap-2 text-sm text-slate-700">
+          <input type="checkbox" {...register('secure')} className="h-4 w-4 rounded border-slate-300" />
+          Connexion sécurisée (SSL/TLS, port 993)
+        </label>
+        <div className="grid grid-cols-2 gap-4">
+          <Input label="Utilisateur" {...register('user')} />
+          <Input label="Mot de passe" type="password" placeholder={SECRET_MASK} {...register('password')} />
+        </div>
+        <Input label="Dossier" placeholder="INBOX" {...register('folder')} />
+        <label className="flex items-center gap-2 text-sm text-slate-700">
+          <input type="checkbox" {...register('isActive')} className="h-4 w-4 rounded border-slate-300" />
+          Activer la réception
+        </label>
+        {res?.success && res.data?.lastError && (
+          <p className="text-xs text-red-600">Dernière erreur : {res.data.lastError}</p>
+        )}
+        <div className="flex justify-end gap-2 pt-2">
+          <Button
+            type="button"
+            variant="secondary"
+            loading={testImap.isPending}
+            onClick={() => testImap.mutate()}
+          >
+            Tester la connexion
+          </Button>
+          <Button type="submit" loading={isSubmitting || update.isPending} icon={<Save className="h-4 w-4" />}>
+            Enregistrer
+          </Button>
+        </div>
+      </form>
+    </Card>
   );
 }
 

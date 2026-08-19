@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { useNavigate, useParams } from 'react-router-dom';
 import PageLayout from '../../../shared/components/layout/PageLayout';
@@ -17,7 +17,7 @@ import { Edit, PlusCircle, FileText, Trash2, Printer, ClipboardList, Upload, Ext
 import { toast } from '../../../shared/components/ui/Toast';
 import {
   useEmployee, useEmployees, useCreateContract, useUpdateContract, useDeleteContract, useDeleteEmployee,
-  useEssaiCategories, useContractFunctions, useContractObjectives, useCommissionActivities,
+  useEssaiCategories, useContractFunctions, useContractObjectives, useCommissionActivities, usePayrollRates,
   useSignedContracts, useUploadSignedContract, useDeleteSignedContract,
 } from '../hooks/useHr';
 import {
@@ -29,7 +29,7 @@ import {
 
 // Écriture opérationnelle : admins/RH + MANAGER & ASSISTANTE_DIRECTION (ces
 // derniers restreints côté IPC aux employés dont le contrat en cours n'est pas CDI).
-const WRITE_ROLES = new Set(['SUPER_ADMIN', 'ADMIN', 'RH', 'ACCOUNTANT', 'MANAGER']);
+const WRITE_ROLES = new Set(['SUPER_ADMIN', 'ADMIN', 'RH', 'ACCOUNTANT', 'MANAGER', 'ASSISTANTE_DIRECTION']);
 const toDateInput = (v?: string | null) => (v ? String(v).slice(0, 10) : '');
 
 function Field({ label, value }: { label: string; value?: React.ReactNode }) {
@@ -115,6 +115,26 @@ function ContractModal({
       label: `${e.lastName ?? ''} ${e.firstName ?? ''}`.trim() + (e.poste ? ` — ${e.poste}` : ''),
     })),
   ];
+  // functionOptions/objectiveOptions/authorityOptions se chargent de façon
+  // asynchrone (React Query) : au premier rendu, le <select> non contrôlé de
+  // RHF applique la valeur par défaut (functionId/objectiveId/
+  // responsibleAuthorityId) alors que l'option correspondante n'existe pas
+  // encore dans le DOM — elle retombe donc sur « Aucun(e) » et ne se remet
+  // jamais à jour toute seule. On réapplique explicitement la sélection dès
+  // que chaque référentiel est chargé (même correctif que DuplicatePayslipModal.tsx).
+  useEffect(() => {
+    if (functions.length && contract?.functionId != null) setValue('functionId', String(contract.functionId));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [functions.length]);
+  useEffect(() => {
+    if (objectives.length && contract?.objectiveId != null) setValue('objectiveId', String(contract.objectiveId));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [objectives.length]);
+  useEffect(() => {
+    if (allEmployees.length && contract?.responsibleAuthorityId != null) setValue('responsibleAuthorityId', String(contract.responsibleAuthorityId));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [allEmployees.length]);
+
   // Commissions sur activité : catalogue (avec taux par défaut) + sélection courante.
   const { data: commActRes } = useCommissionActivities();
   const commissionCatalog: CommissionActivityOption[] = commActRes?.data ?? [];
@@ -138,9 +158,58 @@ function ContractModal({
   const isRenouvellement = type === 'RENOUVELLEMENT_ESSAI';
   const isEssai = type === 'ESSAI';
 
+  // Recalcul automatique de la paie (ITS, CNPS salarié, CMU salarié, salaire
+  // brut, total des retenues, net à payer) à chaque modification du salaire
+  // de base, du sursalaire, de la prime d'ancienneté ou de la prime de
+  // transport — réutilise le même moteur de calcul que l'édition des
+  // bulletins de paie (`hr:payroll:preview` → `computePayroll` côté main,
+  // même fonction que `hr:payslips:generate`). Débounce court pour éviter un
+  // aller-retour IPC à chaque frappe.
+  const baseSalaryW = watch('baseSalary');
+  const sursalaireW = watch('sursalaire');
+  const primeAncienneteW = watch('primeAnciennete');
+  const transportAllowanceW = watch('transportAllowance');
+  useEffect(() => {
+    if (!showRemuneration) return;
+    const base = Number(baseSalaryW) || 0;
+    if (base <= 0) return;
+    const token = useAuthStore.getState().token;
+    if (!token) return;
+    const timer = setTimeout(async () => {
+      const r = await window.electron.hr.payroll.preview(token, {
+        baseSalary: base,
+        sursalaire: Number(sursalaireW) || 0,
+        primeAnciennete: Number(primeAncienneteW) || 0,
+        transportAllowance: Number(transportAllowanceW) || 0,
+      });
+      if (r.success && r.data) {
+        setValue('its', String(r.data.its));
+        setValue('cnps', String(r.data.cnpsEmployee));
+        setValue('cmu', String(r.data.cmuEmployee));
+        setValue('grossSalary', String(r.data.grossSalary));
+        setValue('totalDeductions', String(r.data.totalDeductions));
+        setValue('netSalary', String(r.data.netSalary));
+      }
+    }, 400);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [baseSalaryW, sursalaireW, primeAncienneteW, transportAllowanceW, showRemuneration]);
+
   // Catégories socio-professionnelles configurées (délais d'essai).
   const { data: catsRes } = useEssaiCategories();
   const categories: import('../types/hr.types').EssaiCategory[] = catsRes?.data ?? [];
+
+  // Grille salariale par code de catégorie socio-professionnelle (Paramètres
+  // de paie → « Catégories socio-professionnelles ») — sélectionnable depuis
+  // le même champ « Catégorie / classification », auto-remplit le salaire de
+  // base au choix du code.
+  const { data: payrollRatesRes } = usePayrollRates();
+  const salaryCategories: { code: string; label?: string; definition?: string; baseSalary: number }[] =
+    payrollRatesRes?.data?.salaryCategories ?? [];
+  // Le même code (ex: « 1A ») peut exister dans plusieurs groupes (Cadres,
+  // Ouvriers…) avec un salaire de base différent — le libellé du groupe est
+  // donc inclus dans la valeur du champ pour lever toute ambiguïté au choix.
+  const salaryCategoryValue = (s: { code: string; label?: string }) => (s.label ? `${s.code} (${s.label})` : s.code);
 
   // CDD amendables (avenant) / ESSAI renouvelables — hors le contrat en cours d'édition.
   const parentOptions = (kind: 'CDD' | 'ESSAI') => contracts
@@ -264,7 +333,12 @@ function ContractModal({
         <Input label="Poste" {...register('poste')} />
         <Input
           label="Catégorie / classification" list="essai-cats" {...catReg}
-          onChange={(e) => { catReg.onChange(e); if (isEssai) autofillEssaiEnd(e.target.value, watch('startDate')); }}
+          onChange={(e) => {
+            catReg.onChange(e);
+            if (isEssai) autofillEssaiEnd(e.target.value, watch('startDate'));
+            const sc = salaryCategories.find((s) => salaryCategoryValue(s) === e.target.value);
+            if (sc) setValue('baseSalary', String(sc.baseSalary));
+          }}
         />
         <Input
           label="Date de début" type="date" required {...startReg}
@@ -292,6 +366,11 @@ function ContractModal({
       </div>
       <datalist id="essai-cats">
         {categories.map((c) => <option key={c.id} value={c.label} />)}
+        {salaryCategories.map((s, i) => (
+          <option key={`${s.code}-${s.label}-${i}`} value={salaryCategoryValue(s)}>
+            {Number(s.baseSalary).toLocaleString('fr-FR')} FCFA
+          </option>
+        ))}
       </datalist>
       {(() => {
         const fn = functions.find((f) => String(f.id) === watch('functionId'));
@@ -399,15 +478,15 @@ function ContractModal({
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
             <Input label="Sursalaire (FCFA)" type="number" step="1" min="0" {...register('sursalaire')} />
             <Input label="Prime d'ancienneté (FCFA)" type="number" step="1" min="0" {...register('primeAnciennete')} />
-            <Input label="Salaire brut (FCFA)" type="number" step="1" min="0" {...register('grossSalary')} />
+            <Input label="Prime de transport (FCFA)" type="number" step="1" min="0" {...register('transportAllowance')} />
             <Input label="ITS (FCFA)" type="number" step="1" min="0" {...itsReg}
               onChange={(e) => { itsReg.onChange(e); recomputeDeductions({ its: e.target.value }); }} />
             <Input label="CNPS salarié (FCFA)" type="number" step="1" min="0" {...cnpsReg}
               onChange={(e) => { cnpsReg.onChange(e); recomputeDeductions({ cnps: e.target.value }); }} />
             <Input label="CMU salarié (FCFA)" type="number" step="1" min="0" {...cmuReg}
               onChange={(e) => { cmuReg.onChange(e); recomputeDeductions({ cmu: e.target.value }); }} />
+            <Input label="Salaire brut (FCFA)" type="number" step="1" min="0" {...register('grossSalary')} />
             <Input label="Total des retenues (FCFA)" type="number" step="1" min="0" {...register('totalDeductions')} />
-            <Input label="Prime de transport (FCFA)" type="number" step="1" min="0" {...register('transportAllowance')} />
             <Input label="Salaire net à payer (FCFA)" type="number" step="1" min="0" {...register('netSalary')} />
           </div>
           <p className="mt-2 text-xs text-slate-400">

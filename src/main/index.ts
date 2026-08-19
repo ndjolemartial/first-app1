@@ -38,6 +38,9 @@ import { registerSocialMediaIPC } from './ipc/social-media.ipc';
 import { registerItInnovationsIPC } from './ipc/it-innovations.ipc';
 import { registerConstructionLibraryIPC } from './ipc/construction-library.ipc';
 import { registerConstructionProjectsIPC } from './ipc/construction-projects.ipc';
+import { registerPermitLibraryIPC } from './ipc/permit-library.ipc';
+import { registerPermitProjectsIPC } from './ipc/permit-projects.ipc';
+import { registerAmlIPC } from './ipc/aml.ipc';
 import { registerGeoIPC } from './ipc/geo.ipc';
 import { registerCountriesIPC } from './ipc/countries.ipc';
 import { registerCommissionsIPC } from './ipc/commissions.ipc';
@@ -54,6 +57,8 @@ import { registerDocumentExportIPC } from './ipc/document-export.ipc';
 import { seedDefaultArchivePolicies, scheduleAutoArchiving } from './services/archiving.service';
 import { registerRemindersIPC } from './ipc/reminders.ipc';
 import { seedDefaultRemindersConfig, scheduleReminders } from './services/reminders.service';
+import { registerMailAccountIPC } from './ipc/mail-account.ipc';
+import { scheduleMailboxPolling } from './services/mailbox-poller.service';
 import { seedDefaultAttestationTemplate } from './services/attestation-templates.service';
 import { seedDefaultQuoteTemplate } from './services/quote-templates.service';
 import { seedDefaultContractTemplates, seedDefaultPayslipTemplates, seedDefaultEssaiCategories } from './services/hr-templates.service';
@@ -151,6 +156,9 @@ function registerIPC(): void {
   registerItInnovationsIPC();
   registerConstructionLibraryIPC();
   registerConstructionProjectsIPC();
+  registerPermitLibraryIPC();
+  registerPermitProjectsIPC();
+  registerAmlIPC();
   registerGeoIPC();
   registerCountriesIPC();
   registerCommissionsIPC();
@@ -165,6 +173,7 @@ function registerIPC(): void {
   registerSettingsIPC();
   registerDocumentExportIPC();
   registerRemindersIPC();
+  registerMailAccountIPC();
   // Configuration de la connexion BDD — utilisable avant authentification.
   registerConfigIPC();
   logger.info('All IPC handlers registered');
@@ -212,6 +221,9 @@ app.whenReady().then(async () => {
   seedDefaultRemindersConfig()
     .then(() => scheduleReminders())
     .catch((e) => logger.error(`Reminders bootstrap failed: ${e.message}`));
+  // Réception des réponses par email (boîte système + boîtes personnelles) —
+  // cf. mailbox-poller.service.ts.
+  scheduleMailboxPolling();
   // Modèle d'attestation de SOLDE par défaut (créé une seule fois si absent).
   seedDefaultAttestationTemplate()
     .catch((e) => logger.error(`Attestation template bootstrap failed: ${e.message}`));

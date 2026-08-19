@@ -31,7 +31,13 @@ function checkWriteRole(session: { role: string }, allowedRoles: string[]): void
  */
 function agentScopeWhere(session: { role: string; userId: number }): Record<string, unknown> {
   if (isAgentRole(session.role)) {
-    return { status: 'BROUILLON', client: { assignedToId: session.userId } };
+    return {
+      status: 'BROUILLON',
+      OR: [
+        { client: { assignedToId: session.userId } },
+        { prospect: { assignedToId: session.userId } },
+      ],
+    };
   }
   return {};
 }
@@ -45,7 +51,11 @@ const conventionBaseSchema = z.object({
   // Terrains ANTÉRIEURS rattachés (avenant de transfert de site / changement de
   // lot, hérité ou non) — disjoints des terrainIds courants.
   priorTerrainIds: z.array(z.number().int().positive()).optional(),
-  clientId: z.number().int().positive(),
+  // Client OU prospect — jamais les deux (invariant validé par .refine() sur
+  // conventionSchema, à la création uniquement). Une convention prospect
+  // n'accepte que le type SOUSCRIPTION/SALE au statut BROUILLON.
+  clientId: z.number().int().positive().optional(),
+  prospectId: z.number().int().positive().optional(),
   secondaryClientId: z.number().int().positive().optional(),
   parentConventionId: z.number().int().positive().optional(),
   amendmentType: z.enum(['PROLONGATION_DELAI', 'TRANSFERT_PROPRIETE', 'TRANSFERT_SITE']).optional(),
@@ -155,6 +165,18 @@ const conventionSchema = conventionBaseSchema
   .refine(
     (d) => (d.type === 'SOUSCRIPTION' ? !!d.souscriptionType : true),
     { message: 'Précisez la nature de la souscription' },
+  )
+  .refine(
+    (d) => !!d.clientId !== !!d.prospectId,
+    { message: 'Sélectionnez un client OU un prospect (l\'un des deux, pas les deux)', path: ['clientId'] },
+  )
+  .refine(
+    (d) => !d.prospectId || ['SOUSCRIPTION', 'SALE'].includes(d.type),
+    { message: 'Une convention pour un prospect doit être de type Souscription ou Vente', path: ['type'] },
+  )
+  .refine(
+    (d) => !d.prospectId || d.status === 'BROUILLON',
+    { message: 'Une convention pour un prospect doit être créée au statut Brouillon', path: ['status'] },
   );
 
 const INSTALLMENT_COUNTS: Record<string, number> = {
@@ -389,6 +411,7 @@ export function registerConventionsIPC(): void {
           include: {
             ...linksIncludeList,
             client: { select: { id: true, firstName: true, lastName: true, entreprise: true, type: true } },
+            prospect: { select: { id: true, firstName: true, lastName: true } },
             agent: { select: { id: true, firstName: true, lastName: true } },
             referrer: { select: { id: true, firstName: true, lastName: true, companyName: true } },
           },
@@ -413,6 +436,7 @@ export function registerConventionsIPC(): void {
         include: {
           ...linksIncludeDetail,
           client:          { include: { idType: { select: { id: true, code: true, label: true } } } },
+          prospect:        { select: { id: true, firstName: true, lastName: true, phone: true, email: true, assignedToId: true } },
           secondaryClient: { include: { idType: { select: { id: true, code: true, label: true } } } },
           // Convention parente — on charge en plus signedAt, saleAmount,
           // apportInitial, l'échéancier (pour le solde), la liste de ses
@@ -470,9 +494,10 @@ export function registerConventionsIPC(): void {
         },
       });
       if (!convention) return { success: false, error: 'Convention introuvable' };
-      // AGENT : accès limité à ses clients référents et au statut BROUILLON.
+      // AGENT : accès limité à ses clients/prospects référents et au statut BROUILLON.
       if (isAgentRole(session.role)
-        && (convention.status !== 'BROUILLON' || convention.client?.assignedToId !== session.userId)) {
+        && (convention.status !== 'BROUILLON'
+          || (convention.client?.assignedToId ?? convention.prospect?.assignedToId) !== session.userId)) {
         return { success: false, error: 'Convention inaccessible' };
       }
       return ser({ success: true, data: convention });
@@ -515,7 +540,8 @@ export function registerConventionsIPC(): void {
         data: {
           reference,
           assetType: d.assetType,
-          clientId: d.clientId,
+          clientId: d.clientId ?? null,
+          prospectId: d.prospectId ?? null,
           secondaryClientId: isTerrain ? (d.secondaryClientId ?? null) : null,
           parentConventionId: AMENDMENT_TYPES.includes(d.type) ? d.parentConventionId : null,
           amendmentType: d.type === 'AVENANT' ? d.amendmentType : null,
@@ -624,6 +650,11 @@ export function registerConventionsIPC(): void {
       //   - ACTIVE                       → VALIDEE
       //   - BROUILLON / ATTENTE_SIGNATURE → BROUILLON (en attente de validation)
       //   - EXPIRE / ANNULE / TERMINER    → aucune facture générée
+      // Une convention rattachée à un prospect (pas encore de clientId) n'a
+      // pas de tiers facturable : aucune facture générée tant qu'elle n'est
+      // pas convertie (prospects:convertToClient rattache alors le client,
+      // mais ne rejoue jamais cette génération — geste manuel si nécessaire).
+      if (d.clientId) {
       const autoInvoices: Array<{ type: 'FRAIS_OUVERTURE_DOSSIER' | 'APPORT_INITIAL' | 'VENTE' | 'OTHER'; amount: number; label: string }> = [];
       if (isPaymentOptionType(d.type, d.amendmentType)) {
         // Résiliations / avenants à paiement additionnel facultatif : aucune facture
@@ -686,6 +717,7 @@ export function registerConventionsIPC(): void {
       } else if (autoInvoices.length > 0 && !autoInvoiceStatus) {
         logger.info(`Convention ${convention.reference}: statut ${convention.status} — aucune facture auto-générée`);
       }
+      }
 
       logger.info(`Convention created: ${convention.reference}`);
       return ser({ success: true, data: convention });
@@ -723,8 +755,20 @@ export function registerConventionsIPC(): void {
       // à résoudre les règles dépendant du type sur une mise à jour partielle.
       const before = await db.convention.findUnique({
         where: { id },
-        select: { status: true, assetType: true, type: true, amendmentType: true },
+        select: { status: true, assetType: true, type: true, amendmentType: true, clientId: true, prospectId: true },
       });
+      // Convention rattachée à un prospect non encore converti (clientId
+      // toujours vide) : verrouillée au type Souscription/Vente et au statut
+      // Brouillon jusqu'à la conversion (prospects:convertToClient rattache
+      // alors clientId automatiquement, ce qui lève ce verrou).
+      if (before && !before.clientId && before.prospectId) {
+        if (d.status && d.status !== 'BROUILLON') {
+          return { success: false, error: "Cette convention est rattachée à un prospect : elle ne peut changer de statut que si le prospect est d'abord converti en client." };
+        }
+        if (d.type && !['SOUSCRIPTION', 'SALE'].includes(d.type)) {
+          return { success: false, error: 'Une convention pour un prospect ne peut être que de type Souscription ou Vente.' };
+        }
+      }
       // Champs traités séparément (relations / dates)
       delete data.installments;
       delete data.propertyIds;
@@ -1078,13 +1122,18 @@ export function registerConventionsIPC(): void {
       if (!session) return { success: false, error: 'Session expirée' };
       checkRole(session, READ_ROLES_AGENT);
       const db = getDb();
-      // AGENT : n'accède qu'aux échéances d'une convention BROUILLON de ses clients référents.
+      // AGENT : n'accède qu'aux échéances d'une convention BROUILLON de ses clients/prospects référents.
       if (isAgentRole(session.role)) {
         const conv = await db.convention.findUnique({
           where: { id: conventionId },
-          select: { status: true, client: { select: { assignedToId: true } } },
+          select: {
+            status: true,
+            client:   { select: { assignedToId: true } },
+            prospect: { select: { assignedToId: true } },
+          },
         });
-        if (!conv || conv.status !== 'BROUILLON' || conv.client?.assignedToId !== session.userId) {
+        if (!conv || conv.status !== 'BROUILLON'
+          || (conv.client?.assignedToId ?? conv.prospect?.assignedToId) !== session.userId) {
           return { success: false, error: 'Convention inaccessible' };
         }
       }

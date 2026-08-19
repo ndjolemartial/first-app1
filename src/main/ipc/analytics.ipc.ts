@@ -806,7 +806,7 @@ export function registerAnalyticsIPC(): void {
         const daysSince = Math.floor((now.getTime() - lastActionAt.getTime()) / DAY_MS);
         return {
           id: c.id, reference: c.reference,
-          name: c.type === 'ENTREPRISE' ? (c.entreprise ?? '') : `${c.lastName ?? ''} ${c.firstName ?? ''}`.trim(),
+          name: c.type !== 'INDIVIDUEL' ? (c.entreprise ?? '') : `${c.lastName ?? ''} ${c.firstName ?? ''}`.trim(),
           status: c.status,
           assignedToId: c.assignedToId,
           assignedTo: c.assignedTo ? `${c.assignedTo.lastName ?? ''} ${c.assignedTo.firstName ?? ''}`.trim() : null,

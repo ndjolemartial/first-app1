@@ -3,6 +3,9 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
+exports.markRuleCodeDeleted = markRuleCodeDeleted;
+exports.isSeedReminderTemplateName = isSeedReminderTemplateName;
+exports.markTemplateNameDeleted = markTemplateNameDeleted;
 exports.seedDefaultRemindersConfig = seedDefaultRemindersConfig;
 exports.getReminderPolicy = getReminderPolicy;
 exports.setReminderPolicy = setReminderPolicy;
@@ -153,11 +156,79 @@ const SEED_RULES = [
     { code: 'CONVENTION_EXPIRING_M7_WHATSAPP', name: 'Expiration — J-7 (WhatsApp)', triggerType: 'CONVENTION_EXPIRING', offsetDays: -7, channel: 'WHATSAPP', templateMarker: TPL_CODES.CONV_EXPIRING_WHATSAPP, isActive: false },
 ];
 // ── Seed idempotent ──────────────────────────────────────────────────────────
+// Empreinte des règles seedées supprimées **définitivement** par un admin
+// (`reminders:deleteRule`) — sans cette liste, `seedDefaultRemindersConfig`
+// (appelée à chaque démarrage de l'app) ne peut pas distinguer un code jamais
+// créé d'un code volontairement supprimé, et le recrée à chaque relance, ce
+// qui viderait de son sens la suppression « définitive ». `AppSetting`, pas
+// une colonne dédiée : ReminderRule ne porte pas de deletedAt (règle de
+// configuration, cf. commentaire sur reminders:deleteRule).
+const DELETED_SEED_CODES_KEY = 'reminders.deletedSeedCodes';
+async function loadDeletedSeedCodes() {
+    const raw = await (0, settings_service_1.getSetting)(DELETED_SEED_CODES_KEY);
+    if (!raw)
+        return new Set();
+    try {
+        const arr = JSON.parse(raw);
+        return new Set(Array.isArray(arr) ? arr : []);
+    }
+    catch {
+        return new Set();
+    }
+}
+/** Marque un code de règle comme supprimé définitivement — n'est plus jamais reseedé. */
+async function markRuleCodeDeleted(code) {
+    const codes = await loadDeletedSeedCodes();
+    if (codes.has(code))
+        return;
+    codes.add(code);
+    await (0, settings_service_1.setSetting)(DELETED_SEED_CODES_KEY, JSON.stringify([...codes]));
+}
+// Même principe que `DELETED_SEED_CODES_KEY`, appliqué aux TEMPLATES seedés
+// (`SEED_TEMPLATES`) plutôt qu'aux règles : `communication:deleteTemplate`
+// fait une suppression physique (`commTemplate.delete`) sans laisser aucune
+// trace en base — sans cette liste, l'étape 1 de `seedDefaultRemindersConfig`
+// (exécutée à chaque démarrage) ne trouve plus le template par son nom et le
+// recrée systématiquement, y compris pour les modèles SMS/WhatsApp
+// volontairement supprimés dans « Modèles email / SMS ».
+const DELETED_SEED_TEMPLATE_NAMES_KEY = 'reminders.deletedSeedTemplateNames';
+async function loadDeletedSeedTemplateNames() {
+    const raw = await (0, settings_service_1.getSetting)(DELETED_SEED_TEMPLATE_NAMES_KEY);
+    if (!raw)
+        return new Set();
+    try {
+        const arr = JSON.parse(raw);
+        return new Set(Array.isArray(arr) ? arr : []);
+    }
+    catch {
+        return new Set();
+    }
+}
+/** `name` correspond-il à un des templates seedés par la politique de relance ? */
+function isSeedReminderTemplateName(name) {
+    return Object.values(TPL_CODES).includes(name);
+}
+/** Marque un template seedé comme supprimé définitivement — n'est plus jamais reseedé. */
+async function markTemplateNameDeleted(name) {
+    if (!isSeedReminderTemplateName(name))
+        return;
+    const names = await loadDeletedSeedTemplateNames();
+    if (names.has(name))
+        return;
+    names.add(name);
+    await (0, settings_service_1.setSetting)(DELETED_SEED_TEMPLATE_NAMES_KEY, JSON.stringify([...names]));
+}
 async function seedDefaultRemindersConfig() {
     const db = (0, db_service_1.getDb)();
-    // 1. Templates (par nom : on ne recrée pas si présent).
+    const deletedCodes = await loadDeletedSeedCodes();
+    const deletedTemplateNames = await loadDeletedSeedTemplateNames();
+    // 1. Templates (par nom : on ne recrée pas si présent, ni si supprimé
+    //    définitivement — une règle encore active référençant ce marqueur
+    //    retombe alors sur `templateId: null`, cf. étape 2 ci-dessous).
     const templateIdByMarker = new Map();
     for (const t of SEED_TEMPLATES) {
+        if (deletedTemplateNames.has(t.marker))
+            continue;
         const existing = await db.commTemplate.findFirst({ where: { name: t.marker } });
         if (existing) {
             templateIdByMarker.set(t.marker, existing.id);
@@ -176,8 +247,10 @@ async function seedDefaultRemindersConfig() {
         templateIdByMarker.set(t.marker, created.id);
         logger_1.default.info(`Reminder template created: ${t.marker}`);
     }
-    // 2. Règles (par code : idempotent).
+    // 2. Règles (par code : idempotent, sauf suppression définitive antérieure).
     for (const r of SEED_RULES) {
+        if (deletedCodes.has(r.code))
+            continue;
         const existing = await db.reminderRule.findUnique({ where: { code: r.code } });
         if (existing)
             continue;
@@ -295,9 +368,9 @@ function render(template, vars) {
     });
 }
 function buildClientName(c) {
-    if (c.type === 'ENTREPRISE')
+    if (c.type !== 'INDIVIDUEL')
         return c.entreprise ?? '';
-    return `${c.firstName ?? ''} ${c.lastName ?? ''}`.trim();
+    return `${c.lastName ?? ''} ${c.firstName ?? ''}`.trim();
 }
 async function applyReminderRules(opts = {}) {
     const db = (0, db_service_1.getDb)();
@@ -334,7 +407,10 @@ async function applyReminderRules(opts = {}) {
         const pivotStartIso = startOfDay(pivotStart);
         try {
             if (rule.triggerType === 'INSTALLMENT_UPCOMING' || rule.triggerType === 'INSTALLMENT_OVERDUE') {
-                const overdueStatuses = ['A_REGLER', 'EN_RETARD', 'EN_ATTENTE'];
+                // PARTIEL inclus : une échéance partiellement réglée reste due, les
+                // rappels continuent. Seul un solde totalement réglé (PAYE) — ou une
+                // échéance annulée — arrête les rappels planifiés sur cette échéance.
+                const overdueStatuses = ['A_REGLER', 'EN_RETARD', 'EN_ATTENTE', 'PARTIEL'];
                 const installments = await db.saleInstallment.findMany({
                     where: {
                         dueDate: { gte: pivotStartIso, lte: pivotEnd },
@@ -423,6 +499,11 @@ async function applyReminderRules(opts = {}) {
                         deletedAt: null,
                         status: 'ACTIVE',
                         endDate: { gte: pivotStartIso, lte: pivotEnd },
+                        // Une convention déjà renouvelée ou ayant reçu un avenant (autre
+                        // convention active la référençant via parentConventionId) n'est
+                        // plus candidate : son échéance d'origine est caduque, le
+                        // renouvellement/avenant porte sa propre date de fin.
+                        amendments: { none: { deletedAt: null, status: { not: 'ANNULE' } } },
                     },
                     include: { client: true },
                 });
@@ -539,8 +620,13 @@ async function processCandidate(db, ctx, result, bump) {
         throw createErr;
     }
     try {
+        // Message-ID sortant (email uniquement) — persisté pour permettre à une
+        // réponse entrante de retrouver cet échange via In-Reply-To/References
+        // (cf. mailbox-poller.service.ts).
+        let messageId;
         if (rule.channel === 'EMAIL') {
-            await (0, email_service_1.sendEmail)({ to: recipient, subject: subject ?? '(sans objet)', body });
+            const info = await (0, email_service_1.sendEmail)({ to: recipient, subject: subject ?? '(sans objet)', body });
+            messageId = info.messageId;
         }
         else if (rule.channel === 'WHATSAPP') {
             await (0, whatsapp_service_1.sendWhatsapp)(recipient, body);
@@ -550,7 +636,7 @@ async function processCandidate(db, ctx, result, bump) {
         }
         await db.communication.update({
             where: { id: comm.id },
-            data: { status: 'ENVOYE', sentAt: new Date() },
+            data: { status: 'ENVOYE', sentAt: new Date(), ...(messageId ? { messageId } : {}) },
         });
         // Journalisation CRM — rappel marqué « traité » puisqu'il s'agit d'un envoi
         // déjà réalisé. L'utilisateur référent retrouvera la trace via la fiche client.

@@ -37,6 +37,23 @@ const ownerBaseSchema = zod_1.z.object({
     bankIban: zod_1.z.string().optional(),
     bankBic: zod_1.z.string().optional(),
     compte_contribuable: zod_1.z.string().optional(),
+    // Informations complémentaires — alimentent la « Fiche KYC » imprimable
+    // depuis la fiche propriétaire, même principe que Client.*.
+    employerName: zod_1.z.string().optional(),
+    monthlyIncome: zod_1.z.coerce.number().min(0).nullable().optional(),
+    sourceOfFunds: zod_1.z.array(zod_1.z.string()).optional(),
+    sourceOfFundsOther: zod_1.z.string().optional(),
+    sourceOfWealth: zod_1.z.string().optional(),
+    relationshipPurpose: zod_1.z.array(zod_1.z.string()).optional(),
+    relationshipPurposeOther: zod_1.z.string().optional(),
+    expectedTransactionVolume: zod_1.z.coerce.number().min(0).nullable().optional(),
+    acquisitionChannel: zod_1.z.string().optional(),
+    isPep: zod_1.z.boolean().optional(),
+    pepCategory: zod_1.z.enum(['PEP_NATIONAL', 'PEP_ETRANGER', 'PEP_ORGANISATION_INTERNATIONALE', 'PERSONNE_LIEE_PEP']).nullable().optional(),
+    pepFunction: zod_1.z.string().optional(),
+    hasRiskyCountryLink: zod_1.z.boolean().optional(),
+    kycSignedAt: zod_1.z.string().datetime().nullable().optional(),
+    kycSignedPlace: zod_1.z.string().optional(),
     notes: zod_1.z.string().optional(),
 });
 /**
@@ -63,6 +80,18 @@ const requireIdForOwner = (data, ctx) => {
 };
 const ownerSchema = ownerBaseSchema.superRefine(requireIdForOwner);
 const ownerUpdateSchema = ownerBaseSchema.partial().superRefine(requireIdForOwner);
+// Bénéficiaires effectifs — pertinents pour un propriétaire entreprise,
+// repris sur la Fiche KYC imprimable. Même schéma que ClientBeneficialOwner.
+const beneficialOwnerSchema = zod_1.z.object({
+    firstName: zod_1.z.string().min(1, 'Prénom requis'),
+    lastName: zod_1.z.string().min(1, 'Nom requis'),
+    nationality: zod_1.z.string().optional(),
+    idNumber: zod_1.z.string().optional(),
+    ownershipPct: zod_1.z.coerce.number().min(0).max(100).nullable().optional(),
+    role: zod_1.z.string().optional(),
+    isPep: zod_1.z.boolean().optional(),
+    notes: zod_1.z.string().optional(),
+});
 // Module Propriétaires : réservé aux MANAGER+ (ACCOUNTANT inclus via checkRole).
 // AGENT et READONLY n'ont aucun accès au module.
 const WRITE_ROLES = ['SUPER_ADMIN', 'ADMIN', 'MANAGER'];
@@ -132,6 +161,7 @@ function registerOwnersIPC() {
                     activities: { orderBy: { createdAt: 'desc' }, take: 20 },
                     idType: { select: { id: true, code: true, label: true } },
                     legalRepIdType: { select: { id: true, code: true, label: true } },
+                    beneficialOwners: { where: { deletedAt: null }, orderBy: { createdAt: 'asc' } },
                 },
             });
             if (!owner)
@@ -155,9 +185,11 @@ function registerOwnersIPC() {
             const data = { ...parsed.data };
             if (data.email === '')
                 data.email = undefined;
+            if (data.kycSignedAt)
+                data.kycSignedAt = new Date(data.kycSignedAt);
             const owner = await db.owner.create({ data });
             logger_1.default.info(`Owner created: id=${owner.id}`);
-            return { success: true, data: owner };
+            return { success: true, data: ser(owner) };
         }
         catch (error) {
             return { success: false, error: error.message };
@@ -176,8 +208,10 @@ function registerOwnersIPC() {
             const data = { ...parsed.data };
             if (data.email === '')
                 data.email = undefined;
+            if (data.kycSignedAt)
+                data.kycSignedAt = new Date(data.kycSignedAt);
             const owner = await db.owner.update({ where: { id, deletedAt: null }, data });
-            return { success: true, data: owner };
+            return { success: true, data: ser(owner) };
         }
         catch (error) {
             return { success: false, error: error.message };
@@ -220,6 +254,61 @@ function registerOwnersIPC() {
             return { success: true, data: ser({ properties, totalRentIncome }) };
         }
         catch (error) {
+            return { success: false, error: error.message };
+        }
+    });
+    // ── Bénéficiaires effectifs (propriétaire entreprise) ─────────────────────
+    electron_1.ipcMain.handle('owners:beneficialOwners:create', async (_event, { token, ownerId, payload }) => {
+        try {
+            const session = (0, auth_service_1.getSession)(token);
+            if (!session)
+                return { success: false, error: 'Session expirée' };
+            (0, auth_service_1.checkRole)(session, WRITE_ROLES);
+            const parsed = beneficialOwnerSchema.safeParse(payload);
+            if (!parsed.success)
+                return { success: false, error: parsed.error.format() };
+            const db = (0, db_service_1.getDb)();
+            const owner = await db.owner.findFirst({ where: { id: Number(ownerId), deletedAt: null } });
+            if (!owner)
+                return { success: false, error: 'Propriétaire introuvable' };
+            const bo = await db.ownerBeneficialOwner.create({ data: { ...parsed.data, ownerId: owner.id } });
+            return { success: true, data: ser(bo) };
+        }
+        catch (error) {
+            logger_1.default.error('owners:beneficialOwners:create', error.message);
+            return { success: false, error: error.message };
+        }
+    });
+    electron_1.ipcMain.handle('owners:beneficialOwners:update', async (_event, { token, id, payload }) => {
+        try {
+            const session = (0, auth_service_1.getSession)(token);
+            if (!session)
+                return { success: false, error: 'Session expirée' };
+            (0, auth_service_1.checkRole)(session, WRITE_ROLES);
+            const parsed = beneficialOwnerSchema.partial().safeParse(payload);
+            if (!parsed.success)
+                return { success: false, error: parsed.error.format() };
+            const db = (0, db_service_1.getDb)();
+            const bo = await db.ownerBeneficialOwner.update({ where: { id: Number(id) }, data: parsed.data });
+            return { success: true, data: ser(bo) };
+        }
+        catch (error) {
+            logger_1.default.error('owners:beneficialOwners:update', error.message);
+            return { success: false, error: error.message };
+        }
+    });
+    electron_1.ipcMain.handle('owners:beneficialOwners:delete', async (_event, { token, id }) => {
+        try {
+            const session = (0, auth_service_1.getSession)(token);
+            if (!session)
+                return { success: false, error: 'Session expirée' };
+            (0, auth_service_1.checkRole)(session, WRITE_ROLES);
+            const db = (0, db_service_1.getDb)();
+            await db.ownerBeneficialOwner.update({ where: { id: Number(id) }, data: { deletedAt: new Date() } });
+            return { success: true };
+        }
+        catch (error) {
+            logger_1.default.error('owners:beneficialOwners:delete', error.message);
             return { success: false, error: error.message };
         }
     });

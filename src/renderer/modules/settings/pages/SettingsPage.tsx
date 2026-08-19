@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useAuthStore } from '../../../shared/stores/auth.store';
-import { Building2, HardDrive, Database, Mail, MessageSquare, Images, FileText, FileSignature, Award, Briefcase, Tags, Landmark, IdCard, Layers, Bell, BookOpen, ChevronDown, ChevronRight, Inbox, Printer, MapPin, ShoppingBag, QrCode, Clock, AlarmClockOff, TrendingUp, HardHat, Wrench, Sigma, SlidersHorizontal, Calculator } from 'lucide-react';
+import { Building2, HardDrive, Database, Mail, MessageSquare, Images, FileText, FileSignature, Award, Briefcase, Tags, Landmark, IdCard, Layers, Bell, BookOpen, ChevronDown, ChevronRight, Inbox, Printer, MapPin, ShoppingBag, QrCode, Clock, AlarmClockOff, TrendingUp, HardHat, Wrench, Sigma, SlidersHorizontal, Calculator, Scale, ClipboardList, ShieldAlert, ListChecks } from 'lucide-react';
 import PageLayout from '../../../shared/components/layout/PageLayout';
 import Card from '../../../shared/components/ui/Card';
 import { clsx } from 'clsx';
@@ -42,6 +42,10 @@ import ConstructionRatioDefsSettingsTab from '../components/ConstructionRatioDef
 import ConstructionRatioProfilesSettingsTab from '../components/ConstructionRatioProfilesSettingsTab';
 import ConstructionLocalitiesSettingsTab from '../components/ConstructionLocalitiesSettingsTab';
 import ConstructionFormulasSettingsTab from '../components/ConstructionFormulasSettingsTab';
+import PermitCommunesSettingsTab       from '../components/PermitCommunesSettingsTab';
+import PermitFeeItemsSettingsTab       from '../components/PermitFeeItemsSettingsTab';
+import AmlRiskFactorsSettingsTab       from '../components/AmlRiskFactorsSettingsTab';
+import AmlThresholdsSettingsTab        from '../components/AmlThresholdsSettingsTab';
 import { useMyTemplatePermissions }     from '../../communication/hooks/useCommunication';
 
 type TabKey =
@@ -81,9 +85,13 @@ type TabKey =
   | 'constructionRatioDefs'
   | 'constructionRatioProfiles'
   | 'constructionLocalities'
-  | 'constructionFormulas';
+  | 'constructionFormulas'
+  | 'permitCommunes'
+  | 'permitFeeItems'
+  | 'amlRiskFactors'
+  | 'amlThresholds';
 
-type GroupKey = 'communication' | 'treasury' | 'printedTemplates' | 'construction';
+type GroupKey = 'communication' | 'treasury' | 'printedTemplates' | 'construction' | 'permits' | 'aml';
 
 interface TabDef {
   key: TabKey;
@@ -109,6 +117,8 @@ const GROUPS: GroupDef[] = [
   { key: 'printedTemplates', label: "Modèles d'imprimés",   icon: <Printer className="h-4 w-4" /> },
   { key: 'treasury',         label: 'Opérations bancaires', icon: <Landmark className="h-4 w-4" /> },
   { key: 'construction',     label: 'Moteur de devis construction', icon: <HardHat className="h-4 w-4" /> },
+  { key: 'permits',          label: 'Moteur de devis permis de construire', icon: <Scale className="h-4 w-4" /> },
+  { key: 'aml',              label: 'Conformité LBC/FT', icon: <ShieldAlert className="h-4 w-4" /> },
 ];
 
 /** Exporté pour `Sidebar.tsx` (calcul de `hasAnySettingsAccess`, cf. commentaire ci-dessus). */
@@ -156,6 +166,12 @@ export const TABS: TabDef[] = [
   { key: 'constructionRatioProfiles',   label: 'Profils de coefficients', icon: <SlidersHorizontal className="h-4 w-4" />, group: 'construction' },
   { key: 'constructionLocalities',      label: 'Localités',               icon: <MapPin className="h-4 w-4" />,             group: 'construction', roles: ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ACCOUNTANT'] },
   { key: 'constructionFormulas',        label: 'Formules de calcul',      icon: <Calculator className="h-4 w-4" />,         group: 'construction' },
+  // ── Groupe « Moteur de devis permis de construire » (Module 18) — admin uniquement
+  { key: 'permitCommunes',              label: 'Communes',                icon: <MapPin className="h-4 w-4" />,             group: 'permits', roles: ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ACCOUNTANT'] },
+  { key: 'permitFeeItems',              label: 'Catalogue de prestations', icon: <ClipboardList className="h-4 w-4" />,     group: 'permits', roles: ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ACCOUNTANT'] },
+  // ── Groupe « Conformité LBC/FT » (Module 19) ─────────────
+  { key: 'amlRiskFactors',              label: 'Catalogue des facteurs de risque', icon: <ListChecks className="h-4 w-4" />, group: 'aml', roles: ['SUPER_ADMIN', 'ADMIN', 'CONFORMITE', 'MANAGER', 'ACCOUNTANT'] },
+  { key: 'amlThresholds',               label: 'Seuils de scoring',        icon: <SlidersHorizontal className="h-4 w-4" />, group: 'aml', roles: ['SUPER_ADMIN', 'ADMIN', 'CONFORMITE', 'MANAGER', 'ACCOUNTANT'] },
   // ─────────────────────────────────────────────────────────────
 ];
 
@@ -332,6 +348,10 @@ export default function SettingsPage() {
           {active === 'constructionRatioProfiles' && <ConstructionRatioProfilesSettingsTab />}
           {active === 'constructionLocalities'    && <ConstructionLocalitiesSettingsTab />}
           {active === 'constructionFormulas'      && <ConstructionFormulasSettingsTab />}
+          {active === 'permitCommunes'            && <PermitCommunesSettingsTab />}
+          {active === 'permitFeeItems'             && <PermitFeeItemsSettingsTab />}
+          {active === 'amlRiskFactors'             && <AmlRiskFactorsSettingsTab />}
+          {active === 'amlThresholds'              && <AmlThresholdsSettingsTab />}
           {active === 'invoiceTemplates'     && <InvoiceTemplatesSettingsTab />}
           {active === 'listExportTemplates'  && <ListExportTemplatesSettingsTab />}
           {active === 'wireTransferTemplate' && <WireTransferTemplateSettingsTab />}

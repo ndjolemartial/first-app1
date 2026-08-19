@@ -83,6 +83,7 @@ model User {
   assignedReferrers           BusinessReferrer[]                 @relation("ReferrerAssignedTo")
   attestationsEmitted         Attestation[]                      @relation("AttestationEmittedBy")
   communicationsSent          Communication[]                    @relation("CommunicationSentBy")
+  mailAccount                 MailAccount?
   quotesAsAgent               Quote[]                            @relation("QuoteAgent")
   quotesCreated               Quote[]                            @relation("QuoteCreatedBy")
   ownedDocumentFolders        DocumentFolder[]                   @relation("FolderOwner")
@@ -104,6 +105,19 @@ model User {
   constructionProjectsCreated ConstructionProject[]              @relation("ConstructionProjectCreatedBy")
   constructionEstimates       ConstructionEstimate[]             @relation("ConstructionEstimateGeneratedBy")
   constructionPriceChanges    ConstructionResourcePriceHistory[] @relation("ConstructionPriceChangedBy")
+  permitProjectsAgent         PermitProject[]                    @relation("PermitProjectAgent")
+  permitProjectsCreated       PermitProject[]                    @relation("PermitProjectCreatedBy")
+  permitEstimatesGenerated    PermitEstimate[]                   @relation("PermitEstimateGeneratedBy")
+  amlProfilesValidated        AmlProfile[]                       @relation("AmlProfileValidatedBy")
+  amlProfilesCreated          AmlProfile[]                       @relation("AmlProfileCreatedBy")
+  amlWatchlistMatchesReviewed AmlWatchlistMatch[]                @relation("AmlWatchlistMatchReviewedBy")
+  amlReviewsReviewed          AmlTransactionReview[]             @relation("AmlReviewReviewedBy")
+  amlReviewsCreated           AmlTransactionReview[]             @relation("AmlReviewCreatedBy")
+  amlReportsDeclared          AmlSuspiciousReport[]              @relation("AmlReportDeclaredBy")
+  amlReportsHandled           AmlSuspiciousReport[]              @relation("AmlReportComplianceOfficer")
+  amlReportsTransmitted       AmlSuspiciousReport[]              @relation("AmlReportTransmittedBy")
+  amlTrainingsAttended        AmlTraining[]                      @relation("AmlTrainingUser")
+  amlTrainingsRecorded        AmlTraining[]                      @relation("AmlTrainingRecordedBy")
 }
 
 enum UserRole {
@@ -115,6 +129,7 @@ enum UserRole {
   AGENT
   AGENT_TECHNIQUE
   RH
+  CONFORMITE
   READONLY
 }
 
@@ -152,6 +167,8 @@ model Prospect {
   calls                PhoneCall[]
   communications       Communication[]
   constructionProjects ConstructionProject[]
+  permitProjects       PermitProject[]
+  conventions          Convention[]
 }
 
 enum ProspectSource {
@@ -216,7 +233,32 @@ model Client {
   fatherLastName       String?
   motherFirstName      String?
   motherLastName       String?
-  notes                String?            @db.Text
+  // Informations complémentaires — alimentent la « Fiche KYC » imprimable
+  // depuis la fiche client (le reste de l'identité — nom, filiation,
+  // profession, adresse, pièce d'identité… — est déjà porté par les champs
+  // ci-dessus, jamais dupliqué ici).
+  employerName              String? // employeur / activité professionnelle
+  monthlyIncome             Decimal?        @db.Decimal(15, 2) // revenu mensuel déclaré
+  // Origine des fonds — sélection multiple parmi une liste fermée de sources
+  // usuelles (tableau de codes, sans enum Prisma dédié — même convention que
+  // PermitProject.missionPhases). sourceOfFundsOther précise le libellé
+  // saisi quand le code AUTRE est sélectionné.
+  sourceOfFunds             Json? // string[] de codes (FONDS_PROPRES_ENTREPRISE, SALAIRE…)
+  sourceOfFundsOther        String? // précision libre quand AUTRE est sélectionné
+  sourceOfWealth            String?         @db.Text // origine du patrimoine
+  // Objet de la relation d'affaires — même principe de sélection multiple
+  // que sourceOfFunds ci-dessus.
+  relationshipPurpose       Json? // string[] de codes (ACHAT_TERRAIN, CONSTRUCTION…)
+  relationshipPurposeOther  String? // précision libre quand AUTRE est sélectionné
+  expectedTransactionVolume Decimal?        @db.Decimal(15, 2) // volume mensuel estimé des opérations envisagées
+  acquisitionChannel        String? // comment le client a connu l'agence
+  isPep                     Boolean         @default(false) // personne politiquement exposée
+  pepCategory               AmlPepCategory?
+  pepFunction               String?
+  hasRiskyCountryLink       Boolean         @default(false)
+  kycSignedAt               DateTime? // date de signature de la fiche KYC
+  kycSignedPlace            String? // lieu de signature
+  notes                     String?            @db.Text
   isActive             Boolean            @default(true)
   status               ClientStatus       @default(ACTIF)
   // Refus de relances automatiques par canal (politique de communication).
@@ -250,11 +292,42 @@ model Client {
   quotes                Quote[]
   calls                 PhoneCall[]
   constructionProjects  ConstructionProject[]
+  permitProjects        PermitProject[]
+  beneficialOwners      ClientBeneficialOwner[]
+}
+
+// Bénéficiaires effectifs d'un client personne morale (Entreprise ou
+// Association / ONG) — même structure que AmlBeneficialOwner (Module 19),
+// mais rattachés directement au client plutôt qu'à un profil de vigilance
+// distinct, cohérent avec le reste de la « Fiche KYC » (Client.*). Repris
+// sur le document imprimable.
+model ClientBeneficialOwner {
+  id           Int       @id @default(autoincrement())
+  clientId     Int
+  firstName    String
+  lastName     String
+  nationality  String?
+  idNumber     String?
+  ownershipPct Decimal?  @db.Decimal(5, 2)
+  role         String? // Gérant, Associé majoritaire, Administrateur…
+  isPep        Boolean   @default(false)
+  notes        String?   @db.Text
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  deletedAt    DateTime?
+
+  client Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  @@index([clientId])
 }
 
 enum ClientType {
   INDIVIDUEL
   ENTREPRISE
+  // Association / ONG — personne morale, mêmes champs de saisie qu'ENTREPRISE
+  // (Client uniquement ; jamais proposé dans le formulaire Propriétaires, qui
+  // partage cet enum mais n'expose que INDIVIDUEL/ENTREPRISE).
+  ASSOCIATION_ONG
 }
 
 enum ClientStatus {
@@ -310,20 +383,60 @@ model Owner {
   bankIban            String?
   bankBic             String?
   compte_contribuable String?
+  // Informations complémentaires — alimentent la « Fiche KYC » imprimable
+  // depuis la fiche propriétaire, même principe que Client.*.
+  employerName              String?
+  monthlyIncome             Decimal?        @db.Decimal(15, 2)
+  sourceOfFunds             Json?
+  sourceOfFundsOther        String?
+  sourceOfWealth            String?         @db.Text
+  relationshipPurpose       Json?
+  relationshipPurposeOther  String?
+  expectedTransactionVolume Decimal?        @db.Decimal(15, 2)
+  acquisitionChannel        String?
+  isPep                     Boolean         @default(false)
+  pepCategory               AmlPepCategory?
+  pepFunction               String?
+  hasRiskyCountryLink       Boolean         @default(false)
+  kycSignedAt               DateTime?
+  kycSignedPlace            String?
   notes               String?       @db.Text
   isActive            Boolean       @default(true)
   createdAt           DateTime      @default(now())
   updatedAt           DateTime      @updatedAt
   deletedAt           DateTime?
 
-  properties     Property[]
-  terrains       Terrain[]
-  documents      Document[]
-  activities     CrmActivity[]
-  projects       Project[]
-  communications Communication[]
-  idType         IdDocumentType? @relation("OwnerIdType", fields: [idTypeId], references: [id])
-  legalRepIdType IdDocumentType? @relation("OwnerLegalRepIdType", fields: [legalRepIdTypeId], references: [id])
+  properties       Property[]
+  terrains         Terrain[]
+  documents        Document[]
+  activities       CrmActivity[]
+  projects         Project[]
+  communications   Communication[]
+  idType           IdDocumentType? @relation("OwnerIdType", fields: [idTypeId], references: [id])
+  legalRepIdType   IdDocumentType? @relation("OwnerLegalRepIdType", fields: [legalRepIdTypeId], references: [id])
+  beneficialOwners OwnerBeneficialOwner[]
+}
+
+// Bénéficiaires effectifs d'un propriétaire personne morale — même structure
+// que ClientBeneficialOwner.
+model OwnerBeneficialOwner {
+  id           Int       @id @default(autoincrement())
+  ownerId      Int
+  firstName    String
+  lastName     String
+  nationality  String?
+  idNumber     String?
+  ownershipPct Decimal?  @db.Decimal(5, 2)
+  role         String?
+  isPep        Boolean   @default(false)
+  notes        String?   @db.Text
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  deletedAt    DateTime?
+
+  owner Owner @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+
+  @@index([ownerId])
 }
 
 // ── LOTISSEMENTS ───────────────────────────────────────────────
@@ -614,7 +727,14 @@ model Convention {
   type                    ConventionType
   status                  ConventionStatus            @default(BROUILLON)
   assetType               ConventionAssetType         @default(PROPERTY)
-  clientId                Int
+  // Client OU prospect — jamais les deux (invariant applicatif, validé côté
+  // Zod à la création, même principe que ConstructionProject/PermitProject).
+  // Une convention prospect (Souscription/Vente, statut verrouillé BROUILLON)
+  // voit clientId renseigné automatiquement à la conversion du prospect en
+  // client (prospects:convertToClient), sans jamais effacer prospectId
+  // (traçabilité).
+  clientId                Int?
+  prospectId              Int?
   secondaryClientId       Int?
   parentConventionId      Int?
   amendmentType           ConventionAmendmentType?
@@ -678,7 +798,8 @@ model Convention {
   properties       ConventionProperty[]
   terrains         ConventionTerrain[]
   priorTerrains    ConventionPriorTerrain[]
-  client           Client                   @relation("ConventionClient", fields: [clientId], references: [id])
+  client           Client?                  @relation("ConventionClient", fields: [clientId], references: [id])
+  prospect         Prospect?                @relation(fields: [prospectId], references: [id])
   secondaryClient  Client?                  @relation("ConventionSecondaryClient", fields: [secondaryClientId], references: [id])
   agent            User?                    @relation("AgentConventions", fields: [agentId], references: [id])
   referrer         BusinessReferrer?        @relation("ConventionReferrer", fields: [referrerId], references: [id])
@@ -692,6 +813,8 @@ model Convention {
   commissions      Commission[]
   attestations     Attestation[]
   communications   Communication[]
+
+  @@index([prospectId])
 }
 
 // Liaison Convention ↔ Bien immobilier (une convention peut couvrir plusieurs biens).
@@ -1531,23 +1654,91 @@ model Communication {
   // systèmes (relances automatiques) — sert au filtrage de visibilité
   // dans l'historique pour les rôles non privilégiés.
   senderId     Int?
+  // Message-ID sortant (capturé sur la réponse Nodemailer à l'envoi) — permet
+  // à une réponse entrante de retrouver l'échange d'origine via l'en-tête
+  // In-Reply-To/References (cf. mailbox-poller.service.ts).
+  messageId          String?
+  // Pour une ligne ENTRANT : en-tête In-Reply-To (ou 1ʳᵉ valeur de References)
+  // du message reçu, tel que parsé — conservé même si aucune correspondance
+  // n'a été trouvée (diagnostic).
+  inReplyToMessageId String?
+  // Pour une ligne ENTRANT appariée : la Communication SORTANT d'origine.
+  parentCommunicationId Int?
+  // Boîte IMAP ayant reçu ce message (système des relances, ou boîte
+  // personnelle d'un utilisateur) — null pour les lignes SORTANT.
+  mailAccountId Int?
   metadata     Json?
   createdAt    DateTime      @default(now())
+  // Pour une ligne ENTRANT : date de première consultation dans l'app (aperçu
+  // ouvert depuis l'historique Communication). Null = pas encore lu. Sans
+  // rapport avec `openedAt` (pixel de suivi détectant l'ouverture d'un email
+  // SORTANT par le destinataire) — ici c'est nous qui lisons un message reçu.
+  readAt       DateTime?
+  // Pour une ligne ENTRANT : adresses en copie/copie cachée du message reçu
+  // (cf. mailbox-poller.service.ts), normalisées en minuscules et encadrées
+  // de « | » — ex. "|a@x.ci|b@y.ci|" — pour un filtrage `contains` sûr (évite
+  // les faux positifs de sous-chaîne d'une simple liste séparée par virgules).
+  // Sert exclusivement à l'exception de visibilité : un utilisateur sans
+  // droit sur l'entité rattachée voit quand même le message si sa propre
+  // adresse y figure (communication.ipc.ts → communication:getHistory).
+  ccAddresses  String?       @db.Text
 
-  template   CommTemplate?     @relation(fields: [templateId], references: [id])
-  client     Client?           @relation(fields: [clientId], references: [id])
-  owner      Owner?            @relation(fields: [ownerId], references: [id])
-  convention Convention?       @relation(fields: [conventionId], references: [id])
-  referrer   BusinessReferrer? @relation("CommunicationReferrer", fields: [referrerId], references: [id])
-  sender     User?             @relation("CommunicationSentBy", fields: [senderId], references: [id])
-  prospect   Prospect?         @relation(fields: [prospectId], references: [id])
+  template    CommTemplate?     @relation(fields: [templateId], references: [id])
+  client      Client?           @relation(fields: [clientId], references: [id])
+  owner       Owner?            @relation(fields: [ownerId], references: [id])
+  convention  Convention?       @relation(fields: [conventionId], references: [id])
+  referrer    BusinessReferrer? @relation("CommunicationReferrer", fields: [referrerId], references: [id])
+  sender      User?             @relation("CommunicationSentBy", fields: [senderId], references: [id])
+  prospect    Prospect?         @relation(fields: [prospectId], references: [id])
+  parentCommunication Communication?  @relation("CommunicationThread", fields: [parentCommunicationId], references: [id])
+  replies             Communication[] @relation("CommunicationThread")
+  mailAccount         MailAccount?    @relation(fields: [mailAccountId], references: [id])
 
+  @@unique([mailAccountId, messageId])
   @@index([clientId])
   @@index([ownerId])
   @@index([conventionId])
   @@index([referrerId])
   @@index([senderId])
   @@index([prospectId])
+  @@index([messageId])
+  @@index([parentCommunicationId])
+}
+
+// Boîte IMAP interrogée pour récupérer les réponses aux emails envoyés — soit
+// la boîte système partagée des relances (userId null), soit la boîte
+// personnelle d'un utilisateur (opt-in, self-service, une seule par
+// utilisateur). Un seul service de polling traite les deux de la même façon
+// (cf. mailbox-poller.service.ts).
+model MailAccount {
+  id              Int       @id @default(autoincrement())
+  userId          Int?      @unique
+  label           String?
+  imapHost        String
+  imapPort        Int       @default(993)
+  imapSecure      Boolean   @default(true)
+  imapUser        String
+  // Chiffré (AES-256-GCM portable, même primitive que les secrets AppSetting
+  // — cf. src/main/utils/secretCrypto.ts).
+  imapPasswordEnc String    @db.Text
+  folder          String    @default("INBOX")
+  isActive        Boolean   @default(true)
+  // Par défaut (false), le poller ne journalise dans Communication que les
+  // messages qui prolongent un échange initié depuis l'app (réponse directe
+  // ou suite de fil — cf. mailbox-poller.service.ts). À true, TOUS les
+  // messages reçus dans cette boîte sont journalisés, y compris ceux sans
+  // aucun lien avec un envoi de l'app — réservé à l'usage assumé d'une boîte
+  // personnelle dédiée où l'utilisateur veut tout voir dans l'app.
+  receiveAllMessages Boolean @default(false)
+  // Curseur de polling (dernier UID IMAP traité) et diagnostic de la dernière passe.
+  lastUid         Int?
+  lastPolledAt    DateTime?
+  lastError       String?   @db.Text
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  user           User?           @relation(fields: [userId], references: [id])
+  communications Communication[]
 }
 
 model CommTemplate {
@@ -1627,76 +1818,84 @@ enum CommStatus {
 // ── DOCUMENTS ─────────────────────────────────────────────────
 
 model Document {
-  id                  Int       @id @default(autoincrement())
-  name                String
-  type                String // Type MIME
-  path                String    @db.VarChar(500) // Chemin de stockage (ou chemin réseau d'archives héritées)
-  size                Int // Taille en octets
-  category            String? // Catégorie technique héritée (identité, dm_scan…)
+  id                     Int       @id @default(autoincrement())
+  name                   String
+  type                   String // Type MIME
+  path                   String    @db.VarChar(500) // Chemin de stockage (ou chemin réseau d'archives héritées)
+  size                   Int // Taille en octets
+  category               String? // Catégorie technique héritée (identité, dm_scan…)
   // ── GED (gestion électronique de documents) ──────────────────
-  numeroArchive       String?   @unique // Numéro d'archive automatique : ARC-AAAA-NNNN
-  description         String?   @db.Text
-  categoryId          Int? // Catégorie documentaire (classement)
-  folderId            Int? // Dossier dans l'arborescence documentaire
-  uploadedById        Int? // Utilisateur ayant importé le document
-  ocrText             String?   @db.LongText // Texte extrait par OCR (indexation plein texte)
-  isPhysical          Boolean   @default(false) // Possède une contrepartie papier
-  physBureau          String? // Localisation physique : bureau
-  physCarton          String? // Localisation physique : carton
-  physClasseur        String? // Localisation physique : classeur
+  numeroArchive          String?   @unique // Numéro d'archive automatique : ARC-AAAA-NNNN
+  description            String?   @db.Text
+  categoryId             Int? // Catégorie documentaire (classement)
+  folderId               Int? // Dossier dans l'arborescence documentaire
+  uploadedById           Int? // Utilisateur ayant importé le document
+  ocrText                String?   @db.LongText // Texte extrait par OCR (indexation plein texte)
+  isPhysical             Boolean   @default(false) // Possède une contrepartie papier
+  physBureau             String? // Localisation physique : bureau
+  physCarton             String? // Localisation physique : carton
+  physClasseur           String? // Localisation physique : classeur
   // ── Rattachement aux entités métier ──────────────────────────
-  clientId            Int?
-  ownerId             Int?
-  propertyId          Int?
-  conventionId        Int?
-  lotissementId       Int?
-  terrainId           Int?
-  programmeId         Int?
-  projectId           Int?
+  clientId               Int?
+  ownerId                Int?
+  propertyId             Int?
+  conventionId           Int?
+  lotissementId          Int?
+  terrainId              Int?
+  programmeId            Int?
+  projectId              Int?
   // Rattachements complémentaires : un document peut être lié à au plus
   // une entité de chaque type (FK nullables, pattern identique aux
   // rattachements ci-dessus).
-  prospectId          Int?
-  referrerId          Int? // Apporteur d'affaires (BusinessReferrer)
-  linkedUserId        Int? // Utilisateur rattaché (distinct de uploadedBy)
-  invoiceId           Int?
-  commissionId        Int?
-  attestationId       Int?
-  quoteId             Int?
-  treasuryOperationId Int? // Opération de trésorerie rattachée
-  crmActivityId       Int? // Activité CRM dont ce document est une pièce jointe
-  socialPublicationId Int? // Publication/article (réseaux sociaux & web) dont ce document est une pièce jointe
-  itInnovationId      Int? // Innovation IT dont ce document est une pièce jointe justificative
-  itInnovationPhase   Int? // Phase justifiée par la pièce jointe (1, 2 ou 3)
-  uploadedAt          DateTime  @default(now())
-  updatedAt           DateTime  @updatedAt
-  deletedAt           DateTime?
+  prospectId             Int?
+  referrerId             Int? // Apporteur d'affaires (BusinessReferrer)
+  linkedUserId           Int? // Utilisateur rattaché (distinct de uploadedBy)
+  invoiceId              Int?
+  commissionId           Int?
+  attestationId          Int?
+  quoteId                Int?
+  treasuryOperationId    Int? // Opération de trésorerie rattachée
+  crmActivityId          Int? // Activité CRM dont ce document est une pièce jointe
+  socialPublicationId    Int? // Publication/article (réseaux sociaux & web) dont ce document est une pièce jointe
+  itInnovationId         Int? // Innovation IT dont ce document est une pièce jointe justificative
+  itInnovationPhase      Int? // Phase justifiée par la pièce jointe (1, 2 ou 3)
+  amlProfileId           Int? // Profil LBC/FT/FP dont ce document est une pièce justificative (KYC…)
+  amlTransactionReviewId Int? // Revue de transaction LBC/FT/FP dont ce document est une pièce justificative
+  amlSuspiciousReportId  Int? // Déclaration de soupçon LBC/FT/FP — pièce jointe strictement confidentielle (cf. documents.ipc.ts)
+  amlTrainingId          Int? // Formation LBC/FT/FP dont ce document est le justificatif (attestation…)
+  uploadedAt             DateTime  @default(now())
+  updatedAt              DateTime  @updatedAt
+  deletedAt              DateTime?
 
-  client            Client?              @relation(fields: [clientId], references: [id])
-  owner             Owner?               @relation(fields: [ownerId], references: [id])
-  property          Property?            @relation(fields: [propertyId], references: [id])
-  convention        Convention?          @relation(fields: [conventionId], references: [id])
-  lotissement       Lotissement?         @relation(fields: [lotissementId], references: [id])
-  terrain           Terrain?             @relation(fields: [terrainId], references: [id])
-  programme         ProgrammeImmobilier? @relation(fields: [programmeId], references: [id])
-  project           Project?             @relation(fields: [projectId], references: [id])
-  prospect          Prospect?            @relation(fields: [prospectId], references: [id])
-  referrer          BusinessReferrer?    @relation("DocumentReferrer", fields: [referrerId], references: [id])
-  linkedUser        User?                @relation("DocumentLinkedUser", fields: [linkedUserId], references: [id])
-  invoice           Invoice?             @relation(fields: [invoiceId], references: [id])
-  commission        Commission?          @relation(fields: [commissionId], references: [id])
-  attestation       Attestation?         @relation(fields: [attestationId], references: [id])
-  quote             Quote?               @relation(fields: [quoteId], references: [id])
-  treasuryOperation TreasuryOperation?   @relation(fields: [treasuryOperationId], references: [id])
-  documentCategory  DocumentCategory?    @relation(fields: [categoryId], references: [id])
-  folder            DocumentFolder?      @relation(fields: [folderId], references: [id])
-  uploadedBy        User?                @relation("DocumentUploadedBy", fields: [uploadedById], references: [id])
-  crmActivity       CrmActivity?         @relation("ActivityAttachments", fields: [crmActivityId], references: [id])
-  socialPublication SocialPublication?   @relation("SocialPublicationAttachments", fields: [socialPublicationId], references: [id])
-  itInnovation      ItInnovation?        @relation("ItInnovationAttachments", fields: [itInnovationId], references: [id])
-  tags              DocumentTag[]
-  auditLogs         DocumentAuditLog[]
-  activities        CrmActivity[]        @relation("ActivityLinkedDocument")
+  client               Client?               @relation(fields: [clientId], references: [id])
+  owner                Owner?                @relation(fields: [ownerId], references: [id])
+  property             Property?             @relation(fields: [propertyId], references: [id])
+  convention           Convention?           @relation(fields: [conventionId], references: [id])
+  lotissement          Lotissement?          @relation(fields: [lotissementId], references: [id])
+  terrain              Terrain?              @relation(fields: [terrainId], references: [id])
+  programme            ProgrammeImmobilier?  @relation(fields: [programmeId], references: [id])
+  project              Project?              @relation(fields: [projectId], references: [id])
+  prospect             Prospect?             @relation(fields: [prospectId], references: [id])
+  referrer             BusinessReferrer?     @relation("DocumentReferrer", fields: [referrerId], references: [id])
+  linkedUser           User?                 @relation("DocumentLinkedUser", fields: [linkedUserId], references: [id])
+  invoice              Invoice?              @relation(fields: [invoiceId], references: [id])
+  commission           Commission?           @relation(fields: [commissionId], references: [id])
+  attestation          Attestation?          @relation(fields: [attestationId], references: [id])
+  quote                Quote?                @relation(fields: [quoteId], references: [id])
+  treasuryOperation    TreasuryOperation?    @relation(fields: [treasuryOperationId], references: [id])
+  documentCategory     DocumentCategory?     @relation(fields: [categoryId], references: [id])
+  folder               DocumentFolder?       @relation(fields: [folderId], references: [id])
+  uploadedBy           User?                 @relation("DocumentUploadedBy", fields: [uploadedById], references: [id])
+  crmActivity          CrmActivity?          @relation("ActivityAttachments", fields: [crmActivityId], references: [id])
+  socialPublication    SocialPublication?    @relation("SocialPublicationAttachments", fields: [socialPublicationId], references: [id])
+  itInnovation         ItInnovation?         @relation("ItInnovationAttachments", fields: [itInnovationId], references: [id])
+  amlProfile           AmlProfile?           @relation("AmlProfileAttachments", fields: [amlProfileId], references: [id])
+  amlTransactionReview AmlTransactionReview? @relation("AmlTransactionReviewAttachments", fields: [amlTransactionReviewId], references: [id])
+  amlSuspiciousReport  AmlSuspiciousReport?  @relation("AmlSuspiciousReportAttachments", fields: [amlSuspiciousReportId], references: [id])
+  amlTraining          AmlTraining?          @relation("AmlTrainingAttachments", fields: [amlTrainingId], references: [id])
+  tags                 DocumentTag[]
+  auditLogs            DocumentAuditLog[]
+  activities           CrmActivity[]         @relation("ActivityLinkedDocument")
 }
 
 // Catégorie documentaire — auto-référencée pour les sous-catégories.
@@ -1986,6 +2185,23 @@ model BusinessReferrer {
   country      String        @default("CI")
   bankIban     String?
   bankBic      String?
+  // Informations complémentaires — alimentent la « Fiche KYC » imprimable
+  // depuis la fiche apporteur d'affaire, même principe que Client.*.
+  employerName              String?
+  monthlyIncome             Decimal?        @db.Decimal(15, 2)
+  sourceOfFunds             Json?
+  sourceOfFundsOther        String?
+  sourceOfWealth            String?         @db.Text
+  relationshipPurpose       Json?
+  relationshipPurposeOther  String?
+  expectedTransactionVolume Decimal?        @db.Decimal(15, 2)
+  acquisitionChannel        String?
+  isPep                     Boolean         @default(false)
+  pepCategory               AmlPepCategory?
+  pepFunction               String?
+  hasRiskyCountryLink       Boolean         @default(false)
+  kycSignedAt               DateTime?
+  kycSignedPlace            String?
   notes        String?       @db.Text
   isActive     Boolean       @default(true)
   // Utilisateur interne référent de cet apporteur d'affaire (facultatif).
@@ -2000,6 +2216,29 @@ model BusinessReferrer {
   conventions    Convention[]    @relation("ConventionReferrer")
   documents      Document[]      @relation("DocumentReferrer")
   communications Communication[] @relation("CommunicationReferrer")
+  beneficialOwners ReferrerBeneficialOwner[]
+}
+
+// Bénéficiaires effectifs d'un apporteur d'affaire personne morale — même
+// structure que ClientBeneficialOwner.
+model ReferrerBeneficialOwner {
+  id           Int       @id @default(autoincrement())
+  referrerId   Int
+  firstName    String
+  lastName     String
+  nationality  String?
+  idNumber     String?
+  ownershipPct Decimal?  @db.Decimal(5, 2)
+  role         String?
+  isPep        Boolean   @default(false)
+  notes        String?   @db.Text
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  deletedAt    DateTime?
+
+  referrer BusinessReferrer @relation(fields: [referrerId], references: [id], onDelete: Cascade)
+
+  @@index([referrerId])
 }
 
 model Commission {
@@ -3662,6 +3901,14 @@ enum ConstructionSanitationType {
   AUCUN
 }
 
+// Poteaux sortants (protubérants, plus de coffrage/finition) ou poteaux
+// simples (intégrés au mur, plus économiques) — cf. rubrique « Poteaux » du
+// devis de clôture (Module 17).
+enum ConstructionFencePostType {
+  POTEAUX_SORTANTS
+  POTEAUX_SIMPLES
+}
+
 // Ventilation « Niveau 1 » demandée par l'utilisateur : gros œuvre / second
 // œuvre / électricité / plomberie / finitions / VRD / aménagements.
 enum ConstructionLotPhase {
@@ -3693,6 +3940,16 @@ enum ConstructionProjectStatus {
   ESTIME
   DEVIS_EMIS
   ARCHIVE
+}
+
+// Portée du devis : COMPLET = maison entière (22 lots) ; les deux autres
+// restreignent le moteur aux ouvrages du seul lot concerné (+ installation
+// de chantier / nettoyage réception, LOT01/LOT22) — cf. computeEstimate()
+// (lotCodeFilter) dans construction-engine.service.ts.
+enum ConstructionProjectScope {
+  COMPLET
+  CLOTURE_SEULE
+  PISCINE_SEULE
 }
 
 enum ConstructionEstimateStatus {
@@ -3973,6 +4230,7 @@ model ConstructionProject {
   reference String                    @unique // Ex: PC-2026-0001
   nom       String
   status    ConstructionProjectStatus @default(BROUILLON)
+  scope     ConstructionProjectScope  @default(COMPLET)
 
   // Rattachements optionnels
   clientId   Int?
@@ -4016,8 +4274,11 @@ model ConstructionProject {
   hasElectricityConnection Boolean                    @default(true)
 
   // Extérieurs
-  fenceLength          Decimal? @db.Decimal(10, 2) // clôture (ml)
-  fenceHeight          Decimal? @db.Decimal(5, 2) // hauteur (m), défaut applicatif 2,00
+  fenceLength          Decimal?                   @db.Decimal(10, 2) // clôture (ml)
+  fenceHeight          Decimal?                   @db.Decimal(5, 2) // hauteur (m), défaut applicatif 2,00
+  fenceHasCrepissage   Boolean                    @default(false) // clôture crépie ou brute d'agglos
+  fenceHasChainageHaut Boolean                    @default(false) // chaînage haut optionnel
+  fencePostType        ConstructionFencePostType  @default(POTEAUX_SIMPLES) // poteaux sortants ou simples
   gateCount            Int      @default(0) // portails
   hasPool              Boolean  @default(false)
   poolSurface          Decimal? @db.Decimal(10, 2)
@@ -4039,14 +4300,15 @@ model ConstructionProject {
   updatedAt   DateTime  @updatedAt
   deletedAt   DateTime?
 
-  client    Client?                @relation(fields: [clientId], references: [id])
-  prospect  Prospect?              @relation(fields: [prospectId], references: [id])
-  terrain   Terrain?               @relation(fields: [terrainId], references: [id])
-  project   Project?               @relation(fields: [projectId], references: [id])
-  agent     User?                  @relation("ConstructionProjectAgent", fields: [agentId], references: [id])
-  createdBy User?                  @relation("ConstructionProjectCreatedBy", fields: [createdById], references: [id])
-  locality  ConstructionLocality?  @relation(fields: [localityId], references: [id])
-  estimates ConstructionEstimate[]
+  client         Client?                @relation(fields: [clientId], references: [id])
+  prospect       Prospect?              @relation(fields: [prospectId], references: [id])
+  terrain        Terrain?               @relation(fields: [terrainId], references: [id])
+  project        Project?               @relation(fields: [projectId], references: [id])
+  agent          User?                  @relation("ConstructionProjectAgent", fields: [agentId], references: [id])
+  createdBy      User?                  @relation("ConstructionProjectCreatedBy", fields: [createdById], references: [id])
+  locality       ConstructionLocality?  @relation(fields: [localityId], references: [id])
+  estimates      ConstructionEstimate[]
+  permitProjects PermitProject[] // projets de permis de construire rattachés (Module 18)
 
   @@index([clientId])
   @@index([prospectId])
@@ -4082,6 +4344,11 @@ model ConstructionEstimate {
   margePct         Decimal                @default(0) @db.Decimal(5, 2)
   tvaPct           Decimal                @default(0) @db.Decimal(5, 2)
   puRoundingStep   Int                    @default(1) // arrondi du PU en FCFA (1, 5, 10, 100)
+  // Remise globale — appliquée entre le sous-total HT et la TVA (même
+  // principe que Quote.discountAmount/discountIsPercent/discountPercent).
+  discountAmount    Decimal  @default(0) @db.Decimal(15, 2)
+  discountIsPercent Boolean  @default(false)
+  discountPercent   Decimal? @db.Decimal(5, 2)
 
   // Totaux figés
   totalDeboursMateriaux  Decimal  @default(0) @db.Decimal(15, 2)
@@ -4092,7 +4359,8 @@ model ConstructionEstimate {
   totalFraisChantier     Decimal  @default(0) @db.Decimal(15, 2)
   totalFraisGeneraux     Decimal  @default(0) @db.Decimal(15, 2)
   totalMarge             Decimal  @default(0) @db.Decimal(15, 2)
-  totalHT                Decimal  @default(0) @db.Decimal(15, 2)
+  subtotalHT             Decimal  @default(0) @db.Decimal(15, 2) // sous-total HT avant remise
+  totalHT                Decimal  @default(0) @db.Decimal(15, 2) // total HT après remise
   totalTVA               Decimal  @default(0) @db.Decimal(15, 2)
   totalTTC               Decimal  @default(0) @db.Decimal(15, 2)
   prixMoyenM2            Decimal? @db.Decimal(15, 2)
@@ -4206,4 +4474,671 @@ model ConstructionEstimateResourceLine {
 
   @@unique([estimateId, resourceCode])
   @@index([estimateId, resourceType])
+}
+
+// ── MOTEUR DE DEVIS DE PERMIS DE CONSTRUIRE (Module 18) ─────────────────────
+// Chiffre les prestations intellectuelles, administratives et réglementaires
+// liées à l'obtention d'un permis de construire (honoraires architecte/BET/
+// géomètre, études, frais administratifs, taxes). Peut être rattaché à un
+// ConstructionProject existant pour réutiliser son coût prévisionnel de
+// travaux (dernier ConstructionEstimate.totalHT), ou fonctionner seul.
+// Mêmes principes que le Module 17 : règle d'applicabilité déclarative
+// partagée (isApplicable, applicability-rule.ts), taux lus à chaud depuis
+// la bibliothèque, lignes d'estimation figées (snapshot).
+
+enum PermitProjectNature {
+  VILLA
+  IMMEUBLE
+  COMMERCE
+  BUREAU
+  HOTEL
+  USINE
+  ENTREPOT
+}
+
+enum PermitZoneType {
+  URBAINE
+  RURALE
+}
+
+enum PermitMissionPhase {
+  ESQUISSE
+  APS // Avant-Projet Sommaire
+  APD // Avant-Projet Détaillé
+  PLANS_EXECUTION
+  SUIVI_CHANTIER
+  RECEPTION
+}
+
+// Les « prestations complémentaires » (impression, reliure, déplacements…)
+// sont volontairement absentes de cette énumération : ce sont de simples
+// lignes quantité × prix unitaire, déjà couvertes par le Catalogue
+// prestations/produits existant (CatalogItem) au moment de la conversion
+// en devis commercial (Quote).
+enum PermitFeeCategory {
+  ARCHITECTE
+  BET_STRUCTURE
+  BET_FLUIDES
+  BET_ELECTRICITE
+  BET_VRD
+  BET_GEOTECHNIQUE
+  GEOMETRE
+  ETUDE_SOL
+  ETUDE_HYDROLOGIE
+  ETUDE_ENVIRONNEMENT
+  ETUDE_INCENDIE
+  FRAIS_ADMINISTRATIF
+  TAXE
+}
+
+enum PermitFeeCalcMode {
+  POURCENTAGE_COUT_TRAVAUX // % du coût prévisionnel des travaux
+  FORFAIT // montant fixe (FCFA)
+  PAR_M2_TERRAIN // FCFA × superficie du terrain
+  PAR_M2_BATI // FCFA × surface bâtie
+  BAREME_SURFACE // forfait par tranche de surface bâtie (PermitFeeSurfaceBracket)
+}
+
+enum PermitProjectStatus {
+  BROUILLON
+  ESTIME
+  DEVIS_EMIS
+  ARCHIVE
+}
+
+enum PermitEstimateStatus {
+  BROUILLON
+  VALIDE
+  CONVERTI
+  OBSOLETE
+}
+
+// ── Référentiels ─────────────────────────────────────────────────────────
+
+model PermitCommune {
+  id        Int            @id @default(autoincrement())
+  uuid      String         @unique @default(cuid())
+  nom       String
+  district  String?
+  region    String?
+  zoneType  PermitZoneType @default(URBAINE)
+  isActive  Boolean        @default(true)
+  createdAt DateTime       @default(now())
+  updatedAt DateTime       @updatedAt
+  deletedAt DateTime?
+
+  projects      PermitProject[]
+  rateOverrides PermitFeeRateOverride[]
+
+  @@index([nom])
+}
+
+// Catalogue des prestations/frais/taxes chiffrables (honoraires architecte,
+// BET, géomètre, études, frais administratifs, taxes). `defaultValue`
+// s'interprète selon `calcMode` (pourcentage 0-100, FCFA forfaitaire, ou
+// FCFA/m²) — surchargeable par nature/standing/commune via
+// PermitFeeRateOverride, ou par tranche de surface via
+// PermitFeeSurfaceBracket pour calcMode = BAREME_SURFACE.
+model PermitFeeItem {
+  id                Int                 @id @default(autoincrement())
+  uuid              String              @unique @default(cuid())
+  code              String              @unique
+  category          PermitFeeCategory
+  label             String
+  description       String?             @db.Text
+  calcMode          PermitFeeCalcMode
+  missionPhase      PermitMissionPhase? // uniquement pour la catégorie ARCHITECTE
+  defaultValue      Decimal             @db.Decimal(15, 4)
+  unit              String? // libellé d'affichage, ex. "FCFA/m²"
+  applicabilityRule Json? // même moteur que ConstructionWorkItem.applicabilityRule
+  sortOrder         Int                 @default(0)
+  isActive          Boolean             @default(true)
+  createdAt         DateTime            @default(now())
+  updatedAt         DateTime            @updatedAt
+  deletedAt         DateTime?
+
+  rateOverrides   PermitFeeRateOverride[]
+  surfaceBrackets PermitFeeSurfaceBracket[]
+
+  @@index([category])
+  @@index([isActive])
+}
+
+// Surcharge de `PermitFeeItem.defaultValue` pour une combinaison précise
+// (nature/standing/commune) — dimensions optionnelles, la correspondance la
+// plus spécifique l'emporte (résolue par permit-engine.service.ts).
+model PermitFeeRateOverride {
+  id        Int                   @id @default(autoincrement())
+  feeItemId Int
+  nature    PermitProjectNature?
+  standing  ConstructionStanding?
+  communeId Int?
+  value     Decimal               @db.Decimal(15, 4)
+  createdAt DateTime              @default(now())
+  updatedAt DateTime              @updatedAt
+
+  feeItem PermitFeeItem  @relation(fields: [feeItemId], references: [id], onDelete: Cascade)
+  commune PermitCommune? @relation(fields: [communeId], references: [id])
+
+  @@unique([feeItemId, nature, standing, communeId])
+  @@index([communeId])
+}
+
+// Tranches de surface pour les items en calcMode = BAREME_SURFACE (ex.
+// levé topographique du géomètre, souvent forfaitaire par palier de
+// surface plutôt que strictement proportionnel).
+model PermitFeeSurfaceBracket {
+  id         Int      @id @default(autoincrement())
+  feeItemId  Int
+  minSurface Decimal  @db.Decimal(12, 2)
+  maxSurface Decimal? @db.Decimal(12, 2) // null = pas de plafond (dernière tranche)
+  value      Decimal  @db.Decimal(15, 4) // forfait FCFA pour cette tranche
+  label      String?
+  sortOrder  Int      @default(0)
+
+  feeItem PermitFeeItem @relation(fields: [feeItemId], references: [id], onDelete: Cascade)
+
+  @@index([feeItemId])
+}
+
+// ── Projet & estimations (transactionnel) ───────────────────────────────
+
+model PermitProject {
+  id        Int                 @id @default(autoincrement())
+  uuid      String              @unique @default(cuid())
+  reference String              @unique // Ex: PRM-2026-0001
+  nom       String
+  status    PermitProjectStatus @default(BROUILLON)
+
+  clientId              Int?
+  prospectId            Int?
+  agentId               Int?
+  constructionProjectId Int? // lien optionnel vers un projet du moteur de devis construction
+
+  nature   PermitProjectNature
+  standing ConstructionStanding @default(MOYEN_STANDING)
+
+  communeId       Int?
+  zoneType        PermitZoneType? // repli sur celui de la commune si non renseigné
+  terrainSurface  Decimal?        @db.Decimal(12, 2)
+  surfaceBatie    Decimal         @db.Decimal(12, 2)
+  levels          Int             @default(1)
+  hasSousSol      Boolean         @default(false)
+  nombreBatiments Int             @default(1)
+
+  // Coût prévisionnel des travaux — base des honoraires au pourcentage. Si
+  // `constructionProjectId` est renseigné, se déduit par défaut du dernier
+  // ConstructionEstimate.totalHT du projet lié (reste modifiable manuellement,
+  // ex. permis pour un projet chiffré ailleurs).
+  coutPrevisionnelTravaux Decimal? @db.Decimal(15, 2)
+
+  hasPiscine           Boolean @default(false)
+  hasAscenseur         Boolean @default(false)
+  hasGroupeElectrogene Boolean @default(false)
+  hasForage            Boolean @default(false)
+  hasCloture           Boolean @default(false)
+  hasVoirieInterieure  Boolean @default(false)
+
+  // Phases de mission sélectionnées (sous-ensemble de PermitMissionPhase),
+  // ex. ["ESQUISSE","APS"] pour une mission partielle.
+  missionPhases Json
+
+  description String?   @db.Text
+  notes       String?   @db.Text
+  createdById Int?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  deletedAt   DateTime?
+
+  client              Client?              @relation(fields: [clientId], references: [id])
+  prospect            Prospect?            @relation(fields: [prospectId], references: [id])
+  agent               User?                @relation("PermitProjectAgent", fields: [agentId], references: [id])
+  createdBy           User?                @relation("PermitProjectCreatedBy", fields: [createdById], references: [id])
+  commune             PermitCommune?       @relation(fields: [communeId], references: [id])
+  constructionProject ConstructionProject? @relation(fields: [constructionProjectId], references: [id])
+  estimates           PermitEstimate[]
+
+  @@index([clientId])
+  @@index([prospectId])
+  @@index([status])
+  @@index([communeId])
+  @@index([constructionProjectId])
+}
+
+model PermitEstimate {
+  id        Int                  @id @default(autoincrement())
+  uuid      String               @unique @default(cuid())
+  reference String               @unique // Ex: PRE-2026-0001
+  projectId Int
+  version   Int                  @default(1)
+  status    PermitEstimateStatus @default(BROUILLON)
+
+  totalArchitecte          Decimal @default(0) @db.Decimal(15, 2)
+  totalBET                 Decimal @default(0) @db.Decimal(15, 2)
+  totalGeometre            Decimal @default(0) @db.Decimal(15, 2)
+  totalEtudes              Decimal @default(0) @db.Decimal(15, 2)
+  totalFraisAdministratifs Decimal @default(0) @db.Decimal(15, 2)
+  totalTaxes               Decimal @default(0) @db.Decimal(15, 2)
+  totalHT                  Decimal @default(0) @db.Decimal(15, 2)
+  totalTVA                 Decimal @default(0) @db.Decimal(15, 2)
+  totalTTC                 Decimal @default(0) @db.Decimal(15, 2)
+  tvaPct                   Decimal @default(18) @db.Decimal(5, 2)
+
+  // Coût des travaux effectivement retenu pour les lignes au pourcentage —
+  // figé au moment du calcul (traçabilité si le devis construction lié évolue).
+  coutPrevisionnelTravauxSnapshot Decimal? @db.Decimal(15, 2)
+  warnings                        Json?
+
+  // Conversion en devis commercial — scalaire sans FK (même principe que
+  // ConstructionEstimate.quoteId : ne jamais coupler durement à Quote).
+  quoteId        Int?
+  quoteReference String?
+  convertedAt    DateTime?
+
+  generatedById Int?
+  generatedAt   DateTime  @default(now())
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  deletedAt     DateTime?
+
+  project     PermitProject        @relation(fields: [projectId], references: [id])
+  generatedBy User?                @relation("PermitEstimateGeneratedBy", fields: [generatedById], references: [id])
+  lines       PermitEstimateLine[]
+
+  @@unique([projectId, version])
+  @@index([projectId])
+  @@index([status])
+}
+
+model PermitEstimateLine {
+  id         Int @id @default(autoincrement())
+  estimateId Int
+
+  // Scalaires sans FK (P5) — snapshot figé, insensible à une suppression
+  // ultérieure de l'item dans la bibliothèque.
+  feeItemId   Int?
+  feeItemCode String?
+
+  category   PermitFeeCategory
+  label      String
+  calcMode   PermitFeeCalcMode
+  baseAmount Decimal?          @db.Decimal(15, 2) // coût travaux retenu, surface… selon calcMode
+  rateValue  Decimal           @db.Decimal(15, 4) // % ou FCFA appliqué
+  montantHT  Decimal           @db.Decimal(15, 2)
+  trace      String?           @db.Text
+  order      Int               @default(0)
+  createdAt  DateTime          @default(now())
+
+  estimate PermitEstimate @relation(fields: [estimateId], references: [id], onDelete: Cascade)
+
+  @@index([estimateId])
+}
+
+// ═══════════════════════════════════════════════════════════════
+// MODULE 19 — CONFORMITÉ LBC/FT/FP
+// ═══════════════════════════════════════════════════════════════
+
+enum AmlRiskLevel {
+  FAIBLE
+  MOYEN
+  ELEVE
+}
+
+enum AmlVigilanceType {
+  SIMPLIFIEE
+  NORMALE
+  RENFORCEE
+}
+
+// Statut de validation (CDD) d'un AmlProfile.
+enum AmlReviewStatus {
+  EN_COURS
+  VALIDE
+  A_REVOIR
+  REFUSE
+}
+
+enum AmlPepCategory {
+  PEP_NATIONAL
+  PEP_ETRANGER
+  PEP_ORGANISATION_INTERNATIONALE
+  PERSONNE_LIEE_PEP
+}
+
+enum AmlRiskFactorSource {
+  AUTO
+  MANUEL
+}
+
+enum AmlWatchlistType {
+  ONU
+  UE
+  NATIONALE
+  GIABA
+  AUTRE
+}
+
+enum AmlWatchlistPersonType {
+  PHYSIQUE
+  MORALE
+}
+
+enum AmlWatchlistMatchStatus {
+  A_VERIFIER
+  CONFIRME
+  FAUX_POSITIF
+}
+
+enum AmlReviewTriggerReason {
+  SEUIL_MONTANT
+  RISQUE_ELEVE
+  PEP
+  PAYS_RISQUE
+  ESPECES
+  WATCHLIST
+  MANUEL
+}
+
+enum AmlTransactionReviewStatus {
+  OUVERTE
+  EN_COURS
+  CLOTUREE_RAS
+  CLOTUREE_DECLAREE
+}
+
+enum AmlSuspiciousMotifCategory {
+  STRUCTURATION
+  ORIGINE_FONDS_SUSPECTE
+  INCOHERENCE_PROFIL
+  MONTAGE_COMPLEXE
+  PEP_NON_JUSTIFIE
+  WATCHLIST_CONFIRMEE
+  AUTRE
+}
+
+enum AmlSuspiciousReportStatus {
+  BROUILLON
+  VALIDEE_INTERNE
+  TRANSMISE_CENTIF
+  CLASSEE_SANS_SUITE
+}
+
+// Profil de vigilance LBC/FT/FP — un par Client OU Owner. Discriminateur
+// scalaire subjectType/subjectId (pas de double FK nullable), même principe
+// que EntityTimelineEvent.entityType/entityId.
+model AmlProfile {
+  id          Int    @id @default(autoincrement())
+  uuid        String @unique @default(cuid())
+  reference   String @unique // LBC-AAAA-NNNN
+  subjectType String // "CLIENT" | "OWNER"
+  subjectId   Int
+
+  riskScore     Int              @default(0)
+  riskLevel     AmlRiskLevel     @default(FAIBLE)
+  // Jugement du chargé de conformité — jamais auto-dérivé du score.
+  vigilanceType AmlVigilanceType @default(NORMALE)
+
+  isPep       Boolean         @default(false)
+  pepCategory AmlPepCategory?
+  pepFunction String?
+
+  // Lien avec un pays à risque — jugement manuel (pas de référentiel pays
+  // structuré en phase 1).
+  hasRiskyCountryLink Boolean @default(false)
+  sourceOfFunds       String? @db.Text
+  sourceOfWealth      String? @db.Text
+
+  status         AmlReviewStatus @default(EN_COURS)
+  validatedById  Int?
+  validatedAt    DateTime?
+  nextReviewDate DateTime?
+  lastScoredAt   DateTime?
+
+  notes       String?   @db.Text
+  createdById Int?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  deletedAt   DateTime?
+
+  validatedBy      User?                  @relation("AmlProfileValidatedBy", fields: [validatedById], references: [id])
+  createdBy        User?                  @relation("AmlProfileCreatedBy", fields: [createdById], references: [id])
+  beneficialOwners AmlBeneficialOwner[]
+  riskFactorLinks  AmlProfileRiskFactor[]
+  watchlistMatches AmlWatchlistMatch[]
+  documents        Document[]             @relation("AmlProfileAttachments")
+
+  @@unique([subjectType, subjectId])
+  @@index([riskLevel])
+  @@index([status])
+}
+
+// Bénéficiaire effectif — pertinent quand le sujet (Client/Owner) est de
+// type ENTREPRISE (non contraint en base, vérifié côté IPC/UI).
+model AmlBeneficialOwner {
+  id           Int       @id @default(autoincrement())
+  profileId    Int
+  firstName    String
+  lastName     String
+  nationality  String?
+  idNumber     String?
+  ownershipPct Decimal?  @db.Decimal(5, 2)
+  role         String? // Gérant, Associé majoritaire, Administrateur…
+  isPep        Boolean   @default(false)
+  notes        String?   @db.Text
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  deletedAt    DateTime?
+
+  profile AmlProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+
+  @@index([profileId])
+}
+
+// Catalogue paramétrable des facteurs de risque — calque de KpiDefinition.
+model AmlRiskFactorCatalog {
+  id             Int       @id @default(autoincrement())
+  code           String    @unique
+  label          String
+  category       String?
+  weight         Int       @default(1)
+  isAutoDetected Boolean   @default(false)
+  description    String?   @db.Text
+  isActive       Boolean   @default(true)
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  deletedAt      DateTime?
+
+  profileLinks AmlProfileRiskFactor[]
+}
+
+// Facteurs présents pour un profil — calque de PerformanceWeightLine.
+// Les liens AUTO sont réécrits à chaque recalcul ; les liens MANUEL sont
+// gérés par un handler dédié et jamais touchés par le recalcul automatique.
+model AmlProfileRiskFactor {
+  id           Int                 @id @default(autoincrement())
+  profileId    Int
+  riskFactorId Int
+  source       AmlRiskFactorSource @default(MANUEL)
+  createdAt    DateTime            @default(now())
+
+  profile    AmlProfile           @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  riskFactor AmlRiskFactorCatalog @relation(fields: [riskFactorId], references: [id])
+
+  @@unique([profileId, riskFactorId])
+}
+
+// Référentiel de vigilance (sanctions/PPE) — manuel, aucune connexion à une
+// API externe. Livré vide par conception (cf. scripts/seed-aml.mjs).
+model AmlWatchlist {
+  id               Int                    @id @default(autoincrement())
+  uuid             String                 @unique @default(cuid())
+  listType         AmlWatchlistType
+  personType       AmlWatchlistPersonType @default(PHYSIQUE)
+  name             String // Nom et prénoms (personne physique) / raison sociale (personne morale)
+  aliases          Json? // string[] — noms d'usage/alias
+  sex              String? // Sexe — personne physique uniquement (M/F)
+  nationality      String?
+  // number[] — âges connus (indicatifs, utiles quand la date de naissance
+  // exacte n'est pas connue) ; plusieurs valeurs fréquentes pour une même
+  // personne, comme pour les dates de naissance ci-dessous.
+  ages             Json?
+  // string[] de dates ISO (YYYY-MM-DD) — plusieurs dates de naissance connues
+  // pour une même personne sont fréquentes sur les listes SFC/PPE sources.
+  birthDates       Json?
+  birthPlace       String? // Lieu de naissance
+  // Identité ascendants, descendants, conjoint(e), parents ou proches connus.
+  relatedPersons   String?                @db.Text
+  maritalStatus    StatutConjugalType? // Situation matrimoniale
+  spokenLanguage   String? // Langue parlée
+  residenceCountry String? // Pays de résidence habituel
+  address          String?                @db.Text
+  phone            String? // Numéro de téléphone utilisé
+  profession       String?
+  reason           String?                @db.Text // Motif de l'inscription sur la liste
+  sourceRef        String? // référence de l'entrée dans la liste source
+  notes            String?                @db.Text
+  isActive         Boolean                @default(true)
+  createdAt        DateTime               @default(now())
+  updatedAt        DateTime               @updatedAt
+  deletedAt        DateTime?
+
+  matches AmlWatchlistMatch[]
+
+  @@index([name])
+}
+
+// Résultat de rapprochement profil ↔ entrée de la watchlist. Pas de
+// suppression, seulement un changement de statut.
+model AmlWatchlistMatch {
+  id           Int                     @id @default(autoincrement())
+  profileId    Int
+  watchlistId  Int
+  status       AmlWatchlistMatchStatus @default(A_VERIFIER)
+  matchScore   Int?
+  reviewedById Int?
+  reviewedAt   DateTime?
+  notes        String?                 @db.Text
+  createdAt    DateTime                @default(now())
+  updatedAt    DateTime                @updatedAt
+
+  profile    AmlProfile   @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  watchlist  AmlWatchlist @relation(fields: [watchlistId], references: [id])
+  reviewedBy User?        @relation("AmlWatchlistMatchReviewedBy", fields: [reviewedById], references: [id])
+
+  @@index([profileId])
+  @@index([status])
+}
+
+// Revue de vigilance sur un encaissement effectif — rattachée à sa source
+// réelle (Payment ou SaleInstallment, convention-liée ou héritée) via un
+// scalaire découplé (même principe que PermitEstimate.quoteId / P5) : une
+// revue passée ne casse jamais si la source est modifiée ailleurs. Le risque
+// LBC/FT/FP porte sur l'argent qui bouge, pas sur le contrat signé — une
+// Convention seule ne déclenche donc plus jamais de revue (cf. CLAUDE.md).
+model AmlTransactionReview {
+  id            Int                        @id @default(autoincrement())
+  uuid          String                     @unique @default(cuid())
+  reference     String                     @unique // RC-AAAA-NNNN
+  // Source réelle de l'encaissement — scalaire sans FK (P5) : "PAYMENT"
+  // (Payment.id) ou "INSTALLMENT" (SaleInstallment.id, convention-liée ou
+  // héritée selon que conventionId est renseigné).
+  sourceType    String?
+  sourceId      Int?
+  // Contexte convention — dérivé de la source si disponible ; nul pour les
+  // paiements de facture sans convention et pour les échéances héritées.
+  conventionId  Int?
+  sourceLabel   String? // libellé figé au déclenchement (traçabilité)
+  subjectType   String // "CLIENT" | "OWNER"
+  subjectId     Int
+  triggerReason AmlReviewTriggerReason
+  amount        Decimal?                   @db.Decimal(15, 2)
+  paymentMethod String? // copie texte figée au déclenchement
+  status        AmlTransactionReviewStatus @default(OUVERTE)
+  reviewedById  Int?
+  reviewedAt    DateTime?
+  conclusion    String?                    @db.Text
+  notes         String?                    @db.Text
+  createdById   Int?
+  createdAt     DateTime                   @default(now())
+  updatedAt     DateTime                   @updatedAt
+  deletedAt     DateTime?
+
+  reviewedBy User?                 @relation("AmlReviewReviewedBy", fields: [reviewedById], references: [id])
+  createdBy  User?                 @relation("AmlReviewCreatedBy", fields: [createdById], references: [id])
+  documents  Document[]            @relation("AmlTransactionReviewAttachments")
+  reports    AmlSuspiciousReport[]
+
+  @@index([sourceType, sourceId])
+  @@index([conventionId])
+  @@index([status])
+  @@index([subjectType, subjectId])
+}
+
+// Déclaration de soupçon (CENTIF-CI) — modèle strictement confidentiel
+// (principe de non-divulgation / « tipping-off »). deletedAt conservé pour
+// convention de schéma mais AUCUN handler IPC de suppression n'est jamais
+// enregistré pour ce modèle (obligation réglementaire de non-altération).
+model AmlSuspiciousReport {
+  id                  Int    @id @default(autoincrement())
+  uuid                String @unique @default(cuid())
+  reference           String @unique // DS-AAAA-NNNN
+  subjectType         String // "CLIENT" | "OWNER"
+  subjectId           Int
+  conventionId        Int? // scalaire sans FK, optionnel
+  transactionReviewId Int? // FK réelle : même module, pas de couplage inter-module à éviter
+
+  motifCategory AmlSuspiciousMotifCategory?
+  motif         String                      @db.Text
+  status        AmlSuspiciousReportStatus   @default(BROUILLON)
+
+  // Agent ayant signalé en interne — n'importe quel rôle autorisé (cf.
+  // AML_REPORT_CREATE_ROLES). Non-nullable + ON DELETE RESTRICT : ne jamais
+  // perdre la traçabilité du déclarant.
+  declaredById         Int
+  complianceOfficerId  Int?
+  transmittedById      Int?
+  transmittedAt        DateTime?
+  centifReference      String? // n° d'accusé de réception CENTIF, saisie manuelle
+  classificationReason String?   @db.Text
+
+  notes     String?   @db.Text
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  declaredBy        User                  @relation("AmlReportDeclaredBy", fields: [declaredById], references: [id])
+  complianceOfficer User?                 @relation("AmlReportComplianceOfficer", fields: [complianceOfficerId], references: [id])
+  transmittedBy     User?                 @relation("AmlReportTransmittedBy", fields: [transmittedById], references: [id])
+  transactionReview AmlTransactionReview? @relation(fields: [transactionReviewId], references: [id])
+  documents         Document[]            @relation("AmlSuspiciousReportAttachments")
+
+  @@index([status])
+  @@index([subjectType, subjectId])
+}
+
+// Registre des formations LBC/FT/FP du personnel — registre plat, pas de
+// workflow de validation ni de suivi d'obligations de recyclage périodique.
+// Pas de confidentialité particulière (contrairement à AmlSuspiciousReport) :
+// gestion réservée AML_ROLES, comme le reste du module.
+model AmlTraining {
+  id            Int       @id @default(autoincrement())
+  uuid          String    @unique @default(cuid())
+  reference     String    @unique // FORM-AAAA-NNNN
+  userId        Int // participant
+  trainingDate  DateTime
+  topic         String
+  provider      String?
+  durationHours Decimal?  @db.Decimal(5, 2)
+  notes         String?   @db.Text
+  recordedById  Int?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  deletedAt     DateTime?
+
+  user       User       @relation("AmlTrainingUser", fields: [userId], references: [id])
+  recordedBy User?      @relation("AmlTrainingRecordedBy", fields: [recordedById], references: [id])
+  documents  Document[] @relation("AmlTrainingAttachments")
+
+  @@index([userId])
+  @@index([trainingDate])
 }

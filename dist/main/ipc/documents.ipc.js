@@ -14,9 +14,25 @@ const auth_service_1 = require("../services/auth.service");
 const storage_service_1 = require("../services/storage.service");
 const logger_1 = __importDefault(require("../utils/logger"));
 const WRITE_ROLES = ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'AGENT'];
-const READ_ROLES = [...WRITE_ROLES, 'ACCOUNTANT', 'READONLY'];
+// CONFORMITE (Module 19) ajouté en lecture — sans quoi le chargé de
+// conformité ne pourrait consulter aucune pièce jointe de son propre module
+// (aucune équivalence checkRole pour ce rôle exclusif).
+const READ_ROLES = [...WRITE_ROLES, 'ACCOUNTANT', 'READONLY', 'CONFORMITE'];
 const DELETE_ROLES = ['SUPER_ADMIN', 'ADMIN', 'MANAGER'];
 const PREVIEW_MAX_BYTES = 25 * 1024 * 1024;
+// Rôles autorisés à voir/déposer les pièces jointes d'une déclaration de
+// soupçon (Module 19) — même liste qu'AML_REPORT_MANAGE_ROLES dans aml.ipc.ts,
+// dupliquée localement (convention du projet : pas d'import inter-fichiers IPC).
+const AML_CONFIDENTIAL_ROLES = ['SUPER_ADMIN', 'ADMIN', 'CONFORMITE', 'MANAGER', 'ACCOUNTANT'];
+// Rôles autorisés à créer une déclaration de soupçon (donc à y joindre des
+// pièces juste après sa création) — même liste qu'AML_REPORT_CREATE_ROLES.
+const AML_REPORT_CREATE_ROLES = [
+    'SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ACCOUNTANT', 'ASSISTANTE_DIRECTION',
+    'AGENT', 'AGENT_TECHNIQUE', 'RH', 'CONFORMITE',
+];
+// Rôles autorisés à gérer un profil/une revue LBC/FT (donc à y joindre
+// des pièces) — même liste qu'AML_ROLES.
+const AML_ROLES = ['SUPER_ADMIN', 'ADMIN', 'CONFORMITE', 'MANAGER', 'ACCOUNTANT'];
 /** Classe un type MIME dans un groupe lisible. */
 function typeGroupOf(mime) {
     if (mime === 'application/pdf')
@@ -261,6 +277,10 @@ const importSchema = zod_1.z.object({
     socialPublicationId: zod_1.z.number().int().positive().optional(),
     itInnovationId: zod_1.z.number().int().positive().optional(),
     itInnovationPhase: zod_1.z.number().int().min(1).max(3).optional(),
+    amlProfileId: zod_1.z.number().int().positive().optional(),
+    amlTransactionReviewId: zod_1.z.number().int().positive().optional(),
+    amlSuspiciousReportId: zod_1.z.number().int().positive().optional(),
+    amlTrainingId: zod_1.z.number().int().positive().optional(),
 });
 const updateGedSchema = zod_1.z.object({
     name: zod_1.z.string().min(1).optional(),
@@ -387,6 +407,50 @@ function registerDocumentsIPC() {
         }
         catch (error) {
             logger_1.default.error('documents:uploadClientDoc error', error.message);
+            return { success: false, error: error.message };
+        }
+    });
+    /**
+     * Upload de plusieurs documents pour un client, sous une même catégorie —
+     * contrairement à `documents:uploadClientDoc` (un seul document par
+     * catégorie, remplacé à chaque nouvel envoi), chaque appel s'ajoute aux
+     * documents déjà présents. Utilisé pour les justificatifs pouvant être
+     * multiples (ex. « justificatif_origine_fonds »).
+     */
+    electron_1.ipcMain.handle('documents:uploadClientDocs', async (_event, { token, clientId, category, files }) => {
+        try {
+            const session = (0, auth_service_1.getSession)(token);
+            if (!session)
+                return { success: false, error: 'Session expirée' };
+            (0, auth_service_1.checkRole)(session, WRITE_ROLES);
+            if (!Array.isArray(files) || files.length === 0)
+                return { success: false, error: 'Aucun fichier' };
+            const maxBytes = parseInt(process.env.MAX_FILE_SIZE_MB ?? '10', 10) * 1024 * 1024;
+            const oversized = files.find((f) => f.fileSize > maxBytes);
+            if (oversized)
+                return { success: false, error: `Fichier trop volumineux (max ${process.env.MAX_FILE_SIZE_MB ?? 10} Mo) : ${oversized.fileName}` };
+            const storagePath = process.env.STORAGE_PATH ?? './data/storage';
+            const dir = path_1.default.resolve(storagePath, 'clients', String(clientId), category);
+            fs_1.default.mkdirSync(dir, { recursive: true });
+            const db = (0, db_service_1.getDb)();
+            const created = [];
+            for (let i = 0; i < files.length; i++) {
+                const f = files[i];
+                const ext = path_1.default.extname(f.fileName);
+                const uniqueName = `${category}_${Date.now()}_${i}${ext}`;
+                const absPath = path_1.default.join(dir, uniqueName);
+                const relativePath = path_1.default.posix.join('clients', String(clientId), category, uniqueName);
+                fs_1.default.writeFileSync(absPath, Buffer.from(f.fileData, 'base64'));
+                const document = await db.document.create({
+                    data: { name: f.fileName, type: f.fileType, path: relativePath, size: f.fileSize, category, clientId },
+                });
+                created.push(document);
+            }
+            logger_1.default.info(`Documents client #${clientId} [${category}] ajoutés : ${created.length}`);
+            return { success: true, data: created };
+        }
+        catch (error) {
+            logger_1.default.error('documents:uploadClientDocs error', error.message);
             return { success: false, error: error.message };
         }
     });
@@ -546,6 +610,11 @@ function registerDocumentsIPC() {
                 where.uploadedById = Number(filters.uploadedById);
             if (filters.tagId)
                 where.tags = { some: { tagId: Number(filters.tagId) } };
+            // Confidentialité LBC/FT : les pièces jointes d'une déclaration de
+            // soupçon sont invisibles à la GED générale hors rôles habilités
+            // (obligation de non-divulgation / « tipping-off »).
+            if (!AML_CONFIDENTIAL_ROLES.includes(session.role))
+                where.amlSuspiciousReportId = null;
             // Filtres par entité rattachée
             for (const fk of [
                 'clientId', 'ownerId', 'propertyId', 'conventionId', 'terrainId',
@@ -634,6 +703,10 @@ function registerDocumentsIPC() {
             });
             if (!document)
                 return { success: false, error: 'Document introuvable' };
+            // Confidentialité LBC/FT : ne pas révéler l'existence du document.
+            if (document.amlSuspiciousReportId != null && !AML_CONFIDENTIAL_ROLES.includes(session.role)) {
+                return { success: false, error: 'Document introuvable' };
+            }
             if (!(await canReadDocumentFolder(db, session, document.folderId))) {
                 return { success: false, error: 'Accès refusé à ce document' };
             }
@@ -669,8 +742,28 @@ function registerDocumentsIPC() {
                         personalOrSharedUpload = true;
                 }
             }
-            // Dépôt hors espace perso/partagé : droit d'écriture standard requis.
-            if (!personalOrSharedUpload)
+            // Dépôt rattaché à une entité LBC/FT (Module 19) : contourne le droit
+            // d'écriture général de la GED, avec ses propres contrôles dédiés.
+            let amlUpload = false;
+            if (d.amlProfileId != null || d.amlTransactionReviewId != null || d.amlTrainingId != null) {
+                if (!AML_ROLES.includes(session.role))
+                    return { success: false, error: 'Permission insuffisante' };
+                amlUpload = true;
+            }
+            else if (d.amlSuspiciousReportId != null) {
+                if (!AML_REPORT_CREATE_ROLES.includes(session.role))
+                    return { success: false, error: 'Permission insuffisante' };
+                const report = await db.amlSuspiciousReport.findFirst({
+                    where: { id: d.amlSuspiciousReportId, deletedAt: null },
+                    select: { status: true, declaredById: true },
+                });
+                if (!report || report.status !== 'BROUILLON' || report.declaredById !== session.userId) {
+                    return { success: false, error: 'Vous ne pouvez plus joindre de pièce à cette déclaration' };
+                }
+                amlUpload = true;
+            }
+            // Dépôt hors espace perso/partagé/LBC-FT-FP : droit d'écriture standard requis.
+            if (!personalOrSharedUpload && !amlUpload)
                 (0, auth_service_1.checkRole)(session, WRITE_ROLES);
             if (!(await canWriteFolder(db, session, targetFolderId))) {
                 return { success: false, error: "Vous n'avez pas le droit de déposer dans ce dossier" };
@@ -720,6 +813,10 @@ function registerDocumentsIPC() {
                         socialPublicationId: d.socialPublicationId ?? null,
                         itInnovationId: d.itInnovationId ?? null,
                         itInnovationPhase: d.itInnovationPhase ?? null,
+                        amlProfileId: d.amlProfileId ?? null,
+                        amlTransactionReviewId: d.amlTransactionReviewId ?? null,
+                        amlSuspiciousReportId: d.amlSuspiciousReportId ?? null,
+                        amlTrainingId: d.amlTrainingId ?? null,
                         tags: d.tagIds && d.tagIds.length
                             ? { create: d.tagIds.map((tagId) => ({ tagId })) }
                             : undefined,
@@ -797,11 +894,22 @@ function registerDocumentsIPC() {
             const db = (0, db_service_1.getDb)();
             const doc = await db.document.findUnique({
                 where: { id: Number(id) },
-                select: { id: true, path: true, name: true, folderId: true },
+                select: {
+                    id: true, path: true, name: true, folderId: true, amlSuspiciousReportId: true,
+                    crmActivity: { select: { type: true } },
+                },
             });
             if (!doc)
                 return { success: false, error: 'Document introuvable' };
-            if (!(await canReadDocumentFolder(db, session, doc.folderId))) {
+            if (doc.amlSuspiciousReportId != null && !AML_CONFIDENTIAL_ROLES.includes(session.role)) {
+                return { success: false, error: 'Document introuvable' };
+            }
+            // AGENT_TECHNIQUE : accès aux pièces jointes des activités « Créas /
+            // Publications / Articles » de tous les utilisateurs (même exception que
+            // sur la visibilité de l'activité elle-même, cf. buildVisibilityWhere
+            // dans crm.ipc.ts), quel que soit le dossier GED de dépôt du document.
+            const agentTechniquePublicationBypass = session.role === 'AGENT_TECHNIQUE' && doc.crmActivity?.type === 'CREATION_PUBLICATION';
+            if (!agentTechniquePublicationBypass && !(await canReadDocumentFolder(db, session, doc.folderId))) {
                 return { success: false, error: 'Accès refusé à ce document' };
             }
             const abs = (0, storage_service_1.resolveStoragePath)(doc.path);
@@ -826,11 +934,20 @@ function registerDocumentsIPC() {
             const db = (0, db_service_1.getDb)();
             const doc = await db.document.findUnique({
                 where: { id: Number(id) },
-                select: { path: true, type: true, name: true, size: true, folderId: true },
+                select: {
+                    path: true, type: true, name: true, size: true, folderId: true, amlSuspiciousReportId: true,
+                    crmActivity: { select: { type: true } },
+                },
             });
             if (!doc)
                 return { success: false, error: 'Document introuvable' };
-            if (!(await canReadDocumentFolder(db, session, doc.folderId))) {
+            if (doc.amlSuspiciousReportId != null && !AML_CONFIDENTIAL_ROLES.includes(session.role)) {
+                return { success: false, error: 'Document introuvable' };
+            }
+            // AGENT_TECHNIQUE : accès aux pièces jointes des activités « Créas /
+            // Publications / Articles » de tous les utilisateurs — cf. documents:open.
+            const agentTechniquePublicationBypass = session.role === 'AGENT_TECHNIQUE' && doc.crmActivity?.type === 'CREATION_PUBLICATION';
+            if (!agentTechniquePublicationBypass && !(await canReadDocumentFolder(db, session, doc.folderId))) {
                 return { success: false, error: 'Accès refusé à ce document' };
             }
             if (doc.size > PREVIEW_MAX_BYTES) {

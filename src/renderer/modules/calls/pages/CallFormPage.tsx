@@ -109,7 +109,7 @@ export default function CallFormPage() {
     if (!r.success) return [];
     return (r.data ?? []).map((c: any) => ({
       value: String(c.id),
-      label: c.type === 'ENTREPRISE' ? (c.entreprise ?? '') : `${c.lastName ?? ''} ${c.firstName ?? ''}`.trim(),
+      label: c.type !== 'INDIVIDUEL' ? (c.entreprise ?? '') : `${c.lastName ?? ''} ${c.firstName ?? ''}`.trim(),
     }));
   };
 

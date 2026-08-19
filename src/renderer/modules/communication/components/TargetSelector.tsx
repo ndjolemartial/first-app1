@@ -68,7 +68,7 @@ const PARTICULIER_TAB = { kind: 'PARTICULIER' as EntityKind, label: 'Particulier
 const ENTITY_TARGET_ROLES = ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ACCOUNTANT'];
 
 function clientLabel(c: any): string {
-  if (c.type === 'ENTREPRISE') return c.entreprise || `Client #${c.id}`;
+  if (c.type !== 'INDIVIDUEL') return c.entreprise || `Client #${c.id}`;
   return `${c.firstName ?? ''} ${c.lastName ?? ''}`.trim() || `Client #${c.id}`;
 }
 function prospectLabel(p: any): string {

@@ -15,6 +15,8 @@ import { formatDate, formatCurrency } from '../../../shared/utils/format';
 import EditInstallmentsModal from '../components/EditInstallmentsModal';
 import { Edit, Trash2, FileText, User, Building2, MapPin, Link2, Printer, RefreshCw, FilePlus, PencilLine } from 'lucide-react';
 import EntityDocumentsCard from '../../archiving/components/EntityDocumentsCard';
+import AmlReviewBadge from '../../aml/components/AmlReviewBadge';
+import ReportSuspicionButton from '../../aml/components/ReportSuspicionButton';
 import { ATTESTATION_TYPE_LABELS } from '../utils/attestationTemplate';
 import { Award } from 'lucide-react';
 
@@ -123,6 +125,7 @@ export default function ConventionDetailPage() {
       breadcrumbs={[{ label: 'Conventions', to: '/conventions' }, { label: c.reference }]}
       actions={
         <div className="flex gap-2">
+          {c.clientId && <ReportSuspicionButton subjectType="CLIENT" subjectId={c.clientId} conventionId={c.id} />}
           {canCreate && (
           <div className="relative">
             <Button variant="secondary" icon={<FilePlus className="h-4 w-4" />}
@@ -197,6 +200,8 @@ export default function ConventionDetailPage() {
               {/* Statut cliquable : ouvre un menu pour changer rapidement
                   le statut sans repasser par le formulaire d'édition.
                   AGENT : badge en lecture seule (pas de changement de statut). */}
+              <div className="flex items-center gap-2">
+              <AmlReviewBadge conventionId={c.id} />
               {!canWrite ? (
                 <Badge variant={STATUS_VARIANT[c.status] ?? 'default'}>
                   {STATUS_LABEL[c.status] ?? c.status}
@@ -235,6 +240,7 @@ export default function ConventionDetailPage() {
                 )}
               </div>
               )}
+              </div>
             </div>
 
             <div className="grid grid-cols-3 gap-4 pt-4 border-t border-slate-100">
@@ -404,28 +410,49 @@ export default function ConventionDetailPage() {
 
         {/* Colonne latérale */}
         <div className="space-y-6">
-          {/* Client */}
+          {/* Client ou Prospect */}
           <Card>
-            <h3 className="font-semibold text-slate-800 mb-3 flex items-center gap-2">
-              <User className="h-4 w-4 text-slate-500" /> {secondaryClientName ? 'Client principal' : 'Client'}
-            </h3>
-            <p className="font-medium text-slate-900">{clientName}</p>
-            {c.client?.phone && <p className="text-sm text-slate-500">{c.client.phone}</p>}
-            {c.client?.email && <p className="text-sm text-slate-500">{c.client.email}</p>}
-            <Button variant="ghost" size="sm" className="mt-2 -ml-2"
-              onClick={() => navigate(`/clients/${c.client?.id}`)}>
-              Voir le client →
-            </Button>
-            {secondaryClientName && (
-              <div className="mt-3 pt-3 border-t border-slate-100">
-                <p className="text-xs text-slate-500 mb-1">Souscripteur associé / successeur</p>
-                <p className="font-medium text-slate-900">{secondaryClientName}</p>
-                {c.secondaryClient?.phone && <p className="text-sm text-slate-500">{c.secondaryClient.phone}</p>}
-                <Button variant="ghost" size="sm" className="mt-1 -ml-2"
-                  onClick={() => navigate(`/clients/${c.secondaryClient?.id}`)}>
-                  Voir le souscripteur →
+            {!c.clientId && c.prospect ? (
+              <>
+                <h3 className="font-semibold text-slate-800 mb-3 flex items-center gap-2">
+                  <User className="h-4 w-4 text-slate-500" /> Prospect
+                  <Badge variant="warning">Non converti</Badge>
+                </h3>
+                <p className="font-medium text-slate-900">{`${c.prospect.firstName ?? ''} ${c.prospect.lastName ?? ''}`.trim()}</p>
+                {c.prospect.phone && <p className="text-sm text-slate-500">{c.prospect.phone}</p>}
+                {c.prospect.email && <p className="text-sm text-slate-500">{c.prospect.email}</p>}
+                <Button variant="ghost" size="sm" className="mt-2 -ml-2"
+                  onClick={() => navigate(`/prospects/${c.prospect?.id}`)}>
+                  Voir le prospect →
                 </Button>
-              </div>
+                <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-3 py-2 mt-3">
+                  Cette convention restera au statut Brouillon tant que ce prospect n'aura pas été converti en client.
+                </p>
+              </>
+            ) : (
+              <>
+                <h3 className="font-semibold text-slate-800 mb-3 flex items-center gap-2">
+                  <User className="h-4 w-4 text-slate-500" /> {secondaryClientName ? 'Client principal' : 'Client'}
+                </h3>
+                <p className="font-medium text-slate-900">{clientName}</p>
+                {c.client?.phone && <p className="text-sm text-slate-500">{c.client.phone}</p>}
+                {c.client?.email && <p className="text-sm text-slate-500">{c.client.email}</p>}
+                <Button variant="ghost" size="sm" className="mt-2 -ml-2"
+                  onClick={() => navigate(`/clients/${c.client?.id}`)}>
+                  Voir le client →
+                </Button>
+                {secondaryClientName && (
+                  <div className="mt-3 pt-3 border-t border-slate-100">
+                    <p className="text-xs text-slate-500 mb-1">Souscripteur associé / successeur</p>
+                    <p className="font-medium text-slate-900">{secondaryClientName}</p>
+                    {c.secondaryClient?.phone && <p className="text-sm text-slate-500">{c.secondaryClient.phone}</p>}
+                    <Button variant="ghost" size="sm" className="mt-1 -ml-2"
+                      onClick={() => navigate(`/clients/${c.secondaryClient?.id}`)}>
+                      Voir le souscripteur →
+                    </Button>
+                  </div>
+                )}
+              </>
             )}
           </Card>
 

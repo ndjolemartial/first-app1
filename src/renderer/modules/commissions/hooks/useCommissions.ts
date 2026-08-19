@@ -160,6 +160,27 @@ export function useDeleteReferrer() {
   });
 }
 
+/* ─── Bénéficiaires effectifs (apporteur d'affaire société) ─────────── */
+
+export function useCreateReferrerBeneficialOwner() {
+  const token = useAuthStore((s) => s.token)!;
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ referrerId, payload }: { referrerId: number; payload: object }) =>
+      ipc.referrerBeneficialOwners.create(token, referrerId, payload),
+    onSuccess: () => invalidateAll(qc),
+  });
+}
+
+export function useDeleteReferrerBeneficialOwner() {
+  const token = useAuthStore((s) => s.token)!;
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: number) => ipc.referrerBeneficialOwners.delete(token, id),
+    onSuccess: () => invalidateAll(qc),
+  });
+}
+
 /* ─── Données de formulaire & paramètres ──────────────────────────── */
 
 export function useCommissionUsers() {

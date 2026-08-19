@@ -66,11 +66,27 @@ const FLOORING_TYPES = ['CHAPE_LISSEE', 'CARRELAGE_GRES_STANDARD', 'CARRELAGE_GR
 const AC_TYPES = ['AUCUNE', 'VENTILATION_SEULE', 'SPLIT_PARTIEL', 'SPLIT_TOUTES_PIECES', 'GAINABLE_CENTRALISE'] as const;
 const TERRAIN_TYPES = ['PLAT', 'LEGERE_PENTE', 'FORTE_PENTE', 'MARECAGEUX_REMBLAI', 'ROCHEUX'] as const;
 const SANITATION_TYPES = ['FOSSE_SEPTIQUE_PUISARD', 'FOSSE_TOUTES_EAUX_EPANDAGE', 'MICRO_STATION', 'RACCORDEMENT_RESEAU_COLLECTIF', 'AUCUN'] as const;
+const FENCE_POST_TYPES = ['POTEAUX_SORTANTS', 'POTEAUX_SIMPLES'] as const;
 const MARKUP_MODES = ['CASCADE', 'ADDITIF'] as const;
 const PRECISION_LEVELS = ['NIVEAU_1', 'NIVEAU_2', 'NIVEAU_3'] as const;
+const PROJECT_SCOPES = ['COMPLET', 'CLOTURE_SEULE', 'PISCINE_SEULE'] as const;
+
+/**
+ * Portée du devis → lots pris en compte par le moteur (`computeEstimate`,
+ * `lotCodeFilter`). LOT01 (installation de chantier) et LOT22 (nettoyage
+ * & réception) restent inclus même en portée restreinte — pratique BTP
+ * courante, indépendante du lot principal du devis. `COMPLET` = pas de
+ * filtre (undefined), tous les lots actifs.
+ */
+const SCOPE_LOT_CODES: Record<(typeof PROJECT_SCOPES)[number], string[] | undefined> = {
+  COMPLET: undefined,
+  CLOTURE_SEULE: ['LOT01', 'LOT19', 'LOT22'],
+  PISCINE_SEULE: ['LOT01', 'LOT21', 'LOT22'],
+};
 
 const projectSchema = z.object({
   nom: z.string().min(1, 'Nom du projet requis'),
+  scope: z.enum(PROJECT_SCOPES).default('COMPLET'),
   clientId: z.number().int().positive().nullable().optional(),
   prospectId: z.number().int().positive().nullable().optional(),
   terrainId: z.number().int().positive().nullable().optional(),
@@ -110,6 +126,9 @@ const projectSchema = z.object({
 
   fenceLength: optionalNumber(z.number().min(0)),
   fenceHeight: optionalNumber(z.number().min(0)),
+  fenceHasCrepissage: z.boolean().default(false),
+  fenceHasChainageHaut: z.boolean().default(false),
+  fencePostType: z.enum(FENCE_POST_TYPES).default('POTEAUX_SIMPLES'),
   gateCount: z.number().int().min(0).default(0),
   hasPool: z.boolean().default(false),
   poolSurface: optionalNumber(z.number().min(0)),
@@ -137,6 +156,10 @@ const computeOptionsSchema = z.object({
   markupMode: z.enum(MARKUP_MODES).nullable().optional(),
   puRoundingStep: z.number().int().positive().nullable().optional(),
   toleranceRangePct: optionalNumber(z.number().min(0)),
+  // Remise globale — pourcentage ou montant fixe (cf. Quote.discountAmount).
+  discountAmount: optionalNumber(z.number().min(0)),
+  discountIsPercent: z.boolean().nullable().optional(),
+  discountPercent: optionalNumber(z.number().min(0).max(100)),
 });
 
 const generateSchema = z.object({
@@ -482,7 +505,23 @@ export function registerConstructionProjectsIPC(): void {
       const existing = await db.constructionProject.findUnique({ where: { id: Number(id) }, select: { clientId: true, prospectId: true, deletedAt: true } });
       if (!existing || existing.deletedAt) return { success: false, error: 'Projet introuvable' };
       if (!(await canAccess(db, session, existing))) return { success: false, error: 'Projet inaccessible' };
-      await db.constructionProject.update({ where: { id: Number(id) }, data: { deletedAt: new Date() } });
+
+      // Supprime en cascade les estimations générées pour ce projet et les
+      // devis commerciaux (module Devis) qu'elles ont éventuellement créés —
+      // ConstructionEstimate.quoteId est un scalaire sans FK (cf. quotes:delete
+      // ci-dessus) : sans ce rattrapage, ils resteraient orphelins, rattachés
+      // à un projet supprimé et introuvables depuis nulle part dans l'app.
+      const now = new Date();
+      const estimates = await db.constructionEstimate.findMany({
+        where: { projectId: Number(id), deletedAt: null },
+        select: { id: true, quoteId: true },
+      });
+      const quoteIds = [...new Set(estimates.map((e) => e.quoteId).filter((qid): qid is number => qid != null))];
+      await db.$transaction([
+        db.constructionProject.update({ where: { id: Number(id) }, data: { deletedAt: now } }),
+        ...(estimates.length ? [db.constructionEstimate.updateMany({ where: { id: { in: estimates.map((e) => e.id) } }, data: { deletedAt: now } })] : []),
+        ...(quoteIds.length ? [db.quote.updateMany({ where: { id: { in: quoteIds }, deletedAt: null }, data: { deletedAt: now } })] : []),
+      ]);
       return { success: true };
     } catch (error: any) {
       return { success: false, error: error.message };
@@ -510,6 +549,7 @@ export function registerConstructionProjectsIPC(): void {
         return { success: false, error: 'projectId ou characteristics requis' };
       }
       const inputs = toProjectInputs(source!);
+      const scope = ((source as any).scope ?? 'COMPLET') as keyof typeof SCOPE_LOT_CODES;
       const result = await computeEstimate(db as any, inputs, {
         localityId: (source as any).localityId ?? undefined,
         fraisChantierPct: (source as any).fraisChantierPct != null ? Number((source as any).fraisChantierPct) : undefined,
@@ -517,6 +557,7 @@ export function registerConstructionProjectsIPC(): void {
         margePct: (source as any).margePct != null ? Number((source as any).margePct) : undefined,
         tvaPct: (source as any).tvaPct != null ? Number((source as any).tvaPct) : undefined,
         markupMode: (source as any).markupMode ?? undefined,
+        lotCodeFilter: SCOPE_LOT_CODES[scope],
       });
       return {
         success: true,
@@ -561,6 +602,10 @@ export function registerConstructionProjectsIPC(): void {
         markupMode: opts.markupMode ?? (project.markupMode as any) ?? undefined,
         puRoundingStep: opts.puRoundingStep ?? undefined,
         toleranceRangePct: opts.toleranceRangePct ?? undefined,
+        discountAmount: opts.discountAmount ?? undefined,
+        discountIsPercent: opts.discountIsPercent ?? undefined,
+        discountPercent: opts.discountPercent ?? undefined,
+        lotCodeFilter: SCOPE_LOT_CODES[project.scope as keyof typeof SCOPE_LOT_CODES],
       });
 
       const reference = await nextEstimateReference(db);
@@ -575,10 +620,13 @@ export function registerConstructionProjectsIPC(): void {
             localityId: result.localityId, localityLabel: result.localityLabel,
             markupMode: result.markupMode, fraisChantierPct: dec(result.fraisChantierPct) as any, fraisGenerauxPct: dec(result.fraisGenerauxPct) as any,
             margePct: dec(result.margePct) as any, tvaPct: dec(result.tvaPct) as any, puRoundingStep: result.puRoundingStep,
+            discountAmount: dec(result.discountAmount) as any, discountIsPercent: result.discountIsPercent,
+            discountPercent: result.discountPercent != null ? (dec(result.discountPercent) as any) : null,
             totalDeboursMateriaux: dec(result.totalDeboursMateriaux) as any, totalDeboursMainOeuvre: dec(result.totalDeboursMainOeuvre) as any,
             totalDeboursTransport: dec(result.totalDeboursTransport) as any, totalDeboursAutres: dec(result.totalDeboursAutres) as any,
             totalDeboursSec: dec(result.totalDeboursSec) as any, totalFraisChantier: dec(result.totalFraisChantier) as any,
             totalFraisGeneraux: dec(result.totalFraisGeneraux) as any, totalMarge: dec(result.totalMarge) as any,
+            subtotalHT: dec(result.subtotalHT) as any,
             totalHT: dec(result.totalHT) as any, totalTVA: dec(result.totalTVA) as any, totalTTC: dec(result.totalTTC) as any,
             prixMoyenM2: result.prixMoyenM2 != null ? (dec(result.prixMoyenM2) as any) : null,
             toleranceRangePct: dec(result.toleranceRangePct) as any, budgetMin: dec(result.budgetMin) as any, budgetMax: dec(result.budgetMax) as any,
@@ -696,6 +744,8 @@ export function registerConstructionProjectsIPC(): void {
           byLot: [...byLotMap.entries()].map(([lotCode, v]) => ({ lotCode, ...v })),
           totalDeboursSec: Number(estimate.totalDeboursSec), totalFraisChantier: Number(estimate.totalFraisChantier),
           totalFraisGeneraux: Number(estimate.totalFraisGeneraux), totalMarge: Number(estimate.totalMarge),
+          subtotalHT: Number(estimate.subtotalHT), discountAmount: Number(estimate.discountAmount),
+          discountIsPercent: estimate.discountIsPercent, discountPercent: estimate.discountPercent != null ? Number(estimate.discountPercent) : null,
           totalHT, totalTVA: Number(estimate.totalTVA), totalTTC: Number(estimate.totalTTC), tauxMargeSurPV,
           prixMoyenM2: estimate.prixMoyenM2 != null ? Number(estimate.prixMoyenM2) : null,
           coveragePct: estimate.coveragePct != null ? Number(estimate.coveragePct) : null,

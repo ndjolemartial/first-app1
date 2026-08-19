@@ -10,11 +10,13 @@ import Pagination from '../../../shared/components/ui/Pagination';
 import { SkeletonTable } from '../../../shared/components/ui/Skeleton';
 import EmptyState from '../../../shared/components/ui/EmptyState';
 import { useClients } from '../hooks/useClients';
+import { useCompanySettings, useLogoData } from '../../settings/hooks/useSettings';
+import { buildBlankKycDocumentHtml, buildClientKycFooterTemplate } from '../utils/kycDocument';
 import { formatDate } from '../../../shared/utils/format';
 import ExportMenu, { ExportColumn } from '../../../shared/components/ExportMenu';
 import { useAuthStore } from '../../../shared/stores/auth.store';
 import { canExportPrint } from '../../../shared/utils/exportPermissions';
-import { UserPlus, Eye, Edit } from 'lucide-react';
+import { UserPlus, Eye, Edit, Printer } from 'lucide-react';
 
 /** Rôles habilités à créer un client (équivalents WRITE_ROLES côté IPC). */
 /** Création client : AD est explicitement exclue (réduite au niveau AGENT sur ce module). */
@@ -22,9 +24,16 @@ const WRITE_ROLES = new Set(['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ACCOUNTANT']);
 
 const TYPE_OPTIONS = [
   { value: '', label: 'Tous les types' },
-  { value: 'INDIVIDUEL', label: 'Particulier' },
-  { value: 'ENTREPRISE', label: 'Entreprise' },
+  { value: 'INDIVIDUEL', label: 'Personne physique' },
+  { value: 'ENTREPRISE', label: 'Personne morale' },
+  { value: 'ASSOCIATION_ONG', label: 'Association / ONG' },
 ];
+
+const CLIENT_TYPE_LABEL: Record<string, string> = {
+  INDIVIDUEL: 'Personne physique',
+  ENTREPRISE: 'Personne morale',
+  ASSOCIATION_ONG: 'Association / ONG',
+};
 
 const STATUS_OPTIONS = [
   { value: '', label: 'Tous les statuts' },
@@ -44,7 +53,7 @@ const STATUS_VARIANT: Record<string, 'success' | 'danger' | 'purple' | 'warning'
 const EXPORT_COLUMNS: ExportColumn[] = [
   { header: 'Référence',        cell: (c) => c.reference },
   { header: 'Nom / Entreprise', cell: (c) => (c.type === 'INDIVIDUEL' ? `${c.lastName ?? ''} ${c.firstName ?? ''}`.trim() : c.entreprise) },
-  { header: 'Type',             cell: (c) => (c.type === 'INDIVIDUEL' ? 'Particulier' : 'Entreprise') },
+  { header: 'Type',             cell: (c) => CLIENT_TYPE_LABEL[c.type] ?? c.type },
   { header: 'Téléphone 1',      cell: (c) => c.phone },
   { header: 'Téléphone 2',      cell: (c) => c.mobile },
   { header: 'Email',            cell: (c) => c.email },
@@ -68,6 +77,30 @@ export default function ClientsListPage() {
   const [status, setStatus] = useState('');
   const filters = { search: search || undefined, type: type || undefined, status: status || undefined };
   const { data, isLoading } = useClients(filters, page, 20);
+  const { data: companyRes } = useCompanySettings();
+  const { data: logoRes } = useLogoData();
+  const [exportingBlankKyc, setExportingBlankKyc] = useState(false);
+
+  const handlePrintBlankKyc = async () => {
+    if (!token) return;
+    setExportingBlankKyc(true);
+    try {
+      const company = companyRes?.success ? companyRes.data : null;
+      const logo = logoRes?.success ? (logoRes.data as { mimeType: string; base64: string } | null) : null;
+      const bodyHtml = buildBlankKycDocumentHtml(company ?? null, logo);
+      await window.electron.documentExport.printDocument(token, {
+        fileName: 'Fiche-KYC-vierge',
+        bodyHtml,
+        headerTemplate: '<div></div>',
+        footerTemplate: buildClientKycFooterTemplate(company ?? null),
+        headerMm: 6,
+        footerMm: 20,
+        marginsMm: { top: 20, bottom: 24, left: 18, right: 18 },
+      });
+    } finally {
+      setExportingBlankKyc(false);
+    }
+  };
 
   const filterSummary = [
     search && `Recherche : "${search}"`,
@@ -95,6 +128,12 @@ export default function ClientsListPage() {
                 return r.success ? r.data ?? [] : [];
               }}
             />
+          )}
+          {canExport && (
+            <Button variant="primary" icon={<Printer className="h-4 w-4" />} loading={exportingBlankKyc}
+              onClick={handlePrintBlankKyc}>
+              Fiche KYC non renseignée
+            </Button>
           )}
           {canCreate && (
             <Button icon={<UserPlus className="h-4 w-4" />} onClick={() => navigate('/clients/new')}>
@@ -164,7 +203,7 @@ export default function ClientsListPage() {
                     </td>
                     <td className="px-4 py-3">
                       <Badge variant={c.type === 'INDIVIDUEL' ? 'info' : 'purple'}>
-                        {c.type === 'INDIVIDUEL' ? 'Particulier' : 'Entreprise'}
+                        {CLIENT_TYPE_LABEL[c.type] ?? c.type}
                       </Badge>
                     </td>
                     <td className="px-4 py-3 text-slate-500">

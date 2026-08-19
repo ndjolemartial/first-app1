@@ -9,6 +9,7 @@ import { Skeleton } from '../../../shared/components/ui/Skeleton';
 import { useActivity, useUpdateActivity, useCompleteActivity } from '../hooks/useCrm';
 import { useAuthStore } from '../../../shared/stores/auth.store';
 import { formatDate } from '../../../shared/utils/format';
+import AttachmentViewerModal from './AttachmentViewerModal';
 import {
   Phone, Mail, MessageSquare, Calendar, Eye, Briefcase, Bell, File,
   FileText, Users, Paperclip, Pencil, Target, Save, CheckCircle2, PenTool,
@@ -71,6 +72,9 @@ export default function ActivityDetailModal({ activityId, onClose }: Props) {
   const act: any = res?.data;
   const update = useUpdateActivity();
   const complete = useCompleteActivity();
+
+  // Pièce jointe actuellement prévisualisée (null = aucun aperçu ouvert).
+  const [previewDoc, setPreviewDoc] = useState<any | null>(null);
 
   // Quantité réalisée (édition locale synchronisée sur l'activité chargée).
   const [realized, setRealized] = useState('');
@@ -252,13 +256,22 @@ export default function ActivityDetailModal({ activityId, onClose }: Props) {
                       {doc.size ? <span className="shrink-0 text-xs text-slate-400">{formatFileSize(doc.size)}</span> : null}
                       {doc.numeroArchive && <span className="shrink-0 font-mono text-xs text-slate-400">{doc.numeroArchive}</span>}
                     </span>
-                    <button
-                      type="button"
-                      onClick={() => window.electron.documents.open(token, doc.id)}
-                      className="shrink-0 text-xs font-medium text-blue-600 hover:underline"
-                    >
-                      Ouvrir
-                    </button>
+                    <span className="flex shrink-0 items-center gap-3">
+                      <button
+                        type="button"
+                        onClick={() => setPreviewDoc(doc)}
+                        className="text-xs font-medium text-blue-600 hover:underline"
+                      >
+                        Voir
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => window.electron.documents.open(token, doc.id)}
+                        className="text-xs font-medium text-blue-600 hover:underline"
+                      >
+                        Ouvrir
+                      </button>
+                    </span>
                   </li>
                 ))}
               </ul>
@@ -266,6 +279,12 @@ export default function ActivityDetailModal({ activityId, onClose }: Props) {
           </div>
         </div>
       )}
+
+      <AttachmentViewerModal
+        open={previewDoc != null}
+        onClose={() => setPreviewDoc(null)}
+        attachment={previewDoc}
+      />
     </Modal>
   );
 }

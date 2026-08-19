@@ -31,6 +31,19 @@ export default function MessagePreviewModal({ comm, onClose }: { comm: any | nul
   const isEmail = comm.channel === 'EMAIL';
   const channelLabel = comm.channel === 'WHATSAPP' ? 'WhatsApp' : comm.channel;
 
+  // `to` porte toujours l'adresse de l'AUTRE partie de l'échange (cf.
+  // mailbox-poller.service.ts / communication.ipc.ts) : le destinataire pour
+  // un envoi (SORTANT), l'expéditeur pour une réponse reçue (ENTRANT).
+  const isInbound = comm.direction === 'ENTRANT';
+  const senderLabel = isInbound
+    ? comm.to
+    : (comm.sender
+        ? (`${comm.sender.firstName ?? ''} ${comm.sender.lastName ?? ''}`.trim() || comm.sender.email)
+        : 'Système (envoi automatique)');
+  const recipientLabel = isInbound
+    ? (comm.mailAccount?.label || comm.mailAccount?.imapUser || 'Vous')
+    : comm.to;
+
   return (
     <Modal
       open={!!comm}
@@ -53,8 +66,10 @@ export default function MessagePreviewModal({ comm, onClose }: { comm: any | nul
 
         {/* Métadonnées */}
         <dl className="grid grid-cols-[130px_1fr] gap-x-3 gap-y-2 text-sm">
+          <dt className="text-slate-500">Expéditeur</dt>
+          <dd className="font-medium text-slate-800 break-all">{senderLabel}</dd>
           <dt className="text-slate-500">Destinataire</dt>
-          <dd className="font-medium text-slate-800 break-all">{comm.to}</dd>
+          <dd className="font-medium text-slate-800 break-all">{recipientLabel}</dd>
           {comm.subject && (
             <>
               <dt className="text-slate-500">Sujet</dt>

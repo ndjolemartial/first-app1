@@ -285,7 +285,15 @@ export default function ConstructionEstimatePage() {
             <div className="flex justify-between text-sm"><span className="text-slate-500">+ Frais généraux</span><span className="font-medium">{formatCurrency(summary.totalFraisGeneraux)}</span></div>
             <div className="flex justify-between text-sm border-t border-slate-100 pt-2"><span className="text-slate-600">= Prix de revient</span><span className="font-semibold">{formatCurrency(summary.totalDeboursSec + summary.totalFraisChantier + summary.totalFraisGeneraux)}</span></div>
             <div className="flex justify-between text-sm"><span className="text-slate-500">+ Marge</span><span className="font-medium text-green-600">{formatCurrency(summary.totalMarge)}</span></div>
-            <div className="flex justify-between text-base border-t border-slate-200 pt-2"><span className="font-semibold text-slate-900">= Prix de vente HT</span><span className="font-bold text-slate-900">{formatCurrency(summary.totalHT)}</span></div>
+            {summary.discountAmount > 0 ? (
+              <>
+                <div className="flex justify-between text-base border-t border-slate-200 pt-2"><span className="font-semibold text-slate-900">= Prix de vente HT (avant remise)</span><span className="font-bold text-slate-900">{formatCurrency(summary.subtotalHT)}</span></div>
+                <div className="flex justify-between text-sm"><span className="text-slate-500">− Remise{summary.discountIsPercent ? ` (${summary.discountPercent ?? 0} %)` : ''}</span><span className="font-medium text-red-600">− {formatCurrency(summary.discountAmount)}</span></div>
+                <div className="flex justify-between text-base border-t border-slate-200 pt-2"><span className="font-semibold text-slate-900">= Prix de vente HT</span><span className="font-bold text-slate-900">{formatCurrency(summary.totalHT)}</span></div>
+              </>
+            ) : (
+              <div className="flex justify-between text-base border-t border-slate-200 pt-2"><span className="font-semibold text-slate-900">= Prix de vente HT</span><span className="font-bold text-slate-900">{formatCurrency(summary.totalHT)}</span></div>
+            )}
             <div className="flex justify-between text-sm text-slate-500 pt-1"><span>Taux de marge sur prix de vente</span><span>{summary.tauxMargeSurPV}%</span></div>
           </div>
 

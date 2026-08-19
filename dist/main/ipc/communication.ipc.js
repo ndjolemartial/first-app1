@@ -14,6 +14,7 @@ const sms_service_1 = require("../services/sms.service");
 const whatsapp_service_1 = require("../services/whatsapp.service");
 const templating_service_1 = require("../services/templating.service");
 const settings_service_1 = require("../services/settings.service");
+const reminders_service_1 = require("../services/reminders.service");
 const logger_1 = __importDefault(require("../utils/logger"));
 const zod_1 = require("zod");
 const WRITE_ROLES = ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'AGENT'];
@@ -169,7 +170,7 @@ async function buildCommonVariables(db, userId) {
         where: { id: userId },
         select: { firstName: true, lastName: true },
     });
-    const agentName = user ? `${user.firstName ?? ''} ${user.lastName ?? ''}`.trim() : '';
+    const agentName = user ? `${user.lastName ?? ''} ${user.firstName ?? ''}`.trim() : '';
     return {
         ...company,
         agencyName: company.companyName ?? '',
@@ -194,10 +195,10 @@ function htmlToPlainText(html) {
 }
 /** Variables « destinataire » à partir d'un client / propriétaire. */
 function recipientVariables(rec) {
-    const isCompany = rec.type === 'ENTREPRISE';
+    const isCompany = rec.type && rec.type !== 'INDIVIDUEL';
     const fullName = isCompany
         ? (rec.entreprise ?? rec.companyName ?? '')
-        : `${rec.firstName ?? ''} ${rec.lastName ?? ''}`.trim();
+        : `${rec.lastName ?? ''} ${rec.firstName ?? ''}`.trim();
     return {
         civilite: rec.civilite ?? '',
         firstName: rec.firstName ?? '',
@@ -340,9 +341,9 @@ async function buildShareLocationContext(payload) {
         to = pickRecipient(c);
         recipientFirstName = c.firstName ?? '';
         recipientLastName = c.lastName ?? '';
-        recipientName = c.type === 'ENTREPRISE'
+        recipientName = c.type !== 'INDIVIDUEL'
             ? (c.entreprise ?? `Client #${c.id}`)
-            : `${c.firstName ?? ''} ${c.lastName ?? ''}`.trim();
+            : `${c.lastName ?? ''} ${c.firstName ?? ''}`.trim();
         recipientFK = { clientId: c.id };
     }
     else if (d.recipientType === 'PROSPECT') {
@@ -355,7 +356,7 @@ async function buildShareLocationContext(payload) {
         to = pickRecipient(p);
         recipientFirstName = p.firstName ?? '';
         recipientLastName = p.lastName ?? '';
-        recipientName = `${p.firstName ?? ''} ${p.lastName ?? ''}`.trim();
+        recipientName = `${p.lastName ?? ''} ${p.firstName ?? ''}`.trim();
     }
     else {
         const r = await db.businessReferrer.findUnique({
@@ -367,7 +368,7 @@ async function buildShareLocationContext(payload) {
         to = pickRecipient(r);
         recipientFirstName = r.firstName;
         recipientLastName = r.lastName;
-        recipientName = r.companyName ?? `${r.firstName} ${r.lastName}`.trim();
+        recipientName = r.companyName ?? `${r.lastName} ${r.firstName}`.trim();
     }
     if (!to) {
         return {
@@ -572,7 +573,14 @@ function registerCommunicationIPC() {
                 return { success: false, error: 'Session expirée' };
             (0, auth_service_1.checkRole)(session, ['SUPER_ADMIN', 'ADMIN']);
             const db = (0, db_service_1.getDb)();
-            await db.commTemplate.delete({ where: { id } });
+            const template = await db.commTemplate.delete({ where: { id } });
+            // Empêche le seed de démarrage (seedDefaultRemindersConfig, exécuté à
+            // chaque lancement de l'app) de recréer ce modèle s'il s'agit de l'un
+            // des templates par défaut de la politique de relance (marqueur
+            // « [Politique] … ») — sans quoi une suppression ne resterait
+            // effective que jusqu'au prochain redémarrage. Sans effet sur un
+            // modèle créé manuellement (jamais reseedé de toute façon).
+            await (0, reminders_service_1.markTemplateNameDeleted)(template.name);
             return { success: true };
         }
         catch (error) {
@@ -595,18 +603,35 @@ function registerCommunicationIPC() {
             if (filters.direction)
                 where.direction = filters.direction;
             if (filters.search) {
+                const q = filters.search;
                 where.OR = [
-                    { to: { contains: filters.search } },
-                    { subject: { contains: filters.search } },
-                    { body: { contains: filters.search } },
+                    { to: { contains: q } },
+                    { subject: { contains: q } },
+                    { body: { contains: q } },
+                    // Nom/prénom/email du destinataire ou de l'expéditeur — recherché à
+                    // travers toutes les entités qu'une Communication peut rattacher,
+                    // quel que soit le sens (SORTANT: le contact est le destinataire ;
+                    // ENTRANT: le contact est l'expéditeur). `sender` couvre le
+                    // collaborateur ayant déclenché un envoi manuel.
+                    { client: { OR: [{ firstName: { contains: q } }, { lastName: { contains: q } }, { entreprise: { contains: q } }, { email: { contains: q } }] } },
+                    { prospect: { OR: [{ firstName: { contains: q } }, { lastName: { contains: q } }, { email: { contains: q } }] } },
+                    { owner: { OR: [{ firstName: { contains: q } }, { lastName: { contains: q } }, { companyName: { contains: q } }, { email: { contains: q } }] } },
+                    { referrer: { OR: [{ firstName: { contains: q } }, { lastName: { contains: q } }, { companyName: { contains: q } }, { email: { contains: q } }] } },
+                    { sender: { OR: [{ firstName: { contains: q } }, { lastName: { contains: q } }, { email: { contains: q } }] } },
                 ];
             }
             // Visibilité restreinte pour les rôles non privilégiés : ne montrer
             // que les messages envoyés par l'utilisateur lui-même OU adressés à
             // un client qui lui est rattaché (Client.assignedToId) OU à un
             // apporteur d'affaires dont il est l'utilisateur référent (mêmes
-            // règles d'accès que le ciblage Client).
+            // règles d'accès que le ciblage Client) — même règle pour les messages
+            // reçus, SAUF exception : un message reçu où l'adresse de l'utilisateur
+            // figure en copie/copie cachée (Communication.ccAddresses, capturé par
+            // mailbox-poller.service.ts) reste visible même sans droit sur l'entité
+            // rattachée, puisqu'il en est un destinataire réel.
             if (!FULL_HISTORY_ROLES.includes(session.role)) {
+                const me = await db.user.findUnique({ where: { id: session.userId }, select: { email: true } });
+                const ccToken = me?.email ? `|${me.email.toLowerCase()}|` : null;
                 where.AND = [
                     ...(where.AND ?? []),
                     {
@@ -614,6 +639,37 @@ function registerCommunicationIPC() {
                             { senderId: session.userId },
                             { client: { assignedToId: session.userId } },
                             { referrer: { assignedToId: session.userId } },
+                            ...(ccToken ? [{ ccAddresses: { contains: ccToken } }] : []),
+                        ],
+                    },
+                ];
+            }
+            // Filtre optionnel « Mes messages » (SUPER_ADMIN/ADMIN/MANAGER, en vue
+            // complète par défaut) : ne montrer que les messages qui LE concernent
+            // personnellement — envoyés par lui (senderId), reçus dans sa propre
+            // boîte personnelle (MailAccount.userId — cf. « Ma boîte email
+            // personnelle », Mon profil ; la boîte système partagée des relances,
+            // MailAccount.userId = null, n'est jamais « la boîte de » quelqu'un en
+            // particulier), adressés ou mis en copie/copie cachée à son adresse de
+            // profil (Communication.to / ccAddresses), ou rattachés à un client ou
+            // un prospect dont il est le référent (Client/Prospect.assignedToId).
+            if (filters.onlyMine) {
+                const [myMailAccounts, me] = await Promise.all([
+                    db.mailAccount.findMany({ where: { userId: session.userId }, select: { id: true } }),
+                    db.user.findUnique({ where: { id: session.userId }, select: { email: true } }),
+                ]);
+                const myMailAccountIds = myMailAccounts.map((a) => a.id);
+                const ccToken = me?.email ? `|${me.email.toLowerCase()}|` : null;
+                where.AND = [
+                    ...(where.AND ?? []),
+                    {
+                        OR: [
+                            { senderId: session.userId },
+                            ...(myMailAccountIds.length ? [{ mailAccountId: { in: myMailAccountIds } }] : []),
+                            ...(me?.email ? [{ to: { equals: me.email } }] : []),
+                            ...(ccToken ? [{ ccAddresses: { contains: ccToken } }] : []),
+                            { client: { assignedToId: session.userId } },
+                            { prospect: { assignedToId: session.userId } },
                         ],
                     },
                 ];
@@ -624,7 +680,13 @@ function registerCommunicationIPC() {
                     skip: (page - 1) * limit,
                     take: limit,
                     orderBy: { createdAt: 'desc' },
-                    include: { template: { select: { id: true, name: true } } },
+                    include: {
+                        template: { select: { id: true, name: true } },
+                        // Identité de l'expéditeur (SORTANT manuel) et de la boîte de
+                        // réception (ENTRANT) — affichées dans l'aperçu du message.
+                        sender: { select: { id: true, firstName: true, lastName: true, email: true } },
+                        mailAccount: { select: { id: true, imapUser: true, label: true } },
+                    },
                 }),
                 db.communication.count({ where }),
             ]);
@@ -632,6 +694,66 @@ function registerCommunicationIPC() {
         }
         catch (error) {
             logger_1.default.error('communication:getHistory error', error.message);
+            return { success: false, error: error.message };
+        }
+    });
+    // Marque un message ENTRANT comme lu (première consultation de son aperçu
+    // depuis l'historique) — idempotent, ne touche `readAt` que s'il est encore
+    // null. Sans effet sur un message SORTANT (déjà « lu » par construction).
+    electron_1.ipcMain.handle('communication:markRead', async (_event, { token, id }) => {
+        try {
+            const session = (0, auth_service_1.getSession)(token);
+            if (!session)
+                return { success: false, error: 'Session expirée' };
+            (0, auth_service_1.checkRole)(session, READ_ROLES);
+            const db = (0, db_service_1.getDb)();
+            const comm = await db.communication.findUnique({ where: { id: Number(id) }, select: { direction: true, readAt: true } });
+            if (!comm)
+                return { success: false, error: 'Message introuvable' };
+            if (comm.direction !== 'ENTRANT' || comm.readAt)
+                return { success: true };
+            await db.communication.update({ where: { id: Number(id) }, data: { readAt: new Date() } });
+            return { success: true };
+        }
+        catch (error) {
+            logger_1.default.error('communication:markRead error', error.message);
+            return { success: false, error: error.message };
+        }
+    });
+    // Rattachement manuel d'une réponse entrante non appariée automatiquement
+    // (en-têtes de thread perdus, ou absence de correspondance par adresse
+    // connue — cf. mailbox-poller.service.ts). Un seul des 4 champs à la fois.
+    const linkInboundSchema = zod_1.z.object({
+        clientId: zod_1.z.number().int().positive().optional(),
+        prospectId: zod_1.z.number().int().positive().optional(),
+        ownerId: zod_1.z.number().int().positive().optional(),
+        conventionId: zod_1.z.number().int().positive().optional(),
+    });
+    electron_1.ipcMain.handle('communication:linkInbound', async (_event, { token, id, payload }) => {
+        try {
+            const session = (0, auth_service_1.getSession)(token);
+            if (!session)
+                return { success: false, error: 'Session expirée' };
+            (0, auth_service_1.checkRole)(session, WRITE_ROLES);
+            const parsed = linkInboundSchema.safeParse(payload);
+            if (!parsed.success)
+                return { success: false, error: parsed.error.issues.map((i) => i.message).join(', ') };
+            if (Object.keys(parsed.data).length !== 1) {
+                return { success: false, error: 'Sélectionnez une seule entité à rattacher.' };
+            }
+            const comm = await (0, db_service_1.getDb)().communication.findUnique({ where: { id: Number(id) } });
+            if (!comm)
+                return { success: false, error: 'Message introuvable' };
+            if (comm.direction !== 'ENTRANT')
+                return { success: false, error: 'Seul un message reçu peut être rattaché.' };
+            const updated = await (0, db_service_1.getDb)().communication.update({
+                where: { id: comm.id },
+                data: { clientId: null, prospectId: null, ownerId: null, conventionId: null, ...parsed.data },
+            });
+            return { success: true, data: updated };
+        }
+        catch (error) {
+            logger_1.default.error('communication:linkInbound error', error.message);
             return { success: false, error: error.message };
         }
     });
@@ -704,7 +826,7 @@ function registerCommunicationIPC() {
                 });
                 if (me) {
                     if (d.senderSelf) {
-                        const senderName = (me.nomCommercial || `${me.firstName ?? ''} ${me.lastName ?? ''}`.trim()) || undefined;
+                        const senderName = (me.nomCommercial || `${me.lastName ?? ''} ${me.firstName ?? ''}`.trim()) || undefined;
                         fromOverride = { fromName: senderName, fromAddress: me.email };
                     }
                     if (usePersonalSignature) {
@@ -815,9 +937,11 @@ function registerCommunicationIPC() {
                 });
                 // « Remis » : le serveur SMTP a accepté le destinataire principal.
                 const delivered = info.accepted.some((a) => a.toLowerCase() === d.to.toLowerCase());
+                // Message-ID persisté — permet à une réponse entrante de retrouver cet
+                // échange via In-Reply-To/References (cf. mailbox-poller.service.ts).
                 await db.communication.update({
                     where: { id: comm.id },
-                    data: { status: 'ENVOYE', sentAt: new Date(), deliveredAt: delivered ? new Date() : null },
+                    data: { status: 'ENVOYE', sentAt: new Date(), deliveredAt: delivered ? new Date() : null, messageId: info.messageId },
                 });
                 logger_1.default.info(`Email sent to ${d.to}`);
                 return { success: true, data: { ...comm, status: 'ENVOYE' } };
@@ -966,8 +1090,10 @@ function registerCommunicationIPC() {
                 data: { status: 'EN_ATTENTE', errorMsg: null },
             });
             try {
+                let messageId;
                 if (comm.channel === 'EMAIL') {
-                    await (0, email_service_1.sendEmail)({ to: comm.to, subject: comm.subject ?? '', body: comm.body });
+                    const info = await (0, email_service_1.sendEmail)({ to: comm.to, subject: comm.subject ?? '', body: comm.body });
+                    messageId = info.messageId;
                 }
                 else if (comm.channel === 'SMS') {
                     await (0, sms_service_1.sendSms)(comm.to, comm.body);
@@ -980,7 +1106,7 @@ function registerCommunicationIPC() {
                 }
                 const updated = await db.communication.update({
                     where: { id: comm.id },
-                    data: { status: 'ENVOYE', sentAt: new Date(), errorMsg: null },
+                    data: { status: 'ENVOYE', sentAt: new Date(), errorMsg: null, ...(messageId ? { messageId } : {}) },
                 });
                 logger_1.default.info(`Communication ${comm.id} renvoyée avec succès (${comm.channel} → ${comm.to})`);
                 return { success: true, data: updated };
@@ -1062,7 +1188,7 @@ function registerCommunicationIPC() {
                 const to = pickRecipient(c);
                 if (!to)
                     return { success: false, error: `Le client n'a pas de ${channel === 'EMAIL' ? 'email' : 'numéro mobile/téléphone'} renseigné` };
-                const label = c.type === 'ENTREPRISE' ? (c.entreprise ?? `Client #${c.id}`) : `${c.firstName ?? ''} ${c.lastName ?? ''}`.trim();
+                const label = c.type !== 'INDIVIDUEL' ? (c.entreprise ?? `Client #${c.id}`) : `${c.firstName ?? ''} ${c.lastName ?? ''}`.trim();
                 const variables = { ...commonVars, ...recipientVariables(c) };
                 return { success: true, data: { to, label, targets: { clientId: c.id }, variables } };
             }
@@ -1140,7 +1266,7 @@ function registerCommunicationIPC() {
             const to = pickRecipient(conv.client);
             if (!to)
                 return { success: false, error: `Le client principal de la convention n'a pas de ${channel === 'EMAIL' ? 'email' : 'numéro mobile/téléphone'} renseigné` };
-            const clientLabel = conv.client.type === 'ENTREPRISE'
+            const clientLabel = conv.client.type !== 'INDIVIDUEL'
                 ? (conv.client.entreprise ?? `Client #${conv.client.id}`)
                 : `${conv.client.firstName ?? ''} ${conv.client.lastName ?? ''}`.trim();
             const variables = {
@@ -1232,15 +1358,17 @@ function registerCommunicationIPC() {
                 },
             });
             try {
+                let messageId;
                 if (d.channel === 'EMAIL') {
-                    await (0, email_service_1.sendEmail)({ to, subject: finalSubject, body: finalBody });
+                    const info = await (0, email_service_1.sendEmail)({ to, subject: finalSubject, body: finalBody });
+                    messageId = info.messageId;
                 }
                 else {
                     await (0, whatsapp_service_1.sendWhatsapp)(to, finalBody);
                 }
                 await db.communication.update({
                     where: { id: comm.id },
-                    data: { status: 'ENVOYE', sentAt: new Date() },
+                    data: { status: 'ENVOYE', sentAt: new Date(), ...(messageId ? { messageId } : {}) },
                 });
                 logger_1.default.info(`Partage de localisation envoyé (${d.channel} → ${to}, ${d.entityType}#${d.entityId})`);
                 return { success: true, data: { ...comm, status: 'ENVOYE', to, subject: finalSubject, body: finalBody, entityTitle } };

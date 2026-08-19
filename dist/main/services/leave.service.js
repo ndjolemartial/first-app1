@@ -77,15 +77,25 @@ function workingDays(start, end) {
     }
     return count;
 }
-/** Nombre de mois entiers écoulés entre deux dates (≥ 0). */
+/**
+ * Nombre de mois calendaires courus entre `from` et `to`, **mois de `to`
+ * inclus** — les congés payés s'acquièrent par mois calendaire d'activité
+ * (ex. les bulletins de paie courent du 1ᵉʳ au dernier jour du mois), pas au
+ * jour près depuis la date anniversaire d'embauche. Ex. from = 1ᵉʳ janvier,
+ * to = 31 janvier (même mois) → 1 mois ; to = 31 juillet → 7 mois.
+ */
 function monthsBetween(from, to) {
-    let m = (to.getFullYear() - from.getFullYear()) * 12 + (to.getMonth() - from.getMonth());
-    if (to.getDate() < from.getDate())
-        m -= 1;
+    const m = (to.getFullYear() - from.getFullYear()) * 12 + (to.getMonth() - from.getMonth()) + 1;
     return Math.max(0, m);
 }
-/** Calcule le solde de congés payés d'un employé. */
-async function computeLeaveBalance(employeeId) {
+/**
+ * Calcule le solde de congés payés d'un employé, à la date `asOf` (par défaut
+ * aujourd'hui — solde « en direct », ex. Congés & absences, Mon espace RH).
+ * Un appelant qui doit figer un solde historique (ex. bulletin de paie déjà
+ * émis) passe la fin de la période concernée : ni l'acquis ni le pris ne
+ * doivent alors tenir compte d'évènements postérieurs à cette date.
+ */
+async function computeLeaveBalance(employeeId, asOf = new Date()) {
     const db = (0, db_service_1.getDb)();
     const employee = await db.employee.findUnique({ where: { id: employeeId }, select: { hireDate: true, createdAt: true } });
     const accrualPerMonth = await getLeaveAccrual();
@@ -93,14 +103,15 @@ async function computeLeaveBalance(employeeId) {
     // Acquisition à partir du max(embauche, 1er janvier 2026) : les congés des
     // années antérieures sont considérés déjà consommés (compteur remis à zéro).
     const accrualStart = new Date(Math.max(new Date(startRef).getTime(), ACCRUAL_START.getTime()));
-    const monthsSinceHire = monthsBetween(accrualStart, new Date());
+    const monthsSinceHire = monthsBetween(accrualStart, asOf);
     const acquired = Math.round(monthsSinceHire * accrualPerMonth * 10) / 10;
     // Jours de congés payés approuvés (types affectant le solde) pris depuis le
-    // début de comptabilisation : on ignore les congés antérieurs (déjà soldés).
+    // début de comptabilisation jusqu'à `asOf` : on ignore les congés antérieurs
+    // (déjà soldés) et — pour un solde figé — ceux postérieurs à `asOf`.
     const approved = await db.leaveRequest.findMany({
         where: {
             employeeId, status: 'APPROUVE', deletedAt: null,
-            type: { affectsBalance: true }, startDate: { gte: ACCRUAL_START },
+            type: { affectsBalance: true }, startDate: { gte: ACCRUAL_START, lte: asOf },
         },
         select: { days: true },
     });
@@ -116,16 +127,27 @@ const round1 = (n) => Math.round(n * 10) / 10;
  * - Repos compensateur : cumul des absences approuvées (maladie, maternité,
  *   paternité, exceptionnelle) sur l'année. Pas de notion d'acquis/restant
  *   (colonnes non applicables → null).
+ *
+ * `month` (le mois de la période du bulletin, 1-12) fige tous les compteurs à
+ * la **fin de ce mois** : un bulletin déjà émis ne doit plus voir ses
+ * compteurs de congés évoluer au fil du temps (ni parce que de nouveaux
+ * congés sont pris plus tard dans l'année, ni parce que le solde acquis
+ * continue de courir jusqu'à aujourd'hui). Sans `month` (repli sur le 31
+ * décembre de `year`), le comportement reste celui d'un cumul annuel complet.
+ *
+ * `isEssaiContract` : un contrat/période d'essai (ESSAI, RENOUVELLEMENT_ESSAI)
+ * n'ouvre pas droit aux congés payés — la ligne « Congés payés » du bulletin
+ * reste à 0 (acquis/pris/restant), quel que soit le solde par ailleurs.
  */
-async function computePayslipLeaveCounters(employeeId, year) {
+async function computePayslipLeaveCounters(employeeId, year, month, isEssaiContract = false) {
     const db = (0, db_service_1.getDb)();
-    const balance = await computeLeaveBalance(employeeId);
+    const asOf = month != null ? new Date(year, month, 0, 23, 59, 59, 999) : new Date(year, 11, 31, 23, 59, 59, 999);
+    const balance = await computeLeaveBalance(employeeId, asOf);
     const start = new Date(year, 0, 1);
-    const end = new Date(year + 1, 0, 1);
     const congeYear = await db.leaveRequest.findMany({
         where: {
             employeeId, status: 'APPROUVE', deletedAt: null,
-            type: { affectsBalance: true }, startDate: { gte: start, lt: end },
+            type: { affectsBalance: true }, startDate: { gte: start, lte: asOf },
         },
         select: { days: true },
     });
@@ -133,14 +155,16 @@ async function computePayslipLeaveCounters(employeeId, year) {
     const reposYear = await db.leaveRequest.findMany({
         where: {
             employeeId, status: 'APPROUVE', deletedAt: null,
-            type: { code: { in: exports.REPOS_COMPENSATEUR_TYPE_CODES } }, startDate: { gte: start, lt: end },
+            type: { code: { in: exports.REPOS_COMPENSATEUR_TYPE_CODES } }, startDate: { gte: start, lte: asOf },
         },
         select: { days: true },
     });
     const reposTakenYear = round1(reposYear.reduce((s, r) => s + Number(r.days), 0));
     return {
         year,
-        conge: { acquired: balance.acquired, takenYear: congeTakenYear, remaining: balance.remaining },
+        conge: isEssaiContract
+            ? { acquired: 0, takenYear: 0, remaining: 0 }
+            : { acquired: balance.acquired, takenYear: congeTakenYear, remaining: balance.remaining },
         reposComp: { acquired: null, takenYear: reposTakenYear, remaining: null },
     };
 }

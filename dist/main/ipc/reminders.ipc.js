@@ -26,6 +26,19 @@ const ruleUpdateSchema = zod_1.z.object({
     name: zod_1.z.string().min(1).optional(),
     description: zod_1.z.string().nullable().optional(),
 });
+// Création : le déclencheur (triggerType) n'est modifiable qu'à la création —
+// le moteur (applyReminderRules) dispatche déjà génériquement sur les 3 cas
+// existants, quel que soit le nombre de règles par cas : ajouter une règle
+// « J-3 SMS » à côté des règles seedées ne demande aucun changement du moteur.
+const ruleCreateSchema = zod_1.z.object({
+    triggerType: zod_1.z.enum(['INSTALLMENT_UPCOMING', 'INSTALLMENT_OVERDUE', 'CONVENTION_EXPIRING']),
+    name: zod_1.z.string().min(1, 'Nom requis'),
+    description: zod_1.z.string().nullable().optional(),
+    offsetDays: zod_1.z.number().int().min(-365).max(365),
+    channel: zod_1.z.enum(['EMAIL', 'SMS', 'WHATSAPP']),
+    templateId: zod_1.z.number().int().positive().nullable().optional(),
+    isActive: zod_1.z.boolean().optional(),
+});
 const clientOptOutSchema = zod_1.z.object({
     clientId: zod_1.z.number().int().positive(),
     smsOptOut: zod_1.z.boolean().optional(),
@@ -98,6 +111,66 @@ function registerRemindersIPC() {
             return { success: false, error: error.message };
         }
     });
+    electron_1.ipcMain.handle('reminders:createRule', async (_event, { token, payload }) => {
+        try {
+            const session = (0, auth_service_1.getSession)(token);
+            if (!session)
+                return { success: false, error: 'Session expirée' };
+            (0, auth_service_1.checkRole)(session, ADMIN_ROLES);
+            const parsed = ruleCreateSchema.safeParse(payload);
+            if (!parsed.success)
+                return { success: false, error: parsed.error.format() };
+            const d = parsed.data;
+            const db = (0, db_service_1.getDb)();
+            // Code lisible mais garanti unique — jamais réutilisé par le moteur
+            // (reminders.service.ts n'en dépend que pour le journal/la traçabilité,
+            // cf. Communication.metadata.ruleCode).
+            const code = `${d.triggerType}_J${d.offsetDays >= 0 ? '+' : ''}${d.offsetDays}_${d.channel}_${Date.now().toString(36).toUpperCase()}`;
+            const rule = await db.reminderRule.create({
+                data: {
+                    code,
+                    triggerType: d.triggerType,
+                    name: d.name,
+                    description: d.description ?? null,
+                    offsetDays: d.offsetDays,
+                    channel: d.channel,
+                    templateId: d.templateId ?? null,
+                    isActive: d.isActive ?? true,
+                },
+            });
+            logger_1.default.info(`Reminder rule created: ${rule.code}`);
+            return { success: true, data: rule };
+        }
+        catch (error) {
+            return { success: false, error: error.message };
+        }
+    });
+    // Suppression définitive — `ReminderRule` ne porte pas de `deletedAt` (règle
+    // de configuration, pas une entité métier soumise à traçabilité/archivage) :
+    // la désactivation (`isActive`) reste le geste réversible ; ceci est
+    // irréversible. Une fois supprimée, la règle n'apparaît plus dans les
+    // passes de relance (le moteur ne lit que les lignes existantes) ; les
+    // `Communication` déjà envoyées conservent leur trace (`metadata.ruleCode`
+    // est une simple chaîne, sans FK vers `ReminderRule`).
+    electron_1.ipcMain.handle('reminders:deleteRule', async (_event, { token, id }) => {
+        try {
+            const session = (0, auth_service_1.getSession)(token);
+            if (!session)
+                return { success: false, error: 'Session expirée' };
+            (0, auth_service_1.checkRole)(session, ADMIN_ROLES);
+            const db = (0, db_service_1.getDb)();
+            const rule = await db.reminderRule.delete({ where: { id } });
+            // Empêche le seed de démarrage (seedDefaultRemindersConfig, exécuté à
+            // chaque lancement de l'app) de recréer ce code — sans quoi une règle
+            // seedée « supprimée » ne le resterait que jusqu'au prochain redémarrage.
+            await (0, reminders_service_1.markRuleCodeDeleted)(rule.code);
+            logger_1.default.info(`Reminder rule deleted: ${rule.code}`);
+            return { success: true };
+        }
+        catch (error) {
+            return { success: false, error: error.message };
+        }
+    });
     // ── Exécution manuelle ────────────────────────────────────────────────────
     electron_1.ipcMain.handle('reminders:runNow', async (_event, { token }) => {
         try {
@@ -136,6 +209,42 @@ function registerRemindersIPC() {
                 select: { id: true, smsOptOut: true, emailOptOut: true },
             });
             return { success: true, data: client };
+        }
+        catch (error) {
+            return { success: false, error: error.message };
+        }
+    });
+    // Liste des clients actuellement exclus des relances automatiques (au moins
+    // un des deux canaux). Les relances WhatsApp partagent l'opt-out SMS (cf.
+    // processCandidate dans reminders.service.ts), donc smsOptOut = true exclut
+    // aussi bien les SMS que les WhatsApp.
+    electron_1.ipcMain.handle('reminders:listOptedOutClients', async (_event, { token }) => {
+        try {
+            const session = (0, auth_service_1.getSession)(token);
+            if (!session)
+                return { success: false, error: 'Session expirée' };
+            (0, auth_service_1.checkRole)(session, READ_ROLES);
+            const db = (0, db_service_1.getDb)();
+            const data = await db.client.findMany({
+                where: {
+                    deletedAt: null,
+                    OR: [{ smsOptOut: true }, { emailOptOut: true }],
+                },
+                select: {
+                    id: true,
+                    type: true,
+                    firstName: true,
+                    lastName: true,
+                    entreprise: true,
+                    email: true,
+                    phone: true,
+                    mobile: true,
+                    smsOptOut: true,
+                    emailOptOut: true,
+                },
+                orderBy: [{ lastName: 'asc' }, { entreprise: 'asc' }],
+            });
+            return { success: true, data };
         }
         catch (error) {
             return { success: false, error: error.message };

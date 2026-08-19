@@ -60,12 +60,21 @@ const ATTENDANCE_READ_ROLES = [...ATTENDANCE_WRITE_ROLES, ...HR_SCOPED_ROLES];
 // exclusivement (ni RH, ni ACCOUNTANT, ni ASSISTANTE_DIRECTION). Contrôle de
 // rôle EXACT (checkHrRole), sans équivalence.
 const LATENESS_ROLES = ['SUPER_ADMIN', 'ADMIN', 'MANAGER'];
-// Personnel (détail/écritures), contrats et bulletins de paie : ASSISTANTE_DIRECTION
-// en est EXCLUE (elle ne conserve que Congés & Pointage). Accès : admins, RH,
-// Comptable et MANAGER. (La liste `employees:list` reste ouverte à AD car elle
-// alimente les sélecteurs d'employés des pages Congés / Pointage.)
+// Personnel (détail/écritures), contrats et bulletins de paie : accès admins,
+// RH, Comptable, MANAGER — et ASSISTANTE_DIRECTION (accès opérationnel
+// restreint, cf. HR_SCOPED_ROLES : consulter + gérer, limité aux employés
+// dont le contrat en cours n'est pas un CDI, via assertEmployeeAccessible /
+// hrScopeWhere déjà appliqués par ces handlers).
 const HR_STAFF_READ_ROLES = [...HR_ADMIN_ROLES, 'MANAGER'];
 const HR_STAFF_WRITE_ROLES = [...HR_ADMIN_ROLES, 'MANAGER'];
+// Variantes ouvertes à ASSISTANTE_DIRECTION — tout ce qui touche la « fiche »
+// personnel/contrat/bulletin (consultation, création, modification), mais PAS
+// la suppression ni les opérations financières (marquer un bulletin payé,
+// choisir un compte bancaire de paiement — hors périmètre Trésorerie/
+// Comptabilité de ce rôle, cf. hr:payslips:payAccounts/updateStatus/
+// updatePayment, restés sur HR_STAFF_READ_ROLES/HR_STAFF_WRITE_ROLES).
+const HR_STAFF_READ_ROLES_SCOPED = [...HR_STAFF_READ_ROLES, 'ASSISTANTE_DIRECTION'];
+const HR_STAFF_WRITE_ROLES_SCOPED = [...HR_STAFF_WRITE_ROLES, 'ASSISTANTE_DIRECTION'];
 /**
  * Contrôle de rôle EXACT pour le module RH (n'applique pas les équivalences de
  * `checkRole`, afin que ACCOUNTANT — équivalent MANAGER — n'obtienne PAS l'accès
@@ -431,7 +440,7 @@ function registerHrIPC() {
             const session = (0, auth_service_1.getSession)(token);
             if (!session)
                 return { success: false, error: 'Session expirée' };
-            checkHrRole(session, HR_STAFF_READ_ROLES);
+            checkHrRole(session, HR_STAFF_READ_ROLES_SCOPED);
             const db = (0, db_service_1.getDb)();
             const rows = await db.employee.groupBy({
                 by: ['status'],
@@ -453,7 +462,7 @@ function registerHrIPC() {
             const session = (0, auth_service_1.getSession)(token);
             if (!session)
                 return { success: false, error: 'Session expirée' };
-            checkHrRole(session, HR_STAFF_READ_ROLES);
+            checkHrRole(session, HR_STAFF_READ_ROLES_SCOPED);
             const db = (0, db_service_1.getDb)();
             const employee = await db.employee.findFirst({
                 where: { id, deletedAt: null },
@@ -483,7 +492,7 @@ function registerHrIPC() {
             const session = (0, auth_service_1.getSession)(token);
             if (!session)
                 return { success: false, error: 'Session expirée' };
-            checkHrRole(session, HR_STAFF_READ_ROLES);
+            checkHrRole(session, HR_STAFF_READ_ROLES_SCOPED);
             const db = (0, db_service_1.getDb)();
             // « Lié » s'entend au sens de la contrainte d'unicité userId (tout employé,
             // y compris archivé) : on n'expose donc que les comptes sans employé, plus
@@ -513,7 +522,7 @@ function registerHrIPC() {
             const session = (0, auth_service_1.getSession)(token);
             if (!session)
                 return { success: false, error: 'Session expirée' };
-            checkHrRole(session, HR_STAFF_READ_ROLES);
+            checkHrRole(session, HR_STAFF_READ_ROLES_SCOPED);
             const db = (0, db_service_1.getDb)();
             const data = await db.careerProfile.findMany({
                 where: { deletedAt: null, isActive: true },
@@ -532,7 +541,7 @@ function registerHrIPC() {
             const session = (0, auth_service_1.getSession)(token);
             if (!session)
                 return { success: false, error: 'Session expirée' };
-            checkHrRole(session, HR_STAFF_WRITE_ROLES);
+            checkHrRole(session, HR_STAFF_WRITE_ROLES_SCOPED);
             const parsed = employeeSchema.safeParse(payload);
             if (!parsed.success) {
                 const msg = parsed.error.issues.map((i) => `${i.path.join('.') || 'champ'} : ${i.message}`).join(' ; ');
@@ -582,7 +591,7 @@ function registerHrIPC() {
             const session = (0, auth_service_1.getSession)(token);
             if (!session)
                 return { success: false, error: 'Session expirée' };
-            checkHrRole(session, HR_STAFF_WRITE_ROLES);
+            checkHrRole(session, HR_STAFF_WRITE_ROLES_SCOPED);
             const parsed = employeeSchema.partial().safeParse(payload);
             if (!parsed.success) {
                 const msg = parsed.error.issues.map((i) => `${i.path.join('.') || 'champ'} : ${i.message}`).join(' ; ');
@@ -727,7 +736,7 @@ function registerHrIPC() {
             const session = (0, auth_service_1.getSession)(token);
             if (!session)
                 return { success: false, error: 'Session expirée' };
-            checkHrRole(session, HR_STAFF_WRITE_ROLES);
+            checkHrRole(session, HR_STAFF_WRITE_ROLES_SCOPED);
             const parsed = contractSchema.safeParse(payload);
             if (!parsed.success) {
                 const msg = parsed.error.issues.map((i) => `${i.path.join('.') || 'champ'} : ${i.message}`).join(' ; ');
@@ -783,7 +792,7 @@ function registerHrIPC() {
             const session = (0, auth_service_1.getSession)(token);
             if (!session)
                 return { success: false, error: 'Session expirée' };
-            checkHrRole(session, HR_STAFF_WRITE_ROLES);
+            checkHrRole(session, HR_STAFF_WRITE_ROLES_SCOPED);
             const parsed = contractSchema.partial().safeParse(payload);
             if (!parsed.success) {
                 const msg = parsed.error.issues.map((i) => `${i.path.join('.') || 'champ'} : ${i.message}`).join(' ; ');
@@ -862,7 +871,7 @@ function registerHrIPC() {
             const session = (0, auth_service_1.getSession)(token);
             if (!session)
                 return { success: false, error: 'Session expirée' };
-            checkHrRole(session, HR_STAFF_READ_ROLES);
+            checkHrRole(session, HR_STAFF_READ_ROLES_SCOPED);
             const db = (0, db_service_1.getDb)();
             const contract = await db.employmentContract.findFirst({
                 where: { id, deletedAt: null },
@@ -898,7 +907,7 @@ function registerHrIPC() {
             const session = (0, auth_service_1.getSession)(token);
             if (!session)
                 return { success: false, error: 'Session expirée' };
-            checkHrRole(session, HR_STAFF_READ_ROLES);
+            checkHrRole(session, HR_STAFF_READ_ROLES_SCOPED);
             const rates = await (0, commission_service_1.getDefaultRates)((0, db_service_1.getDb)());
             const data = [
                 { key: 'VENTE', label: 'Vente', defaultRate: rates.saleRate },
@@ -1514,7 +1523,7 @@ function registerHrIPC() {
             const db = (0, db_service_1.getDb)();
             const payslip = await db.payslip.findFirst({
                 where: { id, deletedAt: null },
-                include: { employee: true, contract: { select: { poste: true, categorie: true, startDate: true } }, lines: { orderBy: { order: 'asc' } } },
+                include: { employee: true, contract: { select: { poste: true, categorie: true, startDate: true, type: true } }, lines: { orderBy: { order: 'asc' } } },
             });
             if (!payslip || !payslip.employee)
                 return { success: false, error: 'Bulletin introuvable' };
@@ -1522,7 +1531,7 @@ function registerHrIPC() {
             const company = await (0, payroll_service_1.loadPayslipCompany)();
             const template = await (0, hr_templates_service_1.resolvePayslipTemplate)();
             const logo = await (0, payroll_service_1.loadPayslipLogo)();
-            const counters = await (0, leave_service_1.computePayslipLeaveCounters)(payslip.employeeId, payslip.periodYear);
+            const counters = await (0, leave_service_1.computePayslipLeaveCounters)(payslip.employeeId, payslip.periodYear, payslip.periodMonth, payslip.contract?.type === 'ESSAI' || payslip.contract?.type === 'RENOUVELLEMENT_ESSAI');
             const totals = await (0, payroll_service_1.computePayslipTotals)(payslip);
             const html = (0, payroll_service_1.renderPayslipHtml)(payslip, payslip.employee, company, template ?? undefined, logo, counters, totals);
             const pdf = await (0, pdf_service_1.htmlToPdf)(html, { landscape: false });
@@ -1562,6 +1571,44 @@ function registerHrIPC() {
         }
         catch (error) {
             logger_1.default.error('hr:payroll:setRates error', error.message);
+            return { success: false, error: error.message };
+        }
+    });
+    const payrollPreviewSchema = zod_1.z.object({
+        baseSalary: zod_1.z.number().min(0),
+        sursalaire: zod_1.z.number().min(0).optional(),
+        primeAnciennete: zod_1.z.number().min(0).optional(),
+        transportAllowance: zod_1.z.number().min(0).optional(),
+    });
+    /**
+     * Aperçu de calcul de paie (ITS, CNPS salarié, CMU salarié, brut, total des
+     * retenues, net à payer) à partir des composantes de rémunération d'un
+     * contrat — réutilise tel quel `computePayroll()`, le même cœur de calcul
+     * que la génération d'un bulletin (`hr:payslips:generate`), pour garantir
+     * des résultats strictement identiques. Aucune écriture (pas de bulletin
+     * créé), lecture seule des taux courants.
+     */
+    electron_1.ipcMain.handle('hr:payroll:preview', async (_event, { token, ...payload }) => {
+        try {
+            const session = (0, auth_service_1.getSession)(token);
+            if (!session)
+                return { success: false, error: 'Session expirée' };
+            checkHrRole(session, HR_STAFF_WRITE_ROLES_SCOPED);
+            const parsed = payrollPreviewSchema.safeParse(payload);
+            if (!parsed.success)
+                return { success: false, error: parsed.error.issues[0]?.message ?? 'Données invalides' };
+            const rates = await (0, payroll_service_1.getPayrollRates)((0, db_service_1.getDb)());
+            const result = (0, payroll_service_1.computePayroll)(parsed.data, rates);
+            return {
+                success: true,
+                data: {
+                    its: result.its, cnpsEmployee: result.cnpsEmployee, cmuEmployee: result.cmuEmployee,
+                    grossSalary: result.grossTaxable, totalDeductions: result.totalDeductions, netSalary: result.netSalary,
+                },
+            };
+        }
+        catch (error) {
+            logger_1.default.error('hr:payroll:preview error', error.message);
             return { success: false, error: error.message };
         }
     });
@@ -2982,14 +3029,14 @@ function registerHrIPC() {
             const myId = await getMyEmployeeId(session, db);
             const payslip = await db.payslip.findFirst({
                 where: { id, deletedAt: null },
-                include: { employee: true, contract: { select: { poste: true, categorie: true, startDate: true } }, lines: { orderBy: { order: 'asc' } } },
+                include: { employee: true, contract: { select: { poste: true, categorie: true, startDate: true, type: true } }, lines: { orderBy: { order: 'asc' } } },
             });
             if (!payslip || !payslip.employee || !myId || payslip.employeeId !== myId)
                 return { success: false, error: 'Bulletin introuvable' };
             const company = await (0, payroll_service_1.loadPayslipCompany)();
             const template = await (0, hr_templates_service_1.resolvePayslipTemplate)();
             const logo = await (0, payroll_service_1.loadPayslipLogo)();
-            const counters = await (0, leave_service_1.computePayslipLeaveCounters)(payslip.employeeId, payslip.periodYear);
+            const counters = await (0, leave_service_1.computePayslipLeaveCounters)(payslip.employeeId, payslip.periodYear, payslip.periodMonth, payslip.contract?.type === 'ESSAI' || payslip.contract?.type === 'RENOUVELLEMENT_ESSAI');
             const totals = await (0, payroll_service_1.computePayslipTotals)(payslip);
             const html = (0, payroll_service_1.renderPayslipHtml)(payslip, payslip.employee, company, template ?? undefined, logo, counters, totals);
             const pdf = await (0, pdf_service_1.htmlToPdf)(html, { landscape: false });

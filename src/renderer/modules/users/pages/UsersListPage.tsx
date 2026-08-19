@@ -26,6 +26,7 @@ const ROLE_OPTIONS = [
   { value: 'AGENT_TECHNIQUE', label: 'Agent Technique' },
   { value: 'AGENT', label: 'Agent' },
   { value: 'RH', label: 'RH / Paie' },
+  { value: 'CONFORMITE', label: 'Conformité LBC/FT' },
   { value: 'READONLY', label: 'WELCOME' },
 ];
 
@@ -38,6 +39,7 @@ const ROLE_VARIANT: Record<string, any> = {
   AGENT: 'success',
   AGENT_TECHNIQUE: 'success',
   RH: 'info',
+  CONFORMITE: 'purple',
   READONLY: 'default',
 };
 

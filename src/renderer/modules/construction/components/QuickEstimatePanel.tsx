@@ -11,7 +11,7 @@ import { Gauge, AlertTriangle } from 'lucide-react';
  * la fourchette affichée ne peut donc jamais contredire le devis détaillé
  * généré ensuite.
  */
-export default function QuickEstimatePanel({ characteristics }: { characteristics: Record<string, unknown> }) {
+export default function QuickEstimatePanel({ characteristics, hidePrixM2 = false }: { characteristics: Record<string, unknown>; hidePrixM2?: boolean }) {
   const [debounced, setDebounced] = useState(characteristics);
 
   useEffect(() => {
@@ -48,7 +48,7 @@ export default function QuickEstimatePanel({ characteristics }: { characteristic
             <div className="text-xs text-slate-500 mt-1">
               Budget prévisionnel (±{data.toleranceRangePct}%) · soit {formatCurrency(data.totalHT)} HT
             </div>
-            {data.prixMoyenM2 != null && (
+            {!hidePrixM2 && data.prixMoyenM2 != null && (
               <div className="text-xs text-slate-400 mt-0.5">≈ {formatCurrency(data.prixMoyenM2)} / m²</div>
             )}
           </div>

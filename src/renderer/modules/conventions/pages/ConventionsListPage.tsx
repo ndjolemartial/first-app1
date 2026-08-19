@@ -188,9 +188,13 @@ export default function ConventionsListPage() {
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {conventions.map((c: any) => {
-                  const clientName = c.client?.type === 'INDIVIDUEL'
-                    ? `${c.client?.firstName ?? ''} ${c.client?.lastName ?? ''}`.trim()
-                    : (c.client?.entreprise ?? '—');
+                  const clientName = c.clientId
+                    ? (c.client?.type === 'INDIVIDUEL'
+                        ? `${c.client?.firstName ?? ''} ${c.client?.lastName ?? ''}`.trim()
+                        : (c.client?.entreprise ?? '—'))
+                    : c.prospect
+                      ? `${`${c.prospect.firstName ?? ''} ${c.prospect.lastName ?? ''}`.trim()} (prospect)`
+                      : '—';
                   const amount = c.rentAmount ?? c.saleAmount;
                   return (
                     <tr key={c.id} className="hover:bg-slate-50 transition-colors">

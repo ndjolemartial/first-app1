@@ -13,7 +13,8 @@ import { useAuthStore } from '../../../shared/stores/auth.store';
 import {
   BUILDING_TYPE_LABELS, STANDING_LABELS, PROJECT_STATUS_LABELS, PROJECT_STATUS_VARIANT,
   ROOF_TYPE_LABELS, JOINERY_TYPE_LABELS, FLOORING_TYPE_LABELS, AC_TYPE_LABELS, KITCHEN_TYPE_LABELS,
-  TERRAIN_TYPE_LABELS, SANITATION_TYPE_LABELS, ESTIMATE_STATUS_LABELS, PRECISION_LEVEL_LABELS,
+  TERRAIN_TYPE_LABELS, SANITATION_TYPE_LABELS, ESTIMATE_STATUS_LABELS, PRECISION_LEVEL_LABELS, PROJECT_SCOPE_LABELS,
+  FENCE_POST_TYPE_LABELS,
 } from '../utils/constructionLabels';
 import { Pencil, Plus, FileText, ArrowRight, Trash2 } from 'lucide-react';
 
@@ -80,25 +81,34 @@ export default function ConstructionProjectDetailPage() {
             <Field label="Référence" value={project.reference} />
             <Field label="Destinataire" value={project.client ? formatPersonName(project.client, '') : project.prospect ? `${project.prospect.firstName} ${project.prospect.lastName}` : '—'} />
             <Field label="Agent" value={project.agent ? formatPersonName(project.agent, '') : '—'} />
-            <Field label="Type de bâtiment" value={BUILDING_TYPE_LABELS[project.buildingType]} />
-            <Field label="Standing" value={STANDING_LABELS[project.standing]} />
-            <Field label="Niveaux" value={project.levels} />
-            <Field label="Pièces" value={project.roomCount} />
-            <Field label="Chambres" value={project.bedroomCount} />
-            <Field label="SDB / SDE / WC" value={`${project.bathroomCount} / ${project.showerRoomCount} / ${project.wcCount}`} />
-            <Field label="Surface habitable" value={`${Number(project.surfaceHabitable)} m²`} />
-            <Field label="Surface construite" value={project.surfaceConstruite ? `${Number(project.surfaceConstruite)} m²` : '—'} />
-            <Field label="Cuisine" value={KITCHEN_TYPE_LABELS[project.kitchenType]} />
-            <Field label="Toiture" value={ROOF_TYPE_LABELS[project.roofType]} />
-            <Field label="Menuiserie" value={JOINERY_TYPE_LABELS[project.joineryType]} />
-            <Field label="Revêtement de sol" value={FLOORING_TYPE_LABELS[project.flooringType]} />
-            <Field label="Climatisation" value={AC_TYPE_LABELS[project.acType]} />
-            <Field label="Terrain" value={TERRAIN_TYPE_LABELS[project.terrainType]} />
+            <Field label="Type de devis" value={PROJECT_SCOPE_LABELS[project.scope] ?? 'Maison complète'} />
+            {project.scope === 'COMPLET' && (
+              <>
+                <Field label="Type de bâtiment" value={BUILDING_TYPE_LABELS[project.buildingType]} />
+                <Field label="Standing" value={STANDING_LABELS[project.standing]} />
+                <Field label="Niveaux" value={project.levels} />
+                <Field label="Pièces" value={project.roomCount} />
+                <Field label="Chambres" value={project.bedroomCount} />
+                <Field label="SDB / SDE / WC" value={`${project.bathroomCount} / ${project.showerRoomCount} / ${project.wcCount}`} />
+                <Field label="Surface habitable" value={`${Number(project.surfaceHabitable)} m²`} />
+                <Field label="Surface construite" value={project.surfaceConstruite ? `${Number(project.surfaceConstruite)} m²` : '—'} />
+                <Field label="Cuisine" value={KITCHEN_TYPE_LABELS[project.kitchenType]} />
+                <Field label="Toiture" value={ROOF_TYPE_LABELS[project.roofType]} />
+                <Field label="Menuiserie" value={JOINERY_TYPE_LABELS[project.joineryType]} />
+                <Field label="Revêtement de sol" value={FLOORING_TYPE_LABELS[project.flooringType]} />
+                <Field label="Climatisation" value={AC_TYPE_LABELS[project.acType]} />
+                <Field label="Terrain" value={TERRAIN_TYPE_LABELS[project.terrainType]} />
+              </>
+            )}
             <Field label="Localité" value={project.locality?.label ?? project.ville ?? '—'} />
-            <Field label="Assainissement" value={SANITATION_TYPE_LABELS[project.sanitationType]} />
-            <Field label="Clôture" value={project.fenceLength ? `${Number(project.fenceLength)} ml` : '—'} />
-            <Field label="Piscine" value={project.hasPool ? `Oui (${project.poolSurface ? Number(project.poolSurface) + ' m²' : '—'})` : 'Non'} />
-            <Field label="Aménagements extérieurs" value={project.hasExteriorLayout ? 'Oui' : 'Non'} />
+            {project.scope === 'COMPLET' && <Field label="Assainissement" value={SANITATION_TYPE_LABELS[project.sanitationType]} />}
+            {project.scope !== 'PISCINE_SEULE' && (
+              <Field label="Clôture" value={project.fenceLength ? `${Number(project.fenceLength)} ml × ${project.fenceHeight ? Number(project.fenceHeight) : 2} m${project.gateCount ? ` · ${project.gateCount} portail(s)` : ''} · ${FENCE_POST_TYPE_LABELS[project.fencePostType] ?? project.fencePostType}${project.fenceHasCrepissage ? ' · Crépie' : ' · Brute'}${project.fenceHasChainageHaut ? ' · Chaînage haut' : ''}` : '—'} />
+            )}
+            {project.scope !== 'CLOTURE_SEULE' && (
+              <Field label="Piscine" value={project.hasPool ? `Oui (${project.poolSurface ? Number(project.poolSurface) + ' m²' : '—'})` : 'Non'} />
+            )}
+            {project.scope === 'COMPLET' && <Field label="Aménagements extérieurs" value={project.hasExteriorLayout ? 'Oui' : 'Non'} />}
           </div>
           {project.description && (
             <div className="mt-4 pt-4 border-t border-slate-100">

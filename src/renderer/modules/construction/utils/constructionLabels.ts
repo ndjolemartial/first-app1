@@ -78,6 +78,11 @@ export const SANITATION_TYPE_LABELS: Record<string, string> = {
   AUCUN: 'Aucun',
 };
 
+export const FENCE_POST_TYPE_LABELS: Record<string, string> = {
+  POTEAUX_SORTANTS: 'Poteaux sortants',
+  POTEAUX_SIMPLES: 'Poteaux simples',
+};
+
 export const PROJECT_STATUS_LABELS: Record<string, string> = {
   BROUILLON: 'Brouillon',
   ESTIME: 'Estimé',
@@ -90,6 +95,13 @@ export const PROJECT_STATUS_VARIANT: Record<string, 'default' | 'info' | 'succes
   ESTIME: 'info',
   DEVIS_EMIS: 'success',
   ARCHIVE: 'default',
+};
+
+/** Portée du devis — restreint le moteur à un seul lot ancillaire (+ installation/nettoyage). */
+export const PROJECT_SCOPE_LABELS: Record<string, string> = {
+  COMPLET: 'Maison complète',
+  CLOTURE_SEULE: 'Clôture seule',
+  PISCINE_SEULE: 'Piscine seule',
 };
 
 export const ESTIMATE_STATUS_LABELS: Record<string, string> = {

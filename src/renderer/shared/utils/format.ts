@@ -70,7 +70,7 @@ export function formatPersonName(
   if (!person) return fallback;
   // Personne morale : on privilégie la raison sociale.
   const business = person.entreprise || person.companyName;
-  if (person.type === 'ENTREPRISE' && business) return business;
+  if (person.type !== 'INDIVIDUEL' && business) return business;
   const parts = [person.lastName, person.firstName].filter(Boolean);
   if (parts.length > 0) return parts.join(' ');
   return business || fallback;

@@ -40,6 +40,18 @@ export interface ComputeOptions {
   markupMode?: 'CASCADE' | 'ADDITIF' | null;
   puRoundingStep?: number | null;
   toleranceRangePct?: number | null;
+  /** Remise globale appliquée entre le sous-total HT et la TVA. */
+  discountAmount?: number | null;
+  discountIsPercent?: boolean | null;
+  discountPercent?: number | null;
+  /**
+   * Restreint le calcul aux ouvrages des lots listés (codes `ConstructionLot.code`,
+   * ex. `['LOT01', 'LOT19', 'LOT22']` pour un devis « clôture seule ») — les
+   * ouvrages des autres lots sont ignorés comme s'ils n'existaient pas. `null`/absent
+   * = aucun filtre (devis complet, comportement historique). Utilisé pour les
+   * devis à portée restreinte (`ConstructionProject.scope`).
+   */
+  lotCodeFilter?: string[] | null;
 }
 
 export interface GeneratedLine {
@@ -93,6 +105,10 @@ export interface GeneratedEstimate {
   totalFraisChantier: number;
   totalFraisGeneraux: number;
   totalMarge: number;
+  subtotalHT: number;
+  discountAmount: number;
+  discountIsPercent: boolean;
+  discountPercent: number | null;
   totalHT: number;
   totalTVA: number;
   totalTTC: number;
@@ -353,13 +369,19 @@ export async function computeEstimate(
     : [];
   const { priceFor, localityLabel } = makePriceResolver(locality, variants);
 
-  const workItems = await db.constructionWorkItem.findMany({
+  const allWorkItems = await db.constructionWorkItem.findMany({
     where: { isActive: true },
     include: { lot: true, components: { include: { resource: true } } },
     orderBy: [{ lot: { numero: 'asc' } }, { sortOrder: 'asc' }],
   }) as unknown as WorkItemWithRelations[];
+  const lotFilter = options.lotCodeFilter && options.lotCodeFilter.length > 0 ? new Set(options.lotCodeFilter) : null;
+  const workItems = lotFilter ? allWorkItems.filter((wi) => lotFilter.has(wi.lot.code)) : allWorkItems;
 
-  const activeLots = await db.constructionLot.findMany({ where: { isActive: true } });
+  const allActiveLots = await db.constructionLot.findMany({ where: { isActive: true } });
+  // La couverture (coveragePct) se mesure relativement aux seuls lots concernés
+  // par la portée du devis — sinon un devis « clôture seule » afficherait une
+  // couverture ridiculement basse (3 lots sur 22) et un avertissement trompeur.
+  const activeLots = lotFilter ? allActiveLots.filter((l) => lotFilter.has(l.code)) : allActiveLots;
 
   const lines: GeneratedLine[] = [];
   const resourceAcc = new Map<string, GeneratedResourceLine>();
@@ -396,7 +418,7 @@ export async function computeEstimate(
 
   for (const wi of workItems) {
     if (wi.percentOfTotalPct != null) { percentItems.push(wi); continue; }
-    if (!isApplicable(wi.applicabilityRule as ApplicabilityRule | null, inputs)) continue;
+    if (!isApplicable(wi.applicabilityRule as ApplicabilityRule | null, inputs as unknown as Record<string, unknown>)) continue;
 
     let qty = 0;
     let trace: string | null = null;
@@ -433,7 +455,7 @@ export async function computeEstimate(
 
   const sousTotal = lines.reduce((s, l) => s + l.montantHT, 0);
   for (const wi of percentItems) {
-    if (!isApplicable(wi.applicabilityRule as ApplicabilityRule | null, inputs)) continue;
+    if (!isApplicable(wi.applicabilityRule as ApplicabilityRule | null, inputs as unknown as Record<string, unknown>)) continue;
     const pct = Number(wi.percentOfTotalPct) / 100;
     const montantHT = round(sousTotal * pct, 2);
     if (montantHT <= 0) continue;
@@ -461,7 +483,18 @@ export async function computeEstimate(
   const totalFraisChantier = round(lines.reduce((s, l) => s + l.fraisChantierUnit * l.quantity, 0));
   const totalFraisGeneraux = round(lines.reduce((s, l) => s + l.fraisGenerauxUnit * l.quantity, 0));
   const totalMarge = round(lines.reduce((s, l) => s + l.margeUnit * l.quantity, 0));
-  const totalHT = round(lines.reduce((s, l) => s + l.montantHT, 0));
+  // Remise globale — appliquée entre le sous-total HT (somme des lignes) et
+  // la TVA, comme sur un devis commercial (Quote.discountAmount/Is Percent).
+  // `totalHT` ci-dessous devient donc le total APRÈS remise (0 par défaut =
+  // comportement historique inchangé) ; `subtotalHT` conserve le sous-total
+  // brut pour l'affichage (« Sous-total HT / Remise / Total HT »).
+  const subtotalHT = round(lines.reduce((s, l) => s + l.montantHT, 0));
+  const discountIsPercent = !!options.discountIsPercent;
+  const discountPercent = discountIsPercent ? round(options.discountPercent ?? 0) : null;
+  const discountAmount = discountIsPercent
+    ? round(subtotalHT * ((discountPercent ?? 0) / 100))
+    : round(Math.min(Math.max(options.discountAmount ?? 0, 0), subtotalHT));
+  const totalHT = round(subtotalHT - discountAmount);
   const totalTVA = round(totalHT * (tvaPct / 100));
   const totalTTC = round(totalHT + totalTVA);
   const prixMoyenM2 = inputs.surfaceHabitable > 0 ? round(totalHT / inputs.surfaceHabitable) : null;
@@ -489,7 +522,9 @@ export async function computeEstimate(
     lines,
     resourceLines: [...resourceAcc.values()].sort((a, b) => b.montant - a.montant),
     totalDeboursMateriaux, totalDeboursMainOeuvre, totalDeboursTransport, totalDeboursAutres, totalDeboursSec,
-    totalFraisChantier, totalFraisGeneraux, totalMarge, totalHT, totalTVA, totalTTC, prixMoyenM2,
+    totalFraisChantier, totalFraisGeneraux, totalMarge,
+    subtotalHT, discountAmount, discountIsPercent, discountPercent,
+    totalHT, totalTVA, totalTTC, prixMoyenM2,
     budgetMin: round(totalHT * (1 - toleranceRangePct / 100)),
     budgetMax: round(totalHT * (1 + toleranceRangePct / 100)),
     toleranceRangePct,
@@ -531,6 +566,9 @@ export function toProjectInputs(project: Record<string, unknown>): ProjectInputs
     hasElectricityConnection: project.hasElectricityConnection !== false,
     fenceLength: num(project.fenceLength, 0),
     fenceHeight: num(project.fenceHeight, 2),
+    fenceHasCrepissage: Boolean(project.fenceHasCrepissage),
+    fenceHasChainageHaut: Boolean(project.fenceHasChainageHaut),
+    fencePostType: String(project.fencePostType ?? 'POTEAUX_SIMPLES'),
     gateCount: num(project.gateCount, 0),
     hasPool: Boolean(project.hasPool),
     poolSurface: num(project.poolSurface, 0),

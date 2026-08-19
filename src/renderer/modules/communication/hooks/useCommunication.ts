@@ -114,3 +114,23 @@ export function useDeleteCommunication() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ['comm-history'] }),
   });
 }
+
+/** Rattache manuellement une réponse entrante non appariée automatiquement. */
+/** Marque un message reçu comme lu (sans effet si déjà lu ou si c'est un envoi). */
+export function useMarkCommunicationRead() {
+  const token = useAuthStore((s) => s.token)!;
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: number) => ipc.markRead(token, id),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['comm-history'] }),
+  });
+}
+
+export function useLinkInboundCommunication() {
+  const token = useAuthStore((s) => s.token)!;
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, payload }: { id: number; payload: object }) => ipc.linkInbound(token, id, payload),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['comm-history'] }),
+  });
+}

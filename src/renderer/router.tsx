@@ -54,6 +54,20 @@ import ConstructionProjectsListPage from './modules/construction/pages/Construct
 import ConstructionProjectFormPage from './modules/construction/pages/ConstructionProjectFormPage';
 import ConstructionProjectDetailPage from './modules/construction/pages/ConstructionProjectDetailPage';
 import ConstructionEstimatePage from './modules/construction/pages/ConstructionEstimatePage';
+import PermitProjectsListPage from './modules/permits/pages/PermitProjectsListPage';
+import PermitProjectFormPage from './modules/permits/pages/PermitProjectFormPage';
+import PermitProjectDetailPage from './modules/permits/pages/PermitProjectDetailPage';
+import PermitEstimatePage from './modules/permits/pages/PermitEstimatePage';
+import AmlDashboardPage from './modules/aml/pages/AmlDashboardPage';
+import AmlProfilesListPage from './modules/aml/pages/AmlProfilesListPage';
+import AmlProfileFormPage from './modules/aml/pages/AmlProfileFormPage';
+import AmlProfileDetailPage from './modules/aml/pages/AmlProfileDetailPage';
+import AmlReviewsListPage from './modules/aml/pages/AmlReviewsListPage';
+import AmlReviewDetailPage from './modules/aml/pages/AmlReviewDetailPage';
+import AmlSuspiciousReportsListPage from './modules/aml/pages/AmlSuspiciousReportsListPage';
+import AmlSuspiciousReportDetailPage from './modules/aml/pages/AmlSuspiciousReportDetailPage';
+import AmlTrainingListPage from './modules/aml/pages/AmlTrainingListPage';
+import AmlWatchlistPage from './modules/aml/pages/AmlWatchlistPage';
 import QuoteDetailPage from './modules/quotes/pages/QuoteDetailPage';
 import QuoteDocumentPage from './modules/quotes/pages/QuoteDocumentPage';
 import QuoteTemplateFormPage from './modules/quotes/pages/QuoteTemplateFormPage';
@@ -312,6 +326,56 @@ export const router = createHashRouter([
             ],
           },
 
+          // Devis permis de construire (Module 18) — mêmes conventions de rôle que le Module 17.
+          { path: 'permits', element: <PermitProjectsListPage /> },
+          { path: 'permits/projects/:id', element: <PermitProjectDetailPage /> },
+          { path: 'permits/estimates/:id', element: <PermitEstimatePage /> },
+          {
+            element: <RoleGuard allowedRoles={['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ACCOUNTANT']} />,
+            children: [
+              { path: 'permits/projects/new', element: <PermitProjectFormPage /> },
+              { path: 'permits/projects/:id/edit', element: <PermitProjectFormPage /> },
+            ],
+          },
+
+          // Conformité LBC/FT (Module 19) — rôle CONFORMITE dédié (exclusif,
+          // aucune équivalence checkRole) + SUPER_ADMIN/ADMIN en supervision +
+          // MANAGER et ACCOUNTANT en plein accès (parité ADMIN, y compris les
+          // actions les plus sensibles côté IPC — AML_ADMIN_ONLY dans aml.ipc.ts).
+          // La confidentialité fine des déclarations de soupçon est appliquée
+          // côté IPC (AML_REPORT_MANAGE_ROLES === AML_ROLES ici, pas besoin
+          // d'un second RoleGuard).
+          {
+            element: <RoleGuard allowedRoles={['SUPER_ADMIN', 'ADMIN', 'CONFORMITE', 'MANAGER', 'ACCOUNTANT']} />,
+            children: [
+              { path: 'aml/dashboard', element: <AmlDashboardPage /> },
+              { path: 'aml/profiles', element: <AmlProfilesListPage /> },
+              { path: 'aml/profiles/new', element: <AmlProfileFormPage /> },
+              { path: 'aml/profiles/:id', element: <AmlProfileDetailPage /> },
+              { path: 'aml/profiles/:id/edit', element: <AmlProfileFormPage /> },
+              { path: 'aml/reviews', element: <AmlReviewsListPage /> },
+              { path: 'aml/reviews/:id', element: <AmlReviewDetailPage /> },
+              { path: 'aml/suspicious-reports', element: <AmlSuspiciousReportsListPage /> },
+              { path: 'aml/suspicious-reports/:id', element: <AmlSuspiciousReportDetailPage /> },
+            ],
+          },
+          // Conformité LBC/FT — accès restreint AGENT / AGENT_TECHNIQUE /
+          // ASSISTANTE_DIRECTION / READONLY : uniquement Référentiel de
+          // vigilance et Formations (jamais Profils/Revues/Déclarations/
+          // Tableau de bord). Écriture sur le référentiel de vigilance
+          // limitée à AGENT_TECHNIQUE et lecture des formations limitée à
+          // leurs propres participations — appliqué côté IPC (aml.ipc.ts,
+          // AML_RESTRICTED_ROLES / WATCHLIST_RESTRICTED_WRITE_ROLES), pas
+          // ici (RoleGuard ne gère que l'accès à la route, pas la
+          // granularité des actions).
+          {
+            element: <RoleGuard allowedRoles={['SUPER_ADMIN', 'ADMIN', 'CONFORMITE', 'MANAGER', 'ACCOUNTANT', 'AGENT', 'AGENT_TECHNIQUE', 'ASSISTANTE_DIRECTION', 'READONLY']} />,
+            children: [
+              { path: 'aml/training', element: <AmlTrainingListPage /> },
+              { path: 'aml/watchlist', element: <AmlWatchlistPage /> },
+            ],
+          },
+
           // Conventions / Attestations — CONSULTATION : MANAGER+ (ACCOUNTANT inclus)
           // et AGENT (limité par le backend à ses clients référents en BROUILLON).
           {
@@ -492,19 +556,29 @@ export const router = createHashRouter([
             ],
           },
 
-          // Personnel & Bulletins de paie — ASSISTANTE_DIRECTION EXCLUE.
-          // admins/RH + Comptable + MANAGER (ce dernier filtré côté IPC).
+          // Personnel & contrats — admins/RH + Comptable + MANAGER +
+          // ASSISTANTE_DIRECTION (ces deux derniers filtrés côté IPC : limités
+          // aux employés dont le contrat en cours n'est pas un CDI).
           {
-            element: <RoleGuard allowedRoles={['SUPER_ADMIN', 'ADMIN', 'RH', 'ACCOUNTANT', 'MANAGER']} />,
+            element: <RoleGuard allowedRoles={['SUPER_ADMIN', 'ADMIN', 'RH', 'ACCOUNTANT', 'MANAGER', 'ASSISTANTE_DIRECTION']} />,
             children: [
               { path: 'hr/employees', element: <EmployeesListPage /> },
               { path: 'hr/employees/new', element: <EmployeeFormPage /> },
               { path: 'hr/employees/:id', element: <EmployeeDetailPage /> },
               { path: 'hr/employees/:id/edit', element: <EmployeeFormPage /> },
-              { path: 'hr/payslips', element: <PayslipsListPage /> },
-              { path: 'hr/payslips/:id', element: <PayslipDetailPage /> },
               { path: 'hr/contracts/:id/document', element: <ContractDocumentPage /> },
               { path: 'hr/contracts/:id/job-description', element: <JobDescriptionDocumentPage /> },
+            ],
+          },
+
+          // Bulletins de paie — ASSISTANTE_DIRECTION EXCLUE (accès personnel/
+          // contrats conservé ci-dessus, mais pas la paie). admins/RH + Comptable
+          // + MANAGER (ce dernier filtré côté IPC).
+          {
+            element: <RoleGuard allowedRoles={['SUPER_ADMIN', 'ADMIN', 'RH', 'ACCOUNTANT', 'MANAGER']} />,
+            children: [
+              { path: 'hr/payslips', element: <PayslipsListPage /> },
+              { path: 'hr/payslips/:id', element: <PayslipDetailPage /> },
             ],
           },
 

@@ -1,17 +1,21 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import PageLayout from '../../../shared/components/layout/PageLayout';
 import Button from '../../../shared/components/ui/Button';
 import Badge from '../../../shared/components/ui/Badge';
 import Card from '../../../shared/components/ui/Card';
 import { SkeletonTable } from '../../../shared/components/ui/Skeleton';
-import { useCommunicationHistory, useResendCommunication, useDeleteCommunication } from '../hooks/useCommunication';
-import { formatDateTime } from '../../../shared/utils/format';
+import SearchSelect from '../../../shared/components/ui/SearchSelect';
+import Input from '../../../shared/components/ui/Input';
+import Modal from '../../../shared/components/ui/Modal';
+import { useCommunicationHistory, useResendCommunication, useDeleteCommunication, useLinkInboundCommunication, useMarkCommunicationRead } from '../hooks/useCommunication';
+import { formatDateTime, formatPersonName } from '../../../shared/utils/format';
+import { makeEntitySearch } from '../../../shared/utils/entitySearch';
 import ExportMenu, { ExportColumn } from '../../../shared/components/ExportMenu';
 import ConfirmDialog from '../../../shared/components/ui/ConfirmDialog';
 import { useAuthStore } from '../../../shared/stores/auth.store';
 import { toast } from '../../../shared/components/ui/Toast';
-import { Mail, MessageSquare, Send, RefreshCw, Trash2, Eye } from 'lucide-react';
+import { Mail, MessageSquare, Send, RefreshCw, Trash2, Eye, ArrowDownLeft, ArrowUpRight, Link2 } from 'lucide-react';
 import MessagePreviewModal from '../components/MessagePreviewModal';
 
 const CHANNEL_VARIANT: Record<string, 'info' | 'success' | 'default'> = {
@@ -38,6 +42,17 @@ const STATUS_OPTIONS = [
   { value: 'ENVOYE', label: 'Envoyé' },
   { value: 'ECHEC', label: 'Échec' },
 ];
+const DIRECTION_OPTIONS = [
+  { value: '', label: 'Tous les sens' },
+  { value: 'SORTANT', label: 'Envoyés' },
+  { value: 'ENTRANT', label: 'Reçus' },
+];
+const DIRECTION_LABEL: Record<string, string> = { SORTANT: 'Envoyé', ENTRANT: 'Reçu' };
+
+// Rôles à vue complète pouvant se restreindre à leurs propres messages via le
+// filtre « Mes messages uniquement » — les autres rôles n'ont déjà accès qu'à
+// leurs propres messages (cf. FULL_HISTORY_ROLES dans communication.ipc.ts).
+const ONLY_MINE_FILTER_ROLES = ['SUPER_ADMIN', 'ADMIN', 'MANAGER'];
 
 const EXPORT_COLUMNS: ExportColumn[] = [
   { header: 'Canal',        cell: (c) => c.channel },
@@ -52,25 +67,47 @@ const EXPORT_COLUMNS: ExportColumn[] = [
 export default function CommunicationPage() {
   const navigate = useNavigate();
   const token = useAuthStore((s) => s.token)!;
+  const [search, setSearch] = useState('');
   const [channel, setChannel] = useState('');
   const [status, setStatus] = useState('');
+  const [direction, setDirection] = useState('');
+  const [onlyMine, setOnlyMine] = useState(false);
   const [page, setPage] = useState(1);
   const limit = 20;
 
+  const role = useAuthStore((s) => s.user?.role) ?? '';
+  const canFilterOnlyMine = ONLY_MINE_FILTER_ROLES.includes(role);
+
   const filters: any = {};
+  if (search) filters.search = search;
   if (channel) filters.channel = channel;
   if (status) filters.status = status;
+  if (direction) filters.direction = direction;
+  if (canFilterOnlyMine && onlyMine) filters.onlyMine = true;
 
   const filterSummary = [
+    search && `Recherche : "${search}"`,
     channel && `Canal : ${CHANNEL_OPTIONS.find((o) => o.value === channel)?.label ?? channel}`,
     status && `Statut : ${STATUS_LABEL[status] ?? status}`,
+    direction && `Sens : ${DIRECTION_OPTIONS.find((o) => o.value === direction)?.label ?? direction}`,
+    canFilterOnlyMine && onlyMine && 'Mes messages uniquement',
   ].filter(Boolean).join('   —   ') || undefined;
 
   const { data: res, isLoading } = useCommunicationHistory(filters, page, limit);
   const resend = useResendCommunication();
   const del = useDeleteCommunication();
+  const linkInbound = useLinkInboundCommunication();
+  const markRead = useMarkCommunicationRead();
   const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null);
   const [previewComm, setPreviewComm] = useState<any | null>(null);
+  const [linkComm, setLinkComm] = useState<any | null>(null);
+
+  // Ouvre l'aperçu et marque le message comme lu au passage — un message
+  // reçu non encore lu (readAt null) le devient dès sa première consultation.
+  const handleView = (comm: any) => {
+    setPreviewComm(comm);
+    if (comm.direction === 'ENTRANT' && !comm.readAt) markRead.mutate(comm.id);
+  };
 
   const handleResend = async (id: number) => {
     const r = await resend.mutateAsync(id);
@@ -129,6 +166,13 @@ export default function CommunicationPage() {
     >
       {/* Filtres */}
       <div className="flex gap-3 mb-6">
+        <div className="flex-1 min-w-[240px]">
+          <Input
+            placeholder="Rechercher par email, nom ou prénom (destinataire ou expéditeur)…"
+            value={search}
+            onChange={(e) => { setSearch(e.target.value); setPage(1); }}
+          />
+        </div>
         <select
           value={channel}
           onChange={(e) => { setChannel(e.target.value); setPage(1); }}
@@ -143,6 +187,24 @@ export default function CommunicationPage() {
         >
           {STATUS_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
         </select>
+        <select
+          value={direction}
+          onChange={(e) => { setDirection(e.target.value); setPage(1); }}
+          className="px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+        >
+          {DIRECTION_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+        </select>
+        {canFilterOnlyMine && (
+          <label className="flex items-center gap-2 whitespace-nowrap rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-700 select-none">
+            <input
+              type="checkbox"
+              checked={onlyMine}
+              onChange={(e) => { setOnlyMine(e.target.checked); setPage(1); }}
+              className="h-4 w-4 rounded border-slate-300"
+            />
+            Mes messages uniquement
+          </label>
+        )}
       </div>
 
       {/* Table */}
@@ -161,7 +223,7 @@ export default function CommunicationPage() {
             <thead className="bg-slate-50 border-b border-slate-200">
               <tr>
                 <th className="text-left px-4 py-3 font-medium text-slate-600">Canal</th>
-                <th className="text-left px-4 py-3 font-medium text-slate-600">Destinataire</th>
+                <th className="text-left px-4 py-3 font-medium text-slate-600">Contact</th>
                 <th className="text-left px-4 py-3 font-medium text-slate-600">Sujet / Message</th>
                 <th className="text-left px-4 py-3 font-medium text-slate-600">Template</th>
                 <th className="text-left px-4 py-3 font-medium text-slate-600">Date</th>
@@ -170,8 +232,13 @@ export default function CommunicationPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {history.map((comm: any) => (
-                <tr key={comm.id} className="hover:bg-slate-50">
+              {history.map((comm: any) => {
+                const isUnread = comm.direction === 'ENTRANT' && !comm.readAt;
+                return (
+                <tr
+                  key={comm.id}
+                  className={comm.direction === 'ENTRANT' ? 'bg-emerald-50 hover:bg-emerald-100' : 'hover:bg-slate-50'}
+                >
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-2">
                       {comm.channel === 'EMAIL'    && <Mail          className="h-4 w-4 text-blue-500" />}
@@ -180,16 +247,27 @@ export default function CommunicationPage() {
                       <Badge variant={CHANNEL_VARIANT[comm.channel] ?? 'default'}>{comm.channel === 'WHATSAPP' ? 'WhatsApp' : comm.channel}</Badge>
                     </div>
                   </td>
-                  <td className="px-4 py-3 font-medium">{comm.to}</td>
+                  <td className={isUnread ? 'px-4 py-3 font-bold' : 'px-4 py-3 font-medium'}>
+                    <div className="flex items-center gap-1.5">
+                      {comm.direction === 'ENTRANT'
+                        ? <ArrowDownLeft className="h-3.5 w-3.5 text-emerald-600 flex-shrink-0" />
+                        : <ArrowUpRight className="h-3.5 w-3.5 text-slate-400 flex-shrink-0" />}
+                      <span title={DIRECTION_LABEL[comm.direction] ?? comm.direction}>{comm.to}</span>
+                    </div>
+                  </td>
                   <td className="px-4 py-3 max-w-xs">
                     <button
                       type="button"
-                      onClick={() => setPreviewComm(comm)}
+                      onClick={() => handleView(comm)}
                       className="text-left w-full group"
                       title="Voir le message"
                     >
-                      {comm.subject && <p className="font-medium text-slate-800 truncate group-hover:text-indigo-600">{comm.subject}</p>}
-                      <p className="text-slate-400 truncate text-xs">{comm.body}</p>
+                      {comm.subject && (
+                        <p className={`truncate group-hover:text-indigo-600 ${isUnread ? 'font-bold text-slate-900' : 'font-medium text-slate-800'}`}>
+                          {comm.subject}
+                        </p>
+                      )}
+                      <p className={`truncate text-xs ${isUnread ? 'font-bold text-slate-600' : 'text-slate-400'}`}>{comm.body}</p>
                     </button>
                   </td>
                   <td className="px-4 py-3 text-slate-500 text-xs">{comm.template?.name ?? '—'}</td>
@@ -206,11 +284,22 @@ export default function CommunicationPage() {
                         variant="ghost"
                         size="sm"
                         icon={<Eye className="h-3.5 w-3.5" />}
-                        onClick={() => setPreviewComm(comm)}
+                        onClick={() => handleView(comm)}
                         title="Aperçu du message (lecture seule)"
                       >
                         Voir
                       </Button>
+                      {comm.direction === 'ENTRANT' && !comm.clientId && !comm.prospectId && !comm.ownerId && !comm.conventionId && (
+                        <Button
+                          variant="secondary"
+                          size="sm"
+                          icon={<Link2 className="h-3.5 w-3.5" />}
+                          onClick={() => setLinkComm(comm)}
+                          title="Rattacher ce message reçu à un client ou un prospect"
+                        >
+                          Rattacher
+                        </Button>
+                      )}
                       {comm.status === 'ECHEC' && (
                         <>
                           <Button
@@ -238,7 +327,8 @@ export default function CommunicationPage() {
                     </div>
                   </td>
                 </tr>
-              ))}
+                );
+              })}
             </tbody>
           </table>
         )}
@@ -266,6 +356,100 @@ export default function CommunicationPage() {
       />
 
       <MessagePreviewModal comm={previewComm} onClose={() => setPreviewComm(null)} />
+      <LinkInboundModal
+        comm={linkComm}
+        onClose={() => setLinkComm(null)}
+        onLink={async (payload) => {
+          if (!linkComm) return;
+          const r = await linkInbound.mutateAsync({ id: linkComm.id, payload });
+          if (r?.success) { toast.success('Message rattaché'); setLinkComm(null); }
+          else toast.error(typeof r?.error === 'string' ? r.error : 'Échec du rattachement');
+        }}
+        loading={linkInbound.isPending}
+      />
     </PageLayout>
+  );
+}
+
+type LinkSubjectType = 'CLIENT' | 'PROSPECT';
+
+/**
+ * Rattachement manuel d'une réponse entrante non appariée automatiquement
+ * (en-têtes de thread perdus, ou expéditeur inconnu — cf. mailbox-poller.service.ts).
+ */
+function LinkInboundModal({
+  comm, onClose, onLink, loading,
+}: {
+  comm: any | null;
+  onClose: () => void;
+  onLink: (payload: { clientId?: number; prospectId?: number }) => void;
+  loading: boolean;
+}) {
+  const token = useAuthStore((s) => s.token)!;
+  const [subjectType, setSubjectType] = useState<LinkSubjectType>('CLIENT');
+  const [entityId, setEntityId] = useState('');
+
+  const searchClients = useMemo(() => makeEntitySearch(
+    (f, p, l) => window.electron.clients.list(token, f, p, l),
+    (c: any) => ({ value: String(c.id), label: formatPersonName(c) }),
+  ), [token]);
+  const searchProspects = useMemo(() => makeEntitySearch(
+    (f, p, l) => window.electron.prospects.list(token, f, p, l),
+    (p: any) => ({ value: String(p.id), label: formatPersonName(p) }),
+  ), [token]);
+
+  if (!comm) return null;
+
+  const handleSubmit = () => {
+    if (!entityId) return;
+    onLink(subjectType === 'CLIENT' ? { clientId: Number(entityId) } : { prospectId: Number(entityId) });
+  };
+
+  return (
+    <Modal
+      open={!!comm}
+      onClose={onClose}
+      title="Rattacher ce message reçu"
+      footer={
+        <>
+          <Button variant="secondary" onClick={onClose}>Annuler</Button>
+          <Button onClick={handleSubmit} disabled={!entityId} loading={loading}>Rattacher</Button>
+        </>
+      }
+    >
+      <p className="text-sm text-slate-500 mb-4">
+        De <span className="font-medium text-slate-700">{comm.to}</span>
+        {comm.subject && <> — <span className="italic">{comm.subject}</span></>}
+      </p>
+      <div className="flex gap-2 mb-4">
+        <Button type="button" size="sm" variant={subjectType === 'CLIENT' ? 'primary' : 'secondary'}
+          onClick={() => { setSubjectType('CLIENT'); setEntityId(''); }}>
+          Client
+        </Button>
+        <Button type="button" size="sm" variant={subjectType === 'PROSPECT' ? 'primary' : 'secondary'}
+          onClick={() => { setSubjectType('PROSPECT'); setEntityId(''); }}>
+          Prospect
+        </Button>
+      </div>
+      {subjectType === 'CLIENT' ? (
+        <SearchSelect
+          label="Client"
+          options={[]}
+          onSearch={searchClients}
+          value={entityId}
+          onChange={setEntityId}
+          placeholder="Rechercher un client…"
+        />
+      ) : (
+        <SearchSelect
+          label="Prospect"
+          options={[]}
+          onSearch={searchProspects}
+          value={entityId}
+          onChange={setEntityId}
+          placeholder="Rechercher un prospect…"
+        />
+      )}
+    </Modal>
   );
 }

@@ -40,6 +40,25 @@ export function useUpdateReminderRule() {
   });
 }
 
+export function useCreateReminderRule() {
+  const token = useAuthStore((s) => s.token)!;
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: object) => ipc().createRule(token, payload),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['reminder-rules'] }),
+  });
+}
+
+/** Suppression définitive — irréversible (contrairement à la désactivation `isActive`). */
+export function useDeleteReminderRule() {
+  const token = useAuthStore((s) => s.token)!;
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: number) => ipc().deleteRule(token, id),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['reminder-rules'] }),
+  });
+}
+
 export function useRunRemindersNow() {
   const token = useAuthStore((s) => s.token)!;
   const qc = useQueryClient();
@@ -49,5 +68,24 @@ export function useRunRemindersNow() {
       qc.invalidateQueries({ queryKey: ['comm-history'] });
       qc.invalidateQueries({ queryKey: ['crm-activities'] });
     },
+  });
+}
+
+export function useOptedOutClients() {
+  const token = useAuthStore((s) => s.token)!;
+  return useQuery({
+    queryKey: ['reminders-opted-out-clients'],
+    queryFn: () => ipc().listOptedOutClients(token),
+    enabled: !!token,
+  });
+}
+
+export function useSetClientOptOut() {
+  const token = useAuthStore((s) => s.token)!;
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: { clientId: number; smsOptOut?: boolean; emailOptOut?: boolean }) =>
+      ipc().setClientOptOut(token, payload),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['reminders-opted-out-clients'] }),
   });
 }

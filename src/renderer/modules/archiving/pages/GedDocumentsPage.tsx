@@ -69,7 +69,7 @@ export default function GedDocumentsPage() {
 
   return (
     <PageLayout
-      title="GED — Documents"
+      title="GED — Archivage"
       breadcrumbs={[{ label: 'Archivage', to: '/archiving' }, { label: 'GED' }]}
       actions={
         <Button icon={<UploadCloud className="h-4 w-4" />} onClick={() => setImportOpen(true)}>

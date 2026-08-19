@@ -53,7 +53,7 @@ export default function ShareLocationDialog({ open, onClose, entityType, entityI
     if (recipientType === 'CLIENT') {
       return (clientsRes?.data ?? []).map((c: any) => ({
         value: String(c.id),
-        label: c.type === 'ENTREPRISE'
+        label: c.type !== 'INDIVIDUEL'
           ? (c.entreprise || `Client #${c.id}`)
           : formatPersonName(c) || `Client #${c.id}`,
       }));
@@ -77,7 +77,7 @@ export default function ShareLocationDialog({ open, onClose, entityType, entityI
       (filters, page, limit) => window.electron.clients.list(token, filters, page, limit),
       (c: any) => ({
         value: String(c.id),
-        label: c.type === 'ENTREPRISE'
+        label: c.type !== 'INDIVIDUEL'
           ? (c.entreprise || `Client #${c.id}`)
           : formatPersonName(c) || `Client #${c.id}`,
       }),

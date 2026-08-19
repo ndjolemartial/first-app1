@@ -13,9 +13,8 @@
  * résolu.
  */
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.FORMULAS = void 0;
+exports.isApplicable = exports.FORMULAS = void 0;
 exports.computeDerivedMetrics = computeDerivedMetrics;
-exports.isApplicable = isApplicable;
 const round = (v, dp = 2) => Math.round(v * 10 ** dp) / 10 ** dp;
 const f = (v, dp = 2) => round(v, dp).toLocaleString('fr-FR', { minimumFractionDigits: dp, maximumFractionDigits: dp });
 /** Calcule les métriques géométriques dérivées à partir des caractéristiques du projet. */
@@ -339,9 +338,33 @@ exports.FORMULAS['QTE_VRD_SURFACE'] = ({ p, d, r }) => {
     return { qty, trace: `max(${f(p.terrainSurface ?? 0)} m² terrain, ${f(d.empriseAuSol * 1.5)} m² estimé) × ${r('COEF_VRD_PART')} (COEF_VRD_PART) = ${f(qty)} m²` };
 };
 // ── Clôture & portail (LOT19) ─────────────────────────────────────────────
+// La clôture est détaillée en rubriques distinctes plutôt qu'un seul ouvrage
+// lumpé, sur deux bases de quantité :
+//  - QTE_CLOTURE_ML : longueur brute — infrastructure (fouille, fondation,
+//    ferraillage, chaînage bas, chaînage haut optionnel), dimensionnée
+//    indépendamment de la hauteur du mur dans ce modèle simplifié
+//    (semelle/chaînage standard).
+//  - QTE_CLOTURE_SURFACE : longueur × hauteur — surface réelle du mur, base
+//    du montage (agglos) et du crépissage, qui sont les deux rubriques dont
+//    le coût dépend directement de la hauteur saisie.
+// Les poteaux (QTE_CLOTURE_POTEAUX) sont comptés à l'unité, indépendamment
+// de la hauteur.
 exports.FORMULAS['QTE_CLOTURE_ML'] = ({ p }) => {
     const qty = p.fenceLength;
     return { qty, trace: `= longueur de clôture = ${f(qty)} ml` };
+};
+exports.FORMULAS['QTE_CLOTURE_SURFACE'] = ({ p }) => {
+    const qty = p.fenceLength * p.fenceHeight;
+    return { qty, trace: `${f(p.fenceLength)} ml × ${f(p.fenceHeight)} m (hauteur) = ${f(qty)} m²` };
+};
+// 1 poteau tous les 3 ml + les deux extrémités — convention BTP courante pour
+// un mur de clôture en agglos.
+const FENCE_POST_SPACING_M = 3;
+exports.FORMULAS['QTE_CLOTURE_POTEAUX'] = ({ p }) => {
+    if (p.fenceLength <= 0)
+        return { qty: 0, trace: 'Longueur de clôture nulle = 0 u' };
+    const qty = Math.ceil(p.fenceLength / FENCE_POST_SPACING_M) + 1;
+    return { qty, trace: `${f(p.fenceLength)} ml, 1 poteau / ${FENCE_POST_SPACING_M} ml + extrémités = ${qty} u` };
 };
 exports.FORMULAS['QTE_PORTAILS'] = ({ p }) => {
     const qty = p.gateCount;
@@ -364,61 +387,5 @@ exports.FORMULAS['QTE_PISCINE_STRUCTURE'] = ({ p }) => {
 };
 /** Ouvrage forfaitaire (quantité fixe = 1) — utilisé quand aucune formule ne s'applique. */
 exports.FORMULAS['QTE_FORFAIT'] = () => ({ qty: 1, trace: 'Forfait (quantité fixe = 1)' });
-function evalCondition(cond, p) {
-    const value = p[cond.field];
-    const ops = [
-        ['eq', cond.eq], ['ne', cond.ne], ['in', cond.in], ['notIn', cond.notIn],
-        ['gt', cond.gt], ['gte', cond.gte], ['lt', cond.lt], ['lte', cond.lte],
-    ];
-    for (const [op, target] of ops) {
-        if (target === undefined)
-            continue;
-        switch (op) {
-            case 'eq':
-                if (value !== target)
-                    return false;
-                break;
-            case 'ne':
-                if (value === target)
-                    return false;
-                break;
-            case 'in':
-                if (!Array.isArray(target) || !target.includes(value))
-                    return false;
-                break;
-            case 'notIn':
-                if (Array.isArray(target) && target.includes(value))
-                    return false;
-                break;
-            case 'gt':
-                if (!(Number(value) > target))
-                    return false;
-                break;
-            case 'gte':
-                if (!(Number(value) >= target))
-                    return false;
-                break;
-            case 'lt':
-                if (!(Number(value) < target))
-                    return false;
-                break;
-            case 'lte':
-                if (!(Number(value) <= target))
-                    return false;
-                break;
-        }
-    }
-    return true;
-}
-/** Évalue une règle d'applicabilité déclarative contre les caractéristiques du projet. `null`/`undefined` = toujours applicable. */
-function isApplicable(rule, p) {
-    if (!rule)
-        return true;
-    if (rule.all)
-        return rule.all.every((r) => ('field' in r ? evalCondition(r, p) : isApplicable(r, p)));
-    if (rule.any)
-        return rule.any.some((r) => ('field' in r ? evalCondition(r, p) : isApplicable(r, p)));
-    if (rule.not)
-        return !isApplicable('field' in rule.not ? { all: [rule.not] } : rule.not, p);
-    return true;
-}
+var applicability_rule_1 = require("./applicability-rule");
+Object.defineProperty(exports, "isApplicable", { enumerable: true, get: function () { return applicability_rule_1.isApplicable; } });

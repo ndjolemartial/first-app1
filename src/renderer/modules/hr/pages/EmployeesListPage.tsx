@@ -19,7 +19,7 @@ import {
 } from '../types/hr.types';
 
 // Écriture opérationnelle (personnel) : admins/RH + MANAGER & ASSISTANTE_DIRECTION.
-const WRITE_ROLES = new Set(['SUPER_ADMIN', 'ADMIN', 'RH', 'ACCOUNTANT', 'MANAGER']);
+const WRITE_ROLES = new Set(['SUPER_ADMIN', 'ADMIN', 'RH', 'ACCOUNTANT', 'MANAGER', 'ASSISTANTE_DIRECTION']);
 // Configuration (modèles de contrats) : admins et RH uniquement.
 const CONFIG_ROLES = new Set(['SUPER_ADMIN', 'ADMIN', 'RH', 'ACCOUNTANT']);
 

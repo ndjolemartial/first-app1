@@ -10,10 +10,12 @@ import Pagination from '../../../shared/components/ui/Pagination';
 import { SkeletonTable } from '../../../shared/components/ui/Skeleton';
 import EmptyState from '../../../shared/components/ui/EmptyState';
 import { useOwners } from '../hooks/useOwners';
+import { useCompanySettings, useLogoData } from '../../settings/hooks/useSettings';
+import { buildBlankOwnerKycDocumentHtml, buildOwnerKycFooterTemplate } from '../utils/kycDocument';
 import { formatDate } from '../../../shared/utils/format';
 import ExportMenu, { ExportColumn } from '../../../shared/components/ExportMenu';
 import { useAuthStore } from '../../../shared/stores/auth.store';
-import { UserPlus, Eye, Edit, Home } from 'lucide-react';
+import { UserPlus, Eye, Edit, Home, Printer } from 'lucide-react';
 
 const TYPE_OPTIONS = [
   { value: '', label: 'Tous les types' },
@@ -41,6 +43,30 @@ export default function OwnersListPage() {
   const [type, setType] = useState('');
   const filters = { search: search || undefined, type: type || undefined };
   const { data, isLoading } = useOwners(filters, page, 20);
+  const { data: companyRes } = useCompanySettings();
+  const { data: logoRes } = useLogoData();
+  const [exportingBlankKyc, setExportingBlankKyc] = useState(false);
+
+  const handlePrintBlankKyc = async () => {
+    if (!token) return;
+    setExportingBlankKyc(true);
+    try {
+      const company = companyRes?.success ? companyRes.data : null;
+      const logo = logoRes?.success ? (logoRes.data as { mimeType: string; base64: string } | null) : null;
+      const bodyHtml = buildBlankOwnerKycDocumentHtml(company ?? null, logo);
+      await window.electron.documentExport.printDocument(token, {
+        fileName: 'Fiche-KYC-vierge',
+        bodyHtml,
+        headerTemplate: '<div></div>',
+        footerTemplate: buildOwnerKycFooterTemplate(company ?? null),
+        headerMm: 6,
+        footerMm: 20,
+        marginsMm: { top: 20, bottom: 24, left: 18, right: 18 },
+      });
+    } finally {
+      setExportingBlankKyc(false);
+    }
+  };
 
   const filterSummary = [
     search && `Recherche : "${search}"`,
@@ -66,6 +92,10 @@ export default function OwnersListPage() {
               return r.success ? r.data ?? [] : [];
             }}
           />
+          <Button variant="primary" icon={<Printer className="h-4 w-4" />} loading={exportingBlankKyc}
+            onClick={handlePrintBlankKyc}>
+            Fiche KYC non renseignée
+          </Button>
           <Button icon={<UserPlus className="h-4 w-4" />} onClick={() => navigate('/owners/new')}>
             Nouveau propriétaire
           </Button>

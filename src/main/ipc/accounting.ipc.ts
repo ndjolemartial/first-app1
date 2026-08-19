@@ -449,10 +449,29 @@ export function registerAccountingIPC(): void {
         data: { status: 'EN_RETARD' },
       });
 
+      // Échéances en retard : EN_RETARD (déjà promue ci-dessus, aucun paiement)
+      // OU PARTIEL déjà échue — une échéance partiellement réglée n'est jamais
+      // auto-promue en EN_RETARD (ça écraserait l'info de paiement partiel),
+      // donc son retard se détecte ici par la date d'échéance. Le montant «
+      // restant » (pas le montant d'origine) est sommé après coup en JS, car
+      // `paidAmount` peut être non nul sur une ligne PARTIEL (`.aggregate()`
+      // ne sait pas sommer une expression `amount - paidAmount`).
+      const overdueInstallmentWhere: any = {
+        conventionId: { not: null },
+        OR: [
+          { status: 'EN_RETARD' },
+          { status: 'PARTIEL', dueDate: { lt: now } },
+        ],
+      };
+      const unpaidInstallmentWhere: any = {
+        status: { in: ['EN_ATTENTE', 'A_REGLER', 'EN_RETARD', 'PARTIEL'] },
+        conventionId: { not: null },
+      };
+
       const [
         paidInvoicesAgg,
-        overdueAgg,
-        unpaidInstallmentsAgg,
+        overdueRows,
+        unpaidRows,
         upcomingInstallments,
         overdueInstallments,
         recentInvoices,
@@ -461,14 +480,10 @@ export function registerAccountingIPC(): void {
         partialPayments,
       ] = await Promise.all([
         db.invoice.aggregate({ where: { deletedAt: null, status: 'PAYEE' }, _count: true, _sum: { total: true } }),
-        db.saleInstallment.aggregate({ where: { status: 'EN_RETARD', conventionId: { not: null } }, _count: true, _sum: { amount: true } }),
-        db.saleInstallment.aggregate({
-          where: { status: { in: ['EN_ATTENTE', 'A_REGLER', 'EN_RETARD'] }, conventionId: { not: null } },
-          _count: true,
-          _sum: { amount: true },
-        }),
+        db.saleInstallment.findMany({ where: overdueInstallmentWhere, select: { amount: true, paidAmount: true } }),
+        db.saleInstallment.findMany({ where: unpaidInstallmentWhere, select: { amount: true, paidAmount: true } }),
         db.saleInstallment.findMany({
-          where: { status: { in: ['EN_ATTENTE', 'A_REGLER'] }, dueDate: { gte: now }, conventionId: { not: null } },
+          where: { status: { in: ['EN_ATTENTE', 'A_REGLER', 'PARTIEL'] }, dueDate: { gte: now }, conventionId: { not: null } },
           orderBy: { dueDate: 'asc' },
           take: 8,
           include: {
@@ -482,7 +497,7 @@ export function registerAccountingIPC(): void {
           },
         }),
         db.saleInstallment.findMany({
-          where: { status: 'EN_RETARD', conventionId: { not: null } },
+          where: overdueInstallmentWhere,
           orderBy: { dueDate: 'asc' },
           take: 10,
           include: {
@@ -527,6 +542,14 @@ export function registerAccountingIPC(): void {
         Number(partialPayments._sum.amount ?? 0);
       const unpaidCount = unpaidFull._count + partialInvoices._count;
 
+      // Échéances : somme du restant dû (amount - paidAmount), pas du montant
+      // d'origine — une ligne PARTIEL a déjà un paidAmount non nul.
+      const remaining = (r: { amount: any; paidAmount: any }) => Number(r.amount) - Number(r.paidAmount);
+      const overdueInstallmentsCount = overdueRows.length;
+      const overdueInstallmentsAmount = overdueRows.reduce((sum, r) => sum + remaining(r), 0);
+      const unpaidInstallmentsCount = unpaidRows.length;
+      const unpaidInstallmentsAmount = unpaidRows.reduce((sum, r) => sum + remaining(r), 0);
+
       // CA encaissé des 6 derniers mois (graphique).
       const revenueChart: { month: string; revenue: number }[] = [];
       for (let i = 5; i >= 0; i--) {
@@ -544,10 +567,10 @@ export function registerAccountingIPC(): void {
           paidInvoicesAmount: Number(paidInvoicesAgg._sum.total ?? 0),
           unpaidCount,
           unpaidAmount,
-          unpaidInstallmentsCount: unpaidInstallmentsAgg._count,
-          unpaidInstallmentsAmount: Number(unpaidInstallmentsAgg._sum.amount ?? 0),
-          overdueInstallmentsCount: overdueAgg._count,
-          overdueInstallmentsAmount: Number(overdueAgg._sum.amount ?? 0),
+          unpaidInstallmentsCount,
+          unpaidInstallmentsAmount,
+          overdueInstallmentsCount,
+          overdueInstallmentsAmount,
           revenueChart,
           upcomingInstallments,
           overdueInstallments,
@@ -1098,29 +1121,55 @@ export function registerAccountingIPC(): void {
       let installmentRecap: any = null;
       let versement: any = null;
       const round2 = (n: number) => Math.round(n * 100) / 100;
-      const buildRecap = (active: any[]) => {
-        if (active.length === 0) return null;
-        const paid = active.filter((i) => i.status === 'PAYE');
-        const remaining = active.filter((i) => i.status !== 'PAYE');
-        return {
-          totalCount: active.length,
-          paidCount: paid.length,
-          paidAmount: paid.reduce((s, i) => s + Number(i.amount), 0),
-          remainingCount: remaining.length,
-          remainingAmount: remaining.reduce((s, i) => s + Number(i.amount), 0),
-        };
-      };
-
       // Reconstitue le VERSEMENT à l'origine de la facture imprimée : son règlement
       // le plus récent (même date + référence + mode) identifie l'ensemble des
       // règlements du même versement répartis sur plusieurs échéances. On expose
       // ainsi, sur un seul document : le montant total du versement, les échéances
       // couvertes (partiellement/totalement) et les échéances restantes.
       const anchor = (invoice.payments ?? []).slice(-1)[0];
+      const anchorTime: number | null = anchor ? +new Date(anchor.paidAt) : null;
+      // Solde réglé d'une échéance À LA DATE DU VERSEMENT de CETTE facture (et non
+      // son solde/statut COURANT) : reconstitué à partir de l'historique réel des
+      // Payment de SA PROPRE facture (paidAt), en ne retenant que ceux antérieurs
+      // ou concomitants à `asOfTime`. Un document déjà réglé ne doit jamais être
+      // « rafraîchi » rétroactivement par un règlement reçu après coup — y compris
+      // un solde partiel complété plus tard sur une AUTRE échéance, ou même sur
+      // celle-ci si le champ `paidAt` de l'échéance (posé au solde intégral) ne
+      // correspond pas à la date réelle du versement qui l'a soldée.
+      const paidAsOf = (i: any, asOfTime: number): number =>
+        round2(
+          (i.invoice?.payments ?? [])
+            .filter((p: any) => +new Date(p.paidAt) <= asOfTime)
+            .reduce((s: number, p: any) => s + Number(p.amount), 0),
+        );
+      const buildRecap = (active: any[]) => {
+        if (active.length === 0) return null;
+        if (anchorTime == null) {
+          // Facture pas encore réglée : rien à figer, l'échéancier courant reste
+          // la meilleure information disponible.
+          const paid = active.filter((i) => i.status === 'PAYE');
+          const remaining = active.filter((i) => i.status !== 'PAYE');
+          return {
+            totalCount: active.length,
+            paidCount: paid.length,
+            paidAmount: paid.reduce((s, i) => s + Number(i.amount), 0),
+            remainingCount: remaining.length,
+            remainingAmount: remaining.reduce((s, i) => s + Number(i.amount), 0),
+          };
+        }
+        let paidCount = 0, paidAmount = 0, remainingCount = 0, remainingAmount = 0;
+        for (const i of active) {
+          const settled = paidAsOf(i, anchorTime);
+          if (settled + 0.001 >= Number(i.amount)) { paidCount += 1; paidAmount += Number(i.amount); }
+          else { remainingCount += 1; remainingAmount += round2(Number(i.amount) - settled); }
+        }
+        return { totalCount: active.length, paidCount, paidAmount: round2(paidAmount), remainingCount, remainingAmount: round2(remainingAmount) };
+      };
+
       const buildVersement = (active: any[]) => {
-        if (!anchor || invoice.type !== 'ECHEANCE_VENTE') return null;
+        if (!anchor || anchorTime == null || invoice.type !== 'ECHEANCE_VENTE') return null;
         const sameVersement = (p: any) =>
-          +new Date(p.paidAt) === +new Date(anchor.paidAt) &&
+          +new Date(p.paidAt) === anchorTime &&
           (p.reference ?? '') === (anchor.reference ?? '') &&
           p.method === anchor.method;
         const ordered = [...active].sort((a, b) => a.installmentNumber - b.installmentNumber);
@@ -1131,21 +1180,37 @@ export function registerAccountingIPC(): void {
             .filter(sameVersement)
             .reduce((s: number, p: any) => s + Number(p.amount), 0);
           if (applied > 0.001) {
+            // « Cumul réglé » et « Statut » figés au cumul réellement atteint à LA
+            // DATE DE CE VERSEMENT (via `paidAsOf`) — jamais le solde/statut
+            // COURANT de l'échéance, qui peut avoir évolué depuis (ex. un solde
+            // partiel complété plus tard) sur une facture déjà émise.
+            const settled = paidAsOf(i, anchorTime);
             covered.push({
               number: i.installmentNumber, dueDate: i.dueDate, amount: Number(i.amount),
-              applied: round2(applied), paidAmount: Number(i.paidAmount), status: i.status,
+              applied: round2(applied), paidAmount: settled,
+              status: settled + 0.001 >= Number(i.amount) ? 'PAYE' : 'PARTIEL',
             });
             total += applied;
           }
         }
         if (covered.length === 0) return null;
+        // « Restantes » telles qu'elles étaient à LA DATE DE CE VERSEMENT (jamais
+        // l'état courant de l'échéancier), reconstituées échéance par échéance à
+        // partir de son propre historique de règlements — cf. `paidAsOf` ci-dessus.
+        // Une échéance seulement PARTIELLEMENT couverte par ce versement (montant
+        // réglé cumulé < montant dû) figure donc dans LES DEUX tableaux : dans
+        // « couvertes » pour la part réglée par CE versement, et ici pour le solde
+        // encore dû après ce même versement — seule une échéance intégralement
+        // soldée à cette date (par ce versement ou un antérieur) en est exclue.
         const remaining = ordered
-          .filter((i) => i.status !== 'PAYE')
-          .map((i) => ({
-            number: i.installmentNumber, dueDate: i.dueDate, amount: Number(i.amount),
-            paidAmount: Number(i.paidAmount), remaining: round2(Number(i.amount) - Number(i.paidAmount)),
-            status: i.status,
-          }));
+          .map((i) => {
+            const paid = paidAsOf(i, anchorTime);
+            return {
+              number: i.installmentNumber, dueDate: i.dueDate, amount: Number(i.amount),
+              paidAmount: paid, remaining: round2(Number(i.amount) - paid),
+            };
+          })
+          .filter((r) => r.remaining > 0.001);
         return {
           date: anchor.paidAt, method: anchor.method, reference: anchor.reference,
           total: round2(total), covered, remaining,
@@ -1228,7 +1293,17 @@ export function registerAccountingIPC(): void {
       });
 
       const data = await db.saleInstallment.findMany({
-        where: { status: 'EN_RETARD', conventionId: { not: null } },
+        // EN_RETARD (aucun paiement, déjà promue ci-dessus) OU PARTIEL déjà
+        // échue — une échéance partiellement réglée n'est jamais auto-promue
+        // en EN_RETARD (ça écraserait l'information de paiement partiel),
+        // donc son retard éventuel se détecte ici par la date d'échéance.
+        where: {
+          conventionId: { not: null },
+          OR: [
+            { status: 'EN_RETARD' },
+            { status: 'PARTIEL', dueDate: { lt: new Date() } },
+          ],
+        },
         orderBy: { dueDate: 'asc' },
         include: {
           convention: {
@@ -1255,7 +1330,7 @@ export function registerAccountingIPC(): void {
     }
   });
 
-  // Toutes les échéances impayées (en attente + à régler + en retard).
+  // Toutes les échéances impayées (en attente + à régler + en retard + partiel).
   // Auto-promeut les échues encore en attente vers EN_RETARD avant lecture.
   ipcMain.handle('accounting:getUnpaidInstallments', async (_event, { token }: any) => {
     try {
@@ -1273,7 +1348,7 @@ export function registerAccountingIPC(): void {
       });
 
       const data = await db.saleInstallment.findMany({
-        where: { status: { in: ['EN_ATTENTE', 'A_REGLER', 'EN_RETARD'] }, conventionId: { not: null } },
+        where: { status: { in: ['EN_ATTENTE', 'A_REGLER', 'EN_RETARD', 'PARTIEL'] }, conventionId: { not: null } },
         orderBy: { dueDate: 'asc' },
         include: {
           convention: {
@@ -1307,7 +1382,7 @@ export function registerAccountingIPC(): void {
       checkAccountingRole(session, READ_ROLES);
       const db = getDb();
       const where: any = {
-        status: { in: ['EN_ATTENTE', 'A_REGLER'] },
+        status: { in: ['EN_ATTENTE', 'A_REGLER', 'PARTIEL'] },
         dueDate: { gte: new Date() },
         conventionId: { not: null },
       };

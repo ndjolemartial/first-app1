@@ -43,6 +43,9 @@ const social_media_ipc_1 = require("./ipc/social-media.ipc");
 const it_innovations_ipc_1 = require("./ipc/it-innovations.ipc");
 const construction_library_ipc_1 = require("./ipc/construction-library.ipc");
 const construction_projects_ipc_1 = require("./ipc/construction-projects.ipc");
+const permit_library_ipc_1 = require("./ipc/permit-library.ipc");
+const permit_projects_ipc_1 = require("./ipc/permit-projects.ipc");
+const aml_ipc_1 = require("./ipc/aml.ipc");
 const geo_ipc_1 = require("./ipc/geo.ipc");
 const countries_ipc_1 = require("./ipc/countries.ipc");
 const commissions_ipc_1 = require("./ipc/commissions.ipc");
@@ -59,6 +62,8 @@ const document_export_ipc_1 = require("./ipc/document-export.ipc");
 const archiving_service_1 = require("./services/archiving.service");
 const reminders_ipc_1 = require("./ipc/reminders.ipc");
 const reminders_service_1 = require("./services/reminders.service");
+const mail_account_ipc_1 = require("./ipc/mail-account.ipc");
+const mailbox_poller_service_1 = require("./services/mailbox-poller.service");
 const attestation_templates_service_1 = require("./services/attestation-templates.service");
 const quote_templates_service_1 = require("./services/quote-templates.service");
 const hr_templates_service_1 = require("./services/hr-templates.service");
@@ -150,6 +155,9 @@ function registerIPC() {
     (0, it_innovations_ipc_1.registerItInnovationsIPC)();
     (0, construction_library_ipc_1.registerConstructionLibraryIPC)();
     (0, construction_projects_ipc_1.registerConstructionProjectsIPC)();
+    (0, permit_library_ipc_1.registerPermitLibraryIPC)();
+    (0, permit_projects_ipc_1.registerPermitProjectsIPC)();
+    (0, aml_ipc_1.registerAmlIPC)();
     (0, geo_ipc_1.registerGeoIPC)();
     (0, countries_ipc_1.registerCountriesIPC)();
     (0, commissions_ipc_1.registerCommissionsIPC)();
@@ -164,6 +172,7 @@ function registerIPC() {
     (0, settings_ipc_1.registerSettingsIPC)();
     (0, document_export_ipc_1.registerDocumentExportIPC)();
     (0, reminders_ipc_1.registerRemindersIPC)();
+    (0, mail_account_ipc_1.registerMailAccountIPC)();
     // Configuration de la connexion BDD — utilisable avant authentification.
     (0, config_ipc_1.registerConfigIPC)();
     logger_1.default.info('All IPC handlers registered');
@@ -209,6 +218,9 @@ electron_1.app.whenReady().then(async () => {
     (0, reminders_service_1.seedDefaultRemindersConfig)()
         .then(() => (0, reminders_service_1.scheduleReminders)())
         .catch((e) => logger_1.default.error(`Reminders bootstrap failed: ${e.message}`));
+    // Réception des réponses par email (boîte système + boîtes personnelles) —
+    // cf. mailbox-poller.service.ts.
+    (0, mailbox_poller_service_1.scheduleMailboxPolling)();
     // Modèle d'attestation de SOLDE par défaut (créé une seule fois si absent).
     (0, attestation_templates_service_1.seedDefaultAttestationTemplate)()
         .catch((e) => logger_1.default.error(`Attestation template bootstrap failed: ${e.message}`));

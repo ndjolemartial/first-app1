@@ -146,10 +146,40 @@ const referrerSchema = z.object({
   country: z.string().optional(),
   bankIban: z.string().optional(),
   bankBic: z.string().optional(),
+  // Informations complémentaires — alimentent la « Fiche KYC » imprimable
+  // depuis la fiche apporteur d'affaire, même principe que Client.*.
+  employerName: z.string().optional(),
+  monthlyIncome: z.coerce.number().min(0).nullable().optional(),
+  sourceOfFunds: z.array(z.string()).optional(),
+  sourceOfFundsOther: z.string().optional(),
+  sourceOfWealth: z.string().optional(),
+  relationshipPurpose: z.array(z.string()).optional(),
+  relationshipPurposeOther: z.string().optional(),
+  expectedTransactionVolume: z.coerce.number().min(0).nullable().optional(),
+  acquisitionChannel: z.string().optional(),
+  isPep: z.boolean().optional(),
+  pepCategory: z.enum(['PEP_NATIONAL', 'PEP_ETRANGER', 'PEP_ORGANISATION_INTERNATIONALE', 'PERSONNE_LIEE_PEP']).nullable().optional(),
+  pepFunction: z.string().optional(),
+  hasRiskyCountryLink: z.boolean().optional(),
+  kycSignedAt: z.string().datetime().nullable().optional(),
+  kycSignedPlace: z.string().optional(),
   notes: z.string().optional(),
   isActive: z.boolean().optional(),
   // Utilisateur interne référent de cet apporteur (facultatif).
   assignedToId: z.number().int().positive().nullable().optional(),
+});
+
+// Bénéficiaires effectifs — pertinents pour un apporteur d'affaire société,
+// repris sur la Fiche KYC imprimable. Même schéma que ClientBeneficialOwner.
+const referrerBeneficialOwnerSchema = z.object({
+  firstName: z.string().min(1, 'Prénom requis'),
+  lastName: z.string().min(1, 'Nom requis'),
+  nationality: z.string().optional(),
+  idNumber: z.string().optional(),
+  ownershipPct: z.coerce.number().min(0).max(100).nullable().optional(),
+  role: z.string().optional(),
+  isPep: z.boolean().optional(),
+  notes: z.string().optional(),
 });
 
 // Sélection légère pour la relation utilisateur référent incluse.
@@ -921,6 +951,7 @@ export function registerCommissionsIPC(): void {
           documents: { where: { deletedAt: null }, orderBy: { uploadedAt: 'desc' } },
           assignedTo: { select: USER_BRIEF_SELECT },
           _count: { select: { commissions: true } },
+          beneficialOwners: { where: { deletedAt: null }, orderBy: { createdAt: 'asc' } },
         },
       });
       if (!referrer || referrer.deletedAt) return { success: false, error: 'Apporteur d\'affaire introuvable' };
@@ -963,7 +994,8 @@ export function registerCommissionsIPC(): void {
       const parsed = referrerSchema.safeParse(payload);
       if (!parsed.success) return { success: false, error: parsed.error.format() };
       const db = getDb();
-      const d = parsed.data;
+      const d: any = parsed.data;
+      if (d.kycSignedAt) d.kycSignedAt = new Date(d.kycSignedAt);
       const referrer = await db.businessReferrer.create({
         data: { ...d, email: d.email || null },
       });
@@ -988,6 +1020,7 @@ export function registerCommissionsIPC(): void {
       const d = parsed.data;
       const data: any = { ...d };
       if (d.email !== undefined) data.email = d.email || null;
+      if (data.kycSignedAt) data.kycSignedAt = new Date(data.kycSignedAt);
       const referrer = await db.businessReferrer.update({ where: { id }, data });
       const changedFields = diffChangedFields(before, data);
       if (changedFields.length) {
@@ -1019,6 +1052,55 @@ export function registerCommissionsIPC(): void {
       return { success: true };
     } catch (error: any) {
       logger.error('commissions:deleteReferrer error', error.message);
+      return { success: false, error: error.message };
+    }
+  });
+
+  // ── Bénéficiaires effectifs (apporteur d'affaire société) ──────────────────
+  ipcMain.handle('commissions:referrerBeneficialOwners:create', async (_event, { token, referrerId, payload }: any) => {
+    try {
+      const session = getSession(token);
+      if (!session) return { success: false, error: 'Session expirée' };
+      checkExactRole(session, REFERRERS_WRITE_ROLES);
+      const parsed = referrerBeneficialOwnerSchema.safeParse(payload);
+      if (!parsed.success) return { success: false, error: parsed.error.format() };
+      const db = getDb();
+      const referrer = await db.businessReferrer.findFirst({ where: { id: Number(referrerId), deletedAt: null } });
+      if (!referrer) return { success: false, error: 'Apporteur d\'affaire introuvable' };
+      const bo = await db.referrerBeneficialOwner.create({ data: { ...parsed.data, referrerId: referrer.id } });
+      return ser({ success: true, data: bo });
+    } catch (error: any) {
+      logger.error('commissions:referrerBeneficialOwners:create', error.message);
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle('commissions:referrerBeneficialOwners:update', async (_event, { token, id, payload }: any) => {
+    try {
+      const session = getSession(token);
+      if (!session) return { success: false, error: 'Session expirée' };
+      checkExactRole(session, REFERRERS_WRITE_ROLES);
+      const parsed = referrerBeneficialOwnerSchema.partial().safeParse(payload);
+      if (!parsed.success) return { success: false, error: parsed.error.format() };
+      const db = getDb();
+      const bo = await db.referrerBeneficialOwner.update({ where: { id: Number(id) }, data: parsed.data });
+      return ser({ success: true, data: bo });
+    } catch (error: any) {
+      logger.error('commissions:referrerBeneficialOwners:update', error.message);
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle('commissions:referrerBeneficialOwners:delete', async (_event, { token, id }: any) => {
+    try {
+      const session = getSession(token);
+      if (!session) return { success: false, error: 'Session expirée' };
+      checkExactRole(session, REFERRERS_WRITE_ROLES);
+      const db = getDb();
+      await db.referrerBeneficialOwner.update({ where: { id: Number(id) }, data: { deletedAt: new Date() } });
+      return { success: true };
+    } catch (error: any) {
+      logger.error('commissions:referrerBeneficialOwners:delete', error.message);
       return { success: false, error: error.message };
     }
   });

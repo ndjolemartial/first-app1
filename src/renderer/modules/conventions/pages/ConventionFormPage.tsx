@@ -14,6 +14,7 @@ import Textarea from '../../../shared/components/ui/Textarea';
 import Card from '../../../shared/components/ui/Card';
 import { useConvention, useConventions, useCreateConvention, useUpdateConvention } from '../hooks/useConventions';
 import { useClients, useClientAssignableUsers, useClientReferrers } from '../../clients/hooks/useClients';
+import { useProspects } from '../../prospects/hooks/useProspects';
 import { useConditionsParticulieres } from '../../settings/hooks/useSettings';
 import { useAuthStore } from '../../../shared/stores/auth.store';
 import { useProperties } from '../../properties/hooks/useProperties';
@@ -48,7 +49,10 @@ const schema = z.object({
   propertyIds: idArray,
   terrainIds: idArray,
   priorTerrainIds: idArray,
-  clientId: z.coerce.number().int().positive('Client principal requis'),
+  // Client OU prospect — jamais les deux (cf. superRefine ci-dessous). Une
+  // convention pour un prospect n'accepte que Souscription/Vente en Brouillon.
+  clientId: optionalId,
+  prospectId: optionalId,
   secondaryClientId: optionalId,
   parentConventionId: optionalId,
   amendmentType: z.preprocess(
@@ -78,7 +82,7 @@ const schema = z.object({
   priorSolde: optionalNumber,
   priorTotalBiens: optionalNumber,
   paymentDay: optionalDay,
-  paymentMethod: z.enum(['ESPECE', 'CHEQUE', 'TRANSFERT', 'VIREMENT', 'MOBILE_MONEY', 'NON_DEFINI']).default('ESPECE'),
+  paymentMethod: z.enum(['ESPECE', 'CHEQUE', 'TRANSFERT', 'VIREMENT', 'MOBILE_MONEY', 'NON_DEFINI']).default('NON_DEFINI'),
   paymentModalites: z.enum(['CASH', 'SUR_3_MOIS', 'SUR_6_MOIS', 'SUR_9_MOIS', 'SUR_12_MOIS', 'SUR_24_MOIS', 'SUR_36_MOIS', 'SUR_48_MOIS', 'SUR_60_MOIS', 'SUR_PLUS_60_MOIS']).default('CASH'),
   installmentCount: optionalNumber,
   firstInstallmentDate: z.string().optional(),
@@ -105,6 +109,21 @@ const schema = z.object({
       path: ['secondaryClientId'],
       message: 'Le souscripteur associé doit être différent du client principal',
     });
+  }
+  if (!d.clientId && !d.prospectId) {
+    // Chemin affiché conditionné au mode courant (clientId caché en mode
+    // Prospect) : un seul des deux messages est donc jamais visible à la fois.
+    ctx.addIssue({ code: 'custom', path: ['clientId'], message: 'Sélectionnez un client' });
+    ctx.addIssue({ code: 'custom', path: ['prospectId'], message: 'Sélectionnez un prospect' });
+  } else if (d.clientId && d.prospectId) {
+    ctx.addIssue({ code: 'custom', path: ['clientId'], message: 'Sélectionnez un client OU un prospect, pas les deux' });
+  } else if (d.prospectId) {
+    if (!['SOUSCRIPTION', 'SALE'].includes(d.type)) {
+      ctx.addIssue({ code: 'custom', path: ['type'], message: 'Une convention pour un prospect doit être de type Souscription ou Vente' });
+    }
+    if (d.status !== 'BROUILLON') {
+      ctx.addIssue({ code: 'custom', path: ['status'], message: 'Une convention pour un prospect doit être créée au statut Brouillon' });
+    }
   }
   if ((d.type === 'AVENANT' || d.type === 'RESILIATION') && !d.parentConventionId) {
     ctx.addIssue({
@@ -432,6 +451,7 @@ export default function ConventionFormPage() {
   const create = useCreateConvention();
   const update = useUpdateConvention();
   const { data: clientsRes } = useClients({}, 1, 500);
+  const { data: prospectsRes } = useProspects({}, 1, 500);
   const { data: propertiesRes } = useProperties({}, 1, 500);
   const { data: terrainsRes } = useTerrains({}, 1, 500);
   const { data: conventionsRes } = useConventions({}, 1, 500);
@@ -465,6 +485,11 @@ export default function ConventionFormPage() {
   // Mémorise le clientId courant pour ne réinitialiser la sélection terrain/bien
   // qu'à un VRAI changement (et pas au pré-remplissage initial en édition).
   const prevClientIdRef = useRef<number | null>(null);
+  // Destinataire de la convention : Client (par défaut) ou Prospect — une
+  // convention Souscription/Vente en Brouillon peut être créée pour un
+  // prospect, le statut restant verrouillé jusqu'à sa conversion en client
+  // (cf. prospects:convertToClient). Bascule visible uniquement à la création.
+  const [subjectMode, setSubjectMode] = useState<'CLIENT' | 'PROSPECT'>('CLIENT');
 
   const clientOptions = [
     { value: '', label: '— Choisir un client —' },
@@ -489,11 +514,23 @@ export default function ConventionFormPage() {
     (c: any) => ({ value: String(c.id), label: formatPersonName(c) }),
   ), [token]);
 
+  const prospectOptions = [
+    { value: '', label: '— Choisir un prospect —' },
+    ...(prospectsRes?.data ?? []).map((p: any) => ({
+      value: String(p.id),
+      label: formatPersonName(p),
+    })),
+  ];
+  const searchProspects = useMemo(() => makeEntitySearch(
+    (f, p, l) => window.electron.prospects.list(token, f, p, l),
+    (p: any) => ({ value: String(p.id), label: formatPersonName(p) }),
+  ), [token]);
+
   const { register, handleSubmit, reset, watch, setValue, control, formState: { errors, isSubmitting } } = useForm<z.input<typeof schema>, any, FormData>({
     resolver: zodResolver(schema),
     defaultValues: {
       assetType: 'TERRAIN', type: 'SOUSCRIPTION', status: 'BROUILLON',
-      paymentMethod: 'ESPECE', paymentModalites: 'CASH',
+      paymentMethod: 'NON_DEFINI', paymentModalites: 'CASH',
       propertyIds: [], terrainIds: [], priorTerrainIds: [],
       fraisOuvertureDossier: 100000,
     },
@@ -516,6 +553,22 @@ export default function ConventionFormPage() {
   const watchPriorTotalBiens = watch('priorTotalBiens');
   const watchPriorTotalVersements = watch('priorTotalVersements');
   const clientIdNum = Number(watchClientId) || 0;
+  // Bascule Client/Prospect (création uniquement) : nettoie le champ non
+  // pertinent et verrouille type/statut sur les valeurs autorisées pour un
+  // prospect (Souscription/Vente, Brouillon).
+  const handleSubjectModeChange = (mode: 'CLIENT' | 'PROSPECT') => {
+    setSubjectMode(mode);
+    if (mode === 'PROSPECT') {
+      setValue('clientId', undefined);
+      setValue('secondaryClientId', undefined);
+      setValue('status', 'BROUILLON');
+      if (watchType !== 'SOUSCRIPTION' && watchType !== 'SALE') {
+        setValue('type', 'SOUSCRIPTION');
+      }
+    } else {
+      setValue('prospectId', undefined);
+    }
+  };
   // Cas particulier : l'avenant de transfert de site / changement de lot.
   // L'utilisateur doit pouvoir sélectionner de nouveaux terrains (parmi les
   // DISPONIBLES) — on ne masque pas le sélecteur et on n'hérite pas de la
@@ -580,7 +633,12 @@ export default function ConventionFormPage() {
     setInstallmentRows((rows) => rows.map((r, i) => (i === idx ? { ...r, [field]: value } : r)));
   };
 
-  const typeOptions = watchAssetType === 'TERRAIN' ? TERRAIN_TYPE_OPTIONS : PROPERTY_TYPE_OPTIONS;
+  const baseTypeOptions = watchAssetType === 'TERRAIN' ? TERRAIN_TYPE_OPTIONS : PROPERTY_TYPE_OPTIONS;
+  // Convention pour un prospect : uniquement Souscription ou Vente (cf. verrou
+  // appliqué côté serveur dans conventions.ipc.ts).
+  const typeOptions = subjectMode === 'PROSPECT'
+    ? baseTypeOptions.filter((o) => o.value === 'SOUSCRIPTION' || o.value === 'SALE')
+    : baseTypeOptions;
 
   // Règle métier : pour SOUSCRIPTION de terrain (et pour l'avenant de
   // TRANSFERT_SITE — hérité ou non — qui acte le changement de lot vers un
@@ -923,13 +981,15 @@ export default function ConventionFormPage() {
       // Coercion des null Prisma en '' / undefined pour les champs optional :
       // Zod n'accepte pas null sur un string/enum optional, sinon handleSubmit
       // échoue silencieusement et RHF focus le premier champ "invalide".
+      setSubjectMode(!c.clientId && c.prospectId ? 'PROSPECT' : 'CLIENT');
       reset({
         ...c,
         assetType: c.assetType ?? 'PROPERTY',
         propertyIds: propIds,
         terrainIds: terrIds,
         priorTerrainIds: priorTerrIds,
-        clientId: c.clientId,
+        clientId: c.clientId ?? undefined,
+        prospectId: c.prospectId ?? undefined,
         secondaryClientId: c.secondaryClientId ?? undefined,
         parentConventionId: c.parentConventionId ?? undefined,
         amendmentType: c.amendmentType ?? undefined,
@@ -1061,6 +1121,13 @@ export default function ConventionFormPage() {
     }
     try {
     const payload: any = { ...data };
+    // Destinataire exclusif : n'envoie que le champ correspondant au mode choisi.
+    if (subjectMode === 'PROSPECT') {
+      delete payload.clientId;
+      delete payload.secondaryClientId;
+    } else {
+      delete payload.prospectId;
+    }
     // Fige l'énumération des lots souscrits (identique à la variable de template
     // {{convention.lotsSouscrits}}) pour l'afficher ensuite sur les factures.
     // On résout les terrains dans l'ordre des terrainIds afin de respecter
@@ -1212,8 +1279,17 @@ export default function ConventionFormPage() {
           <h3 className="text-base font-semibold text-slate-800 mb-4">Type de convention</h3>
           <div className="grid grid-cols-2 gap-4">
             <Select label="Type *" options={typeOptions} error={errors.type?.message} {...register('type')} />
-            <Select label="Statut" options={STATUS_OPTIONS} {...register('status')} />
+            {subjectMode === 'PROSPECT' ? (
+              <Select label="Statut" options={STATUS_OPTIONS} disabled {...register('status')} />
+            ) : (
+              <Select label="Statut" options={STATUS_OPTIONS} {...register('status')} />
+            )}
           </div>
+          {subjectMode === 'PROSPECT' && (
+            <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-3 py-2 mt-2">
+              Cette convention restera au statut Brouillon tant que ce prospect n'aura pas été converti en client.
+            </p>
+          )}
           {watchType === 'AVENANT' && (
             <div className="mt-4">
               <Select
@@ -1267,8 +1343,39 @@ export default function ConventionFormPage() {
         <Card>
           <h3 className="text-base font-semibold text-slate-800 mb-4">Rattachement de la convention</h3>
           <div className="space-y-4">
+            {/* Destinataire : Client (par défaut) ou Prospect — bascule visible
+                uniquement à la création. */}
+            {!isEdit && (
+              <div className="flex gap-2">
+                <Button
+                  type="button"
+                  variant={subjectMode === 'CLIENT' ? 'primary' : 'secondary'}
+                  size="sm"
+                  onClick={() => handleSubjectModeChange('CLIENT')}
+                >
+                  Client
+                </Button>
+                <Button
+                  type="button"
+                  variant={subjectMode === 'PROSPECT' ? 'primary' : 'secondary'}
+                  size="sm"
+                  onClick={() => handleSubjectModeChange('PROSPECT')}
+                >
+                  Prospect
+                </Button>
+              </div>
+            )}
             {/* Client principal + Souscripteur associé — en tête du bloc */}
-            {watchAssetType === 'TERRAIN' ? (
+            {subjectMode === 'PROSPECT' ? (
+              <FormSearchSelect
+                control={control}
+                name="prospectId"
+                label="Prospect *"
+                options={prospectOptions}
+                onSearch={searchProspects}
+                error={errors.prospectId?.message}
+              />
+            ) : watchAssetType === 'TERRAIN' ? (
               <div className="grid grid-cols-2 gap-4">
                 <FormSearchSelect
                   control={control}

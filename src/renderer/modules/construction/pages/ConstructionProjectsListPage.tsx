@@ -8,7 +8,7 @@ import ConfirmDialog from '../../../shared/components/ui/ConfirmDialog';
 import { SkeletonTable } from '../../../shared/components/ui/Skeleton';
 import { useConstructionProjects, useDeleteConstructionProject } from '../hooks/useConstructionProjects';
 import {
-  BUILDING_TYPE_LABELS, STANDING_LABELS, PROJECT_STATUS_LABELS, PROJECT_STATUS_VARIANT, toOptions,
+  BUILDING_TYPE_LABELS, STANDING_LABELS, PROJECT_STATUS_LABELS, PROJECT_STATUS_VARIANT, PROJECT_SCOPE_LABELS, toOptions,
 } from '../utils/constructionLabels';
 import { formatDate, formatPersonName } from '../../../shared/utils/format';
 import { useAuthStore } from '../../../shared/stores/auth.store';
@@ -94,9 +94,11 @@ export default function ConstructionProjectsListPage() {
                   <td className="px-4 py-3 font-medium text-indigo-600">{p.reference}</td>
                   <td className="px-4 py-3 text-slate-700">{p.nom}</td>
                   <td className="px-4 py-3 text-slate-500">{destinataire(p)}</td>
-                  <td className="px-4 py-3 text-slate-500">{BUILDING_TYPE_LABELS[p.buildingType] ?? p.buildingType}</td>
-                  <td className="px-4 py-3 text-slate-500">{STANDING_LABELS[p.standing] ?? p.standing}</td>
-                  <td className="px-4 py-3 text-right text-slate-700">{Number(p.surfaceHabitable)} m²</td>
+                  <td className="px-4 py-3 text-slate-500">
+                    {p.scope && p.scope !== 'COMPLET' ? PROJECT_SCOPE_LABELS[p.scope] ?? p.scope : (BUILDING_TYPE_LABELS[p.buildingType] ?? p.buildingType)}
+                  </td>
+                  <td className="px-4 py-3 text-slate-500">{p.scope && p.scope !== 'COMPLET' ? '—' : (STANDING_LABELS[p.standing] ?? p.standing)}</td>
+                  <td className="px-4 py-3 text-right text-slate-700">{p.scope && p.scope !== 'COMPLET' ? '—' : `${Number(p.surfaceHabitable)} m²`}</td>
                   <td className="px-4 py-3 text-slate-500">{formatDate(p.createdAt)}</td>
                   <td className="px-4 py-3"><Badge variant={PROJECT_STATUS_VARIANT[p.status] ?? 'default'}>{PROJECT_STATUS_LABELS[p.status] ?? p.status}</Badge></td>
                   {canDelete && (

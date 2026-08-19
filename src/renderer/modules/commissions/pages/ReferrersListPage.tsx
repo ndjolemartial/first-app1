@@ -10,7 +10,9 @@ import { useReferrers } from '../hooks/useCommissions';
 import { referrerName, COMMISSION_WRITE_ROLES, COMMISSION_REFERRERS_FULL_VIEW_ROLES, COMMISSION_REFERRERS_EXPORT_ROLES } from '../utils/commissions.utils';
 import { formatPersonName } from '../../../shared/utils/format';
 import ExportMenu, { ExportColumn } from '../../../shared/components/ExportMenu';
-import { Plus, Search, Eye, Receipt } from 'lucide-react';
+import { useCompanySettings, useLogoData } from '../../settings/hooks/useSettings';
+import { buildBlankReferrerKycDocumentHtml, buildReferrerKycFooterTemplate } from '../utils/referrerKycDocument';
+import { Plus, Search, Eye, Receipt, Printer } from 'lucide-react';
 
 const ACTIVE_OPTIONS = [
   { value: '', label: 'Tous' },
@@ -57,6 +59,31 @@ export default function ReferrersListPage() {
   const total = res?.total ?? 0;
   const totalPages = Math.ceil(total / limit);
 
+  const { data: companyRes } = useCompanySettings();
+  const { data: logoRes } = useLogoData();
+  const [exportingBlankKyc, setExportingBlankKyc] = useState(false);
+
+  const handlePrintBlankKyc = async () => {
+    if (!token) return;
+    setExportingBlankKyc(true);
+    try {
+      const company = companyRes?.success ? companyRes.data : null;
+      const logo = logoRes?.success ? (logoRes.data as { mimeType: string; base64: string } | null) : null;
+      const bodyHtml = buildBlankReferrerKycDocumentHtml(company ?? null, logo);
+      await window.electron.documentExport.printDocument(token, {
+        fileName: 'Fiche-KYC-vierge',
+        bodyHtml,
+        headerTemplate: '<div></div>',
+        footerTemplate: buildReferrerKycFooterTemplate(company ?? null),
+        headerMm: 6,
+        footerMm: 20,
+        marginsMm: { top: 20, bottom: 24, left: 18, right: 18 },
+      });
+    } finally {
+      setExportingBlankKyc(false);
+    }
+  };
+
   return (
     <PageLayout
       title="Apporteurs d'affaire"
@@ -74,6 +101,12 @@ export default function ReferrersListPage() {
                 return r.success ? r.data ?? [] : [];
               }}
             />
+          )}
+          {canExport && (
+            <Button variant="primary" icon={<Printer className="h-4 w-4" />} loading={exportingBlankKyc}
+              onClick={handlePrintBlankKyc}>
+              Fiche KYC non renseignée
+            </Button>
           )}
           {canManage && (
             <Button icon={<Plus className="h-4 w-4" />} onClick={() => navigate('/commissions/referrers/new')}>

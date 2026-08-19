@@ -102,8 +102,12 @@ const prospectSchema = zod_1.z.object({
     assignedToId: zod_1.z.number().int().nullable().optional(),
 });
 // ── Rôles ────────────────────────────────────────────────────────────────────
-const WRITE_ROLES = ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'AGENT'];
-const READ_ROLES = [...WRITE_ROLES, 'READONLY'];
+// READONLY dispose des mêmes droits d'écriture qu'AGENT sur ce module
+// (décision produit : un « lecteur » peut malgré tout enregistrer des
+// prospects), d'où sa présence explicite dans WRITE_ROLES plutôt que dans
+// une équivalence globale de checkRole (qui l'aurait élargi à d'autres modules).
+const WRITE_ROLES = ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'AGENT', 'READONLY'];
+const READ_ROLES = WRITE_ROLES;
 const ASSIGN_ROLES = ['SUPER_ADMIN', 'ADMIN', 'MANAGER'];
 /** Rôles habilités à convertir un prospect en client (équivalents à la création de client). */
 const CONVERT_TO_CLIENT_ROLES = ['SUPER_ADMIN', 'ADMIN', 'MANAGER'];
@@ -503,6 +507,15 @@ function registerProspectsIPC() {
                 const updated = await tx.prospect.update({
                     where: { id },
                     data: { status: 'CONVERTI', convertedAt: new Date(), clientId: client.id },
+                });
+                // Bascule vers le client toute convention créée pour ce prospect
+                // (Souscription/Vente, statut verrouillé Brouillon — cf. conventions.ipc.ts)
+                // qui n'a pas encore de client. prospectId n'est jamais effacé
+                // (traçabilité) ; dès que clientId est renseigné, la convention suit
+                // les règles de statut normales sans code supplémentaire.
+                await tx.convention.updateMany({
+                    where: { prospectId: id, clientId: null, deletedAt: null },
+                    data: { clientId: client.id },
                 });
                 return { client, prospect: updated };
             });

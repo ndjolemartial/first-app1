@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { Save, KeyRound, Lock, Palette, Check } from 'lucide-react';
+import { Save, KeyRound, Lock, Palette, Check, Mail, Trash2 } from 'lucide-react';
 import { clsx } from 'clsx';
 import PageLayout from '../../../shared/components/layout/PageLayout';
 import Button from '../../../shared/components/ui/Button';
@@ -13,6 +13,9 @@ import Card from '../../../shared/components/ui/Card';
 import { useAuthStore } from '../../../shared/stores/auth.store';
 import { toast } from '../../../shared/components/ui/Toast';
 import { THEME_PREVIEWS, THEME_KEYS, normalizeTheme, applyTheme, type ThemeKey } from '../../../shared/theme/themes';
+import { useMailAccount, useUpsertMailAccount, useTestMailAccount, useDeleteMailAccount } from '../hooks/useMailAccount';
+
+const SECRET_MASK = '••••••••';
 
 const profileSchema = z.object({
   firstName: z.string().min(1, 'Prénom requis'),
@@ -281,6 +284,9 @@ export default function ProfilePage() {
           </form>
         </Card>
 
+        {/* Boîte email personnelle — réception des réponses */}
+        <PersonalMailboxCard />
+
         {/* Apparence : thème graphique */}
         <Card>
           <div className="flex items-center gap-2 mb-2">
@@ -372,5 +378,157 @@ export default function ProfilePage() {
         </Card>
       </div>
     </PageLayout>
+  );
+}
+
+interface MailAccountFormData {
+  host: string;
+  port: number;
+  secure: boolean;
+  user: string;
+  password: string;
+  folder: string;
+  isActive: boolean;
+  receiveAllMessages: boolean;
+}
+
+/**
+ * Boîte email personnelle (self-service, facultative) — permet de recevoir
+ * dans l'application les réponses aux emails envoyés « en tant que soi-même »
+ * (mode Particulier du module Communication), qui atterrissent sinon
+ * uniquement dans la vraie boîte mail personnelle (Gmail, Outlook…), hors de
+ * l'application. Identifiants stockés chiffrés (cf. secretCrypto.ts).
+ */
+function PersonalMailboxCard() {
+  const { data: res, isLoading } = useMailAccount();
+  const upsert = useUpsertMailAccount();
+  const test = useTestMailAccount();
+  const del = useDeleteMailAccount();
+  const [enabled, setEnabled] = useState(false);
+
+  const { register, handleSubmit, reset, getValues, formState: { isSubmitting } } = useForm<MailAccountFormData>({
+    defaultValues: { host: '', port: 993, secure: true, user: '', password: '', folder: 'INBOX', isActive: true, receiveAllMessages: false },
+  });
+
+  useEffect(() => {
+    if (!res?.success) return;
+    if (res.data) {
+      setEnabled(true);
+      reset({
+        host:     res.data.host ?? '',
+        port:     res.data.port ?? 993,
+        secure:   res.data.secure ?? true,
+        user:     res.data.user ?? '',
+        password: res.data.passwordSet ? SECRET_MASK : '',
+        folder:   res.data.folder ?? 'INBOX',
+        isActive: res.data.isActive ?? true,
+        receiveAllMessages: res.data.receiveAllMessages ?? false,
+      });
+    } else {
+      setEnabled(false);
+    }
+  }, [res, reset]);
+
+  const onSubmit = handleSubmit((data) => upsert.mutate({
+    host:     data.host,
+    port:     Number(data.port),
+    secure:   Boolean(data.secure),
+    user:     data.user,
+    password: data.password === SECRET_MASK ? undefined : data.password,
+    folder:   data.folder,
+    isActive: Boolean(data.isActive),
+    receiveAllMessages: Boolean(data.receiveAllMessages),
+  }));
+
+  const handleDelete = () => {
+    del.mutate(undefined, {
+      onSuccess: (r) => {
+        if (r.success) {
+          setEnabled(false);
+          reset({ host: '', port: 993, secure: true, user: '', password: '', folder: 'INBOX', isActive: true, receiveAllMessages: false });
+        }
+      },
+    });
+  };
+
+  return (
+    <Card>
+      <div className="flex items-center gap-2 mb-2">
+        <Mail className="h-4 w-4 text-slate-500" />
+        <h2 className="text-sm font-semibold text-slate-700">Ma boîte email personnelle</h2>
+      </div>
+      <p className="text-xs text-slate-500 mb-4">
+        Facultatif — connectez votre boîte mail personnelle (IMAP) pour recevoir, dans l'application, les réponses aux
+        emails que vous envoyez « en tant que vous-même ». Vos identifiants sont stockés chiffrés. Pour Gmail/Outlook
+        avec double authentification, utilisez un « mot de passe d'application » plutôt que votre mot de passe habituel.
+      </p>
+      {isLoading ? <p className="text-sm text-slate-400">Chargement…</p> : !enabled ? (
+        <Button variant="secondary" icon={<Mail className="h-4 w-4" />} onClick={() => setEnabled(true)}>
+          Connecter ma boîte email
+        </Button>
+      ) : (
+        <form onSubmit={onSubmit} className="space-y-4">
+          <div className="grid grid-cols-3 gap-4">
+            <div className="col-span-2">
+              <Input label="Serveur IMAP" placeholder="imap.gmail.com" {...register('host')} />
+            </div>
+            <Input label="Port" type="number" min="1" max="65535" {...register('port', { valueAsNumber: true })} />
+          </div>
+          <label className="flex items-center gap-2 text-sm text-slate-700">
+            <input type="checkbox" {...register('secure')} className="h-4 w-4 rounded border-slate-300" />
+            Connexion sécurisée (SSL/TLS, port 993)
+          </label>
+          <div className="grid grid-cols-2 gap-4">
+            <Input label="Adresse email" {...register('user')} />
+            <Input label="Mot de passe" type="password" placeholder={SECRET_MASK} {...register('password')} />
+          </div>
+          <label className="flex items-center gap-2 text-sm text-slate-700">
+            <input type="checkbox" {...register('isActive')} className="h-4 w-4 rounded border-slate-300" />
+            Activer la réception
+          </label>
+          <label className="flex items-start gap-2 text-sm text-slate-700">
+            <input type="checkbox" {...register('receiveAllMessages')} className="h-4 w-4 mt-0.5 rounded border-slate-300" />
+            <span>
+              Recevoir tous les messages
+              <span className="block text-xs text-slate-400 font-normal">
+                Par défaut, seules les réponses (ou suites de réponses) à un message envoyé depuis l'application sont
+                récupérées dans « Communication ». Cochez cette case pour recevoir tous les messages de cette boîte,
+                même ceux sans lien avec un envoi de l'application.
+              </span>
+            </span>
+          </label>
+          {res?.success && res.data?.lastError && (
+            <p className="text-xs text-red-600">Dernière erreur : {res.data.lastError}</p>
+          )}
+          <div className="flex justify-end gap-2 pt-2">
+            {res?.data && (
+              <Button type="button" variant="danger" icon={<Trash2 className="h-4 w-4" />} loading={del.isPending} onClick={handleDelete}>
+                Supprimer
+              </Button>
+            )}
+            <Button
+              type="button"
+              variant="secondary"
+              loading={test.isPending}
+              onClick={() => {
+                const v = getValues();
+                test.mutate({
+                  host:     v.host,
+                  port:     Number(v.port),
+                  secure:   Boolean(v.secure),
+                  user:     v.user,
+                  password: v.password === SECRET_MASK ? undefined : v.password,
+                });
+              }}
+            >
+              Tester la connexion
+            </Button>
+            <Button type="submit" loading={isSubmitting || upsert.isPending} icon={<Save className="h-4 w-4" />}>
+              Enregistrer
+            </Button>
+          </div>
+        </form>
+      )}
+    </Card>
   );
 }

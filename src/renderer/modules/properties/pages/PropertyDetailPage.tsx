@@ -286,7 +286,7 @@ export default function PropertyDetailPage() {
                 <User className="h-4 w-4 text-slate-500" /> Client rattaché
               </h3>
               <p className="font-medium text-slate-900">
-                {p.client.type === 'ENTREPRISE'
+                {p.client.type !== 'INDIVIDUEL'
                   ? p.client.entreprise ?? '—'
                   : `${p.client.firstName ?? ''} ${p.client.lastName ?? ''}`.trim() || '—'}
               </p>

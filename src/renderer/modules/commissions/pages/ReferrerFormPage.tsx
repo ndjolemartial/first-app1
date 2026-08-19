@@ -13,6 +13,8 @@ import { FormSearchSelect } from '../../../shared/components/ui/SearchSelect';
 import Textarea from '../../../shared/components/ui/Textarea';
 import { useReferrer, useCreateReferrer, useUpdateReferrer, useCommissionUsers } from '../hooks/useCommissions';
 import { useCountries } from '../../../shared/hooks/useCountries';
+import { SOURCE_OF_FUNDS_OPTIONS, RELATIONSHIP_PURPOSE_OPTIONS } from '../../../shared/utils/kycDocumentKit';
+import { PEP_CATEGORY_LABEL } from '../../aml/utils/aml.utils';
 import { Save } from 'lucide-react';
 import EntityDocumentsCard from '../../archiving/components/EntityDocumentsCard';
 
@@ -36,6 +38,22 @@ const schema = z.object({
   country: z.string().optional(),
   bankIban: z.string().optional(),
   bankBic: z.string().optional(),
+  // Informations complémentaires — alimentent la Fiche KYC imprimable.
+  employerName: z.string().optional(),
+  monthlyIncome: z.string().optional(),
+  sourceOfFunds: z.array(z.string()).optional(),
+  sourceOfFundsOther: z.string().optional(),
+  sourceOfWealth: z.string().optional(),
+  relationshipPurpose: z.array(z.string()).optional(),
+  relationshipPurposeOther: z.string().optional(),
+  expectedTransactionVolume: z.string().optional(),
+  acquisitionChannel: z.string().optional(),
+  isPep: z.boolean().optional(),
+  pepCategory: z.string().optional(),
+  pepFunction: z.string().optional(),
+  hasRiskyCountryLink: z.boolean().optional(),
+  kycSignedAt: z.string().optional(),
+  kycSignedPlace: z.string().optional(),
   notes: z.string().optional(),
   isActive: z.string().optional(),
   assignedToId: z.string().optional(),
@@ -52,10 +70,24 @@ export default function ReferrerFormPage() {
   const create = useCreateReferrer();
   const update = useUpdateReferrer();
 
-  const { register, handleSubmit, reset, control, formState: { errors, isSubmitting } } = useForm<FormData>({
+  const { register, handleSubmit, reset, watch, setValue, control, formState: { errors, isSubmitting } } = useForm<FormData>({
     resolver: zodResolver(schema),
-    defaultValues: { country: 'CI', isActive: 'true' },
+    defaultValues: { country: 'CI', isActive: 'true', sourceOfFunds: [], relationshipPurpose: [] },
   });
+
+  const watchIsPep = watch('isPep');
+  const watchSourceOfFunds = watch('sourceOfFunds') ?? [];
+  const toggleSourceOfFunds = (value: string) => {
+    setValue('sourceOfFunds', watchSourceOfFunds.includes(value)
+      ? watchSourceOfFunds.filter((v) => v !== value)
+      : [...watchSourceOfFunds, value]);
+  };
+  const watchRelationshipPurpose = watch('relationshipPurpose') ?? [];
+  const toggleRelationshipPurpose = (value: string) => {
+    setValue('relationshipPurpose', watchRelationshipPurpose.includes(value)
+      ? watchRelationshipPurpose.filter((v) => v !== value)
+      : [...watchRelationshipPurpose, value]);
+  };
 
   const { data: countriesRes } = useCountries();
   const countryOptions = (countriesRes?.data ?? []).map((c) => ({ value: c.isoCode, label: c.name }));
@@ -84,6 +116,21 @@ export default function ReferrerFormPage() {
         country: res.data.country ?? 'CI',
         bankIban: res.data.bankIban ?? '',
         bankBic: res.data.bankBic ?? '',
+        employerName: res.data.employerName ?? '',
+        monthlyIncome: res.data.monthlyIncome != null ? String(res.data.monthlyIncome) : '',
+        sourceOfFunds: Array.isArray(res.data.sourceOfFunds) ? res.data.sourceOfFunds : [],
+        sourceOfFundsOther: res.data.sourceOfFundsOther ?? '',
+        sourceOfWealth: res.data.sourceOfWealth ?? '',
+        relationshipPurpose: Array.isArray(res.data.relationshipPurpose) ? res.data.relationshipPurpose : [],
+        relationshipPurposeOther: res.data.relationshipPurposeOther ?? '',
+        expectedTransactionVolume: res.data.expectedTransactionVolume != null ? String(res.data.expectedTransactionVolume) : '',
+        acquisitionChannel: res.data.acquisitionChannel ?? '',
+        isPep: res.data.isPep ?? false,
+        pepCategory: res.data.pepCategory ?? '',
+        pepFunction: res.data.pepFunction ?? '',
+        hasRiskyCountryLink: res.data.hasRiskyCountryLink ?? false,
+        kycSignedAt: res.data.kycSignedAt ? new Date(res.data.kycSignedAt).toISOString().slice(0, 10) : '',
+        kycSignedPlace: res.data.kycSignedPlace ?? '',
         notes: res.data.notes ?? '',
         isActive: String(res.data.isActive),
         assignedToId: res.data.assignedToId != null ? String(res.data.assignedToId) : '',
@@ -99,6 +146,14 @@ export default function ReferrerFormPage() {
     const { assignedToId, ...rest } = data;
     const payload: any = { ...rest, isActive: data.isActive !== 'false' };
     payload.assignedToId = assignedToId ? Number(assignedToId) : null;
+    if (payload.kycSignedAt) {
+      payload.kycSignedAt = new Date(`${payload.kycSignedAt}T00:00:00.000Z`).toISOString();
+    } else {
+      delete payload.kycSignedAt;
+    }
+    if (!payload.isPep) payload.pepCategory = null;
+    if (!payload.sourceOfFunds?.includes('AUTRE')) payload.sourceOfFundsOther = null;
+    if (!payload.relationshipPurpose?.includes('AUTRE')) payload.relationshipPurposeOther = null;
     const r = isEdit
       ? await update.mutateAsync({ id: Number(id), payload })
       : await create.mutateAsync(payload);
@@ -150,6 +205,76 @@ export default function ReferrerFormPage() {
               <div className="grid grid-cols-2 gap-4">
                 <Input label="IBAN" placeholder="CI xx xxxx" {...register('bankIban')} />
                 <Input label="BIC / SWIFT" {...register('bankBic')} />
+              </div>
+            </div>
+
+            {/* Informations complémentaires (Fiche KYC) */}
+            <div className="border-t border-slate-200 pt-4 space-y-4">
+              <h3 className="text-sm font-semibold text-slate-700">Informations complémentaires (Fiche KYC)</h3>
+              <div className="grid grid-cols-2 gap-4">
+                <Input label="Employeur / activité professionnelle" {...register('employerName')} />
+                <Input label="Revenu mensuel déclaré (FCFA)" type="number" {...register('monthlyIncome')} />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-2">Origine des fonds</label>
+                <div className="grid grid-cols-2 gap-x-4 gap-y-2 rounded-lg border border-slate-200 bg-white p-3">
+                  {SOURCE_OF_FUNDS_OPTIONS.map((opt) => (
+                    <label key={opt.value} className="flex items-center gap-2 text-sm text-slate-700">
+                      <input type="checkbox" className="h-4 w-4 rounded border-slate-300"
+                        checked={watchSourceOfFunds.includes(opt.value)}
+                        onChange={() => toggleSourceOfFunds(opt.value)} />
+                      {opt.label}
+                    </label>
+                  ))}
+                </div>
+                {watchSourceOfFunds.includes('AUTRE') && (
+                  <div className="mt-2">
+                    <Input label="Précisez" {...register('sourceOfFundsOther')} />
+                  </div>
+                )}
+              </div>
+              <Textarea label="Origine du patrimoine" rows={2} {...register('sourceOfWealth')} />
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-2">Objet de la relation d'affaires</label>
+                <div className="grid grid-cols-2 gap-x-4 gap-y-2 rounded-lg border border-slate-200 bg-white p-3">
+                  {RELATIONSHIP_PURPOSE_OPTIONS.map((opt) => (
+                    <label key={opt.value} className="flex items-center gap-2 text-sm text-slate-700">
+                      <input type="checkbox" className="h-4 w-4 rounded border-slate-300"
+                        checked={watchRelationshipPurpose.includes(opt.value)}
+                        onChange={() => toggleRelationshipPurpose(opt.value)} />
+                      {opt.label}
+                    </label>
+                  ))}
+                </div>
+                {watchRelationshipPurpose.includes('AUTRE') && (
+                  <div className="mt-2">
+                    <Input label="Précisez" {...register('relationshipPurposeOther')} />
+                  </div>
+                )}
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <Input label="Volume mensuel estimé des opérations (FCFA)" type="number" {...register('expectedTransactionVolume')} />
+                <Input label="Canal d'entrée en relation" {...register('acquisitionChannel')} />
+              </div>
+              <div className="flex items-center gap-2">
+                <input id="referrerIsPep" type="checkbox" className="h-4 w-4 rounded border-slate-300" {...register('isPep')} />
+                <label htmlFor="referrerIsPep" className="text-sm font-medium text-slate-700">Personne politiquement exposée (PPE)</label>
+              </div>
+              {watchIsPep && (
+                <div className="grid grid-cols-2 gap-4">
+                  <Select label="Catégorie PPE" placeholder="Non précisée"
+                    options={Object.entries(PEP_CATEGORY_LABEL).map(([v, l]) => ({ value: v, label: l }))}
+                    {...register('pepCategory')} />
+                  <Input label="Fonction exercée" {...register('pepFunction')} />
+                </div>
+              )}
+              <div className="flex items-center gap-2">
+                <input id="referrerHasRiskyCountryLink" type="checkbox" className="h-4 w-4 rounded border-slate-300" {...register('hasRiskyCountryLink')} />
+                <label htmlFor="referrerHasRiskyCountryLink" className="text-sm font-medium text-slate-700">Lien avec un pays à risque</label>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <Input label="Lieu de signature de la fiche KYC" {...register('kycSignedPlace')} />
+                <Input label="Date de signature de la fiche KYC" type="date" {...register('kycSignedAt')} />
               </div>
             </div>
 

@@ -71,6 +71,13 @@ const clients = {
   listAssignableUsers: (token: string) => api.invoke('clients:listAssignableUsers', { token }),
   listReferrers: (token: string) => api.invoke('clients:listReferrers', { token }),
   getTimeline: (token: string, id: number) => api.invoke('clients:getTimeline', { token, id }),
+  beneficialOwners: {
+    create: (token: string, clientId: number, payload: object) =>
+      api.invoke('clients:beneficialOwners:create', { token, clientId, payload }),
+    update: (token: string, id: number, payload: object) =>
+      api.invoke('clients:beneficialOwners:update', { token, id, payload }),
+    delete: (token: string, id: number) => api.invoke('clients:beneficialOwners:delete', { token, id }),
+  },
 };
 
 // Owners
@@ -82,6 +89,13 @@ const owners = {
   update: (token: string, id: number, payload: object) => api.invoke('owners:update', { token, id, payload }),
   delete: (token: string, id: number) => api.invoke('owners:delete', { token, id }),
   portfolio: (token: string, id: number) => api.invoke('owners:portfolio', { token, id }),
+  beneficialOwners: {
+    create: (token: string, ownerId: number, payload: object) =>
+      api.invoke('owners:beneficialOwners:create', { token, ownerId, payload }),
+    update: (token: string, id: number, payload: object) =>
+      api.invoke('owners:beneficialOwners:update', { token, id, payload }),
+    delete: (token: string, id: number) => api.invoke('owners:beneficialOwners:delete', { token, id }),
+  },
 };
 
 // Properties
@@ -275,6 +289,8 @@ const communication = {
     api.invoke('communication:myTemplatePermissions', { token }),
   getHistory: (token: string, filters?: object, page?: number, limit?: number) =>
     api.invoke('communication:getHistory', { token, filters, page, limit }),
+  markRead: (token: string, id: number) =>
+    api.invoke('communication:markRead', { token, id }),
   sendEmail: (token: string, payload: object) =>
     api.invoke('communication:sendEmail', { token, payload }),
   sendSms: (token: string, payload: object) =>
@@ -295,6 +311,17 @@ const communication = {
     api.invoke('communication:getTracking', { token }),
   updateTracking: (token: string, baseUrl: string) =>
     api.invoke('communication:updateTracking', { token, baseUrl }),
+  linkInbound: (token: string, id: number, payload: object) =>
+    api.invoke('communication:linkInbound', { token, id, payload }),
+};
+
+// Boîte email personnelle (self-service, réception des réponses)
+const mailAccount = {
+  get: (token: string) => api.invoke('mailAccount:get', { token }),
+  upsert: (token: string, payload: object) =>
+    api.invoke('mailAccount:upsert', { token, payload }),
+  test: (token: string, payload?: object) => api.invoke('mailAccount:test', { token, payload }),
+  delete: (token: string) => api.invoke('mailAccount:delete', { token }),
 };
 
 // Reminders (politique de relance automatique)
@@ -307,10 +334,16 @@ const reminders = {
     api.invoke('reminders:listRules', { token }),
   updateRule: (token: string, id: number, payload: object) =>
     api.invoke('reminders:updateRule', { token, id, payload }),
+  createRule: (token: string, payload: object) =>
+    api.invoke('reminders:createRule', { token, payload }),
+  deleteRule: (token: string, id: number) =>
+    api.invoke('reminders:deleteRule', { token, id }),
   runNow: (token: string) =>
     api.invoke('reminders:runNow', { token }),
   setClientOptOut: (token: string, payload: object) =>
     api.invoke('reminders:setClientOptOut', { token, payload }),
+  listOptedOutClients: (token: string) =>
+    api.invoke('reminders:listOptedOutClients', { token }),
 };
 
 // CRM
@@ -520,6 +553,126 @@ const construction = {
   },
 };
 
+// Moteur de devis de permis de construire (Module 18) — bibliothèque technique
+const permitLibrary = {
+  communes: {
+    list: (token: string, includeInactive?: boolean) => api.invoke('permits:communes:list', { token, includeInactive }),
+    upsert: (token: string, id: number | undefined, payload: object) => api.invoke('permits:communes:upsert', { token, id, payload }),
+    delete: (token: string, id: number) => api.invoke('permits:communes:delete', { token, id }),
+  },
+  feeItems: {
+    list: (token: string, filters?: object) => api.invoke('permits:feeItems:list', { token, filters }),
+    getById: (token: string, id: number) => api.invoke('permits:feeItems:getById', { token, id }),
+    create: (token: string, payload: object) => api.invoke('permits:feeItems:create', { token, payload }),
+    update: (token: string, id: number, payload: object) => api.invoke('permits:feeItems:update', { token, id, payload }),
+    delete: (token: string, id: number) => api.invoke('permits:feeItems:delete', { token, id }),
+  },
+  rateOverrides: {
+    list: (token: string, feeItemId: number) => api.invoke('permits:rateOverrides:list', { token, feeItemId }),
+    upsert: (token: string, id: number | undefined, payload: object) => api.invoke('permits:rateOverrides:upsert', { token, id, payload }),
+    delete: (token: string, id: number) => api.invoke('permits:rateOverrides:delete', { token, id }),
+  },
+  surfaceBrackets: {
+    list: (token: string, feeItemId: number) => api.invoke('permits:surfaceBrackets:list', { token, feeItemId }),
+    upsert: (token: string, id: number | undefined, payload: object) => api.invoke('permits:surfaceBrackets:upsert', { token, id, payload }),
+    delete: (token: string, id: number) => api.invoke('permits:surfaceBrackets:delete', { token, id }),
+  },
+};
+
+// Moteur de devis de permis de construire (Module 18) — projets & estimations
+const permits = {
+  projects: {
+    list: (token: string, filters?: object, page?: number, limit?: number) => api.invoke('permits:projects:list', { token, filters, page, limit }),
+    getById: (token: string, id: number) => api.invoke('permits:projects:getById', { token, id }),
+    create: (token: string, payload: object) => api.invoke('permits:projects:create', { token, payload }),
+    update: (token: string, id: number, payload: object) => api.invoke('permits:projects:update', { token, id, payload }),
+    delete: (token: string, id: number) => api.invoke('permits:projects:delete', { token, id }),
+  },
+  quickEstimate: (token: string, args: { projectId?: number; characteristics?: object }) =>
+    api.invoke('permits:quickEstimate', { token, ...args }),
+  generateEstimate: (token: string, projectId: number) => api.invoke('permits:generateEstimate', { token, projectId }),
+  estimates: {
+    list: (token: string, projectId: number) => api.invoke('permits:estimates:list', { token, projectId }),
+    getById: (token: string, id: number) => api.invoke('permits:estimates:getById', { token, id }),
+    toQuote: (token: string, estimateId: number, payload: object) => api.invoke('permits:estimates:toQuote', { token, estimateId, payload }),
+    setStatus: (token: string, id: number, status: string) => api.invoke('permits:estimates:setStatus', { token, id, status }),
+    delete: (token: string, id: number) => api.invoke('permits:estimates:delete', { token, id }),
+  },
+};
+
+// Conformité LBC/FT (Module 19)
+const aml = {
+  profiles: {
+    list: (token: string, filters?: object, page?: number, limit?: number) =>
+      api.invoke('aml:profiles:list', { token, filters, page, limit }),
+    getById: (token: string, id: number) => api.invoke('aml:profiles:getById', { token, id }),
+    getBySubject: (token: string, subjectType: string, subjectId: number) =>
+      api.invoke('aml:profiles:getBySubject', { token, subjectType, subjectId }),
+    subjectsWithoutProfile: (token: string, subjectType: string, search?: string) =>
+      api.invoke('aml:profiles:subjectsWithoutProfile', { token, subjectType, search }),
+    create: (token: string, payload: object) => api.invoke('aml:profiles:create', { token, payload }),
+    update: (token: string, id: number, payload: object) => api.invoke('aml:profiles:update', { token, id, payload }),
+    setRiskFactors: (token: string, id: number, payload: object) => api.invoke('aml:profiles:setRiskFactors', { token, id, payload }),
+    computeRisk: (token: string, id: number) => api.invoke('aml:profiles:computeRisk', { token, id }),
+    validate: (token: string, id: number) => api.invoke('aml:profiles:validate', { token, id }),
+    markToReview: (token: string, id: number) => api.invoke('aml:profiles:markToReview', { token, id }),
+    markRefused: (token: string, id: number) => api.invoke('aml:profiles:markRefused', { token, id }),
+    delete: (token: string, id: number) => api.invoke('aml:profiles:delete', { token, id }),
+  },
+  beneficialOwners: {
+    list: (token: string, profileId: number) => api.invoke('aml:beneficialOwners:list', { token, profileId }),
+    create: (token: string, profileId: number, payload: object) => api.invoke('aml:beneficialOwners:create', { token, profileId, payload }),
+    update: (token: string, id: number, payload: object) => api.invoke('aml:beneficialOwners:update', { token, id, payload }),
+    delete: (token: string, id: number) => api.invoke('aml:beneficialOwners:delete', { token, id }),
+  },
+  riskFactors: {
+    list: (token: string, includeInactive?: boolean) => api.invoke('aml:riskFactors:list', { token, includeInactive }),
+    create: (token: string, payload: object) => api.invoke('aml:riskFactors:create', { token, payload }),
+    update: (token: string, id: number, payload: object) => api.invoke('aml:riskFactors:update', { token, id, payload }),
+    delete: (token: string, id: number) => api.invoke('aml:riskFactors:delete', { token, id }),
+  },
+  watchlist: {
+    list: (token: string, filters?: object) => api.invoke('aml:watchlist:list', { token, filters }),
+    getById: (token: string, id: number) => api.invoke('aml:watchlist:getById', { token, id }),
+    create: (token: string, payload: object) => api.invoke('aml:watchlist:create', { token, payload }),
+    update: (token: string, id: number, payload: object) => api.invoke('aml:watchlist:update', { token, id, payload }),
+    delete: (token: string, id: number) => api.invoke('aml:watchlist:delete', { token, id }),
+    screen: (token: string, profileId: number) => api.invoke('aml:watchlist:screen', { token, profileId }),
+  },
+  watchlistMatches: {
+    list: (token: string, profileId: number) => api.invoke('aml:watchlistMatches:list', { token, profileId }),
+    review: (token: string, id: number, payload: object) => api.invoke('aml:watchlistMatches:review', { token, id, payload }),
+  },
+  reviews: {
+    list: (token: string, filters?: object, page?: number, limit?: number) =>
+      api.invoke('aml:reviews:list', { token, filters, page, limit }),
+    getById: (token: string, id: number) => api.invoke('aml:reviews:getById', { token, id }),
+    getByConvention: (token: string, conventionId: number) => api.invoke('aml:reviews:getByConvention', { token, conventionId }),
+    pendingCandidates: (token: string) => api.invoke('aml:reviews:pendingCandidates', { token }),
+    create: (token: string, payload: object) => api.invoke('aml:reviews:create', { token, payload }),
+    close: (token: string, id: number, payload: object) => api.invoke('aml:reviews:close', { token, id, payload }),
+    delete: (token: string, id: number) => api.invoke('aml:reviews:delete', { token, id }),
+  },
+  suspiciousReports: {
+    create: (token: string, payload: object) => api.invoke('aml:suspiciousReports:create', { token, payload }),
+    list: (token: string, filters?: object, page?: number, limit?: number) =>
+      api.invoke('aml:suspiciousReports:list', { token, filters, page, limit }),
+    getById: (token: string, id: number) => api.invoke('aml:suspiciousReports:getById', { token, id }),
+    update: (token: string, id: number, payload: object) => api.invoke('aml:suspiciousReports:update', { token, id, payload }),
+    transmit: (token: string, id: number, payload: object) => api.invoke('aml:suspiciousReports:transmit', { token, id, payload }),
+    classify: (token: string, id: number, payload: object) => api.invoke('aml:suspiciousReports:classify', { token, id, payload }),
+  },
+  training: {
+    list: (token: string, filters?: object, page?: number, limit?: number) =>
+      api.invoke('aml:training:list', { token, filters, page, limit }),
+    getById: (token: string, id: number) => api.invoke('aml:training:getById', { token, id }),
+    create: (token: string, payload: object) => api.invoke('aml:training:create', { token, payload }),
+    update: (token: string, id: number, payload: object) => api.invoke('aml:training:update', { token, id, payload }),
+    delete: (token: string, id: number) => api.invoke('aml:training:delete', { token, id }),
+  },
+  dashboard: (token: string) => api.invoke('aml:dashboard:overview', { token }),
+};
+
 // Terrains
 const terrains = {
   list: (token: string, filters?: object, page?: number, limit?: number) =>
@@ -620,6 +773,8 @@ const hr = {
   payroll: {
     getRates: (token: string) => api.invoke('hr:payroll:getRates', { token }),
     setRates: (token: string, rates: object) => api.invoke('hr:payroll:setRates', { token, rates }),
+    preview: (token: string, payload: { baseSalary: number; sursalaire?: number; primeAnciennete?: number; transportAllowance?: number }) =>
+      api.invoke('hr:payroll:preview', { token, ...payload }),
   },
   contractTemplates: {
     list: (token: string) => api.invoke('hr:contractTemplates:list', { token }),
@@ -927,6 +1082,13 @@ const commissions = {
   updateReferrer: (token: string, id: number, payload: object) =>
     api.invoke('commissions:updateReferrer', { token, id, payload }),
   deleteReferrer: (token: string, id: number) => api.invoke('commissions:deleteReferrer', { token, id }),
+  referrerBeneficialOwners: {
+    create: (token: string, referrerId: number, payload: object) =>
+      api.invoke('commissions:referrerBeneficialOwners:create', { token, referrerId, payload }),
+    update: (token: string, id: number, payload: object) =>
+      api.invoke('commissions:referrerBeneficialOwners:update', { token, id, payload }),
+    delete: (token: string, id: number) => api.invoke('commissions:referrerBeneficialOwners:delete', { token, id }),
+  },
   listUsers: (token: string) => api.invoke('commissions:listUsers', { token }),
   listEligibleConventions: (token: string, filters?: { userId?: number; referrerId?: number }) =>
     api.invoke('commissions:listEligibleConventions', { token, filters }),
@@ -1072,6 +1234,12 @@ const settings = {
   updateManualTemplateEditors: (token: string, userIds: number[]) =>
     api.invoke('settings:updateManualTemplateEditors', { token, userIds }),
 
+  getKycAuthorizedUsers: (token: string) =>
+    api.invoke('settings:getKycAuthorizedUsers', { token }),
+  updateKycAuthorizedUsers: (token: string, userIds: number[]) =>
+    api.invoke('settings:updateKycAuthorizedUsers', { token, userIds }),
+  myKycAccess: (token: string) => api.invoke('settings:myKycAccess', { token }),
+
   getLatenessSettings: (token: string) => api.invoke('settings:getLatenessSettings', { token }),
   updateLatenessSettings: (token: string, payload: object) =>
     api.invoke('settings:updateLatenessSettings', { token, payload }),
@@ -1080,11 +1248,20 @@ const settings = {
   updateVisitorQr: (token: string, payload: object) =>
     api.invoke('settings:updateVisitorQr', { token, payload }),
 
+  getAmlRiskThresholds: (token: string) => api.invoke('settings:getAmlRiskThresholds', { token }),
+  updateAmlRiskThresholds: (token: string, payload: object) =>
+    api.invoke('settings:updateAmlRiskThresholds', { token, payload }),
+
   getEmail: (token: string) => api.invoke('settings:getEmail', { token }),
   updateEmail: (token: string, payload: object) =>
     api.invoke('settings:updateEmail', { token, payload }),
   testEmail: (token: string, to: string) =>
     api.invoke('settings:testEmail', { token, to }),
+
+  getImap: (token: string) => api.invoke('settings:getImap', { token }),
+  updateImap: (token: string, payload: object) =>
+    api.invoke('settings:updateImap', { token, payload }),
+  testImap: (token: string) => api.invoke('settings:testImap', { token }),
 
   getSms: (token: string) => api.invoke('settings:getSms', { token }),
   updateSms: (token: string, payload: object) =>
@@ -1140,6 +1317,8 @@ const documents = {
     api.invoke('documents:uploadIdDocument', { token, clientId, ...payload }),
   uploadClientDoc: (token: string, clientId: number, category: string, payload: object) =>
     api.invoke('documents:uploadClientDoc', { token, clientId, category, ...payload }),
+  uploadClientDocs: (token: string, clientId: number, category: string, files: object[]) =>
+    api.invoke('documents:uploadClientDocs', { token, clientId, category, files }),
   getByClient: (token: string, clientId: number) =>
     api.invoke('documents:getByClient', { token, clientId }),
   uploadOwnerDoc: (token: string, ownerId: number, category: string, payload: object) =>
@@ -1197,4 +1376,4 @@ const careerProfiles = {
   duplicate: (token: string, id: number) => api.invoke('careerProfiles:duplicate', { token, id }),
 };
 
-contextBridge.exposeInMainWorld('electron', { auth, users, prospects, clients, owners, properties, conventions, conventionTemplates, attestationTemplates, attestations, quotes, quoteTemplates, catalog, accounting, bilan, communication, crm, archiving, documents, documentExport, lotissements, terrains, programmes, projects, hr, careerProfiles, performance, visitors, calls, socialMedia, innovations, constructionLibrary, construction, geo, countries, commissions, expenses, analytics, exporter, invoiceTemplates, listExportTemplates, wireTransfer, treasury, budget, dashboard, settings, reminders, config });
+contextBridge.exposeInMainWorld('electron', { auth, users, prospects, clients, owners, properties, conventions, conventionTemplates, attestationTemplates, attestations, quotes, quoteTemplates, catalog, accounting, bilan, communication, crm, archiving, documents, documentExport, lotissements, terrains, programmes, projects, hr, careerProfiles, performance, visitors, calls, socialMedia, innovations, constructionLibrary, construction, permitLibrary, permits, aml, geo, countries, commissions, expenses, analytics, exporter, invoiceTemplates, listExportTemplates, wireTransfer, treasury, budget, dashboard, settings, reminders, mailAccount, config });

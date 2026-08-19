@@ -33,7 +33,7 @@ const contactName = (c: PhoneCall) => `${c.lastName ?? ''} ${c.firstName ?? ''}`
 
 const linkedEntityLabel = (c: PhoneCall): string | null => {
   if (c.client) {
-    return c.client.type === 'ENTREPRISE'
+    return c.client.type !== 'INDIVIDUEL'
       ? (c.client.entreprise ?? '')
       : `${c.client.lastName ?? ''} ${c.client.firstName ?? ''}`.trim();
   }

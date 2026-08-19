@@ -7,7 +7,7 @@ const FULL_ARCHIVING_ROLES = ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ACCOUNTANT', '
 
 const TABS = [
   { label: 'Tableau de bord GED', to: '/archiving/ged/dashboard', full: true },
-  { label: 'GED — Documents', to: '/archiving/ged', full: false },
+  { label: 'GED — Archivage', to: '/archiving/ged', full: false },
   { label: 'Organisation', to: '/archiving/ged/settings', full: true },
   { label: 'Entités archivées', to: '/archiving/entities', full: true },
   { label: 'Politiques', to: '/archiving/policies', full: true },

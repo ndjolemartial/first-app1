@@ -8,6 +8,10 @@ import { z } from 'zod';
 const ALL_ROLES = ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'AGENT', 'ACCOUNTANT', 'READONLY'];
 const WRITE_ROLES = ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'AGENT'];
 
+// CrmActivity.objectiveRealized est un Decimal Prisma — non clonable tel quel
+// par l'IPC Electron (structured clone). Sérialiser avant tout retour.
+const ser = <T>(v: T): T => JSON.parse(JSON.stringify(v));
+
 /**
  * Rôles qui voient l'ensemble des activités CRM, sans filtre de propriété.
  * Les rôles restreints (AGENT, ACCOUNTANT, READONLY) ne voient que les
@@ -48,7 +52,14 @@ function buildVisibilityWhere(session: { userId: number; role: string }): any {
     }
     return {};
   }
-  return activitiesForUserWhere(session.userId);
+  const own = activitiesForUserWhere(session.userId);
+  // AGENT_TECHNIQUE voit en plus, quel que soit l'assigné/créateur/référent,
+  // toutes les activités « Créas / Publications / Articles » (module Réseaux
+  // Sociaux & Plateformes Web) — seule exception à sa vue restreinte.
+  if (session.role === 'AGENT_TECHNIQUE') {
+    return { OR: [...own.OR, { type: 'CREATION_PUBLICATION' }] };
+  }
+  return own;
 }
 
 const activitySchema = z.object({
@@ -192,7 +203,7 @@ export function registerCrmIPC(): void {
         }),
         db.crmActivity.count({ where: finalWhere }),
       ]);
-      return { success: true, data, total };
+      return { success: true, data: ser(data), total };
     } catch (error: any) {
       logger.error('crm:listActivities error', error.message);
       return { success: false, error: error.message };
@@ -233,7 +244,7 @@ export function registerCrmIPC(): void {
         },
       });
       if (!activity) return { success: false, error: 'Activité introuvable ou inaccessible' };
-      return { success: true, data: activity };
+      return { success: true, data: ser(activity) };
     } catch (error: any) {
       return { success: false, error: error.message };
     }
@@ -287,7 +298,7 @@ export function registerCrmIPC(): void {
       });
       if (activity.objectiveId) await recomputeObjectiveProgress(db, activity.objectiveId);
       logger.info(`CRM activity created: ${activity.id}`);
-      return { success: true, data: activity };
+      return { success: true, data: ser(activity) };
     } catch (error: any) {
       return { success: false, error: error.message };
     }
@@ -337,7 +348,7 @@ export function registerCrmIPC(): void {
       if (existing.objectiveId) affected.add(existing.objectiveId);
       if (finalObjectiveId) affected.add(finalObjectiveId);
       for (const oid of affected) await recomputeObjectiveProgress(db, oid);
-      return { success: true, data: activity };
+      return { success: true, data: ser(activity) };
     } catch (error: any) {
       return { success: false, error: error.message };
     }
@@ -382,7 +393,7 @@ export function registerCrmIPC(): void {
         data: { status: 'TRAITE', completedAt: new Date() },
       });
       if (existing.objectiveId) await recomputeObjectiveProgress(db, existing.objectiveId);
-      return { success: true, data: activity };
+      return { success: true, data: ser(activity) };
     } catch (error: any) {
       return { success: false, error: error.message };
     }

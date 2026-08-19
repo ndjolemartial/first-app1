@@ -152,3 +152,30 @@ export function useClientTimeline(id: number) {
     enabled: !!token && !!id,
   });
 }
+
+/* ─── Bénéficiaires effectifs (client personne morale) ─────────────────── */
+
+export function useCreateClientBeneficialOwner() {
+  const token = useAuthStore((s) => s.token)!;
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ clientId, payload }: { clientId: number; payload: object }) =>
+      ipc().beneficialOwners.create(token, clientId, payload),
+    onSuccess: (res, { clientId }) => {
+      if (res.success) { qc.invalidateQueries({ queryKey: ['clients', clientId] }); toast.success('Bénéficiaire effectif ajouté'); }
+      else toast.error(String(res.error));
+    },
+  });
+}
+
+export function useDeleteClientBeneficialOwner() {
+  const token = useAuthStore((s) => s.token)!;
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, clientId }: { id: number; clientId: number }) => ipc().beneficialOwners.delete(token, id),
+    onSuccess: (res, { clientId }) => {
+      if (res.success) { qc.invalidateQueries({ queryKey: ['clients', clientId] }); toast.success('Bénéficiaire effectif retiré'); }
+      else toast.error(String(res.error));
+    },
+  });
+}

@@ -69,3 +69,30 @@ export function useDeleteOwner() {
     },
   });
 }
+
+/* ─── Bénéficiaires effectifs (propriétaire entreprise) ─────────────────── */
+
+export function useCreateOwnerBeneficialOwner() {
+  const token = useAuthStore((s) => s.token)!;
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ ownerId, payload }: { ownerId: number; payload: object }) =>
+      ipc().beneficialOwners.create(token, ownerId, payload),
+    onSuccess: (res, { ownerId }) => {
+      if (res.success) { qc.invalidateQueries({ queryKey: ['owners', ownerId] }); toast.success('Bénéficiaire effectif ajouté'); }
+      else toast.error(String(res.error));
+    },
+  });
+}
+
+export function useDeleteOwnerBeneficialOwner() {
+  const token = useAuthStore((s) => s.token)!;
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, ownerId }: { id: number; ownerId: number }) => ipc().beneficialOwners.delete(token, id),
+    onSuccess: (res, { ownerId }) => {
+      if (res.success) { qc.invalidateQueries({ queryKey: ['owners', ownerId] }); toast.success('Bénéficiaire effectif retiré'); }
+      else toast.error(String(res.error));
+    },
+  });
+}

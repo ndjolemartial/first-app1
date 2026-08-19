@@ -12,7 +12,7 @@ const zod_1 = require("zod");
 const timeline_service_1 = require("../services/timeline.service");
 // ── Schéma ───────────────────────────────────────────────────────────────────
 const clientBaseSchema = zod_1.z.object({
-    type: zod_1.z.enum(['INDIVIDUEL', 'ENTREPRISE']).default('INDIVIDUEL'),
+    type: zod_1.z.enum(['INDIVIDUEL', 'ENTREPRISE', 'ASSOCIATION_ONG']).default('INDIVIDUEL'),
     firstName: zod_1.z.string().optional(),
     lastName: zod_1.z.string().optional(),
     civilite: zod_1.z.enum(['Monsieur', 'Madame', 'Mademoiselle']).optional(),
@@ -46,6 +46,23 @@ const clientBaseSchema = zod_1.z.object({
     fatherLastName: zod_1.z.string().optional(),
     motherFirstName: zod_1.z.string().optional(),
     motherLastName: zod_1.z.string().optional(),
+    // Informations complémentaires — alimentent la « Fiche KYC » imprimable
+    // depuis la fiche client (bouton dédié, cf. clients:renderKycDocument ci-dessous).
+    employerName: zod_1.z.string().optional(),
+    monthlyIncome: zod_1.z.coerce.number().min(0).nullable().optional(),
+    sourceOfFunds: zod_1.z.array(zod_1.z.string()).optional(),
+    sourceOfFundsOther: zod_1.z.string().optional(),
+    sourceOfWealth: zod_1.z.string().optional(),
+    relationshipPurpose: zod_1.z.array(zod_1.z.string()).optional(),
+    relationshipPurposeOther: zod_1.z.string().optional(),
+    expectedTransactionVolume: zod_1.z.coerce.number().min(0).nullable().optional(),
+    acquisitionChannel: zod_1.z.string().optional(),
+    isPep: zod_1.z.boolean().optional(),
+    pepCategory: zod_1.z.enum(['PEP_NATIONAL', 'PEP_ETRANGER', 'PEP_ORGANISATION_INTERNATIONALE', 'PERSONNE_LIEE_PEP']).nullable().optional(),
+    pepFunction: zod_1.z.string().optional(),
+    hasRiskyCountryLink: zod_1.z.boolean().optional(),
+    kycSignedAt: zod_1.z.string().datetime().nullable().optional(),
+    kycSignedPlace: zod_1.z.string().optional(),
     notes: zod_1.z.string().optional(),
     status: zod_1.z.enum(['ACTIF', 'INACTIF', 'VIP', 'SUSPENDU']).optional(),
     assignedToId: zod_1.z.number().int().nullable().optional(),
@@ -66,9 +83,11 @@ const requireIdForIndividuel = (data, ctx) => {
             ctx.addIssue({ code: zod_1.z.ZodIssueCode.custom, path: ['idNumber'], message: 'Numéro de pièce d’identité requis' });
         }
     }
-    // Client entreprise : pièce d'identité du représentant légal obligatoire
-    // (alignement sur le module Propriétaires).
-    if (data.type === 'ENTREPRISE') {
+    // Client personne morale (entreprise ou association/ONG) : pièce d'identité
+    // du représentant légal obligatoire (alignement sur le module Propriétaires).
+    // `data.type` peut être absent sur une mise à jour partielle qui ne touche
+    // pas ce champ — dans ce cas, on ne déclenche pas cette validation.
+    if (data.type && data.type !== 'INDIVIDUEL') {
         if (data.legalRepIdTypeId == null) {
             ctx.addIssue({ code: zod_1.z.ZodIssueCode.custom, path: ['legalRepIdTypeId'], message: 'Type de pièce d’identité du représentant requis' });
         }
@@ -79,6 +98,18 @@ const requireIdForIndividuel = (data, ctx) => {
 };
 const clientSchema = clientBaseSchema.superRefine(requireIdForIndividuel);
 const clientUpdateSchema = clientBaseSchema.partial().superRefine(requireIdForIndividuel);
+// Bénéficiaires effectifs — pertinents pour un client personne morale
+// (Entreprise ou Association/ONG), repris sur la Fiche KYC imprimable.
+const beneficialOwnerSchema = zod_1.z.object({
+    firstName: zod_1.z.string().min(1, 'Prénom requis'),
+    lastName: zod_1.z.string().min(1, 'Nom requis'),
+    nationality: zod_1.z.string().optional(),
+    idNumber: zod_1.z.string().optional(),
+    ownershipPct: zod_1.z.coerce.number().min(0).max(100).nullable().optional(),
+    role: zod_1.z.string().optional(),
+    isPep: zod_1.z.boolean().optional(),
+    notes: zod_1.z.string().optional(),
+});
 // ── Rôles ────────────────────────────────────────────────────────────────────
 /** Création / modification / changement d'affectation : MANAGER, ADMIN, SUPER_ADMIN
  *  (ACCOUNTANT hérite des droits MANAGER via checkRole). */
@@ -244,6 +275,7 @@ function registerClientsIPC() {
                     referrer: { select: REFERRER_BRIEF_SELECT },
                     idType: { select: { id: true, code: true, label: true } },
                     legalRepIdType: { select: { id: true, code: true, label: true } },
+                    beneficialOwners: { where: { deletedAt: null }, orderBy: { createdAt: 'asc' } },
                 },
             });
             if (!client)
@@ -305,9 +337,11 @@ function registerClientsIPC() {
             data.reference = await nextReference(db);
             if (data.birthDate)
                 data.birthDate = new Date(data.birthDate);
+            if (data.kycSignedAt)
+                data.kycSignedAt = new Date(data.kycSignedAt);
             const client = await db.client.create({ data });
             logger_1.default.info(`Client created: id=${client.id}`);
-            return { success: true, data: client };
+            return { success: true, data: ser(client) };
         }
         catch (error) {
             return { success: false, error: error.message };
@@ -331,6 +365,8 @@ function registerClientsIPC() {
             const data = { ...parsed.data };
             if (data.birthDate)
                 data.birthDate = new Date(data.birthDate);
+            if (data.kycSignedAt)
+                data.kycSignedAt = new Date(data.kycSignedAt);
             const client = await db.client.update({ where: { id, deletedAt: null }, data });
             // Fiche de suivi chronologique : le statut fait l'objet d'un événement
             // dédié, le reste des champs modifiés d'un événement de synthèse.
@@ -349,7 +385,7 @@ function registerClientsIPC() {
                     changedFields, labels: timeline_service_1.CLIENT_FIELD_LABELS, userId: session.userId,
                 });
             }
-            return { success: true, data: client };
+            return { success: true, data: ser(client) };
         }
         catch (error) {
             return { success: false, error: error.message };
@@ -564,6 +600,61 @@ function registerClientsIPC() {
         }
         catch (error) {
             logger_1.default.error('clients:listReferrers', error.message);
+            return { success: false, error: error.message };
+        }
+    });
+    // ── Bénéficiaires effectifs (client personne morale) ───────────────────────
+    electron_1.ipcMain.handle('clients:beneficialOwners:create', async (_event, { token, clientId, payload }) => {
+        try {
+            const session = (0, auth_service_1.getSession)(token);
+            if (!session)
+                return { success: false, error: 'Session expirée' };
+            checkClientWriteRole(session, WRITE_ROLES);
+            const parsed = beneficialOwnerSchema.safeParse(payload);
+            if (!parsed.success)
+                return { success: false, error: parsed.error.format() };
+            const db = (0, db_service_1.getDb)();
+            const client = await db.client.findFirst({ where: { id: Number(clientId), deletedAt: null } });
+            if (!client)
+                return { success: false, error: 'Client introuvable' };
+            const owner = await db.clientBeneficialOwner.create({ data: { ...parsed.data, clientId: client.id } });
+            return { success: true, data: ser(owner) };
+        }
+        catch (error) {
+            logger_1.default.error('clients:beneficialOwners:create', error.message);
+            return { success: false, error: error.message };
+        }
+    });
+    electron_1.ipcMain.handle('clients:beneficialOwners:update', async (_event, { token, id, payload }) => {
+        try {
+            const session = (0, auth_service_1.getSession)(token);
+            if (!session)
+                return { success: false, error: 'Session expirée' };
+            checkClientWriteRole(session, WRITE_ROLES);
+            const parsed = beneficialOwnerSchema.partial().safeParse(payload);
+            if (!parsed.success)
+                return { success: false, error: parsed.error.format() };
+            const db = (0, db_service_1.getDb)();
+            const owner = await db.clientBeneficialOwner.update({ where: { id: Number(id) }, data: parsed.data });
+            return { success: true, data: ser(owner) };
+        }
+        catch (error) {
+            logger_1.default.error('clients:beneficialOwners:update', error.message);
+            return { success: false, error: error.message };
+        }
+    });
+    electron_1.ipcMain.handle('clients:beneficialOwners:delete', async (_event, { token, id }) => {
+        try {
+            const session = (0, auth_service_1.getSession)(token);
+            if (!session)
+                return { success: false, error: 'Session expirée' };
+            checkClientWriteRole(session, WRITE_ROLES);
+            const db = (0, db_service_1.getDb)();
+            await db.clientBeneficialOwner.update({ where: { id: Number(id) }, data: { deletedAt: new Date() } });
+            return { success: true };
+        }
+        catch (error) {
+            logger_1.default.error('clients:beneficialOwners:delete', error.message);
             return { success: false, error: error.message };
         }
     });

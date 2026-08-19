@@ -11,23 +11,9 @@ exports.getSettings = getSettings;
 exports.setSetting = setSetting;
 exports.setSecret = setSecret;
 exports.setSettings = setSettings;
-const crypto_1 = __importDefault(require("crypto"));
 const db_service_1 = require("./db.service");
 const logger_1 = __importDefault(require("../utils/logger"));
-// Import paresseux : le paquet `electron` (binaire complet, ~100-200 Mo) n'a
-// pas besoin d'être présent quand ce module est chargé hors runtime Electron
-// (ex. script autonome de relances déployé sur un serveur/NAS sans le paquet
-// `electron` dans ses node_modules, cf. run-reminders-once.ts). Un import
-// statique échouerait alors dès le chargement du module (`MODULE_NOT_FOUND`),
-// avant même d'atteindre la garde `typeof safeStorage?.isEncryptionAvailable`.
-let safeStorage;
-try {
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    safeStorage = require('electron').safeStorage;
-}
-catch {
-    safeStorage = undefined;
-}
+const secretCrypto_1 = require("../utils/secretCrypto");
 /**
  * Service de paramétrage applicatif.
  *
@@ -47,99 +33,14 @@ catch {
  * constante intégrée), donc déchiffrables sur n'importe quel poste relié à la
  * même base. Les anciennes valeurs `enc:` (safeStorage) restent lisibles sur le
  * poste d'origine et sont automatiquement re-chiffrées au format portable.
+ *
+ * La primitive de chiffrement elle-même (`encryptSecret`/`decryptSecret`) vit
+ * dans `src/main/utils/secretCrypto.ts`, partagée avec tout secret qui n'est
+ * pas un simple couple clé/valeur `AppSetting` (ex. `MailAccount.imapPasswordEnc`,
+ * un par utilisateur).
  */
-/** Ancien préfixe — secret chiffré via safeStorage (lié à la machine). Lecture seule. */
-const ENC_PREFIX = 'enc:';
-/** Préfixe courant — secret chiffré portable (AES-256-GCM, clé applicative commune). */
-const ENC_PORTABLE_PREFIX = 'encp:';
 /** Marqueur renvoyé au renderer pour indiquer qu'un secret est défini sans le révéler. */
 exports.SECRET_MASK = '••••••••';
-// ── Clé de chiffrement portable ──────────────────────────────────────────────
-// Dérivée d'un secret commun à toutes les installations. `APP_SECRET_KEY` (env)
-// est prioritaire ; à défaut, une constante intégrée garantit que tous les
-// postes du même build partagent la même clé (condition nécessaire à la
-// portabilité des secrets dans une base partagée). Calculée à la demande pour
-// laisser le temps à `loadEnv` de renseigner `process.env`.
-let cachedKey = null;
-// Constante partagée par tous les builds (dev ET packagé) — garantit que les
-// secrets restent déchiffrables quel que soit le contexte d'exécution.
-const PORTABLE_KEY_FALLBACK = 'afrikimmo-app::portable-secret-key::v1';
-// Valeurs placeholder d'APP_SECRET_KEY à NE PAS utiliser comme clé : sinon le
-// dev (.env avec placeholder) dériverait une clé différente de l'app packagée
-// (sans .env), rendant les secrets mutuellement indéchiffrables.
-const APP_SECRET_PLACEHOLDERS = new Set([
-    'change-me-in-production',
-    'your-secret-key-here',
-]);
-function getPortableKey() {
-    if (cachedKey)
-        return cachedKey;
-    const raw = (process.env.APP_SECRET_KEY ?? '').trim();
-    const material = (raw && !APP_SECRET_PLACEHOLDERS.has(raw)) ? raw : PORTABLE_KEY_FALLBACK;
-    cachedKey = crypto_1.default.scryptSync(material, 'afrikimmo.settings.secret.salt.v1', 32);
-    return cachedKey;
-}
-/** Chiffre une chaîne (AES-256-GCM portable). Format : encp:base64(iv|tag|ciphertext). */
-function encrypt(plain) {
-    if (!plain)
-        return '';
-    try {
-        const iv = crypto_1.default.randomBytes(12);
-        const cipher = crypto_1.default.createCipheriv('aes-256-gcm', getPortableKey(), iv);
-        const enc = Buffer.concat([cipher.update(plain, 'utf8'), cipher.final()]);
-        const tag = cipher.getAuthTag();
-        return ENC_PORTABLE_PREFIX + Buffer.concat([iv, tag, enc]).toString('base64');
-    }
-    catch (err) {
-        logger_1.default.error('encrypt (portable) error', err.message);
-        // Repli : ne jamais perdre la valeur silencieusement.
-        return plain;
-    }
-}
-/** Déchiffre une valeur chiffrée portable (encp:). */
-function decryptPortable(stored) {
-    try {
-        const data = Buffer.from(stored.slice(ENC_PORTABLE_PREFIX.length), 'base64');
-        const iv = data.subarray(0, 12);
-        const tag = data.subarray(12, 28);
-        const enc = data.subarray(28);
-        const decipher = crypto_1.default.createDecipheriv('aes-256-gcm', getPortableKey(), iv);
-        decipher.setAuthTag(tag);
-        return Buffer.concat([decipher.update(enc), decipher.final()]).toString('utf8');
-    }
-    catch (err) {
-        logger_1.default.error('decrypt (portable) error', err.message);
-        return '';
-    }
-}
-/** Déchiffre un ancien secret safeStorage (enc:) — ne fonctionne que sur le poste d'origine. */
-function decryptLegacy(stored) {
-    try {
-        // `safeStorage` est `undefined` hors runtime Electron (ex. script autonome
-        // exécuté via `node`, cf. src/main/scripts/run-reminders-once.ts) — on ne
-        // suppose jamais sa présence avant de l'appeler.
-        if (typeof safeStorage?.isEncryptionAvailable !== 'function' || !safeStorage.isEncryptionAvailable()) {
-            logger_1.default.warn('safeStorage indisponible — ancien secret enc: indéchiffrable sur ce poste');
-            return '';
-        }
-        const buf = Buffer.from(stored.slice(ENC_PREFIX.length), 'base64');
-        return safeStorage.decryptString(buf);
-    }
-    catch (err) {
-        logger_1.default.error('safeStorage decryptString error', err.message);
-        return '';
-    }
-}
-/** Déchiffre une valeur (retourne la chaîne brute si non chiffrée). */
-function decrypt(stored) {
-    if (!stored)
-        return '';
-    if (stored.startsWith(ENC_PORTABLE_PREFIX))
-        return decryptPortable(stored);
-    if (stored.startsWith(ENC_PREFIX))
-        return decryptLegacy(stored);
-    return stored;
-}
 // ── API publique ─────────────────────────────────────────────────────────────
 /** Lit une valeur brute de l'AppSetting (chaîne). */
 async function getSetting(key) {
@@ -152,13 +53,13 @@ async function getSecret(key) {
     const raw = await getSetting(key);
     if (!raw)
         return '';
-    const value = decrypt(raw);
+    const value = (0, secretCrypto_1.decryptSecret)(raw);
     // Auto-migration : un ancien secret safeStorage (enc:) déchiffré avec succès
     // — donc sur le poste qui l'avait saisi — est re-chiffré au format portable
     // pour devenir lisible depuis tous les postes reliés à la même base.
-    if (value && raw.startsWith(ENC_PREFIX)) {
+    if (value && (0, secretCrypto_1.isLegacySecret)(raw)) {
         try {
-            await setSetting(key, encrypt(value));
+            await setSetting(key, (0, secretCrypto_1.encryptSecret)(value));
             logger_1.default.info(`Secret « ${key} » migré vers le chiffrement portable`);
         }
         catch (err) {
@@ -199,7 +100,7 @@ async function setSecret(key, plain) {
         await db.appSetting.deleteMany({ where: { key } });
         return;
     }
-    await setSetting(key, encrypt(plain));
+    await setSetting(key, (0, secretCrypto_1.encryptSecret)(plain));
 }
 /** Écrit plusieurs paires en une transaction. */
 async function setSettings(entries) {
@@ -228,6 +129,7 @@ exports.SettingsKeys = {
     companyPhoneMobile2: 'company.phone.mobile2',
     companyWebsite: 'company.website',
     companyAddress: 'company.address',
+    companyEmail: 'company.email',
     // Stockage
     storagePath: 'storage.path',
     storageMaxFileSizeMb: 'storage.maxFileSizeMb',
@@ -300,6 +202,12 @@ exports.SettingsKeys = {
     // SUPER_ADMIN/ADMIN, toujours en accès complet) autorisés à consulter et
     // gérer les modèles de type « manuel » (jamais les modèles « auto »).
     commTemplateManualEditorIds: 'communication.templates.manualEditorUserIds', // JSON array d'ids User
+    // Fiche KYC (Clients, Propriétaires, Apporteurs d'affaire) — utilisateurs
+    // désignés autorisés, en plus des rôles à plein accès par défaut, à voir et
+    // utiliser les boutons « Fiche KYC » / « Fiche KYC non renseignée » alors
+    // que leur rôle (AGENT, AGENT_TECHNIQUE, ASSISTANTE_DIRECTION, READONLY) en
+    // est par défaut exclu.
+    kycAuthorizedUserIds: 'kyc.authorizedUserIds', // JSON array d'ids User
 };
 /** Liste des clés correspondant à des secrets chiffrés. */
 exports.SECRET_KEYS = new Set([

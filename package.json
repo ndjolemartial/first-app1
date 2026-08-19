@@ -1,6 +1,6 @@
 {
   "name": "afrikimmo-app",
-  "version": "1.0.9",
+  "version": "1.1.2",
   "description": "Application de gestion immobilière Afrikimmo",
   "main": "dist/main/index.js",
   "scripts": {
@@ -27,6 +27,7 @@
     "db:seed": "tsx scripts/seed.ts",
     "db:reset": "prisma migrate reset",
     "reminders:run": "node dist/main/scripts/run-reminders-once.js",
+    "mail:poll": "node dist/main/scripts/run-mailbox-poll-once.js",
     "lint": "eslint src --ext .ts,.tsx",
     "format": "prettier --write src",
     "typecheck": "tsc --noEmit"
@@ -79,6 +80,7 @@
   "license": "ISC",
   "devDependencies": {
     "@tailwindcss/vite": "^4.3.0",
+    "@types/mailparser": "^3.4.6",
     "@types/node": "^25.7.0",
     "@types/qrcode": "^1.5.6",
     "@types/react": "^19.2.14",
@@ -121,7 +123,9 @@
     "electron-log": "^5.4.3",
     "exceljs": "^4.4.0",
     "html-to-docx": "^1.8.0",
+    "imapflow": "^1.6.5",
     "lucide-react": "^1.14.0",
+    "mailparser": "^3.9.14",
     "nodemailer": "^8.0.7",
     "qrcode": "^1.5.4",
     "react": "^19.2.6",

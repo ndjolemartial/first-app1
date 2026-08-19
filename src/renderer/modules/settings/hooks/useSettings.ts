@@ -268,6 +268,40 @@ export function useTestEmail() {
   });
 }
 
+// ── Réception (IMAP) — boîte système partagée des relances ────────────────
+
+export function useImapSettings() {
+  const token = useAuthStore((s) => s.token)!;
+  return useQuery({
+    queryKey: ['settings', 'imap'],
+    queryFn:  () => ipc().getImap(token),
+    enabled:  !!token,
+  });
+}
+
+export function useUpdateImap() {
+  const token = useAuthStore((s) => s.token)!;
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: object) => ipc().updateImap(token, payload),
+    onSuccess:  (res) => {
+      if (res.success) { qc.invalidateQueries({ queryKey: ['settings', 'imap'] }); toast.success('Paramètres IMAP enregistrés'); }
+      else toast.error(String(res.error));
+    },
+  });
+}
+
+export function useTestImap() {
+  const token = useAuthStore((s) => s.token)!;
+  return useMutation({
+    mutationFn: () => ipc().testImap(token),
+    onSuccess:  (res) => {
+      if (res.success) toast.success('Connexion IMAP réussie');
+      else toast.error(String(res.error));
+    },
+  });
+}
+
 // ── SMS ─────────────────────────────────────────────────────────────────────
 
 export function useSmsSettings() {

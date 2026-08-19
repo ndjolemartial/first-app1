@@ -54,9 +54,14 @@ export default function DashboardPage() {
 
   const isAD = user?.role === 'ASSISTANTE_DIRECTION';
   const isAgent = user?.role === 'AGENT' || user?.role === 'AGENT_TECHNIQUE';
+  // ACCOUNTANT est restreint à ses propres activités côté IPC depuis le 10
+  // juillet 2026 (FULL_VIEW_ROLES dans crm.ipc.ts ne l'inclut plus) — la
+  // synthèse « Activité CRM » en vue globale ci-dessous n'a donc plus de sens
+  // pour ce rôle, qui rejoint le même affichage « propres activités » qu'AGENT.
+  const isCrmOwnView = isAgent || user?.role === 'ACCOUNTANT';
   // Rôles full-view : la synthèse CRM couvre l'ensemble des activités (vue globale).
   const isCrmFullView = !!user
-    && ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ACCOUNTANT'].includes(user.role);
+    && ['SUPER_ADMIN', 'ADMIN', 'MANAGER'].includes(user.role);
 
   useEffect(() => {
     if (!token) return;
@@ -217,7 +222,7 @@ export default function DashboardPage() {
 
       {isAD && <AdDashboardSections />}
 
-      {isAgent && (
+      {isCrmOwnView && (
         <div className="mt-8">
           <CrmRecapSection />
         </div>

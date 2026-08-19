@@ -40,6 +40,37 @@ function assertStepsInternallyConsistent(steps: { poste: string; order: number }
   return null;
 }
 
+/**
+ * Synchronise le référentiel « Fonctions » de *Modèles de contrats de
+ * travail* à partir des étapes d'un profil de carrière : `poste` → `titre`,
+ * `rolePrincipal` → `contenu` (upsert par titre). Lien à sens unique
+ * (Profils de carrière → Fonctions) : une fonction déjà présente pour ce
+ * poste est mise à jour, sinon elle est créée ; rien n'est supprimé côté
+ * Fonctions si un poste est retiré d'un profil ou si le profil est supprimé
+ * (un même poste pouvant être partagé par plusieurs profils).
+ */
+async function syncContractFunctionsFromSteps(
+  db: any,
+  steps: { poste: string; rolePrincipal?: string | null }[],
+): Promise<void> {
+  for (const s of steps) {
+    const titre = s.poste.trim();
+    if (!titre) continue;
+    const contenu = (s.rolePrincipal ?? '').trim();
+    const existing = await db.contractFunction.findFirst({
+      where: { titre, deletedAt: null },
+      orderBy: { id: 'asc' },
+    });
+    if (existing) {
+      if (existing.contenu !== contenu) {
+        await db.contractFunction.update({ where: { id: existing.id }, data: { contenu } });
+      }
+    } else {
+      await db.contractFunction.create({ data: { titre, contenu, isActive: true } });
+    }
+  }
+}
+
 export function registerCareerProfilesIPC(): void {
   ipcMain.handle('careerProfiles:list', async (_event, { token }: any) => {
     try {
@@ -89,24 +120,28 @@ export function registerCareerProfilesIPC(): void {
       if (consistencyError) return { success: false, error: consistencyError };
 
       const db = getDb();
-      const data = await db.careerProfile.create({
-        data: {
-          name: d.name.trim(),
-          description: d.description || null,
-          isActive: d.isActive ?? true,
-          steps: {
-            create: d.steps.map((s) => ({
-              poste: s.poste.trim(),
-              order: s.order,
-              rolePrincipal: s.rolePrincipal || null,
-              competencesDiplomes: s.competencesDiplomes || null,
-              categorieSocioPro: s.categorieSocioPro || null,
-              categorieCode: s.categorieCode || null,
-              avantages: s.avantages || null,
-            })),
+      const data = await db.$transaction(async (tx) => {
+        const created = await tx.careerProfile.create({
+          data: {
+            name: d.name.trim(),
+            description: d.description || null,
+            isActive: d.isActive ?? true,
+            steps: {
+              create: d.steps.map((s) => ({
+                poste: s.poste.trim(),
+                order: s.order,
+                rolePrincipal: s.rolePrincipal || null,
+                competencesDiplomes: s.competencesDiplomes || null,
+                categorieSocioPro: s.categorieSocioPro || null,
+                categorieCode: s.categorieCode || null,
+                avantages: s.avantages || null,
+              })),
+            },
           },
-        },
-        include: { steps: { orderBy: { order: 'asc' } } },
+          include: { steps: { orderBy: { order: 'asc' } } },
+        });
+        await syncContractFunctionsFromSteps(tx, d.steps);
+        return created;
       });
       logger.info(`Profil de carrière créé : ${data.name}`);
       return ser({ success: true, data });
@@ -150,6 +185,7 @@ export function registerCareerProfilesIPC(): void {
             avantages: s.avantages || null,
           })),
         });
+        await syncContractFunctionsFromSteps(tx, d.steps);
         return tx.careerProfile.findUnique({ where: { id }, include: { steps: { orderBy: { order: 'asc' } } } });
       });
       logger.info(`Profil de carrière modifié : ${data?.name}`);
@@ -192,24 +228,28 @@ export function registerCareerProfilesIPC(): void {
       });
       if (!original) return { success: false, error: 'Profil de carrière introuvable' };
 
-      const data = await db.careerProfile.create({
-        data: {
-          name: `${original.name} (copie)`,
-          description: original.description,
-          isActive: original.isActive,
-          steps: {
-            create: original.steps.map((s) => ({
-              poste: s.poste,
-              order: s.order,
-              rolePrincipal: s.rolePrincipal,
-              competencesDiplomes: s.competencesDiplomes,
-              categorieSocioPro: s.categorieSocioPro,
-              categorieCode: s.categorieCode,
-              avantages: s.avantages,
-            })),
+      const data = await db.$transaction(async (tx) => {
+        const created = await tx.careerProfile.create({
+          data: {
+            name: `${original.name} (copie)`,
+            description: original.description,
+            isActive: original.isActive,
+            steps: {
+              create: original.steps.map((s) => ({
+                poste: s.poste,
+                order: s.order,
+                rolePrincipal: s.rolePrincipal,
+                competencesDiplomes: s.competencesDiplomes,
+                categorieSocioPro: s.categorieSocioPro,
+                categorieCode: s.categorieCode,
+                avantages: s.avantages,
+              })),
+            },
           },
-        },
-        include: { steps: { orderBy: { order: 'asc' } } },
+          include: { steps: { orderBy: { order: 'asc' } } },
+        });
+        await syncContractFunctionsFromSteps(tx, original.steps);
+        return created;
       });
       logger.info(`Profil de carrière dupliqué : « ${original.name} » → « ${data.name} »`);
       return ser({ success: true, data });

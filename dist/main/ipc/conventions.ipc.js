@@ -34,7 +34,13 @@ function checkWriteRole(session, allowedRoles) {
  */
 function agentScopeWhere(session) {
     if ((0, auth_service_1.isAgentRole)(session.role)) {
-        return { status: 'BROUILLON', client: { assignedToId: session.userId } };
+        return {
+            status: 'BROUILLON',
+            OR: [
+                { client: { assignedToId: session.userId } },
+                { prospect: { assignedToId: session.userId } },
+            ],
+        };
     }
     return {};
 }
@@ -47,7 +53,11 @@ const conventionBaseSchema = zod_1.z.object({
     // Terrains ANTÉRIEURS rattachés (avenant de transfert de site / changement de
     // lot, hérité ou non) — disjoints des terrainIds courants.
     priorTerrainIds: zod_1.z.array(zod_1.z.number().int().positive()).optional(),
-    clientId: zod_1.z.number().int().positive(),
+    // Client OU prospect — jamais les deux (invariant validé par .refine() sur
+    // conventionSchema, à la création uniquement). Une convention prospect
+    // n'accepte que le type SOUSCRIPTION/SALE au statut BROUILLON.
+    clientId: zod_1.z.number().int().positive().optional(),
+    prospectId: zod_1.z.number().int().positive().optional(),
     secondaryClientId: zod_1.z.number().int().positive().optional(),
     parentConventionId: zod_1.z.number().int().positive().optional(),
     amendmentType: zod_1.z.enum(['PROLONGATION_DELAI', 'TRANSFERT_PROPRIETE', 'TRANSFERT_SITE']).optional(),
@@ -137,7 +147,10 @@ const conventionSchema = conventionBaseSchema
     .refine((d) => (d.assetType === 'TERRAIN' ? TERRAIN_CONVENTION_TYPES : PROPERTY_CONVENTION_TYPES).includes(d.type), { message: 'Le type de convention ne correspond pas au type de rattachement (bien / terrain)' })
     .refine((d) => (AMENDMENT_TYPES.includes(d.type) ? !!d.parentConventionId : true), { message: 'Un avenant ou une résiliation doit être lié à une convention initiale/précédente' })
     .refine((d) => (d.type === 'AVENANT' ? !!d.amendmentType : true), { message: 'Précisez la nature de l\'avenant' })
-    .refine((d) => (d.type === 'SOUSCRIPTION' ? !!d.souscriptionType : true), { message: 'Précisez la nature de la souscription' });
+    .refine((d) => (d.type === 'SOUSCRIPTION' ? !!d.souscriptionType : true), { message: 'Précisez la nature de la souscription' })
+    .refine((d) => !!d.clientId !== !!d.prospectId, { message: 'Sélectionnez un client OU un prospect (l\'un des deux, pas les deux)', path: ['clientId'] })
+    .refine((d) => !d.prospectId || ['SOUSCRIPTION', 'SALE'].includes(d.type), { message: 'Une convention pour un prospect doit être de type Souscription ou Vente', path: ['type'] })
+    .refine((d) => !d.prospectId || d.status === 'BROUILLON', { message: 'Une convention pour un prospect doit être créée au statut Brouillon', path: ['status'] });
 const INSTALLMENT_COUNTS = {
     CASH: 0, SUR_3_MOIS: 3, SUR_6_MOIS: 6, SUR_9_MOIS: 9, SUR_12_MOIS: 12,
     SUR_24_MOIS: 24, SUR_36_MOIS: 36, SUR_48_MOIS: 48, SUR_60_MOIS: 60,
@@ -358,6 +371,7 @@ function registerConventionsIPC() {
                     include: {
                         ...linksIncludeList,
                         client: { select: { id: true, firstName: true, lastName: true, entreprise: true, type: true } },
+                        prospect: { select: { id: true, firstName: true, lastName: true } },
                         agent: { select: { id: true, firstName: true, lastName: true } },
                         referrer: { select: { id: true, firstName: true, lastName: true, companyName: true } },
                     },
@@ -383,6 +397,7 @@ function registerConventionsIPC() {
                 include: {
                     ...linksIncludeDetail,
                     client: { include: { idType: { select: { id: true, code: true, label: true } } } },
+                    prospect: { select: { id: true, firstName: true, lastName: true, phone: true, email: true, assignedToId: true } },
                     secondaryClient: { include: { idType: { select: { id: true, code: true, label: true } } } },
                     // Convention parente — on charge en plus signedAt, saleAmount,
                     // apportInitial, l'échéancier (pour le solde), la liste de ses
@@ -441,9 +456,10 @@ function registerConventionsIPC() {
             });
             if (!convention)
                 return { success: false, error: 'Convention introuvable' };
-            // AGENT : accès limité à ses clients référents et au statut BROUILLON.
+            // AGENT : accès limité à ses clients/prospects référents et au statut BROUILLON.
             if ((0, auth_service_1.isAgentRole)(session.role)
-                && (convention.status !== 'BROUILLON' || convention.client?.assignedToId !== session.userId)) {
+                && (convention.status !== 'BROUILLON'
+                    || (convention.client?.assignedToId ?? convention.prospect?.assignedToId) !== session.userId)) {
                 return { success: false, error: 'Convention inaccessible' };
             }
             return ser({ success: true, data: convention });
@@ -489,7 +505,8 @@ function registerConventionsIPC() {
                 data: {
                     reference,
                     assetType: d.assetType,
-                    clientId: d.clientId,
+                    clientId: d.clientId ?? null,
+                    prospectId: d.prospectId ?? null,
                     secondaryClientId: isTerrain ? (d.secondaryClientId ?? null) : null,
                     parentConventionId: AMENDMENT_TYPES.includes(d.type) ? d.parentConventionId : null,
                     amendmentType: d.type === 'AVENANT' ? d.amendmentType : null,
@@ -600,71 +617,77 @@ function registerConventionsIPC() {
             //   - ACTIVE                       → VALIDEE
             //   - BROUILLON / ATTENTE_SIGNATURE → BROUILLON (en attente de validation)
             //   - EXPIRE / ANNULE / TERMINER    → aucune facture générée
-            const autoInvoices = [];
-            if (isPaymentOptionType(d.type, d.amendmentType)) {
-                // Résiliations / avenants à paiement additionnel facultatif : aucune facture
-                // de frais d'ouverture ni de vente. Une seule facture, pour le paiement
-                // additionnel (« Avec paiement »), générée si le montant saisi est > 0.
-                const additionnel = Number(d.additionalAmount ?? 0);
-                if (additionnel > 0)
-                    autoInvoices.push({ type: 'OTHER', amount: additionnel, label: 'Paiement additionnel' });
-            }
-            else {
-                const fraisOuverture = Number(d.fraisOuvertureDossier ?? 0);
-                const apport = Number(d.apportInitial ?? 0);
-                if (fraisOuverture > 0)
-                    autoInvoices.push({ type: 'FRAIS_OUVERTURE_DOSSIER', amount: fraisOuverture, label: "Frais d'ouverture de dossier" });
-                if (apport > 0)
-                    autoInvoices.push({ type: 'APPORT_INITIAL', amount: apport, label: 'Apport initial' });
-                // Paiement comptant : facture de vente pour le solde réglé en une fois
-                // (prix total − apport déjà facturé). Exclut de fait les locations (saleAmount nul).
-                const soldeComptant = Number(d.saleAmount ?? 0) - apport;
-                if (d.paymentModalites === 'CASH' && soldeComptant > 0) {
-                    autoInvoices.push({ type: 'VENTE', amount: soldeComptant, label: 'Vente — paiement comptant' });
+            // Une convention rattachée à un prospect (pas encore de clientId) n'a
+            // pas de tiers facturable : aucune facture générée tant qu'elle n'est
+            // pas convertie (prospects:convertToClient rattache alors le client,
+            // mais ne rejoue jamais cette génération — geste manuel si nécessaire).
+            if (d.clientId) {
+                const autoInvoices = [];
+                if (isPaymentOptionType(d.type, d.amendmentType)) {
+                    // Résiliations / avenants à paiement additionnel facultatif : aucune facture
+                    // de frais d'ouverture ni de vente. Une seule facture, pour le paiement
+                    // additionnel (« Avec paiement »), générée si le montant saisi est > 0.
+                    const additionnel = Number(d.additionalAmount ?? 0);
+                    if (additionnel > 0)
+                        autoInvoices.push({ type: 'OTHER', amount: additionnel, label: 'Paiement additionnel' });
                 }
-            }
-            const autoInvoiceStatus = convention.status === 'ACTIVE' ? 'VALIDEE'
-                : (convention.status === 'BROUILLON' || convention.status === 'ATTENTE_SIGNATURE') ? 'BROUILLON'
-                    : null;
-            if (autoInvoices.length > 0 && autoInvoiceStatus) {
-                const year = new Date().getFullYear();
-                const lastInv = await db.invoice.findFirst({
-                    where: { reference: { startsWith: `FAC-${year}-` } },
-                    orderBy: { reference: 'desc' },
-                    select: { reference: true },
-                });
-                let seq = lastInv ? parseInt(lastInv.reference.split('-')[2], 10) : 0;
-                const now = new Date();
-                for (const inv of autoInvoices) {
-                    seq += 1;
-                    await db.invoice.create({
-                        data: {
-                            reference: `FAC-${year}-${String(seq).padStart(4, '0')}`,
-                            type: inv.type,
-                            status: autoInvoiceStatus,
-                            clientId: d.clientId,
-                            conventionId: convention.id,
-                            subtotal: inv.amount,
-                            taxRate: 0,
-                            taxAmount: 0,
-                            total: inv.amount,
-                            issueDate: now,
-                            dueDate: now,
-                            items: {
-                                create: [{
-                                        description: `${inv.label} — convention ${convention.reference}`,
-                                        quantity: 1,
-                                        unitPrice: inv.amount,
-                                        total: inv.amount,
-                                    }],
-                            },
-                        },
+                else {
+                    const fraisOuverture = Number(d.fraisOuvertureDossier ?? 0);
+                    const apport = Number(d.apportInitial ?? 0);
+                    if (fraisOuverture > 0)
+                        autoInvoices.push({ type: 'FRAIS_OUVERTURE_DOSSIER', amount: fraisOuverture, label: "Frais d'ouverture de dossier" });
+                    if (apport > 0)
+                        autoInvoices.push({ type: 'APPORT_INITIAL', amount: apport, label: 'Apport initial' });
+                    // Paiement comptant : facture de vente pour le solde réglé en une fois
+                    // (prix total − apport déjà facturé). Exclut de fait les locations (saleAmount nul).
+                    const soldeComptant = Number(d.saleAmount ?? 0) - apport;
+                    if (d.paymentModalites === 'CASH' && soldeComptant > 0) {
+                        autoInvoices.push({ type: 'VENTE', amount: soldeComptant, label: 'Vente — paiement comptant' });
+                    }
+                }
+                const autoInvoiceStatus = convention.status === 'ACTIVE' ? 'VALIDEE'
+                    : (convention.status === 'BROUILLON' || convention.status === 'ATTENTE_SIGNATURE') ? 'BROUILLON'
+                        : null;
+                if (autoInvoices.length > 0 && autoInvoiceStatus) {
+                    const year = new Date().getFullYear();
+                    const lastInv = await db.invoice.findFirst({
+                        where: { reference: { startsWith: `FAC-${year}-` } },
+                        orderBy: { reference: 'desc' },
+                        select: { reference: true },
                     });
+                    let seq = lastInv ? parseInt(lastInv.reference.split('-')[2], 10) : 0;
+                    const now = new Date();
+                    for (const inv of autoInvoices) {
+                        seq += 1;
+                        await db.invoice.create({
+                            data: {
+                                reference: `FAC-${year}-${String(seq).padStart(4, '0')}`,
+                                type: inv.type,
+                                status: autoInvoiceStatus,
+                                clientId: d.clientId,
+                                conventionId: convention.id,
+                                subtotal: inv.amount,
+                                taxRate: 0,
+                                taxAmount: 0,
+                                total: inv.amount,
+                                issueDate: now,
+                                dueDate: now,
+                                items: {
+                                    create: [{
+                                            description: `${inv.label} — convention ${convention.reference}`,
+                                            quantity: 1,
+                                            unitPrice: inv.amount,
+                                            total: inv.amount,
+                                        }],
+                                },
+                            },
+                        });
+                    }
+                    logger_1.default.info(`Convention ${convention.reference}: ${autoInvoices.length} facture(s) ${autoInvoiceStatus} générée(s) automatiquement`);
                 }
-                logger_1.default.info(`Convention ${convention.reference}: ${autoInvoices.length} facture(s) ${autoInvoiceStatus} générée(s) automatiquement`);
-            }
-            else if (autoInvoices.length > 0 && !autoInvoiceStatus) {
-                logger_1.default.info(`Convention ${convention.reference}: statut ${convention.status} — aucune facture auto-générée`);
+                else if (autoInvoices.length > 0 && !autoInvoiceStatus) {
+                    logger_1.default.info(`Convention ${convention.reference}: statut ${convention.status} — aucune facture auto-générée`);
+                }
             }
             logger_1.default.info(`Convention created: ${convention.reference}`);
             return ser({ success: true, data: convention });
@@ -704,8 +727,20 @@ function registerConventionsIPC() {
             // à résoudre les règles dépendant du type sur une mise à jour partielle.
             const before = await db.convention.findUnique({
                 where: { id },
-                select: { status: true, assetType: true, type: true, amendmentType: true },
+                select: { status: true, assetType: true, type: true, amendmentType: true, clientId: true, prospectId: true },
             });
+            // Convention rattachée à un prospect non encore converti (clientId
+            // toujours vide) : verrouillée au type Souscription/Vente et au statut
+            // Brouillon jusqu'à la conversion (prospects:convertToClient rattache
+            // alors clientId automatiquement, ce qui lève ce verrou).
+            if (before && !before.clientId && before.prospectId) {
+                if (d.status && d.status !== 'BROUILLON') {
+                    return { success: false, error: "Cette convention est rattachée à un prospect : elle ne peut changer de statut que si le prospect est d'abord converti en client." };
+                }
+                if (d.type && !['SOUSCRIPTION', 'SALE'].includes(d.type)) {
+                    return { success: false, error: 'Une convention pour un prospect ne peut être que de type Souscription ou Vente.' };
+                }
+            }
             // Champs traités séparément (relations / dates)
             delete data.installments;
             delete data.propertyIds;
@@ -1084,13 +1119,18 @@ function registerConventionsIPC() {
                 return { success: false, error: 'Session expirée' };
             (0, auth_service_1.checkRole)(session, READ_ROLES_AGENT);
             const db = (0, db_service_1.getDb)();
-            // AGENT : n'accède qu'aux échéances d'une convention BROUILLON de ses clients référents.
+            // AGENT : n'accède qu'aux échéances d'une convention BROUILLON de ses clients/prospects référents.
             if ((0, auth_service_1.isAgentRole)(session.role)) {
                 const conv = await db.convention.findUnique({
                     where: { id: conventionId },
-                    select: { status: true, client: { select: { assignedToId: true } } },
+                    select: {
+                        status: true,
+                        client: { select: { assignedToId: true } },
+                        prospect: { select: { assignedToId: true } },
+                    },
                 });
-                if (!conv || conv.status !== 'BROUILLON' || conv.client?.assignedToId !== session.userId) {
+                if (!conv || conv.status !== 'BROUILLON'
+                    || (conv.client?.assignedToId ?? conv.prospect?.assignedToId) !== session.userId) {
                     return { success: false, error: 'Convention inaccessible' };
                 }
             }

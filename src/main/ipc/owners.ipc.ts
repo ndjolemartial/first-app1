@@ -32,6 +32,23 @@ const ownerBaseSchema = z.object({
   bankIban: z.string().optional(),
   bankBic: z.string().optional(),
   compte_contribuable: z.string().optional(),
+  // Informations complémentaires — alimentent la « Fiche KYC » imprimable
+  // depuis la fiche propriétaire, même principe que Client.*.
+  employerName: z.string().optional(),
+  monthlyIncome: z.coerce.number().min(0).nullable().optional(),
+  sourceOfFunds: z.array(z.string()).optional(),
+  sourceOfFundsOther: z.string().optional(),
+  sourceOfWealth: z.string().optional(),
+  relationshipPurpose: z.array(z.string()).optional(),
+  relationshipPurposeOther: z.string().optional(),
+  expectedTransactionVolume: z.coerce.number().min(0).nullable().optional(),
+  acquisitionChannel: z.string().optional(),
+  isPep: z.boolean().optional(),
+  pepCategory: z.enum(['PEP_NATIONAL', 'PEP_ETRANGER', 'PEP_ORGANISATION_INTERNATIONALE', 'PERSONNE_LIEE_PEP']).nullable().optional(),
+  pepFunction: z.string().optional(),
+  hasRiskyCountryLink: z.boolean().optional(),
+  kycSignedAt: z.string().datetime().nullable().optional(),
+  kycSignedPlace: z.string().optional(),
   notes: z.string().optional(),
 });
 
@@ -60,6 +77,19 @@ const requireIdForOwner = (data: any, ctx: z.RefinementCtx): void => {
 
 const ownerSchema = ownerBaseSchema.superRefine(requireIdForOwner);
 const ownerUpdateSchema = ownerBaseSchema.partial().superRefine(requireIdForOwner);
+
+// Bénéficiaires effectifs — pertinents pour un propriétaire entreprise,
+// repris sur la Fiche KYC imprimable. Même schéma que ClientBeneficialOwner.
+const beneficialOwnerSchema = z.object({
+  firstName: z.string().min(1, 'Prénom requis'),
+  lastName: z.string().min(1, 'Nom requis'),
+  nationality: z.string().optional(),
+  idNumber: z.string().optional(),
+  ownershipPct: z.coerce.number().min(0).max(100).nullable().optional(),
+  role: z.string().optional(),
+  isPep: z.boolean().optional(),
+  notes: z.string().optional(),
+});
 
 // Module Propriétaires : réservé aux MANAGER+ (ACCOUNTANT inclus via checkRole).
 // AGENT et READONLY n'ont aucun accès au module.
@@ -128,6 +158,7 @@ export function registerOwnersIPC(): void {
           activities: { orderBy: { createdAt: 'desc' }, take: 20 },
           idType:         { select: { id: true, code: true, label: true } },
           legalRepIdType: { select: { id: true, code: true, label: true } },
+          beneficialOwners: { where: { deletedAt: null }, orderBy: { createdAt: 'asc' } },
         },
       });
       if (!owner) return { success: false, error: 'Propriétaire introuvable' };
@@ -147,9 +178,10 @@ export function registerOwnersIPC(): void {
       const db = getDb();
       const data: any = { ...parsed.data };
       if (data.email === '') data.email = undefined;
+      if (data.kycSignedAt) data.kycSignedAt = new Date(data.kycSignedAt);
       const owner = await db.owner.create({ data });
       logger.info(`Owner created: id=${owner.id}`);
-      return { success: true, data: owner };
+      return { success: true, data: ser(owner) };
     } catch (error: any) {
       return { success: false, error: error.message };
     }
@@ -165,8 +197,9 @@ export function registerOwnersIPC(): void {
       const db = getDb();
       const data: any = { ...parsed.data };
       if (data.email === '') data.email = undefined;
+      if (data.kycSignedAt) data.kycSignedAt = new Date(data.kycSignedAt);
       const owner = await db.owner.update({ where: { id, deletedAt: null }, data });
-      return { success: true, data: owner };
+      return { success: true, data: ser(owner) };
     } catch (error: any) {
       return { success: false, error: error.message };
     }
@@ -210,6 +243,55 @@ export function registerOwnersIPC(): void {
       }, 0);
       return { success: true, data: ser({ properties, totalRentIncome }) };
     } catch (error: any) {
+      return { success: false, error: error.message };
+    }
+  });
+
+  // ── Bénéficiaires effectifs (propriétaire entreprise) ─────────────────────
+  ipcMain.handle('owners:beneficialOwners:create', async (_event, { token, ownerId, payload }: any) => {
+    try {
+      const session = getSession(token);
+      if (!session) return { success: false, error: 'Session expirée' };
+      checkRole(session, WRITE_ROLES);
+      const parsed = beneficialOwnerSchema.safeParse(payload);
+      if (!parsed.success) return { success: false, error: parsed.error.format() };
+      const db = getDb();
+      const owner = await db.owner.findFirst({ where: { id: Number(ownerId), deletedAt: null } });
+      if (!owner) return { success: false, error: 'Propriétaire introuvable' };
+      const bo = await db.ownerBeneficialOwner.create({ data: { ...parsed.data, ownerId: owner.id } });
+      return { success: true, data: ser(bo) };
+    } catch (error: any) {
+      logger.error('owners:beneficialOwners:create', error.message);
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle('owners:beneficialOwners:update', async (_event, { token, id, payload }: any) => {
+    try {
+      const session = getSession(token);
+      if (!session) return { success: false, error: 'Session expirée' };
+      checkRole(session, WRITE_ROLES);
+      const parsed = beneficialOwnerSchema.partial().safeParse(payload);
+      if (!parsed.success) return { success: false, error: parsed.error.format() };
+      const db = getDb();
+      const bo = await db.ownerBeneficialOwner.update({ where: { id: Number(id) }, data: parsed.data });
+      return { success: true, data: ser(bo) };
+    } catch (error: any) {
+      logger.error('owners:beneficialOwners:update', error.message);
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle('owners:beneficialOwners:delete', async (_event, { token, id }: any) => {
+    try {
+      const session = getSession(token);
+      if (!session) return { success: false, error: 'Session expirée' };
+      checkRole(session, WRITE_ROLES);
+      const db = getDb();
+      await db.ownerBeneficialOwner.update({ where: { id: Number(id) }, data: { deletedAt: new Date() } });
+      return { success: true };
+    } catch (error: any) {
+      logger.error('owners:beneficialOwners:delete', error.message);
       return { success: false, error: error.message };
     }
   });

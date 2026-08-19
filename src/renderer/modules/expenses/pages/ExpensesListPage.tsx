@@ -59,8 +59,11 @@ function SettleModal({ expense, onClose }: { expense: any; onClose: () => void }
   const settleAmount = Number(amount) || 0;
   // Solde insuffisant : le compte sélectionné ne couvre pas le montant à régler.
   // Le règlement est bloqué tant que le compte n'est pas approvisionné à hauteur
-  // du montant (solde ≥ montant requis).
-  const insufficient = selectedAccount != null && balance != null && settleAmount > 0 && balance < settleAmount;
+  // du montant (solde ≥ montant requis) — restreint aux comptes « Caisse interne »
+  // (CAISSE_CENTRALE) ; un solde négatif est désormais autorisé sur tous les
+  // autres types de comptes.
+  const insufficient = selectedAccount != null && balance != null && selectedAccount.type === 'CAISSE_CENTRALE'
+    && settleAmount > 0 && balance < settleAmount;
 
   return (
     <>

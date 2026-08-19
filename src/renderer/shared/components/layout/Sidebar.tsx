@@ -7,7 +7,7 @@ import {
   Map, Landmark, Percent, Wallet, Building, PiggyBank, Briefcase, FileSpreadsheet, UserCog, ReceiptText, CalendarDays, Clock,
   BarChart3, ChevronDown, UserPlus, IdCard, Trophy, Gauge, Target, ClipboardCheck, Sliders,
   Share2, PenTool, Users2, AlarmClockOff, TrendingUp, AlertTriangle, Lightbulb, Radar, Phone,
-  Handshake, Rocket, HardHat,
+  Handshake, Rocket, HardHat, Scale, ShieldAlert, GraduationCap,
 } from 'lucide-react';
 import { useAuthStore } from '../../stores/auth.store';
 import { roleLabel } from '../../utils/roleLabel';
@@ -40,43 +40,8 @@ const isGroup = (e: NavEntry): e is NavGroup => 'children' in e;
 
 const navItems: NavEntry[] = [
   { label: 'Tableau de bord', to: '/dashboard', icon: <LayoutDashboard className="h-5 w-5" /> },
-  { label: 'Utilisateurs', to: '/users', icon: <Users className="h-5 w-5" />, roles: ['SUPER_ADMIN', 'ADMIN', 'AGENT_TECHNIQUE'] },
-  { label: 'Prospects', to: '/prospects', icon: <UserSearch className="h-5 w-5" /> },
-  { label: 'Clients', to: '/clients', icon: <UserCheck className="h-5 w-5" /> },
-  {
-    label: 'Tierce partie',
-    icon: <Handshake className="h-5 w-5" />,
-    // Groupe ouvert à tous : Apporteurs d'affaire est accessible à tout rôle
-    // (vue filtrée pour les rôles non privilégiés) — Propriétaires reste
-    // restreint via son propre `roles`, aligné sur le RoleGuard de /owners.
-    children: [
-      { label: 'Propriétaires', to: '/owners', icon: <Home className="h-5 w-5" />, roles: ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ACCOUNTANT', 'ASSISTANTE_DIRECTION'] },
-      { label: 'Apporteurs d\'affaire', to: '/commissions/referrers', icon: <UserPlus className="h-5 w-5" /> },
-    ],
-  },
-  { label: 'Lotissements', to: '/lotissements', icon: <Map className="h-5 w-5" />, roles: ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ACCOUNTANT', 'ASSISTANTE_DIRECTION'] },
-  { label: 'Terrains', to: '/terrains', icon: <Landmark className="h-5 w-5" /> },
-  { label: 'Programmes immobiliers', to: '/programmes', icon: <Building className="h-5 w-5" />, roles: ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ACCOUNTANT', 'ASSISTANTE_DIRECTION'] },
-  { label: 'Biens', to: '/properties', icon: <Building2 className="h-5 w-5" /> },
-  { label: 'Devis', to: '/quotes', icon: <FileSpreadsheet className="h-5 w-5" />, roles: ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ACCOUNTANT', 'ASSISTANTE_DIRECTION', 'AGENT', 'AGENT_TECHNIQUE', 'READONLY'] },
-  { label: 'Devis construction', to: '/construction', icon: <HardHat className="h-5 w-5" />, roles: ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ACCOUNTANT', 'ASSISTANTE_DIRECTION', 'AGENT', 'AGENT_TECHNIQUE', 'READONLY'] },
-  { label: 'Conventions / Attestations', to: '/conventions', icon: <FileText className="h-5 w-5" />, roles: ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ACCOUNTANT', 'ASSISTANTE_DIRECTION', 'AGENT', 'AGENT_TECHNIQUE'] },
-  {
-    label: 'Commissions', to: '/commissions', icon: <Percent className="h-5 w-5" />,
-    roles: ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ACCOUNTANT', 'ASSISTANTE_DIRECTION', 'AGENT', 'AGENT_TECHNIQUE', 'READONLY'],
-    // Les pages Apporteurs d'affaire sont accessibles sous /commissions/referrers
-    // mais ont leur propre entrée sous « Tierce partie » — elles ne doivent pas
-    // sélectionner aussi « Commissions ». Seul un accès aux commissions d'un
-    // apporteur (ex: /commissions/beneficiary/REFERRER/:id, depuis le bouton
-    // « Commissions » d'une ligne ou de la fiche apporteur) reste couvert.
-    matchExcludePrefixes: ['/commissions/referrers'],
-  },
-  { label: 'Comptabilité', to: '/accounting', icon: <Calculator className="h-5 w-5" />, roles: ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ACCOUNTANT'] },
-  { label: 'Trésorerie', to: '/treasury', icon: <Wallet className="h-5 w-5" />, roles: ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ACCOUNTANT'] },
-  { label: 'Budgets', to: '/budgets', icon: <PiggyBank className="h-5 w-5" />, roles: ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ACCOUNTANT'] },
-  { label: 'Charges prévisionnelles', to: '/expenses', icon: <ReceiptText className="h-5 w-5" />, roles: ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ACCOUNTANT', 'ASSISTANTE_DIRECTION'] },
-  { label: 'Communication', to: '/communication', icon: <MessageSquare className="h-5 w-5" /> },
   { label: 'Activités & CRM', to: '/crm', icon: <CalendarClock className="h-5 w-5" /> },
+  { label: 'Communication', to: '/communication', icon: <MessageSquare className="h-5 w-5" /> },
   {
     label: 'Réseaux Sociaux & Web',
     icon: <Share2 className="h-5 w-5" />,
@@ -99,8 +64,64 @@ const navItems: NavEntry[] = [
     // propres innovations) + SUPER_ADMIN/ADMIN/MANAGER/RH (vue complète).
     roles: ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'RH', 'AGENT_TECHNIQUE'],
   },
-  { label: 'Archivage', to: '/archiving', icon: <Archive className="h-5 w-5" /> },
+  {
+    label: 'Prospects & Clients',
+    icon: <Users2 className="h-5 w-5" />,
+    children: [
+      { label: 'Prospects', to: '/prospects', icon: <UserSearch className="h-5 w-5" /> },
+      { label: 'Clients', to: '/clients', icon: <UserCheck className="h-5 w-5" /> },
+      // Périmètre inchangé (déplacé depuis « Analyses décisionnelles ») :
+      // tous les rôles sauf RH.
+      {
+        label: 'Suivi Prospects & Clients', to: '/analytics/followup', icon: <Radar className="h-5 w-5" />,
+        roles: ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'AGENT', 'AGENT_TECHNIQUE', 'ACCOUNTANT', 'ASSISTANTE_DIRECTION', 'READONLY'],
+      },
+    ],
+  },
+  {
+    label: 'Tierce partie',
+    icon: <Handshake className="h-5 w-5" />,
+    // Groupe ouvert à tous : Apporteurs d'affaire est accessible à tout rôle
+    // (vue filtrée pour les rôles non privilégiés) — Propriétaires reste
+    // restreint via son propre `roles`, aligné sur le RoleGuard de /owners.
+    children: [
+      { label: 'Propriétaires', to: '/owners', icon: <Home className="h-5 w-5" />, roles: ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ACCOUNTANT', 'ASSISTANTE_DIRECTION'] },
+      { label: 'Apporteurs d\'affaire', to: '/commissions/referrers', icon: <UserPlus className="h-5 w-5" /> },
+    ],
+  },
+  { label: 'Lotissements', to: '/lotissements', icon: <Map className="h-5 w-5" />, roles: ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ACCOUNTANT', 'ASSISTANTE_DIRECTION'] },
+  { label: 'Terrains', to: '/terrains', icon: <Landmark className="h-5 w-5" /> },
+  { label: 'Programmes immobiliers', to: '/programmes', icon: <Building className="h-5 w-5" />, roles: ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ACCOUNTANT', 'ASSISTANTE_DIRECTION'] },
+  { label: 'Biens', to: '/properties', icon: <Building2 className="h-5 w-5" /> },
   { label: 'Projets', to: '/projects', icon: <Briefcase className="h-5 w-5" />, roles: ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ACCOUNTANT', 'ASSISTANTE_DIRECTION', 'AGENT_TECHNIQUE'] },
+  {
+    label: 'Devis & Calculateurs',
+    icon: <FileSpreadsheet className="h-5 w-5" />,
+    // Mêmes rôles pour les 3 sous-menus (Devis, Devis construction, Devis
+    // permis de construire) — portés au niveau du groupe plutôt que dupliqués
+    // sur chaque enfant.
+    roles: ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ACCOUNTANT', 'ASSISTANTE_DIRECTION', 'AGENT', 'AGENT_TECHNIQUE', 'READONLY'],
+    children: [
+      { label: 'Devis', to: '/quotes', icon: <FileSpreadsheet className="h-5 w-5" /> },
+      { label: 'Devis construction', to: '/construction', icon: <HardHat className="h-5 w-5" /> },
+      { label: 'Devis permis de construire', to: '/permits', icon: <Scale className="h-5 w-5" /> },
+    ],
+  },
+  { label: 'Conventions / Attestations', to: '/conventions', icon: <FileText className="h-5 w-5" />, roles: ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ACCOUNTANT', 'ASSISTANTE_DIRECTION', 'AGENT', 'AGENT_TECHNIQUE'] },
+  {
+    label: 'Commissions', to: '/commissions', icon: <Percent className="h-5 w-5" />,
+    roles: ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ACCOUNTANT', 'ASSISTANTE_DIRECTION', 'AGENT', 'AGENT_TECHNIQUE', 'READONLY'],
+    // Les pages Apporteurs d'affaire sont accessibles sous /commissions/referrers
+    // mais ont leur propre entrée sous « Tierce partie » — elles ne doivent pas
+    // sélectionner aussi « Commissions ». Seul un accès aux commissions d'un
+    // apporteur (ex: /commissions/beneficiary/REFERRER/:id, depuis le bouton
+    // « Commissions » d'une ligne ou de la fiche apporteur) reste couvert.
+    matchExcludePrefixes: ['/commissions/referrers'],
+  },
+  { label: 'Comptabilité', to: '/accounting', icon: <Calculator className="h-5 w-5" />, roles: ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ACCOUNTANT'] },
+  { label: 'Trésorerie', to: '/treasury', icon: <Wallet className="h-5 w-5" />, roles: ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ACCOUNTANT'] },
+  { label: 'Budgets', to: '/budgets', icon: <PiggyBank className="h-5 w-5" />, roles: ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ACCOUNTANT'] },
+  { label: 'Charges prévisionnelles', to: '/expenses', icon: <ReceiptText className="h-5 w-5" />, roles: ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ACCOUNTANT', 'ASSISTANTE_DIRECTION'] },
   {
     label: 'Gestion du personnel',
     icon: <UserCog className="h-5 w-5" />,
@@ -110,7 +131,7 @@ const navItems: NavEntry[] = [
     // individuellement (« Congés & absences » porte donc désormais sa propre
     // liste, identique au périmètre historique du groupe).
     children: [
-      { label: 'RH & Paie', to: '/hr/employees', icon: <Users className="h-5 w-5" />, roles: ['SUPER_ADMIN', 'ADMIN', 'RH', 'ACCOUNTANT', 'MANAGER'] },
+      { label: 'RH & Paie', to: '/hr/employees', icon: <Users className="h-5 w-5" />, roles: ['SUPER_ADMIN', 'ADMIN', 'RH', 'ACCOUNTANT', 'MANAGER', 'ASSISTANTE_DIRECTION'] },
       { label: 'Bulletins de paie', to: '/hr/payslips', icon: <ReceiptText className="h-5 w-5" />, roles: ['SUPER_ADMIN', 'ADMIN', 'RH', 'ACCOUNTANT', 'MANAGER'] },
       { label: 'Congés & absences', to: '/hr/leave', icon: <CalendarDays className="h-5 w-5" />, roles: ['SUPER_ADMIN', 'ADMIN', 'RH', 'ACCOUNTANT', 'MANAGER', 'ASSISTANTE_DIRECTION'] },
       { label: 'Pointage', to: '/hr/attendance', icon: <Clock className="h-5 w-5" />, roles: ['SUPER_ADMIN', 'ADMIN', 'RH', 'MANAGER', 'ASSISTANTE_DIRECTION'] },
@@ -139,16 +160,11 @@ const navItems: NavEntry[] = [
   {
     label: 'Analyses décisionnelles',
     icon: <BarChart3 className="h-5 w-5" />,
-    // Groupe ouvert aussi au MANAGER (plein accès CRM & Clients, Suivi
-    // Prospects & Clients, Statistiques visiteurs) et, pour Suivi Prospects &
-    // Clients uniquement, en accès restreint (périmètre affecté) à AGENT,
-    // AGENT_TECHNIQUE, ACCOUNTANT, ASSISTANTE_DIRECTION et READONLY — les
-    // autres sous-menus restent réservés à SUPER_ADMIN/ADMIN (ou MANAGER pour
-    // les 3 rubriques citées).
-    roles: [
-      'SUPER_ADMIN', 'ADMIN', 'MANAGER',
-      'AGENT', 'AGENT_TECHNIQUE', 'ACCOUNTANT', 'ASSISTANTE_DIRECTION', 'READONLY',
-    ],
+    // Groupe ouvert aussi au MANAGER, mais seulement pour CRM & Clients,
+    // Statistiques visiteurs et Statistiques appels — les autres sous-menus
+    // restent réservés à SUPER_ADMIN/ADMIN. (« Suivi Prospects & Clients »
+    // déplacé dans le groupe « Prospects & Clients ».)
+    roles: ['SUPER_ADMIN', 'ADMIN', 'MANAGER'],
     children: [
       { label: 'Tableau de bord', to: '/analytics/executive', icon: <LayoutDashboard className="h-5 w-5" />, roles: ['SUPER_ADMIN', 'ADMIN'] },
       { label: 'Finances et rentabilité', to: '/analytics/financial', icon: <TrendingUp className="h-5 w-5" />, roles: ['SUPER_ADMIN', 'ADMIN'] },
@@ -163,10 +179,33 @@ const navItems: NavEntry[] = [
       { label: 'Recommandations', to: '/analytics/recommendations', icon: <Lightbulb className="h-5 w-5" />, roles: ['SUPER_ADMIN', 'ADMIN'] },
     ],
   },
+  {
+    label: 'Conformité LBC/FT',
+    icon: <ShieldAlert className="h-5 w-5" />,
+    // Rôle CONFORMITE dédié (Module 19), calqué sur RH — accès exclusif,
+    // aucune équivalence checkRole. SUPER_ADMIN/ADMIN gardent la supervision.
+    // MANAGER et ACCOUNTANT ont été ajoutés en plein accès (parité ADMIN).
+    // AGENT / AGENT_TECHNIQUE / ASSISTANTE_DIRECTION / READONLY : accès
+    // restreint à « Formations » et « Référentiel de vigilance » uniquement
+    // (roles du groupe élargi à l'union des deux périmètres ; chaque enfant
+    // réservé au périmètre plein accès porte désormais son propre `roles`
+    // explicite).
+    roles: ['SUPER_ADMIN', 'ADMIN', 'CONFORMITE', 'MANAGER', 'ACCOUNTANT', 'AGENT', 'AGENT_TECHNIQUE', 'ASSISTANTE_DIRECTION', 'READONLY'],
+    children: [
+      { label: 'Tableau de bord', to: '/aml/dashboard', icon: <Gauge className="h-5 w-5" />, roles: ['SUPER_ADMIN', 'ADMIN', 'CONFORMITE', 'MANAGER', 'ACCOUNTANT'] },
+      { label: 'Profils LBC/FT', to: '/aml/profiles', icon: <UserCheck className="h-5 w-5" />, roles: ['SUPER_ADMIN', 'ADMIN', 'CONFORMITE', 'MANAGER', 'ACCOUNTANT'] },
+      { label: 'Revues de transaction', to: '/aml/reviews', icon: <Radar className="h-5 w-5" />, roles: ['SUPER_ADMIN', 'ADMIN', 'CONFORMITE', 'MANAGER', 'ACCOUNTANT'] },
+      { label: 'Déclarations de soupçon', to: '/aml/suspicious-reports', icon: <AlertTriangle className="h-5 w-5" />, roles: ['SUPER_ADMIN', 'ADMIN', 'CONFORMITE', 'MANAGER', 'ACCOUNTANT'] },
+      { label: 'Formations', to: '/aml/training', icon: <GraduationCap className="h-5 w-5" /> },
+      { label: 'Référentiel de vigilance', to: '/aml/watchlist', icon: <AlertTriangle className="h-5 w-5" /> },
+    ],
+  },
   // Visibilité calculée dynamiquement dans Sidebar() (hasAnySettingsAccess),
   // pas par un simple rôle statique : dépend de la liste des onglets visibles
   // (SettingsPage.TABS) ET de la désignation individuelle éventuelle comme
   // éditeur de modèles de messages manuels (indépendante du rôle).
+  { label: 'GED - Archivage', to: '/archiving', icon: <Archive className="h-5 w-5" /> },
+  { label: 'Utilisateurs', to: '/users', icon: <Users className="h-5 w-5" />, roles: ['SUPER_ADMIN', 'ADMIN', 'AGENT_TECHNIQUE'] },
   { label: 'Paramètres', to: '/settings', icon: <Settings className="h-5 w-5" /> },
 ];
 

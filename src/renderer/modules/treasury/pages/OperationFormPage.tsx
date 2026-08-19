@@ -151,8 +151,11 @@ export default function OperationFormPage() {
   const debitedBalance = debitedAccount ? Number(debitedAccount.balance ?? 0) : null;
   // Compte débité dont le solde ne couvre pas le montant : enregistrement bloqué
   // tant qu'il n'est pas approvisionné à hauteur du montant (solde ≥ montant).
+  // Restreint aux comptes « Caisse interne » (CAISSE_CENTRALE) — un solde
+  // négatif est désormais autorisé sur tous les autres types de comptes.
   const insufficientFunds =
     debitedAccount != null && debitedBalance != null
+    && debitedAccount.type === 'CAISSE_CENTRALE'
     && operationAmount > 0 && debitedBalance < operationAmount;
 
   // Préremplit le champ « Compte » selon le sens choisi : compte par défaut

@@ -453,11 +453,77 @@ const WORK_ITEMS_V2 = [
     components: [['MAT.PAVE.AUTOBLOQUANT', 1.05, 5], ['MAT.GRAVIER.VRD', 0.1, 5], ['MO.MANOEUVRE', 0.3, 0]],
   },
 
-  // LOT19 — Clôture & portail
+  // LOT19 — Clôture & portail — détaillée en rubriques distinctes (fouille,
+  // fondation, ferraillage, chaînage bas, chaînage haut optionnel, montage du
+  // mur, poteaux, crépissage optionnel) plutôt qu'un seul ouvrage lumpé, pour
+  // que chacune apparaisse clairement sur le devis. Fouille/fondation/
+  // ferraillage/chaînages sont dimensionnés par ml (infrastructure standard,
+  // indépendante de la hauteur dans ce modèle) ; montage du mur et
+  // crépissage sont dimensionnés par m² réel (longueur × hauteur,
+  // QTE_CLOTURE_SURFACE) — c'est là que la hauteur de clôture pèse sur le
+  // montant.
+  //
+  // Quantités de main d'œuvre recalibrées (maçon ×4,6, coffreur ×2,5 —
+  // matériaux hors agglos/coffrage bois ×0,75) à partir de 3 devis réels de
+  // référence (clôture crépie, terrain 400 m², longueur ≈ 80 ml pour un
+  // terrain carré) : (1) poteaux simples, 1 m — déboursé sec 2 700 000 FCFA
+  // dont 940 000 de main d'œuvre ; (2) poteaux sortants + chaînage haut, 2 m
+  // — déboursé sec 5 137 000 FCFA dont 2 080 000 de main d'œuvre ; (3)
+  // poteaux simples sans chaînage haut, 2 m — déboursé sec 4 300 000 FCFA.
+  // Résultat du moteur sur ces 3 cas, à ±3-11 % des références (écart normal
+  // pour des références déclarées « en moyenne ») : cf. CLAUDE.md Module 17.
   {
-    code: 'CLOT.MUR', lotCode: 'LOT19', designation: 'Mur de clôture en agglos', unit: 'ml', formulaCode: 'QTE_CLOTURE_ML',
+    code: 'CLOT.FOUILLE', lotCode: 'LOT19', designation: 'Fouille en rigole (fondation clôture)', unit: 'ml', formulaCode: 'QTE_CLOTURE_ML',
     rule: { all: [{ field: 'fenceLength', gt: 0 }] },
-    components: [['MAT.AGGLO.20', 25, 3], ['MAT.CIMENT.CPJ35', 0.4, 2], ['MAT.SABLE.LAGUNE', 0.05, 5], ['MAT.FER.HA10', 3, 3], ['MO.MACON', 1.2, 0], ['MO.MANOEUVRE', 1, 0]],
+    components: [['MO.MANOEUVRE', 0.35, 0]],
+  },
+  {
+    code: 'CLOT.FONDATION', lotCode: 'LOT19', designation: 'Fondation (béton de propreté + semelle filante)', unit: 'ml', formulaCode: 'QTE_CLOTURE_ML',
+    rule: { all: [{ field: 'fenceLength', gt: 0 }] },
+    components: [['MAT.CIMENT.CPJ35', 0.98, 2], ['MAT.SABLE.LAGUNE', 0.053, 5], ['MAT.GRAVIER.5_15', 0.098, 5], ['MO.MACON', 1.61, 0], ['MO.MANOEUVRE', 0.5, 0]],
+  },
+  {
+    code: 'CLOT.FERRAILLAGE', lotCode: 'LOT19', designation: 'Ferraillage (fondation + chaînage)', unit: 'ml', formulaCode: 'QTE_CLOTURE_ML',
+    rule: { all: [{ field: 'fenceLength', gt: 0 }] },
+    components: [['MAT.FER.HA8', 3, 3], ['MAT.FIL.ATTACHE', 0.11, 0], ['MO.FERRAILLEUR', 0.25, 0]],
+  },
+  {
+    code: 'CLOT.CHAINAGE_BAS', lotCode: 'LOT19', designation: 'Chaînage bas', unit: 'ml', formulaCode: 'QTE_CLOTURE_ML',
+    rule: { all: [{ field: 'fenceLength', gt: 0 }] },
+    components: [['MAT.CIMENT.CPJ35', 0.53, 2], ['MAT.SABLE.LAGUNE', 0.03, 5], ['MAT.GRAVIER.5_15', 0.053, 5], ['MO.MACON', 1.15, 0]],
+  },
+  {
+    code: 'CLOT.CHAINAGE_HAUT', lotCode: 'LOT19', designation: 'Chaînage haut (optionnel)', unit: 'ml', formulaCode: 'QTE_CLOTURE_ML',
+    rule: { all: [{ field: 'fenceLength', gt: 0 }, { field: 'fenceHasChainageHaut', eq: true }] },
+    components: [['MAT.CIMENT.CPJ35', 0.56, 2], ['MAT.SABLE.LAGUNE', 0.034, 5], ['MAT.GRAVIER.5_15', 0.056, 5], ['MAT.FER.HA8', 2.25, 3], ['MO.MACON', 1.15, 0], ['MO.FERRAILLEUR', 0.15, 0]],
+  },
+  {
+    code: 'CLOT.MONTAGE_MUR', lotCode: 'LOT19', designation: 'Montage du mur (élévation en agglos)', unit: 'm²', formulaCode: 'QTE_CLOTURE_SURFACE',
+    rule: { all: [{ field: 'fenceLength', gt: 0 }] },
+    components: [['MAT.AGGLO.20', 12.5, 3], ['MAT.CIMENT.CPJ35', 0.135, 2], ['MAT.SABLE.LAGUNE', 0.0173, 5], ['MO.MACON', 2.53, 0], ['MO.MANOEUVRE', 0.45, 0]],
+  },
+  {
+    code: 'CLOT.POTEAUX.SORTANTS', lotCode: 'LOT19', designation: 'Poteaux sortants en béton armé', unit: 'u', formulaCode: 'QTE_CLOTURE_POTEAUX',
+    rule: { all: [{ field: 'fenceLength', gt: 0 }, { field: 'fencePostType', eq: 'POTEAUX_SORTANTS' }] },
+    components: [
+      ['MAT.CIMENT.CPJ35', 1.13, 2], ['MAT.SABLE.LAGUNE', 0.06, 5], ['MAT.GRAVIER.15_25', 0.11, 5],
+      ['MAT.FER.HA10', 9, 3], ['MAT.FIL.ATTACHE', 0.23, 0], ['MAT.BOIS.COFFRAGE', 1.5, 15],
+      ['MO.COFFREUR', 3.75, 0], ['MO.FERRAILLEUR', 0.8, 0], ['MO.MACON', 4.6, 0],
+    ],
+  },
+  {
+    code: 'CLOT.POTEAUX.SIMPLES', lotCode: 'LOT19', designation: 'Poteaux simples en béton armé', unit: 'u', formulaCode: 'QTE_CLOTURE_POTEAUX',
+    rule: { all: [{ field: 'fenceLength', gt: 0 }, { field: 'fencePostType', eq: 'POTEAUX_SIMPLES' }] },
+    components: [
+      ['MAT.CIMENT.CPJ35', 0.75, 2], ['MAT.SABLE.LAGUNE', 0.038, 5], ['MAT.GRAVIER.15_25', 0.075, 5],
+      ['MAT.FER.HA10', 6, 3], ['MAT.FIL.ATTACHE', 0.15, 0],
+      ['MO.COFFREUR', 2, 0], ['MO.FERRAILLEUR', 0.5, 0], ['MO.MACON', 2.76, 0],
+    ],
+  },
+  {
+    code: 'CLOT.CREPISSAGE', lotCode: 'LOT19', designation: 'Crépissage', unit: 'm²', formulaCode: 'QTE_CLOTURE_SURFACE',
+    rule: { all: [{ field: 'fenceLength', gt: 0 }, { field: 'fenceHasCrepissage', eq: true }] },
+    components: [['MAT.CIMENT.CPJ35', 0.11, 2], ['MAT.SABLE.LAGUNE', 0.015, 5], ['MO.MACON', 1.84, 0], ['MO.MANOEUVRE', 0.35, 0]],
   },
   {
     code: 'CLOT.PORTAIL', lotCode: 'LOT19', designation: 'Portail métallique coulissant', unit: 'u', formulaCode: 'QTE_PORTAILS',

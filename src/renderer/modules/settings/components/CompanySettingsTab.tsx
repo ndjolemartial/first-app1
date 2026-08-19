@@ -24,6 +24,7 @@ interface FormData {
   phoneMobile2: string;
   website: string;
   address: string;
+  email: string;
 }
 
 const ACCEPTED_LOGO_TYPES = ['image/png', 'image/jpeg', 'image/webp', 'image/svg+xml'];
@@ -51,7 +52,7 @@ export default function CompanySettingsTab() {
   const { register, handleSubmit, reset, formState: { isSubmitting } } = useForm<FormData>({
     defaultValues: {
       name: '', denomination: '', legalRepEmployeeId: '', slogan: '', registreCommerce: '', compteContribuable: '',
-      phoneFixed: '', phoneMobile1: '', phoneMobile2: '', website: '', address: '',
+      phoneFixed: '', phoneMobile1: '', phoneMobile2: '', website: '', address: '', email: '',
     },
   });
 
@@ -69,6 +70,7 @@ export default function CompanySettingsTab() {
         phoneMobile2:       companyRes.data.phoneMobile2 ?? '',
         website:            companyRes.data.website ?? '',
         address:            companyRes.data.address ?? '',
+        email:              companyRes.data.email ?? '',
       });
     }
   }, [companyRes, reset]);
@@ -206,13 +208,21 @@ export default function CompanySettingsTab() {
                   {...register('phoneMobile2')}
                 />
               </div>
-              <Input
-                label="Site web"
-                type="url"
-                placeholder="https://www.afrikimmo.ci"
-                helper="URL complète avec https://"
-                {...register('website')}
-              />
+              <div className="grid grid-cols-2 gap-4">
+                <Input
+                  label="Site web"
+                  type="url"
+                  placeholder="https://www.afrikimmo.ci"
+                  helper="URL complète avec https://"
+                  {...register('website')}
+                />
+                <Input
+                  label="Adresse mail"
+                  type="email"
+                  placeholder="contact@afrikimmo.ci"
+                  {...register('email')}
+                />
+              </div>
               <Textarea
                 label="Adresse"
                 placeholder="Numéro, rue, quartier, commune, ville…"

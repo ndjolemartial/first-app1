@@ -39,6 +39,9 @@ export interface ProjectInputs {
   hasElectricityConnection: boolean;
   fenceLength: number;
   fenceHeight: number;
+  fenceHasCrepissage: boolean;
+  fenceHasChainageHaut: boolean;
+  fencePostType: string;
   gateCount: number;
   hasPool: boolean;
   poolSurface: number;
@@ -482,9 +485,36 @@ FORMULAS['QTE_VRD_SURFACE'] = ({ p, d, r }) => {
 
 // ── Clôture & portail (LOT19) ─────────────────────────────────────────────
 
+// La clôture est détaillée en rubriques distinctes plutôt qu'un seul ouvrage
+// lumpé, sur deux bases de quantité :
+//  - QTE_CLOTURE_ML : longueur brute — infrastructure (fouille, fondation,
+//    ferraillage, chaînage bas, chaînage haut optionnel), dimensionnée
+//    indépendamment de la hauteur du mur dans ce modèle simplifié
+//    (semelle/chaînage standard).
+//  - QTE_CLOTURE_SURFACE : longueur × hauteur — surface réelle du mur, base
+//    du montage (agglos) et du crépissage, qui sont les deux rubriques dont
+//    le coût dépend directement de la hauteur saisie.
+// Les poteaux (QTE_CLOTURE_POTEAUX) sont comptés à l'unité, indépendamment
+// de la hauteur.
+
 FORMULAS['QTE_CLOTURE_ML'] = ({ p }) => {
   const qty = p.fenceLength;
   return { qty, trace: `= longueur de clôture = ${f(qty)} ml` };
+};
+
+FORMULAS['QTE_CLOTURE_SURFACE'] = ({ p }) => {
+  const qty = p.fenceLength * p.fenceHeight;
+  return { qty, trace: `${f(p.fenceLength)} ml × ${f(p.fenceHeight)} m (hauteur) = ${f(qty)} m²` };
+};
+
+// 1 poteau tous les 3 ml + les deux extrémités — convention BTP courante pour
+// un mur de clôture en agglos.
+const FENCE_POST_SPACING_M = 3;
+
+FORMULAS['QTE_CLOTURE_POTEAUX'] = ({ p }) => {
+  if (p.fenceLength <= 0) return { qty: 0, trace: 'Longueur de clôture nulle = 0 u' };
+  const qty = Math.ceil(p.fenceLength / FENCE_POST_SPACING_M) + 1;
+  return { qty, trace: `${f(p.fenceLength)} ml, 1 poteau / ${FENCE_POST_SPACING_M} ml + extrémités = ${qty} u` };
 };
 
 FORMULAS['QTE_PORTAILS'] = ({ p }) => {
@@ -516,38 +546,9 @@ FORMULAS['QTE_PISCINE_STRUCTURE'] = ({ p }) => {
 FORMULAS['QTE_FORFAIT'] = () => ({ qty: 1, trace: 'Forfait (quantité fixe = 1)' });
 
 // ── Règle d'applicabilité déclarative ────────────────────────────────────
+// Extraite dans un module partagé (applicability-rule.ts), générique et
+// réutilisé tel quel par le moteur de devis de permis de construire.
+// Ré-exportée ici pour ne rien changer aux imports existants.
 
-type RuleOperator = 'eq' | 'ne' | 'in' | 'notIn' | 'gt' | 'gte' | 'lt' | 'lte';
-interface RuleCondition { field: string; eq?: unknown; ne?: unknown; in?: unknown[]; notIn?: unknown[]; gt?: number; gte?: number; lt?: number; lte?: number; }
-export interface ApplicabilityRule { all?: (RuleCondition | ApplicabilityRule)[]; any?: (RuleCondition | ApplicabilityRule)[]; not?: RuleCondition | ApplicabilityRule; }
-
-function evalCondition(cond: RuleCondition, p: ProjectInputs): boolean {
-  const value = (p as unknown as Record<string, unknown>)[cond.field];
-  const ops: Array<[RuleOperator, unknown]> = [
-    ['eq', cond.eq], ['ne', cond.ne], ['in', cond.in], ['notIn', cond.notIn],
-    ['gt', cond.gt], ['gte', cond.gte], ['lt', cond.lt], ['lte', cond.lte],
-  ];
-  for (const [op, target] of ops) {
-    if (target === undefined) continue;
-    switch (op) {
-      case 'eq': if (value !== target) return false; break;
-      case 'ne': if (value === target) return false; break;
-      case 'in': if (!Array.isArray(target) || !target.includes(value)) return false; break;
-      case 'notIn': if (Array.isArray(target) && target.includes(value)) return false; break;
-      case 'gt': if (!(Number(value) > (target as number))) return false; break;
-      case 'gte': if (!(Number(value) >= (target as number))) return false; break;
-      case 'lt': if (!(Number(value) < (target as number))) return false; break;
-      case 'lte': if (!(Number(value) <= (target as number))) return false; break;
-    }
-  }
-  return true;
-}
-
-/** Évalue une règle d'applicabilité déclarative contre les caractéristiques du projet. `null`/`undefined` = toujours applicable. */
-export function isApplicable(rule: ApplicabilityRule | null | undefined, p: ProjectInputs): boolean {
-  if (!rule) return true;
-  if (rule.all) return rule.all.every((r) => ('field' in r ? evalCondition(r as RuleCondition, p) : isApplicable(r as ApplicabilityRule, p)));
-  if (rule.any) return rule.any.some((r) => ('field' in r ? evalCondition(r as RuleCondition, p) : isApplicable(r as ApplicabilityRule, p)));
-  if (rule.not) return !isApplicable('field' in rule.not ? { all: [rule.not] } : (rule.not as ApplicabilityRule), p);
-  return true;
-}
+export type { ApplicabilityRule } from './applicability-rule';
+export { isApplicable } from './applicability-rule';

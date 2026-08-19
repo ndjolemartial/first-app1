@@ -17,6 +17,40 @@ import { PRECISION_LEVEL_LABELS, BUILDING_TYPE_LABELS, STANDING_LABELS } from '.
 const clientLabel = (c: any) => formatPersonName(c, '');
 const prospectLabel = (p: any) => `${p.firstName ?? ''} ${p.lastName ?? ''}`.trim();
 
+/** Champ remise pourcentage/montant fixe — même composant que QuoteFormPage.tsx (« Montants & modalités »). */
+function AmountPercentField({ label, isPercent, onModeChange, value, onValueChange, hint }: {
+  label: string;
+  isPercent: boolean;
+  onModeChange: (percent: boolean) => void;
+  value: string;
+  onValueChange: (v: string) => void;
+  hint?: string;
+}) {
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-1">
+        <label className="block text-xs font-medium text-slate-700">{label}</label>
+        <div className="inline-flex rounded-md border border-slate-200 overflow-hidden">
+          <button type="button" onClick={() => onModeChange(false)}
+            className={`px-2 py-0.5 text-xs transition-colors ${!isPercent ? 'bg-blue-600 text-white' : 'bg-white text-slate-600 hover:bg-slate-50'}`}>XOF</button>
+          <button type="button" onClick={() => onModeChange(true)}
+            className={`px-2 py-0.5 text-xs transition-colors ${isPercent ? 'bg-blue-600 text-white' : 'bg-white text-slate-600 hover:bg-slate-50'}`}>%</button>
+        </div>
+      </div>
+      <div className="relative">
+        <input
+          type="number" min="0" step={isPercent ? '0.01' : '1'} max={isPercent ? '100' : undefined}
+          value={value}
+          onChange={(e) => onValueChange(e.target.value)}
+          className="w-full px-3 py-2 pr-8 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+        />
+        <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-slate-400">{isPercent ? '%' : 'XOF'}</span>
+      </div>
+      {hint && <p className="mt-1 text-xs text-slate-400">{hint}</p>}
+    </div>
+  );
+}
+
 export default function GenerateEstimateModal({ open, onClose, project }: { open: boolean; onClose: () => void; project: any }) {
   const navigate = useNavigate();
   const token = useAuthStore((s) => s.token);
@@ -27,6 +61,9 @@ export default function GenerateEstimateModal({ open, onClose, project }: { open
   const [fraisGenerauxPct, setFraisGenerauxPct] = useState('');
   const [margePct, setMargePct] = useState('');
   const [tvaPct, setTvaPct] = useState('18');
+  const [discountIsPercent, setDiscountIsPercent] = useState(false);
+  const [discountAmount, setDiscountAmount] = useState('0');
+  const [discountPercent, setDiscountPercent] = useState('0');
   const [createQuote, setCreateQuote] = useState(false);
   const [clientId, setClientId] = useState(project?.clientId ? String(project.clientId) : '');
   const [prospectId, setProspectId] = useState(project?.prospectId ? String(project.prospectId) : '');
@@ -60,6 +97,9 @@ export default function GenerateEstimateModal({ open, onClose, project }: { open
         fraisGenerauxPct: fraisGenerauxPct ? Number(fraisGenerauxPct) : undefined,
         margePct: margePct ? Number(margePct) : undefined,
         tvaPct: tvaPct ? Number(tvaPct) : undefined,
+        discountIsPercent,
+        discountAmount: discountIsPercent ? undefined : (Number(discountAmount) || 0),
+        discountPercent: discountIsPercent ? (Number(discountPercent) || 0) : undefined,
       },
       createQuote,
     };
@@ -87,12 +127,19 @@ export default function GenerateEstimateModal({ open, onClose, project }: { open
           options={[{ value: 'NIVEAU_2', label: PRECISION_LEVEL_LABELS.NIVEAU_2 }, { value: 'NIVEAU_1', label: PRECISION_LEVEL_LABELS.NIVEAU_1 }]}
           value={precisionLevel} onChange={(e) => setPrecisionLevel(e.target.value as any)}
         />
-        <Select
-          label="Profil de coefficients"
-          options={profiles.map((p: any) => ({ value: String(p.id), label: p.name }))}
-          placeholder={matchingProfile ? `Auto : ${matchingProfile.name}` : `Aucun profil pour ${BUILDING_TYPE_LABELS[project?.buildingType]} × ${STANDING_LABELS[project?.standing]} — valeurs par défaut`}
-          value={ratioProfileId} onChange={(e) => setRatioProfileId(e.target.value)}
-        />
+        {project?.scope === 'COMPLET' ? (
+          <Select
+            label="Profil de coefficients"
+            options={profiles.map((p: any) => ({ value: String(p.id), label: p.name }))}
+            placeholder={matchingProfile ? `Auto : ${matchingProfile.name}` : `Aucun profil pour ${BUILDING_TYPE_LABELS[project?.buildingType]} × ${STANDING_LABELS[project?.standing]} — valeurs par défaut`}
+            value={ratioProfileId} onChange={(e) => setRatioProfileId(e.target.value)}
+          />
+        ) : (
+          <p className="text-xs text-slate-400">
+            Profil de coefficients sans effet sur un devis {project?.scope === 'CLOTURE_SEULE' ? 'clôture seule' : 'piscine seule'} — les quantités
+            de ce type de devis ne dépendent d'aucun coefficient de type de bâtiment/standing.
+          </p>
+        )}
         <Select
           label="Localité (prix)"
           options={(localitiesRes?.data ?? []).map((l: any) => ({ value: String(l.id), label: l.label }))}
@@ -105,6 +152,15 @@ export default function GenerateEstimateModal({ open, onClose, project }: { open
           <Input label="Marge %" type="number" placeholder="15" value={margePct} onChange={(e) => setMargePct(e.target.value)} />
           <Input label="TVA %" type="number" value={tvaPct} onChange={(e) => setTvaPct(e.target.value)} />
         </div>
+
+        <AmountPercentField
+          label="Remise"
+          isPercent={discountIsPercent}
+          onModeChange={setDiscountIsPercent}
+          value={discountIsPercent ? discountPercent : discountAmount}
+          onValueChange={discountIsPercent ? setDiscountPercent : setDiscountAmount}
+          hint="Appliquée entre le sous-total HT et la TVA."
+        />
 
         <label className="flex items-center gap-2 text-sm text-slate-700">
           <input type="checkbox" checked={createQuote} onChange={(e) => setCreateQuote(e.target.checked)} className="rounded border-slate-300" />

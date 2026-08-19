@@ -15,7 +15,7 @@ import {
 // ── Schéma ───────────────────────────────────────────────────────────────────
 
 const clientBaseSchema = z.object({
-  type: z.enum(['INDIVIDUEL', 'ENTREPRISE']).default('INDIVIDUEL'),
+  type: z.enum(['INDIVIDUEL', 'ENTREPRISE', 'ASSOCIATION_ONG']).default('INDIVIDUEL'),
   firstName: z.string().optional(),
   lastName: z.string().optional(),
   civilite: z.enum(['Monsieur', 'Madame', 'Mademoiselle']).optional(),
@@ -49,6 +49,23 @@ const clientBaseSchema = z.object({
   fatherLastName: z.string().optional(),
   motherFirstName: z.string().optional(),
   motherLastName: z.string().optional(),
+  // Informations complémentaires — alimentent la « Fiche KYC » imprimable
+  // depuis la fiche client (bouton dédié, cf. clients:renderKycDocument ci-dessous).
+  employerName: z.string().optional(),
+  monthlyIncome: z.coerce.number().min(0).nullable().optional(),
+  sourceOfFunds: z.array(z.string()).optional(),
+  sourceOfFundsOther: z.string().optional(),
+  sourceOfWealth: z.string().optional(),
+  relationshipPurpose: z.array(z.string()).optional(),
+  relationshipPurposeOther: z.string().optional(),
+  expectedTransactionVolume: z.coerce.number().min(0).nullable().optional(),
+  acquisitionChannel: z.string().optional(),
+  isPep: z.boolean().optional(),
+  pepCategory: z.enum(['PEP_NATIONAL', 'PEP_ETRANGER', 'PEP_ORGANISATION_INTERNATIONALE', 'PERSONNE_LIEE_PEP']).nullable().optional(),
+  pepFunction: z.string().optional(),
+  hasRiskyCountryLink: z.boolean().optional(),
+  kycSignedAt: z.string().datetime().nullable().optional(),
+  kycSignedPlace: z.string().optional(),
   notes: z.string().optional(),
   status: z.enum(['ACTIF', 'INACTIF', 'VIP', 'SUSPENDU']).optional(),
   assignedToId: z.number().int().nullable().optional(),
@@ -70,9 +87,11 @@ const requireIdForIndividuel = (data: any, ctx: z.RefinementCtx): void => {
       ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['idNumber'], message: 'Numéro de pièce d’identité requis' });
     }
   }
-  // Client entreprise : pièce d'identité du représentant légal obligatoire
-  // (alignement sur le module Propriétaires).
-  if (data.type === 'ENTREPRISE') {
+  // Client personne morale (entreprise ou association/ONG) : pièce d'identité
+  // du représentant légal obligatoire (alignement sur le module Propriétaires).
+  // `data.type` peut être absent sur une mise à jour partielle qui ne touche
+  // pas ce champ — dans ce cas, on ne déclenche pas cette validation.
+  if (data.type && data.type !== 'INDIVIDUEL') {
     if (data.legalRepIdTypeId == null) {
       ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['legalRepIdTypeId'], message: 'Type de pièce d’identité du représentant requis' });
     }
@@ -84,6 +103,19 @@ const requireIdForIndividuel = (data: any, ctx: z.RefinementCtx): void => {
 
 const clientSchema = clientBaseSchema.superRefine(requireIdForIndividuel);
 const clientUpdateSchema = clientBaseSchema.partial().superRefine(requireIdForIndividuel);
+
+// Bénéficiaires effectifs — pertinents pour un client personne morale
+// (Entreprise ou Association/ONG), repris sur la Fiche KYC imprimable.
+const beneficialOwnerSchema = z.object({
+  firstName: z.string().min(1, 'Prénom requis'),
+  lastName: z.string().min(1, 'Nom requis'),
+  nationality: z.string().optional(),
+  idNumber: z.string().optional(),
+  ownershipPct: z.coerce.number().min(0).max(100).nullable().optional(),
+  role: z.string().optional(),
+  isPep: z.boolean().optional(),
+  notes: z.string().optional(),
+});
 
 // ── Rôles ────────────────────────────────────────────────────────────────────
 
@@ -259,6 +291,7 @@ export function registerClientsIPC(): void {
           referrer:   { select: REFERRER_BRIEF_SELECT },
           idType:     { select: { id: true, code: true, label: true } },
           legalRepIdType: { select: { id: true, code: true, label: true } },
+          beneficialOwners: { where: { deletedAt: null }, orderBy: { createdAt: 'asc' } },
         },
       });
       if (!client) return { success: false, error: 'Client introuvable' };
@@ -316,9 +349,10 @@ export function registerClientsIPC(): void {
       const data: any = { ...parsed.data };
       data.reference = await nextReference(db);
       if (data.birthDate) data.birthDate = new Date(data.birthDate);
+      if (data.kycSignedAt) data.kycSignedAt = new Date(data.kycSignedAt);
       const client = await db.client.create({ data });
       logger.info(`Client created: id=${client.id}`);
-      return { success: true, data: client };
+      return { success: true, data: ser(client) };
     } catch (error: any) {
       return { success: false, error: error.message };
     }
@@ -338,6 +372,7 @@ export function registerClientsIPC(): void {
       if (!before) return { success: false, error: 'Client introuvable' };
       const data: any = { ...parsed.data };
       if (data.birthDate) data.birthDate = new Date(data.birthDate);
+      if (data.kycSignedAt) data.kycSignedAt = new Date(data.kycSignedAt);
       const client = await db.client.update({ where: { id, deletedAt: null }, data });
 
       // Fiche de suivi chronologique : le statut fait l'objet d'un événement
@@ -358,7 +393,7 @@ export function registerClientsIPC(): void {
         });
       }
 
-      return { success: true, data: client };
+      return { success: true, data: ser(client) };
     } catch (error: any) {
       return { success: false, error: error.message };
     }
@@ -579,6 +614,55 @@ export function registerClientsIPC(): void {
       return { success: true, data: referrers };
     } catch (error: any) {
       logger.error('clients:listReferrers', error.message);
+      return { success: false, error: error.message };
+    }
+  });
+
+  // ── Bénéficiaires effectifs (client personne morale) ───────────────────────
+  ipcMain.handle('clients:beneficialOwners:create', async (_event, { token, clientId, payload }: any) => {
+    try {
+      const session = getSession(token);
+      if (!session) return { success: false, error: 'Session expirée' };
+      checkClientWriteRole(session, WRITE_ROLES);
+      const parsed = beneficialOwnerSchema.safeParse(payload);
+      if (!parsed.success) return { success: false, error: parsed.error.format() };
+      const db = getDb();
+      const client = await db.client.findFirst({ where: { id: Number(clientId), deletedAt: null } });
+      if (!client) return { success: false, error: 'Client introuvable' };
+      const owner = await db.clientBeneficialOwner.create({ data: { ...parsed.data, clientId: client.id } });
+      return { success: true, data: ser(owner) };
+    } catch (error: any) {
+      logger.error('clients:beneficialOwners:create', error.message);
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle('clients:beneficialOwners:update', async (_event, { token, id, payload }: any) => {
+    try {
+      const session = getSession(token);
+      if (!session) return { success: false, error: 'Session expirée' };
+      checkClientWriteRole(session, WRITE_ROLES);
+      const parsed = beneficialOwnerSchema.partial().safeParse(payload);
+      if (!parsed.success) return { success: false, error: parsed.error.format() };
+      const db = getDb();
+      const owner = await db.clientBeneficialOwner.update({ where: { id: Number(id) }, data: parsed.data });
+      return { success: true, data: ser(owner) };
+    } catch (error: any) {
+      logger.error('clients:beneficialOwners:update', error.message);
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle('clients:beneficialOwners:delete', async (_event, { token, id }: any) => {
+    try {
+      const session = getSession(token);
+      if (!session) return { success: false, error: 'Session expirée' };
+      checkClientWriteRole(session, WRITE_ROLES);
+      const db = getDb();
+      await db.clientBeneficialOwner.update({ where: { id: Number(id) }, data: { deletedAt: new Date() } });
+      return { success: true };
+    } catch (error: any) {
+      logger.error('clients:beneficialOwners:delete', error.message);
       return { success: false, error: error.message };
     }
   });

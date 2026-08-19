@@ -124,10 +124,39 @@ const referrerSchema = zod_1.z.object({
     country: zod_1.z.string().optional(),
     bankIban: zod_1.z.string().optional(),
     bankBic: zod_1.z.string().optional(),
+    // Informations complémentaires — alimentent la « Fiche KYC » imprimable
+    // depuis la fiche apporteur d'affaire, même principe que Client.*.
+    employerName: zod_1.z.string().optional(),
+    monthlyIncome: zod_1.z.coerce.number().min(0).nullable().optional(),
+    sourceOfFunds: zod_1.z.array(zod_1.z.string()).optional(),
+    sourceOfFundsOther: zod_1.z.string().optional(),
+    sourceOfWealth: zod_1.z.string().optional(),
+    relationshipPurpose: zod_1.z.array(zod_1.z.string()).optional(),
+    relationshipPurposeOther: zod_1.z.string().optional(),
+    expectedTransactionVolume: zod_1.z.coerce.number().min(0).nullable().optional(),
+    acquisitionChannel: zod_1.z.string().optional(),
+    isPep: zod_1.z.boolean().optional(),
+    pepCategory: zod_1.z.enum(['PEP_NATIONAL', 'PEP_ETRANGER', 'PEP_ORGANISATION_INTERNATIONALE', 'PERSONNE_LIEE_PEP']).nullable().optional(),
+    pepFunction: zod_1.z.string().optional(),
+    hasRiskyCountryLink: zod_1.z.boolean().optional(),
+    kycSignedAt: zod_1.z.string().datetime().nullable().optional(),
+    kycSignedPlace: zod_1.z.string().optional(),
     notes: zod_1.z.string().optional(),
     isActive: zod_1.z.boolean().optional(),
     // Utilisateur interne référent de cet apporteur (facultatif).
     assignedToId: zod_1.z.number().int().positive().nullable().optional(),
+});
+// Bénéficiaires effectifs — pertinents pour un apporteur d'affaire société,
+// repris sur la Fiche KYC imprimable. Même schéma que ClientBeneficialOwner.
+const referrerBeneficialOwnerSchema = zod_1.z.object({
+    firstName: zod_1.z.string().min(1, 'Prénom requis'),
+    lastName: zod_1.z.string().min(1, 'Nom requis'),
+    nationality: zod_1.z.string().optional(),
+    idNumber: zod_1.z.string().optional(),
+    ownershipPct: zod_1.z.coerce.number().min(0).max(100).nullable().optional(),
+    role: zod_1.z.string().optional(),
+    isPep: zod_1.z.boolean().optional(),
+    notes: zod_1.z.string().optional(),
 });
 // Sélection légère pour la relation utilisateur référent incluse.
 const USER_BRIEF_SELECT = {
@@ -903,6 +932,7 @@ function registerCommissionsIPC() {
                     documents: { where: { deletedAt: null }, orderBy: { uploadedAt: 'desc' } },
                     assignedTo: { select: USER_BRIEF_SELECT },
                     _count: { select: { commissions: true } },
+                    beneficialOwners: { where: { deletedAt: null }, orderBy: { createdAt: 'asc' } },
                 },
             });
             if (!referrer || referrer.deletedAt)
@@ -951,6 +981,8 @@ function registerCommissionsIPC() {
                 return { success: false, error: parsed.error.format() };
             const db = (0, db_service_1.getDb)();
             const d = parsed.data;
+            if (d.kycSignedAt)
+                d.kycSignedAt = new Date(d.kycSignedAt);
             const referrer = await db.businessReferrer.create({
                 data: { ...d, email: d.email || null },
             });
@@ -979,6 +1011,8 @@ function registerCommissionsIPC() {
             const data = { ...d };
             if (d.email !== undefined)
                 data.email = d.email || null;
+            if (data.kycSignedAt)
+                data.kycSignedAt = new Date(data.kycSignedAt);
             const referrer = await db.businessReferrer.update({ where: { id }, data });
             const changedFields = (0, timeline_service_1.diffChangedFields)(before, data);
             if (changedFields.length) {
@@ -1012,6 +1046,61 @@ function registerCommissionsIPC() {
         }
         catch (error) {
             logger_1.default.error('commissions:deleteReferrer error', error.message);
+            return { success: false, error: error.message };
+        }
+    });
+    // ── Bénéficiaires effectifs (apporteur d'affaire société) ──────────────────
+    electron_1.ipcMain.handle('commissions:referrerBeneficialOwners:create', async (_event, { token, referrerId, payload }) => {
+        try {
+            const session = (0, auth_service_1.getSession)(token);
+            if (!session)
+                return { success: false, error: 'Session expirée' };
+            checkExactRole(session, REFERRERS_WRITE_ROLES);
+            const parsed = referrerBeneficialOwnerSchema.safeParse(payload);
+            if (!parsed.success)
+                return { success: false, error: parsed.error.format() };
+            const db = (0, db_service_1.getDb)();
+            const referrer = await db.businessReferrer.findFirst({ where: { id: Number(referrerId), deletedAt: null } });
+            if (!referrer)
+                return { success: false, error: 'Apporteur d\'affaire introuvable' };
+            const bo = await db.referrerBeneficialOwner.create({ data: { ...parsed.data, referrerId: referrer.id } });
+            return ser({ success: true, data: bo });
+        }
+        catch (error) {
+            logger_1.default.error('commissions:referrerBeneficialOwners:create', error.message);
+            return { success: false, error: error.message };
+        }
+    });
+    electron_1.ipcMain.handle('commissions:referrerBeneficialOwners:update', async (_event, { token, id, payload }) => {
+        try {
+            const session = (0, auth_service_1.getSession)(token);
+            if (!session)
+                return { success: false, error: 'Session expirée' };
+            checkExactRole(session, REFERRERS_WRITE_ROLES);
+            const parsed = referrerBeneficialOwnerSchema.partial().safeParse(payload);
+            if (!parsed.success)
+                return { success: false, error: parsed.error.format() };
+            const db = (0, db_service_1.getDb)();
+            const bo = await db.referrerBeneficialOwner.update({ where: { id: Number(id) }, data: parsed.data });
+            return ser({ success: true, data: bo });
+        }
+        catch (error) {
+            logger_1.default.error('commissions:referrerBeneficialOwners:update', error.message);
+            return { success: false, error: error.message };
+        }
+    });
+    electron_1.ipcMain.handle('commissions:referrerBeneficialOwners:delete', async (_event, { token, id }) => {
+        try {
+            const session = (0, auth_service_1.getSession)(token);
+            if (!session)
+                return { success: false, error: 'Session expirée' };
+            checkExactRole(session, REFERRERS_WRITE_ROLES);
+            const db = (0, db_service_1.getDb)();
+            await db.referrerBeneficialOwner.update({ where: { id: Number(id) }, data: { deletedAt: new Date() } });
+            return { success: true };
+        }
+        catch (error) {
+            logger_1.default.error('commissions:referrerBeneficialOwners:delete', error.message);
             return { success: false, error: error.message };
         }
     });

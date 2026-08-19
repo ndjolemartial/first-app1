@@ -244,7 +244,7 @@ function CrmDetailModal({
                       <tr key={c.id}>
                         <td className="py-2 pr-3 font-mono text-xs">{c.reference}</td>
                         <td className="py-2 pr-3 text-slate-600">
-                          {c.client?.type === 'ENTREPRISE'
+                          {c.client?.type && c.client.type !== 'INDIVIDUEL'
                             ? (c.client?.entreprise ?? '—')
                             : (`${c.client?.lastName ?? ''} ${c.client?.firstName ?? ''}`.trim() || '—')}
                         </td>

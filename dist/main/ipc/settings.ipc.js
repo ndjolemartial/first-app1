@@ -1,4 +1,37 @@
 "use strict";
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
 var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
@@ -18,6 +51,9 @@ const os_1 = __importDefault(require("os"));
 const email_service_1 = require("../services/email.service");
 const sms_service_1 = require("../services/sms.service");
 const whatsapp_service_1 = require("../services/whatsapp.service");
+const secretCrypto_1 = require("../utils/secretCrypto");
+const imapError_1 = require("../utils/imapError");
+const imapflow_1 = require("imapflow");
 /** Adresses IPv4 locales (hors loopback) — pour suggérer l'URL du QR. */
 function getLocalIps() {
     const ips = [];
@@ -45,6 +81,7 @@ const companySchema = zod_1.z.object({
     phoneMobile2: zod_1.z.string().optional(),
     website: zod_1.z.string().optional(),
     address: zod_1.z.string().optional(),
+    email: zod_1.z.string().optional(),
 });
 const storageSchema = zod_1.z.object({
     path: zod_1.z.string().optional(),
@@ -63,6 +100,16 @@ const emailSchema = zod_1.z.object({
     fromAddress: zod_1.z.string().optional(),
     fromName: zod_1.z.string().optional(),
     signature: zod_1.z.string().optional(), // HTML — inséré via la variable {{signature}}
+});
+// Réception (IMAP) — boîte système partagée des relances (MailAccount.userId = null).
+const imapSchema = zod_1.z.object({
+    host: zod_1.z.string().optional(),
+    port: zod_1.z.coerce.number().int().min(1).max(65535).optional(),
+    secure: zod_1.z.boolean().optional(),
+    user: zod_1.z.string().optional(),
+    password: zod_1.z.string().optional(),
+    folder: zod_1.z.string().optional(),
+    isActive: zod_1.z.boolean().optional(),
 });
 const smsSchema = zod_1.z.object({
     provider: zod_1.z.enum(['twilio', 'ovh', 'brevo', 'orange', 'mtn', '']).optional(),
@@ -192,6 +239,7 @@ function registerSettingsIPC() {
                 settings_service_1.SettingsKeys.companyPhoneMobile2,
                 settings_service_1.SettingsKeys.companyWebsite,
                 settings_service_1.SettingsKeys.companyAddress,
+                settings_service_1.SettingsKeys.companyEmail,
             ]);
             return {
                 success: true,
@@ -208,6 +256,7 @@ function registerSettingsIPC() {
                     phoneMobile2: map[settings_service_1.SettingsKeys.companyPhoneMobile2] ?? '',
                     website: map[settings_service_1.SettingsKeys.companyWebsite] ?? '',
                     address: map[settings_service_1.SettingsKeys.companyAddress] ?? '',
+                    email: map[settings_service_1.SettingsKeys.companyEmail] ?? '',
                 },
             };
         }
@@ -248,6 +297,8 @@ function registerSettingsIPC() {
                 entries.push({ key: settings_service_1.SettingsKeys.companyWebsite, value: parsed.data.website });
             if (parsed.data.address !== undefined)
                 entries.push({ key: settings_service_1.SettingsKeys.companyAddress, value: parsed.data.address });
+            if (parsed.data.email !== undefined)
+                entries.push({ key: settings_service_1.SettingsKeys.companyEmail, value: parsed.data.email });
             await (0, settings_service_1.setSettings)(entries);
             logger_1.default.info('Paramètres entreprise mis à jour');
             return { success: true };
@@ -588,6 +639,125 @@ function registerSettingsIPC() {
         catch (err) {
             logger_1.default.error('settings:testEmail', err.message);
             return { success: false, error: err.message };
+        }
+    });
+    // ── Réception (IMAP) — boîte système partagée des relances ────────────────
+    electron_1.ipcMain.handle('settings:getImap', async (_event, { token }) => {
+        try {
+            const session = (0, auth_service_1.getSession)(token);
+            if (!session)
+                return { success: false, error: 'Session expirée' };
+            (0, auth_service_1.checkRole)(session, ADMIN_ROLES);
+            const db = (0, db_service_1.getDb)();
+            const account = await db.mailAccount.findFirst({ where: { userId: null } });
+            return {
+                success: true,
+                data: {
+                    host: account?.imapHost ?? '',
+                    port: account?.imapPort ?? 993,
+                    secure: account?.imapSecure ?? true,
+                    user: account?.imapUser ?? '',
+                    password: account ? settings_service_1.SECRET_MASK : '',
+                    passwordSet: !!account,
+                    folder: account?.folder ?? 'INBOX',
+                    isActive: account?.isActive ?? true,
+                    lastPolledAt: account?.lastPolledAt ?? null,
+                    lastError: account?.lastError ?? null,
+                },
+            };
+        }
+        catch (err) {
+            return { success: false, error: err.message };
+        }
+    });
+    electron_1.ipcMain.handle('settings:updateImap', async (_event, { token, payload }) => {
+        try {
+            const session = (0, auth_service_1.getSession)(token);
+            if (!session)
+                return { success: false, error: 'Session expirée' };
+            (0, auth_service_1.checkRole)(session, ADMIN_ROLES);
+            const parsed = imapSchema.safeParse(payload);
+            if (!parsed.success)
+                return { success: false, error: parsed.error.issues.map((i) => i.message).join(', ') };
+            const d = parsed.data;
+            const db = (0, db_service_1.getDb)();
+            const existing = await db.mailAccount.findFirst({ where: { userId: null } });
+            const data = {};
+            if (d.host !== undefined)
+                data.imapHost = d.host;
+            if (d.port !== undefined)
+                data.imapPort = d.port;
+            if (d.secure !== undefined)
+                data.imapSecure = d.secure;
+            if (d.user !== undefined)
+                data.imapUser = d.user;
+            if (d.folder !== undefined)
+                data.folder = d.folder;
+            if (d.isActive !== undefined)
+                data.isActive = d.isActive;
+            if (d.password !== undefined && d.password !== settings_service_1.SECRET_MASK) {
+                data.imapPasswordEnc = (0, secretCrypto_1.encryptSecret)(d.password);
+            }
+            if (existing) {
+                await db.mailAccount.update({ where: { id: existing.id }, data });
+            }
+            else {
+                if (!data.imapHost || !data.imapUser || !data.imapPasswordEnc) {
+                    return { success: false, error: 'Hôte, utilisateur et mot de passe requis pour créer la boîte de réception.' };
+                }
+                await db.mailAccount.create({
+                    data: {
+                        userId: null,
+                        label: 'Boîte système — relances',
+                        imapHost: data.imapHost,
+                        imapPort: data.imapPort ?? 993,
+                        imapSecure: data.imapSecure ?? true,
+                        imapUser: data.imapUser,
+                        imapPasswordEnc: data.imapPasswordEnc,
+                        folder: data.folder ?? 'INBOX',
+                        isActive: data.isActive ?? true,
+                    },
+                });
+            }
+            logger_1.default.info('Paramètres IMAP (boîte système) mis à jour');
+            return { success: true };
+        }
+        catch (err) {
+            logger_1.default.error('settings:updateImap', err.message);
+            return { success: false, error: err.message };
+        }
+    });
+    electron_1.ipcMain.handle('settings:testImap', async (_event, { token }) => {
+        try {
+            const session = (0, auth_service_1.getSession)(token);
+            if (!session)
+                return { success: false, error: 'Session expirée' };
+            (0, auth_service_1.checkRole)(session, ADMIN_ROLES);
+            const db = (0, db_service_1.getDb)();
+            const account = await db.mailAccount.findFirst({ where: { userId: null } });
+            if (!account)
+                return { success: false, error: "Boîte de réception non configurée." };
+            const { decryptSecret } = await Promise.resolve().then(() => __importStar(require('../utils/secretCrypto')));
+            const password = decryptSecret(account.imapPasswordEnc);
+            const client = new imapflow_1.ImapFlow({
+                host: account.imapHost, port: account.imapPort, secure: account.imapSecure,
+                auth: { user: account.imapUser, pass: password }, logger: false,
+            });
+            try {
+                await client.connect();
+                await client.logout();
+            }
+            finally {
+                try {
+                    client.close();
+                }
+                catch { /* déjà fermé */ }
+            }
+            return { success: true };
+        }
+        catch (err) {
+            logger_1.default.error('settings:testImap', err.message);
+            return { success: false, error: `Connexion IMAP échouée : ${(0, imapError_1.describeImapError)(err)}` };
         }
     });
     // ── SMS ────────────────────────────────────────────────────────────────────
@@ -1117,6 +1287,90 @@ function registerSettingsIPC() {
         }
         catch (err) {
             logger_1.default.error('settings:updateManualTemplateEditors', err.message);
+            return { success: false, error: err.message };
+        }
+    });
+    // ── Fiche KYC (Clients, Propriétaires, Apporteurs d'affaire) — accès individuel ──
+    // Rôles exclus par défaut des boutons « Fiche KYC » / « Fiche KYC non
+    // renseignée » — accès individuel possible via la liste ci-dessous. Test de
+    // rôle EXACT (pas d'équivalence checkRole) : tous les autres rôles gardent
+    // un accès complet par défaut.
+    const KYC_RESTRICTED_ROLES = ['AGENT', 'AGENT_TECHNIQUE', 'ASSISTANTE_DIRECTION', 'READONLY'];
+    async function kycAuthorizedUserIds() {
+        const raw = await (0, settings_service_1.getSetting)(settings_service_1.SettingsKeys.kycAuthorizedUserIds);
+        if (!raw)
+            return [];
+        try {
+            const parsed = JSON.parse(raw);
+            return Array.isArray(parsed) ? parsed.filter((n) => Number.isInteger(n)) : [];
+        }
+        catch {
+            return [];
+        }
+    }
+    /**
+     * Liste des ids d'utilisateurs individuellement autorisés à utiliser les
+     * boutons « Fiche KYC » alors que leur rôle en est par défaut exclu. Réservé
+     * aux administrateurs (paramétrage).
+     */
+    electron_1.ipcMain.handle('settings:getKycAuthorizedUsers', async (_event, { token }) => {
+        try {
+            const session = (0, auth_service_1.getSession)(token);
+            if (!session)
+                return { success: false, error: 'Session expirée' };
+            (0, auth_service_1.checkRole)(session, ADMIN_ROLES);
+            const userIds = await kycAuthorizedUserIds();
+            return { success: true, data: { userIds } };
+        }
+        catch (err) {
+            logger_1.default.error('settings:getKycAuthorizedUsers', err.message);
+            return { success: false, error: err.message };
+        }
+    });
+    electron_1.ipcMain.handle('settings:updateKycAuthorizedUsers', async (_event, { token, userIds }) => {
+        try {
+            const session = (0, auth_service_1.getSession)(token);
+            if (!session)
+                return { success: false, error: 'Session expirée' };
+            (0, auth_service_1.checkRole)(session, ADMIN_ROLES);
+            const ids = Array.isArray(userIds)
+                ? Array.from(new Set(userIds.map((v) => Number(v)).filter((n) => Number.isInteger(n) && n > 0)))
+                : [];
+            const db = (0, db_service_1.getDb)();
+            const validUsers = ids.length
+                ? await db.user.findMany({ where: { id: { in: ids }, deletedAt: null }, select: { id: true } })
+                : [];
+            const validIds = validUsers.map((u) => u.id);
+            await (0, settings_service_1.setSetting)(settings_service_1.SettingsKeys.kycAuthorizedUserIds, JSON.stringify(validIds));
+            logger_1.default.info(`Utilisateurs désignés (accès Fiche KYC) mis à jour (${validIds.length} utilisateur(s))`);
+            return { success: true, data: { userIds: validIds } };
+        }
+        catch (err) {
+            logger_1.default.error('settings:updateKycAuthorizedUsers', err.message);
+            return { success: false, error: err.message };
+        }
+    });
+    /**
+     * Indique à l'utilisateur connecté s'il peut utiliser les boutons « Fiche
+     * KYC » (Clients, Propriétaires, Apporteurs d'affaire) — utilisé côté
+     * renderer pour afficher (ou non) ces boutons. Accessible à tout utilisateur
+     * authentifié (pas réservé aux admins, contrairement à la gestion de la liste).
+     */
+    electron_1.ipcMain.handle('settings:myKycAccess', async (_event, { token }) => {
+        try {
+            const session = (0, auth_service_1.getSession)(token);
+            if (!session)
+                return { success: false, error: 'Session expirée' };
+            const isRestricted = KYC_RESTRICTED_ROLES.includes(session.role);
+            let hasAccess = !isRestricted;
+            if (isRestricted) {
+                const ids = await kycAuthorizedUserIds();
+                hasAccess = ids.includes(session.userId);
+            }
+            return { success: true, data: { hasAccess } };
+        }
+        catch (err) {
+            logger_1.default.error('settings:myKycAccess', err.message);
             return { success: false, error: err.message };
         }
     });
