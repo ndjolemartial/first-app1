@@ -177,6 +177,42 @@ export function useUpdateManualTemplateEditors() {
   });
 }
 
+// ── Fiche KYC — utilisateurs désignés (accès individuel) ────────────────────
+
+export function useKycAuthorizedUsers() {
+  const token = useAuthStore((s) => s.token)!;
+  return useQuery({
+    queryKey: ['settings', 'kycAuthorizedUsers'],
+    queryFn:  () => ipc().getKycAuthorizedUsers(token),
+    enabled:  !!token,
+  });
+}
+
+export function useUpdateKycAuthorizedUsers() {
+  const token = useAuthStore((s) => s.token)!;
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (userIds: number[]) => ipc().updateKycAuthorizedUsers(token, userIds),
+    onSuccess:  (res) => {
+      if (res.success) {
+        qc.invalidateQueries({ queryKey: ['settings', 'kycAuthorizedUsers'] });
+        qc.invalidateQueries({ queryKey: ['settings', 'myKycAccess'] });
+        toast.success('Utilisateurs autorisés enregistrés');
+      } else toast.error(String(res.error));
+    },
+  });
+}
+
+/** Indique si l'utilisateur connecté peut utiliser les boutons « Fiche KYC ». */
+export function useMyKycAccess() {
+  const token = useAuthStore((s) => s.token)!;
+  return useQuery({
+    queryKey: ['settings', 'myKycAccess'],
+    queryFn:  () => ipc().myKycAccess(token),
+    enabled:  !!token,
+  });
+}
+
 // ── Retards & Départs précipités ─────────────────────────────────────────────
 
 export function useLatenessSettings() {

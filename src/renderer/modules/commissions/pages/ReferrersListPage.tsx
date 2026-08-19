@@ -12,6 +12,7 @@ import { formatPersonName } from '../../../shared/utils/format';
 import ExportMenu, { ExportColumn } from '../../../shared/components/ExportMenu';
 import { useCompanySettings, useLogoData } from '../../settings/hooks/useSettings';
 import { buildBlankReferrerKycDocumentHtml, buildReferrerKycFooterTemplate } from '../utils/referrerKycDocument';
+import { useKycAccess } from '../../../shared/hooks/useKycAccess';
 import { Plus, Search, Eye, Receipt, Printer } from 'lucide-react';
 
 const ACTIVE_OPTIONS = [
@@ -37,6 +38,7 @@ export default function ReferrersListPage() {
   const canManage = COMMISSION_WRITE_ROLES.includes(role);
   const canViewCommissions = COMMISSION_REFERRERS_FULL_VIEW_ROLES.includes(role);
   const canExport = COMMISSION_REFERRERS_EXPORT_ROLES.includes(role);
+  const hasKycAccess = useKycAccess();
 
   const [search, setSearch] = useState('');
   const [active, setActive] = useState('');
@@ -102,7 +104,7 @@ export default function ReferrersListPage() {
               }}
             />
           )}
-          {canExport && (
+          {hasKycAccess && (
             <Button variant="primary" icon={<Printer className="h-4 w-4" />} loading={exportingBlankKyc}
               onClick={handlePrintBlankKyc}>
               Fiche KYC non renseignée

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useAuthStore } from '../../../shared/stores/auth.store';
-import { Building2, HardDrive, Database, Mail, MessageSquare, Images, FileText, FileSignature, Award, Briefcase, Tags, Landmark, IdCard, Layers, Bell, BookOpen, ChevronDown, ChevronRight, Inbox, Printer, MapPin, ShoppingBag, QrCode, Clock, AlarmClockOff, TrendingUp, HardHat, Wrench, Sigma, SlidersHorizontal, Calculator, Scale, ClipboardList, ShieldAlert, ListChecks } from 'lucide-react';
+import { Building2, HardDrive, Database, Mail, MessageSquare, Images, FileText, FileSignature, Award, Briefcase, Tags, Landmark, IdCard, Layers, Bell, BookOpen, ChevronDown, ChevronRight, Inbox, Printer, MapPin, ShoppingBag, QrCode, Clock, AlarmClockOff, TrendingUp, HardHat, Wrench, Sigma, SlidersHorizontal, Calculator, Scale, ClipboardList, ShieldAlert, ListChecks, ShieldCheck } from 'lucide-react';
 import PageLayout from '../../../shared/components/layout/PageLayout';
 import Card from '../../../shared/components/ui/Card';
 import { clsx } from 'clsx';
@@ -46,6 +46,7 @@ import PermitCommunesSettingsTab       from '../components/PermitCommunesSetting
 import PermitFeeItemsSettingsTab       from '../components/PermitFeeItemsSettingsTab';
 import AmlRiskFactorsSettingsTab       from '../components/AmlRiskFactorsSettingsTab';
 import AmlThresholdsSettingsTab        from '../components/AmlThresholdsSettingsTab';
+import KycAccessSettingsTab            from '../components/KycAccessSettingsTab';
 import { useMyTemplatePermissions }     from '../../communication/hooks/useCommunication';
 
 type TabKey =
@@ -89,7 +90,8 @@ type TabKey =
   | 'permitCommunes'
   | 'permitFeeItems'
   | 'amlRiskFactors'
-  | 'amlThresholds';
+  | 'amlThresholds'
+  | 'kycAccess';
 
 type GroupKey = 'communication' | 'treasury' | 'printedTemplates' | 'construction' | 'permits' | 'aml';
 
@@ -158,6 +160,7 @@ export const TABS: TabDef[] = [
   { key: 'visitorQr',            label: 'QR Visiteurs',            icon: <QrCode className="h-4 w-4" /> },
   { key: 'lateness',             label: 'Retards & Départs précipités', icon: <AlarmClockOff className="h-4 w-4" /> },
   { key: 'careerProfiles',       label: 'Profils de carrière',      icon: <TrendingUp className="h-4 w-4" /> },
+  { key: 'kycAccess',            label: 'Fiche KYC — accès',        icon: <ShieldCheck className="h-4 w-4" /> },
   // ── Groupe « Moteur de devis construction » (Module 17) — admin uniquement
   { key: 'constructionLots',            label: 'Lots de travaux',         icon: <Layers className="h-4 w-4" />,             group: 'construction', roles: ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ACCOUNTANT'] },
   { key: 'constructionResources',       label: 'Bordereau des prix',      icon: <Wrench className="h-4 w-4" />,             group: 'construction', roles: ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ACCOUNTANT'] },
@@ -341,6 +344,7 @@ export default function SettingsPage() {
           {active === 'visitorQr'            && <VisitorQrSettingsTab />}
           {active === 'lateness'             && <LatenessSettingsTab />}
           {active === 'careerProfiles'       && <CareerProfilesSettingsTab />}
+          {active === 'kycAccess'            && <KycAccessSettingsTab />}
           {active === 'constructionLots'          && <ConstructionLotsSettingsTab />}
           {active === 'constructionResources'     && <ConstructionResourcesSettingsTab />}
           {active === 'constructionWorkItems'     && <ConstructionWorkItemsSettingsTab />}

@@ -15,6 +15,7 @@ import { buildBlankOwnerKycDocumentHtml, buildOwnerKycFooterTemplate } from '../
 import { formatDate } from '../../../shared/utils/format';
 import ExportMenu, { ExportColumn } from '../../../shared/components/ExportMenu';
 import { useAuthStore } from '../../../shared/stores/auth.store';
+import { useKycAccess } from '../../../shared/hooks/useKycAccess';
 import { UserPlus, Eye, Edit, Home, Printer } from 'lucide-react';
 
 const TYPE_OPTIONS = [
@@ -46,6 +47,7 @@ export default function OwnersListPage() {
   const { data: companyRes } = useCompanySettings();
   const { data: logoRes } = useLogoData();
   const [exportingBlankKyc, setExportingBlankKyc] = useState(false);
+  const hasKycAccess = useKycAccess();
 
   const handlePrintBlankKyc = async () => {
     if (!token) return;
@@ -92,10 +94,12 @@ export default function OwnersListPage() {
               return r.success ? r.data ?? [] : [];
             }}
           />
-          <Button variant="primary" icon={<Printer className="h-4 w-4" />} loading={exportingBlankKyc}
-            onClick={handlePrintBlankKyc}>
-            Fiche KYC non renseignée
-          </Button>
+          {hasKycAccess && (
+            <Button variant="primary" icon={<Printer className="h-4 w-4" />} loading={exportingBlankKyc}
+              onClick={handlePrintBlankKyc}>
+              Fiche KYC non renseignée
+            </Button>
+          )}
           <Button icon={<UserPlus className="h-4 w-4" />} onClick={() => navigate('/owners/new')}>
             Nouveau propriétaire
           </Button>

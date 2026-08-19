@@ -16,6 +16,7 @@ import { formatDate } from '../../../shared/utils/format';
 import ExportMenu, { ExportColumn } from '../../../shared/components/ExportMenu';
 import { useAuthStore } from '../../../shared/stores/auth.store';
 import { canExportPrint } from '../../../shared/utils/exportPermissions';
+import { useKycAccess } from '../../../shared/hooks/useKycAccess';
 import { UserPlus, Eye, Edit, Printer } from 'lucide-react';
 
 /** Rôles habilités à créer un client (équivalents WRITE_ROLES côté IPC). */
@@ -71,6 +72,7 @@ export default function ClientsListPage() {
   const role  = useAuthStore((s) => s.user?.role) ?? '';
   const canCreate = WRITE_ROLES.has(role);
   const canExport = canExportPrint(role);
+  const hasKycAccess = useKycAccess();
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState('');
   const [type, setType] = useState('');
@@ -129,7 +131,7 @@ export default function ClientsListPage() {
               }}
             />
           )}
-          {canExport && (
+          {hasKycAccess && (
             <Button variant="primary" icon={<Printer className="h-4 w-4" />} loading={exportingBlankKyc}
               onClick={handlePrintBlankKyc}>
               Fiche KYC non renseignée

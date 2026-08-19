@@ -16,6 +16,7 @@ import { formatDate, formatPersonName, formatCurrency } from '../../../shared/ut
 import { useCountries } from '../../../shared/hooks/useCountries';
 import { useCompanySettings, useLogoData } from '../../settings/hooks/useSettings';
 import { buildReferrerKycDocumentHtml, buildReferrerKycFooterTemplate, formatSourceOfFunds, formatRelationshipPurpose } from '../utils/referrerKycDocument';
+import { useKycAccess } from '../../../shared/hooks/useKycAccess';
 import { PEP_CATEGORY_LABEL } from '../../aml/utils/aml.utils';
 import { Edit, Trash2, Receipt, History, Printer, ShieldCheck, Users, Plus } from 'lucide-react';
 import EntityDocumentsCard from '../../archiving/components/EntityDocumentsCard';
@@ -27,6 +28,7 @@ export default function ReferrerDetailPage() {
   const canManage = COMMISSION_WRITE_ROLES.includes(role);
   const canDelete = COMMISSION_REFERRERS_DELETE_ROLES.includes(role);
   const canViewCommissions = COMMISSION_REFERRERS_FULL_VIEW_ROLES.includes(role);
+  const hasKycAccess = useKycAccess();
 
   const { data: res, isLoading } = useReferrer(Number(id));
   const deleteReferrer = useDeleteReferrer();
@@ -143,8 +145,10 @@ export default function ReferrerDetailPage() {
         <div className="flex gap-2">
           <Button variant="secondary" icon={<History className="h-4 w-4" />}
             onClick={() => navigate(`/commissions/referrers/${id}/timeline`)}>Fiche de suivi</Button>
-          <Button variant="primary" icon={<Printer className="h-4 w-4" />} loading={exportingKyc}
-            onClick={handlePrintKyc}>Fiche KYC</Button>
+          {hasKycAccess && (
+            <Button variant="primary" icon={<Printer className="h-4 w-4" />} loading={exportingKyc}
+              onClick={handlePrintKyc}>Fiche KYC</Button>
+          )}
           {canViewCommissions && (
             <Button variant="secondary" icon={<Receipt className="h-4 w-4" />}
               onClick={() => navigate(`/commissions/beneficiary/REFERRER/${id}`)}>Commissions</Button>

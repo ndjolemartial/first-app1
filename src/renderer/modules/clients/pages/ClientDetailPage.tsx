@@ -17,6 +17,7 @@ import {
 import { useAuthStore } from '../../../shared/stores/auth.store';
 import { formatDate, formatCurrency, formatCivilite } from '../../../shared/utils/format';
 import { useCountries } from '../../../shared/hooks/useCountries';
+import { useKycAccess } from '../../../shared/hooks/useKycAccess';
 import { useCompanySettings, useLogoData } from '../../settings/hooks/useSettings';
 import { buildClientKycDocumentHtml, buildClientKycFooterTemplate, formatSourceOfFunds, formatRelationshipPurpose } from '../utils/kycDocument';
 import { formatBytes } from '../../archiving/utils/gedTree';
@@ -130,6 +131,7 @@ export default function ClientDetailPage() {
   const assignClient   = useAssignClient();
   const setReferrer    = useSetClientReferrer();
   const role = useAuthStore((s) => s.user?.role) ?? '';
+  const hasKycAccess = useKycAccess();
   const canAssign = ASSIGN_ROLES.has(role);
   // AGENT, ASSISTANTE_DIRECTION et READONLY ne peuvent pas modifier un client.
   const canWrite = ASSIGN_ROLES.has(role);
@@ -267,8 +269,10 @@ export default function ClientDetailPage() {
           )}
           <Button variant="secondary" icon={<History className="h-4 w-4" />}
             onClick={() => navigate(`/clients/${id}/timeline`)}>Fiche de suivi</Button>
-          <Button variant="primary" icon={<Printer className="h-4 w-4" />} loading={exportingKyc}
-            onClick={handlePrintKyc}>Fiche KYC</Button>
+          {hasKycAccess && (
+            <Button variant="primary" icon={<Printer className="h-4 w-4" />} loading={exportingKyc}
+              onClick={handlePrintKyc}>Fiche KYC</Button>
+          )}
           <ReportSuspicionButton subjectType="CLIENT" subjectId={c.id} />
           {canWrite && (
             <>

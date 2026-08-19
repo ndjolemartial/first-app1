@@ -15,6 +15,7 @@ import { formatDate, formatCurrency } from '../../../shared/utils/format';
 import { useCountries } from '../../../shared/hooks/useCountries';
 import { useCompanySettings, useLogoData } from '../../settings/hooks/useSettings';
 import { buildOwnerKycDocumentHtml, buildOwnerKycFooterTemplate, formatSourceOfFunds, formatRelationshipPurpose } from '../utils/kycDocument';
+import { useKycAccess } from '../../../shared/hooks/useKycAccess';
 import { PEP_CATEGORY_LABEL } from '../../aml/utils/aml.utils';
 import { Edit, Trash2, Home, Building2, FileText, Printer, ShieldCheck, Users, Plus } from 'lucide-react';
 import EntityDocumentsCard from '../../archiving/components/EntityDocumentsCard';
@@ -41,6 +42,7 @@ export default function OwnerDetailPage() {
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [exportingKyc, setExportingKyc] = useState(false);
   const token = useAuthStore((s) => s.token)!;
+  const hasKycAccess = useKycAccess();
   const { data: companyRes } = useCompanySettings();
   const { data: logoRes } = useLogoData();
   const { data: countriesRes } = useCountries();
@@ -148,8 +150,10 @@ export default function OwnerDetailPage() {
       breadcrumbs={[{ label: 'Tierce partie' }, { label: 'Propriétaires', to: '/owners' }, { label: displayName }]}
       actions={
         <div className="flex gap-2">
-          <Button variant="primary" icon={<Printer className="h-4 w-4" />} loading={exportingKyc}
-            onClick={handlePrintKyc}>Fiche KYC</Button>
+          {hasKycAccess && (
+            <Button variant="primary" icon={<Printer className="h-4 w-4" />} loading={exportingKyc}
+              onClick={handlePrintKyc}>Fiche KYC</Button>
+          )}
           <ReportSuspicionButton subjectType="OWNER" subjectId={o.id} />
           <Button variant="secondary" icon={<Edit className="h-4 w-4" />}
             onClick={() => navigate(`/owners/${id}/edit`)}>Modifier</Button>
