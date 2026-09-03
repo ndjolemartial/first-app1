@@ -184,6 +184,18 @@ const quotes = {
   listUnits: (token: string, includeInactive?: boolean) => api.invoke('quotes:listUnits', { token, includeInactive }),
 };
 
+// Factures Proforma — document optionnel, non comptable, émis avant un achat
+// de terrain/bien depuis un devis (Vente terrain/bien) ou une convention
+// encore en Brouillon.
+const proforma = {
+  list: (token: string, filters?: object, page?: number, limit?: number) =>
+    api.invoke('proforma:list', { token, filters, page, limit }),
+  getById: (token: string, id: number) => api.invoke('proforma:getById', { token, id }),
+  createFromQuote: (token: string, payload: object) => api.invoke('proforma:createFromQuote', { token, payload }),
+  createFromConvention: (token: string, payload: object) => api.invoke('proforma:createFromConvention', { token, payload }),
+  delete: (token: string, id: number) => api.invoke('proforma:delete', { token, id }),
+};
+
 const quoteTemplates = {
   list: (token: string, filters?: object, page?: number, limit?: number) =>
     api.invoke('quoteTemplates:list', { token, filters, page, limit }),
@@ -1243,6 +1255,11 @@ const settings = {
   getLatenessSettings: (token: string) => api.invoke('settings:getLatenessSettings', { token }),
   updateLatenessSettings: (token: string, payload: object) =>
     api.invoke('settings:updateLatenessSettings', { token, payload }),
+  listAttendanceSpecialDays: (token: string) => api.invoke('settings:listAttendanceSpecialDays', { token }),
+  createAttendanceSpecialDay: (token: string, payload: object) =>
+    api.invoke('settings:createAttendanceSpecialDay', { token, payload }),
+  deleteAttendanceSpecialDay: (token: string, id: number) =>
+    api.invoke('settings:deleteAttendanceSpecialDay', { token, id }),
 
   getVisitorQr: (token: string) => api.invoke('settings:getVisitorQr', { token }),
   updateVisitorQr: (token: string, payload: object) =>
@@ -1323,8 +1340,12 @@ const documents = {
     api.invoke('documents:getByClient', { token, clientId }),
   uploadOwnerDoc: (token: string, ownerId: number, category: string, payload: object) =>
     api.invoke('documents:uploadOwnerDoc', { token, ownerId, category, ...payload }),
+  uploadOwnerDocs: (token: string, ownerId: number, category: string, files: object[]) =>
+    api.invoke('documents:uploadOwnerDocs', { token, ownerId, category, files }),
   getByOwner: (token: string, ownerId: number) =>
     api.invoke('documents:getByOwner', { token, ownerId }),
+  uploadReferrerDocs: (token: string, referrerId: number, category: string, files: object[]) =>
+    api.invoke('documents:uploadReferrerDocs', { token, referrerId, category, files }),
   uploadTerrainDoc: (token: string, terrainId: number, category: string, payload: object) =>
     api.invoke('documents:uploadTerrainDoc', { token, terrainId, category, ...payload }),
   getByTerrain: (token: string, terrainId: number) =>
@@ -1376,4 +1397,4 @@ const careerProfiles = {
   duplicate: (token: string, id: number) => api.invoke('careerProfiles:duplicate', { token, id }),
 };
 
-contextBridge.exposeInMainWorld('electron', { auth, users, prospects, clients, owners, properties, conventions, conventionTemplates, attestationTemplates, attestations, quotes, quoteTemplates, catalog, accounting, bilan, communication, crm, archiving, documents, documentExport, lotissements, terrains, programmes, projects, hr, careerProfiles, performance, visitors, calls, socialMedia, innovations, constructionLibrary, construction, permitLibrary, permits, aml, geo, countries, commissions, expenses, analytics, exporter, invoiceTemplates, listExportTemplates, wireTransfer, treasury, budget, dashboard, settings, reminders, mailAccount, config });
+contextBridge.exposeInMainWorld('electron', { auth, users, prospects, clients, owners, properties, conventions, conventionTemplates, attestationTemplates, attestations, quotes, quoteTemplates, proforma, catalog, accounting, bilan, communication, crm, archiving, documents, documentExport, lotissements, terrains, programmes, projects, hr, careerProfiles, performance, visitors, calls, socialMedia, innovations, constructionLibrary, construction, permitLibrary, permits, aml, geo, countries, commissions, expenses, analytics, exporter, invoiceTemplates, listExportTemplates, wireTransfer, treasury, budget, dashboard, settings, reminders, mailAccount, config });

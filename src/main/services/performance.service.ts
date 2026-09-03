@@ -384,14 +384,18 @@ export interface LatenessLine {
  * Journées de retard d'arrivée / départ anticipé d'un employé sur [start, end[
  * (uniquement les journées `PRESENT` avec pointage), avec la justification
  * éventuellement déjà enregistrée. Les seuils (arrivée/départ attendus) sont
- * ceux paramétrés pour le pointage QR (`attendance.expectedArrival/Departure`).
+ * ceux paramétrés pour le pointage QR (`attendance.expectedArrival/Departure`),
+ * sauf pour une journée déclarée `AttendanceSpecialDay` (journée continue se
+ * terminant à 12h/14h, valable pour toute l'entreprise — Paramètres → Retards
+ * & Départs précipités), dont les seuils remplacent alors les seuils globaux
+ * pour cette seule date.
  */
 export async function computeLatenessLinesForEmployee(db: Db, employeeId: number, start: Date, end: Date): Promise<LatenessLine[]> {
   const { expectedArrival, expectedDeparture } = await getAttendanceClockSettings();
-  const arrivalThreshold = thresholdMinutes(expectedArrival);
-  const departureThreshold = thresholdMinutes(expectedDeparture);
+  const defaultArrivalThreshold = thresholdMinutes(expectedArrival);
+  const defaultDepartureThreshold = thresholdMinutes(expectedDeparture);
 
-  const [records, justifications] = await Promise.all([
+  const [records, justifications, specialDays] = await Promise.all([
     db.attendanceRecord.findMany({
       where: { employeeId, date: { gte: start, lt: end }, status: 'PRESENT' },
       select: { date: true, arrivalTime: true, departureTime: true },
@@ -404,11 +408,19 @@ export async function computeLatenessLinesForEmployee(db: Db, employeeId: number
         tolerated: true, toleratedById: true, toleratedAt: true, notes: true,
       },
     }),
+    db.attendanceSpecialDay.findMany({
+      where: { date: { gte: start, lt: end } },
+      select: { date: true, expectedArrival: true, expectedDeparture: true },
+    }),
   ]);
   const justByDate = new Map(justifications.map((j) => [j.date.getTime(), j]));
+  const specialByDate = new Map(specialDays.map((s) => [s.date.getTime(), s]));
 
   const lines: LatenessLine[] = [];
   for (const r of records) {
+    const special = specialByDate.get(r.date.getTime());
+    const arrivalThreshold = special?.expectedArrival ? thresholdMinutes(special.expectedArrival) : defaultArrivalThreshold;
+    const departureThreshold = special ? thresholdMinutes(special.expectedDeparture) : defaultDepartureThreshold;
     const lateMinutes = r.arrivalTime ? Math.max(0, minutesOfDay(r.arrivalTime) - arrivalThreshold) : 0;
     const earlyMinutes = r.departureTime ? Math.max(0, departureThreshold - minutesOfDay(r.departureTime)) : 0;
     const totalMinutes = lateMinutes + earlyMinutes;

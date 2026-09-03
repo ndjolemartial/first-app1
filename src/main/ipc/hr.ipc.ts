@@ -905,6 +905,7 @@ export function registerHrIPC(): void {
     sursalaire: z.coerce.number().nonnegative().optional(),
     taxablePrime: z.coerce.number().nonnegative().optional(),
     transportAllowance: z.coerce.number().nonnegative().optional(),
+    commissionsVente: z.coerce.number().nonnegative().optional(),
     // Inclure automatiquement les heures supplémentaires du pointage du mois.
     includeOvertime: z.coerce.boolean().optional(),
   });
@@ -927,6 +928,7 @@ export function registerHrIPC(): void {
     sursalaire?: number;
     taxablePrime?: number;
     transportAllowance?: number;
+    commissionsVente?: number;
     includeOvertime?: boolean;
   }
 
@@ -974,6 +976,7 @@ export function registerHrIPC(): void {
         taxablePrime: p.taxablePrime,
         overtimeAmount,
         transportAllowance: p.transportAllowance,
+        commissionsVente: p.commissionsVente,
       },
       rates,
     );
@@ -1158,6 +1161,7 @@ export function registerHrIPC(): void {
         sursalaire: lineAmount('Sursalaire'),
         taxablePrime: lineAmount('Primes imposables'),
         transportAllowance: lineAmount('Indemnité de transport (non imposable)') + lineAmount('Indemnité de transport (part imposable)'),
+        commissionsVente: lineAmount('Commissions sur vente'),
         includeOvertime: lineAmount('Heures supplémentaires') > 0,
       });
       if (result.success) {
@@ -1177,6 +1181,7 @@ export function registerHrIPC(): void {
     sursalaire: z.coerce.number().nonnegative().optional(),
     taxablePrime: z.coerce.number().nonnegative().optional(),
     transportAllowance: z.coerce.number().nonnegative().optional(),
+    commissionsVente: z.coerce.number().nonnegative().optional(),
     includeOvertime: z.coerce.boolean().optional(),
   });
 
@@ -1228,6 +1233,7 @@ export function registerHrIPC(): void {
           taxablePrime: d.taxablePrime,
           overtimeAmount,
           transportAllowance: d.transportAllowance,
+          commissionsVente: d.commissionsVente,
         },
         rates,
       );
@@ -2537,10 +2543,30 @@ export function registerHrIPC(): void {
       if (!session) return { success: false, error: 'Session expirée' };
       const db = getDb();
       const now = new Date();
-      const y = year ? Number(year) : now.getFullYear();
-      const m = month ? Number(month) : now.getMonth() + 1;
-      const start = new Date(y, m - 1, 1);
-      const end = new Date(y, m, 1);
+      // year/month = 0 (ou absent) → sentinel « Toutes les années » / « Tous
+      // les mois » côté formulaire (LatenessPage.tsx). Bornes de requête :
+      // - année + mois précisés : la seule fenêtre mensuelle (comportement historique).
+      // - année précisée, mois « tous » : toute l'année.
+      // - année « toutes », mois précisé : tout l'historique, filtré par mois en mémoire ci-dessous.
+      // - les deux « tous » : tout l'historique.
+      const y = year ? Number(year) : null;
+      const m = month ? Number(month) : null;
+      let start: Date;
+      let end: Date;
+      if (y != null && m != null) {
+        start = new Date(y, m - 1, 1);
+        end = new Date(y, m, 1);
+      } else if (y != null) {
+        start = new Date(y, 0, 1);
+        end = new Date(y + 1, 0, 1);
+      } else {
+        start = new Date(2000, 0, 1);
+        end = new Date(now.getFullYear() + 1, 0, 1);
+      }
+      // Filtre supplémentaire en mémoire : seul le cas « toutes les années +
+      // mois précis » ne peut pas être réduit à une simple fenêtre continue
+      // de dates (bornes DB déjà exactes dans tous les autres cas).
+      const filterMonthAcrossYears = y == null && m != null ? m : null;
 
       let employeeIds: number[];
       if (LATENESS_ROLES.includes(session.role)) {
@@ -2572,6 +2598,7 @@ export function registerHrIPC(): void {
         if (!emp) continue;
         const lines = await computeLatenessLinesForEmployee(db, id, start, end);
         for (const l of lines) {
+          if (filterMonthAcrossYears != null && l.date.getMonth() + 1 !== filterMonthAcrossYears) continue;
           if (onlyUnjustified && (l.justification?.justified || l.justification?.tolerated)) continue;
           allLines.push({
             ...l,

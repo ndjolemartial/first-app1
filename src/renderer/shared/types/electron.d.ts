@@ -149,6 +149,13 @@ interface Window {
       convert: (token: string, id: number, options: object) => Promise<IpcResponse<any>>;
       listUnits: (token: string, includeInactive?: boolean) => Promise<IpcResponse<any[]>>;
     };
+    proforma: {
+      list: (token: string, filters?: object, page?: number, limit?: number) => Promise<IpcResponse<any[]>>;
+      getById: (token: string, id: number) => Promise<IpcResponse<any>>;
+      createFromQuote: (token: string, payload: object) => Promise<IpcResponse<any>>;
+      createFromConvention: (token: string, payload: object) => Promise<IpcResponse<any>>;
+      delete: (token: string, id: number) => Promise<IpcResponse>;
+    };
     quoteTemplates: {
       list: (token: string, filters?: object, page?: number, limit?: number) => Promise<IpcResponse<any[]>>;
       getById: (token: string, id: number) => Promise<IpcResponse<any>>;
@@ -243,7 +250,9 @@ interface Window {
       uploadIdDocument: (token: string, clientId: number, payload: object) => Promise<IpcResponse<any>>;
       getByClient: (token: string, clientId: number) => Promise<IpcResponse<any[]>>;
       uploadOwnerDoc: (token: string, ownerId: number, category: string, payload: object) => Promise<IpcResponse<any>>;
+      uploadOwnerDocs: (token: string, ownerId: number, category: string, files: object[]) => Promise<IpcResponse<any[]>>;
       getByOwner: (token: string, ownerId: number) => Promise<IpcResponse<any[]>>;
+      uploadReferrerDocs: (token: string, referrerId: number, category: string, files: object[]) => Promise<IpcResponse<any[]>>;
       uploadTerrainDoc: (token: string, terrainId: number, category: string, payload: object) => Promise<IpcResponse<any>>;
       getByTerrain: (token: string, terrainId: number) => Promise<IpcResponse<any[]>>;
       openFile: (token: string, relativePath: string) => Promise<IpcResponse>;
@@ -1184,6 +1193,9 @@ interface Window {
       // Retards & Départs précipités — inclusion des employés liés SUPER_ADMIN/ADMIN/MANAGER
       getLatenessSettings: (token: string) => Promise<IpcResponse<{ includeManagementRoles: boolean; toleranceMinutes: number }>>;
       updateLatenessSettings: (token: string, payload: { includeManagementRoles: boolean; toleranceMinutes: number }) => Promise<IpcResponse>;
+      listAttendanceSpecialDays: (token: string) => Promise<IpcResponse<any[]>>;
+      createAttendanceSpecialDay: (token: string, payload: object) => Promise<IpcResponse<any>>;
+      deleteAttendanceSpecialDay: (token: string, id: number) => Promise<IpcResponse>;
       getAmlRiskThresholds: (token: string) => Promise<IpcResponse<{ faibleMax: number; moyenMax: number; amountThreshold: number }>>;
       updateAmlRiskThresholds: (token: string, payload: { faibleMax: number; moyenMax: number; amountThreshold: number }) => Promise<IpcResponse>;
 

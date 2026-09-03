@@ -309,7 +309,13 @@ async function buildQuoteFromEstimate(tx, session, estimate, projectNom, lines, 
         throw new Error('Sélectionnez un client ou un prospect destinataire du devis.');
     }
     const quoteItems = buildQuoteItems(lines, payload.splitLaborByLot ?? false);
-    const { subtotal, taxAmount, total } = (0, quotes_ipc_1.resolveQuoteAmounts)(quoteItems.map((it) => ({ quantity: it.quantity, unitPrice: it.unitPrice })), { taxRate: payload.taxRate ?? 0 });
+    // La remise éventuelle de l'estimation (ConstructionEstimate.discount*) doit
+    // se répercuter sur le devis généré, sous peine que le TOTAL du devis ne
+    // corresponde plus au Total HT de l'estimation dont il est issu.
+    const discountIsPercent = estimate.discountIsPercent;
+    const discountPercent = estimate.discountPercent != null ? Number(estimate.discountPercent) : null;
+    const discountAmount = Number(estimate.discountAmount ?? 0);
+    const { subtotal, taxAmount, total, discountAmount: resolvedDiscountAmount } = (0, quotes_ipc_1.resolveQuoteAmounts)(quoteItems.map((it) => ({ quantity: it.quantity, unitPrice: it.unitPrice })), { taxRate: payload.taxRate ?? 0, discountAmount, discountIsPercent, discountPercent });
     const reference = await (0, quotes_ipc_1.nextReference)(tx);
     const quote = await tx.quote.create({
         data: {
@@ -323,6 +329,9 @@ async function buildQuoteFromEstimate(tx, session, estimate, projectNom, lines, 
             validUntil: payload.validUntil ? new Date(payload.validUntil) : null,
             taxRate: dec(payload.taxRate ?? 0),
             subtotal: dec(subtotal),
+            discountAmount: dec(resolvedDiscountAmount),
+            discountIsPercent,
+            discountPercent: discountPercent != null ? dec(discountPercent) : null,
             taxAmount: dec(taxAmount),
             total: dec(total),
             templateId: payload.templateId ?? null,

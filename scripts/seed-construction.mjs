@@ -44,7 +44,7 @@ const LOTS = [
   ['LOT16', 16, 'Cuisine', 'SECOND_OEUVRE'],
   ['LOT17', 17, 'Assainissement', 'VRD'],
   ['LOT18', 18, 'VRD (voirie & réseaux divers)', 'VRD'],
-  ['LOT19', 19, 'Clôture & portail', 'AMENAGEMENTS'],
+  ['LOT19', 19, 'Clôture', 'AMENAGEMENTS'],
   ['LOT20', 20, 'Aménagements extérieurs', 'AMENAGEMENTS'],
   ['LOT21', 21, 'Piscine', 'AMENAGEMENTS'],
   ['LOT22', 22, 'Nettoyage & réception', 'FINITIONS'],
@@ -473,37 +473,37 @@ const WORK_ITEMS_V2 = [
   // Résultat du moteur sur ces 3 cas, à ±3-11 % des références (écart normal
   // pour des références déclarées « en moyenne ») : cf. CLAUDE.md Module 17.
   {
-    code: 'CLOT.FOUILLE', lotCode: 'LOT19', designation: 'Fouille en rigole (fondation clôture)', unit: 'ml', formulaCode: 'QTE_CLOTURE_ML',
+    code: 'CLOT.FOUILLE', lotCode: 'LOT19', designation: 'Fouille en rigole (fondation clôture)', unit: 'ml', formulaCode: 'QTE_CLOTURE_ML', sortOrder: 0,
     rule: { all: [{ field: 'fenceLength', gt: 0 }] },
     components: [['MO.MANOEUVRE', 0.35, 0]],
   },
   {
-    code: 'CLOT.FONDATION', lotCode: 'LOT19', designation: 'Fondation (béton de propreté + semelle filante)', unit: 'ml', formulaCode: 'QTE_CLOTURE_ML',
+    code: 'CLOT.FONDATION', lotCode: 'LOT19', designation: 'Fondation (béton de propreté + semelle filante)', unit: 'ml', formulaCode: 'QTE_CLOTURE_ML', sortOrder: 1,
     rule: { all: [{ field: 'fenceLength', gt: 0 }] },
     components: [['MAT.CIMENT.CPJ35', 0.98, 2], ['MAT.SABLE.LAGUNE', 0.053, 5], ['MAT.GRAVIER.5_15', 0.098, 5], ['MO.MACON', 1.61, 0], ['MO.MANOEUVRE', 0.5, 0]],
   },
   {
-    code: 'CLOT.FERRAILLAGE', lotCode: 'LOT19', designation: 'Ferraillage (fondation + chaînage)', unit: 'ml', formulaCode: 'QTE_CLOTURE_ML',
+    code: 'CLOT.FERRAILLAGE', lotCode: 'LOT19', designation: 'Ferraillage (fondation + chaînage)', unit: 'ml', formulaCode: 'QTE_CLOTURE_ML', sortOrder: 2,
     rule: { all: [{ field: 'fenceLength', gt: 0 }] },
     components: [['MAT.FER.HA8', 3, 3], ['MAT.FIL.ATTACHE', 0.11, 0], ['MO.FERRAILLEUR', 0.25, 0]],
   },
   {
-    code: 'CLOT.CHAINAGE_BAS', lotCode: 'LOT19', designation: 'Chaînage bas', unit: 'ml', formulaCode: 'QTE_CLOTURE_ML',
+    code: 'CLOT.CHAINAGE_BAS', lotCode: 'LOT19', designation: 'Chaînage bas', unit: 'ml', formulaCode: 'QTE_CLOTURE_ML', sortOrder: 3,
     rule: { all: [{ field: 'fenceLength', gt: 0 }] },
     components: [['MAT.CIMENT.CPJ35', 0.53, 2], ['MAT.SABLE.LAGUNE', 0.03, 5], ['MAT.GRAVIER.5_15', 0.053, 5], ['MO.MACON', 1.15, 0]],
   },
   {
-    code: 'CLOT.CHAINAGE_HAUT', lotCode: 'LOT19', designation: 'Chaînage haut (optionnel)', unit: 'ml', formulaCode: 'QTE_CLOTURE_ML',
+    code: 'CLOT.CHAINAGE_HAUT', lotCode: 'LOT19', designation: 'Chaînage haut (optionnel)', unit: 'ml', formulaCode: 'QTE_CLOTURE_ML', sortOrder: 4,
     rule: { all: [{ field: 'fenceLength', gt: 0 }, { field: 'fenceHasChainageHaut', eq: true }] },
     components: [['MAT.CIMENT.CPJ35', 0.56, 2], ['MAT.SABLE.LAGUNE', 0.034, 5], ['MAT.GRAVIER.5_15', 0.056, 5], ['MAT.FER.HA8', 2.25, 3], ['MO.MACON', 1.15, 0], ['MO.FERRAILLEUR', 0.15, 0]],
   },
   {
-    code: 'CLOT.MONTAGE_MUR', lotCode: 'LOT19', designation: 'Montage du mur (élévation en agglos)', unit: 'm²', formulaCode: 'QTE_CLOTURE_SURFACE',
+    code: 'CLOT.MONTAGE_MUR', lotCode: 'LOT19', designation: 'Montage du mur (élévation en agglos)', unit: 'm²', formulaCode: 'QTE_CLOTURE_SURFACE', sortOrder: 5,
     rule: { all: [{ field: 'fenceLength', gt: 0 }] },
     components: [['MAT.AGGLO.20', 12.5, 3], ['MAT.CIMENT.CPJ35', 0.135, 2], ['MAT.SABLE.LAGUNE', 0.0173, 5], ['MO.MACON', 2.53, 0], ['MO.MANOEUVRE', 0.45, 0]],
   },
   {
-    code: 'CLOT.POTEAUX.SORTANTS', lotCode: 'LOT19', designation: 'Poteaux sortants en béton armé', unit: 'u', formulaCode: 'QTE_CLOTURE_POTEAUX',
+    code: 'CLOT.POTEAUX.SORTANTS', lotCode: 'LOT19', designation: 'Poteaux sortants en béton armé', unit: 'u', formulaCode: 'QTE_CLOTURE_POTEAUX', sortOrder: 6,
     rule: { all: [{ field: 'fenceLength', gt: 0 }, { field: 'fencePostType', eq: 'POTEAUX_SORTANTS' }] },
     components: [
       ['MAT.CIMENT.CPJ35', 1.13, 2], ['MAT.SABLE.LAGUNE', 0.06, 5], ['MAT.GRAVIER.15_25', 0.11, 5],
@@ -512,7 +512,7 @@ const WORK_ITEMS_V2 = [
     ],
   },
   {
-    code: 'CLOT.POTEAUX.SIMPLES', lotCode: 'LOT19', designation: 'Poteaux simples en béton armé', unit: 'u', formulaCode: 'QTE_CLOTURE_POTEAUX',
+    code: 'CLOT.POTEAUX.SIMPLES', lotCode: 'LOT19', designation: 'Poteaux simples en béton armé', unit: 'u', formulaCode: 'QTE_CLOTURE_POTEAUX', sortOrder: 6,
     rule: { all: [{ field: 'fenceLength', gt: 0 }, { field: 'fencePostType', eq: 'POTEAUX_SIMPLES' }] },
     components: [
       ['MAT.CIMENT.CPJ35', 0.75, 2], ['MAT.SABLE.LAGUNE', 0.038, 5], ['MAT.GRAVIER.15_25', 0.075, 5],
@@ -521,12 +521,12 @@ const WORK_ITEMS_V2 = [
     ],
   },
   {
-    code: 'CLOT.CREPISSAGE', lotCode: 'LOT19', designation: 'Crépissage', unit: 'm²', formulaCode: 'QTE_CLOTURE_SURFACE',
+    code: 'CLOT.CREPISSAGE', lotCode: 'LOT19', designation: 'Crépissage', unit: 'm²', formulaCode: 'QTE_CLOTURE_SURFACE', sortOrder: 7,
     rule: { all: [{ field: 'fenceLength', gt: 0 }, { field: 'fenceHasCrepissage', eq: true }] },
     components: [['MAT.CIMENT.CPJ35', 0.11, 2], ['MAT.SABLE.LAGUNE', 0.015, 5], ['MO.MACON', 1.84, 0], ['MO.MANOEUVRE', 0.35, 0]],
   },
   {
-    code: 'CLOT.PORTAIL', lotCode: 'LOT19', designation: 'Portail métallique coulissant', unit: 'u', formulaCode: 'QTE_PORTAILS',
+    code: 'CLOT.PORTAIL', lotCode: 'LOT19', designation: 'Portail', unit: 'u', formulaCode: 'QTE_PORTAILS', sortOrder: 8,
     rule: { all: [{ field: 'gateCount', gt: 0 }] },
     components: [['MAT.PORTAIL.METAL', 1, 0], ['MO.SOUDEUR', 6, 0]],
   },
@@ -704,9 +704,9 @@ async function main() {
     const header = { lotId, designation, unit, percentOfTotalPct, isActive: true };
     await db.constructionWorkItem.upsert({ where: { code }, create: { code, ...header }, update: header });
   }
-  for (const { code, lotCode, designation, unit, formulaCode, rule, components } of WORK_ITEMS_V2) {
+  for (const { code, lotCode, designation, unit, formulaCode, rule, components, sortOrder } of WORK_ITEMS_V2) {
     const lotId = lotIdByCode[lotCode];
-    const header = { lotId, designation, unit, formulaCode, applicabilityRule: rule ?? null, isActive: true };
+    const header = { lotId, designation, unit, formulaCode, applicabilityRule: rule ?? null, isActive: true, ...(sortOrder !== undefined ? { sortOrder } : {}) };
     const workItem = await db.constructionWorkItem.upsert({ where: { code }, create: { code, ...header }, update: header });
     await db.constructionWorkItemComponent.deleteMany({ where: { workItemId: workItem.id } });
     await db.constructionWorkItemComponent.createMany({

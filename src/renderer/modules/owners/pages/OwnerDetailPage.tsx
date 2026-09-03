@@ -96,6 +96,7 @@ export default function OwnerDetailPage() {
   const identityDocs = docs.filter((d: any) =>
     ['piece_identite', 'piece_identite_rep_legal', 'registre_commerce'].includes(d.category)
   );
+  const fundsProofDocs = docs.filter((d: any) => d.category === 'justificatif_origine_fonds');
 
   const handlePrintKyc = async () => {
     if (!token) return;
@@ -142,6 +143,7 @@ export default function OwnerDetailPage() {
     || (Array.isArray(o.relationshipPurpose) && o.relationshipPurpose.length > 0)
     || o.expectedTransactionVolume != null || o.acquisitionChannel
     || o.isPep || o.hasRiskyCountryLink || o.kycSignedAt || o.kycSignedPlace
+    || fundsProofDocs.length > 0
   );
 
   return (
@@ -385,6 +387,27 @@ export default function OwnerDetailPage() {
               <div className="mt-4 pt-4 border-t border-indigo-100">
                 <p className="text-xs font-semibold text-indigo-900/70 uppercase tracking-wide mb-1">Objet de la relation d'affaires</p>
                 <p className="text-sm text-slate-700">{formatRelationshipPurpose(o.relationshipPurpose, o.relationshipPurposeOther)}</p>
+              </div>
+            )}
+
+            {fundsProofDocs.length > 0 && (
+              <div className="mt-4 pt-4 border-t border-indigo-100">
+                <p className="text-xs font-semibold text-indigo-900/70 uppercase tracking-wide mb-2">
+                  Justificatif(s) d'origine des fonds ({fundsProofDocs.length})
+                </p>
+                <div className="space-y-2">
+                  {fundsProofDocs.map((doc: any) => (
+                    <div key={doc.id} className="flex items-center gap-3 rounded-lg border border-slate-200 bg-white px-3 py-2">
+                      <FileText className="h-4 w-4 shrink-0 text-slate-400" />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium text-slate-800 truncate">{doc.name}</p>
+                        <p className="text-xs text-slate-400">{formatDate(doc.uploadedAt)}</p>
+                      </div>
+                      <button type="button" className="text-xs font-medium text-blue-600 hover:underline shrink-0"
+                        onClick={() => window.electron.documents.open(token, doc.id)}>Ouvrir</button>
+                    </div>
+                  ))}
+                </div>
               </div>
             )}
           </Card>

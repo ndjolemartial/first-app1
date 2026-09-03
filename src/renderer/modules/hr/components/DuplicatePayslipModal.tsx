@@ -76,8 +76,9 @@ export default function DuplicatePayslipModal({ source, onClose }: { source: Pay
       }
     >
       <p className="mb-3 text-xs text-slate-500">
-        Reprend le sursalaire, la prime imposable, l'indemnité de transport et l'option heures supplémentaires
-        de ce bulletin, et recalcule entièrement (CNPS, ITS, CMU, charges) pour l'employé et la période choisis.
+        Reprend le sursalaire, la prime imposable, l'indemnité de transport, les commissions sur vente et l'option
+        heures supplémentaires de ce bulletin, et recalcule entièrement (CNPS, ITS, CMU, charges) pour l'employé et
+        la période choisis.
         Un seul bulletin est autorisé par employé et par période.
       </p>
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">

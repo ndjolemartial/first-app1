@@ -360,6 +360,14 @@ function formatAmount(n) {
         return String(n);
     return new Intl.NumberFormat('fr-FR').format(Math.round(num));
 }
+// Solde restant dû d'une échéance (montant − déjà encaissé). Une échéance
+// PARTIEL n'est due, et ne doit être relancée, qu'à hauteur de ce reliquat —
+// jamais du montant initial de l'échéance.
+function remainingInstallmentAmount(inst) {
+    const amount = Number(inst.amount ?? 0);
+    const paid = Number(inst.paidAmount ?? 0);
+    return Math.max(0, amount - paid);
+}
 // ── Rendu des templates ──────────────────────────────────────────────────────
 function render(template, vars) {
     return template.replace(/\{\{\s*([a-zA-Z0-9_]+)\s*\}\}/g, (_, k) => {
@@ -441,7 +449,7 @@ async function applyReminderRules(opts = {}) {
                             conventionRef: inst.convention?.reference ?? '',
                             installmentNumber: inst.installmentNumber,
                             dueDate: formatDateFr(inst.dueDate),
-                            amount: formatAmount(inst.amount),
+                            amount: formatAmount(remainingInstallmentAmount(inst)),
                             daysLate: rule.offsetDays > 0 ? rule.offsetDays : 0,
                             companyName,
                         },
@@ -481,7 +489,7 @@ async function applyReminderRules(opts = {}) {
                             conventionRef: inst.detailsSouscription ?? '',
                             installmentNumber: inst.installmentNumber,
                             dueDate: formatDateFr(inst.dueDate),
-                            amount: formatAmount(inst.amount),
+                            amount: formatAmount(remainingInstallmentAmount(inst)),
                             daysLate: rule.offsetDays > 0 ? rule.offsetDays : 0,
                             companyName,
                         },

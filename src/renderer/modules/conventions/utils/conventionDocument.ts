@@ -63,12 +63,14 @@ export function buildConventionDocumentHtml(
   return { bodyHtml, headerTemplate, footerTemplate, headerMm, footerMm };
 }
 
-/** Nom de fichier exporté : référence + nom du client (particulier ou entreprise), assaini. */
+/** Nom de fichier exporté : référence + nom du client ou, à défaut, du prospect rattaché (particulier ou entreprise), assaini. */
 export function conventionExportFileName(convention: any): string {
   const sanitize = (s: string) => s.replace(/[\\/:*?"<>|]/g, '').replace(/\s+/g, ' ').trim();
-  const clientLabel = convention.client?.type === 'INDIVIDUEL'
-    ? `${convention.client?.lastName ?? ''} ${convention.client?.firstName ?? ''}`
-    : (convention.client?.entreprise ?? '');
+  const clientLabel = convention.client
+    ? (convention.client?.type === 'INDIVIDUEL'
+      ? `${convention.client?.lastName ?? ''} ${convention.client?.firstName ?? ''}`
+      : (convention.client?.entreprise ?? ''))
+    : `${convention.prospect?.lastName ?? ''} ${convention.prospect?.firstName ?? ''}`;
   const sanitizedClient = sanitize(clientLabel);
   return sanitizedClient ? `${convention.reference}-${sanitizedClient}` : convention.reference;
 }

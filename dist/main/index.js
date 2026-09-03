@@ -21,6 +21,7 @@ const attestation_templates_ipc_1 = require("./ipc/attestation-templates.ipc");
 const attestations_ipc_1 = require("./ipc/attestations.ipc");
 const quotes_ipc_1 = require("./ipc/quotes.ipc");
 const quote_templates_ipc_1 = require("./ipc/quote-templates.ipc");
+const proforma_ipc_1 = require("./ipc/proforma.ipc");
 const catalog_ipc_1 = require("./ipc/catalog.ipc");
 const accounting_ipc_1 = require("./ipc/accounting.ipc");
 const bilan_ipc_1 = require("./ipc/bilan.ipc");
@@ -134,6 +135,7 @@ function registerIPC() {
     (0, attestations_ipc_1.registerAttestationsIPC)();
     (0, quotes_ipc_1.registerQuotesIPC)();
     (0, quote_templates_ipc_1.registerQuoteTemplatesIPC)();
+    (0, proforma_ipc_1.registerProformaIPC)();
     (0, catalog_ipc_1.registerCatalogIPC)();
     (0, accounting_ipc_1.registerAccountingIPC)();
     (0, bilan_ipc_1.registerBilanIPC)();

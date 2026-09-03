@@ -77,7 +77,12 @@ export default function PublicationModal({ open, onClose, editing, defaultPlatfo
 
   const addFiles = (list: FileList | null) => {
     if (!list || !list.length) return;
-    setFiles((prev) => [...prev, ...Array.from(list)]);
+    // `list` peut être un FileList — référence live vidée dès que l'appelant
+    // réinitialise `input.value` juste après cet appel. La matérialiser
+    // immédiatement plutôt que dans le callback (différé) de `setFiles` évite
+    // de lire un FileList déjà vidé.
+    const captured = Array.from(list);
+    setFiles((prev) => [...prev, ...captured]);
   };
 
   /** Téléverse les fichiers sélectionnés et les rattache à la publication créée/éditée. */

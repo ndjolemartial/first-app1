@@ -196,6 +196,15 @@ function clientName(cl: any): string {
     : (cl.entreprise ?? '');
 }
 
+/**
+ * Nom complet d'un prospect (toujours un particulier — `Prospect` n'a pas de
+ * champ `type`/`entreprise`), au même format Nom + Prénoms que `clientName`.
+ */
+function prospectName(p: any): string {
+  if (!p) return '';
+  return `${p.lastName ?? ''} ${p.firstName ?? ''}`.trim();
+}
+
 /** Décompose un délai en (nombre, unité) à partir de deux dates ; null si invalide. */
 function delayValueAndUnit(
   startVal?: string | Date | null,
@@ -409,10 +418,15 @@ export function resolveConventionVariables(
     'convention.premiereEcheance': date(c.firstInstallmentDate),
     'convention.derniereEcheance': date(c.lastInstallmentDate),
     'convention.echeancier': buildInstallmentsTable(c.installments),
-    'client.nomComplet': clientName(c.client),
+    // Convention rattachée à un prospect (pas encore converti en client,
+    // `clientId` vide) : repli sur les seules données disponibles côté
+    // Prospect (nom, téléphone, e-mail) — les autres champs (civilité,
+    // adresse, pièce d'identité, nationalité, date/lieu de naissance…)
+    // n'existent pas sur ce modèle et restent vides jusqu'à la conversion.
+    'client.nomComplet': c.client ? clientName(c.client) : prospectName(c.prospect),
     'client.civilite': c.client?.civilite ?? '',
-    'client.telephone': c.client?.phone ?? c.client?.mobile ?? '',
-    'client.email': c.client?.email ?? '',
+    'client.telephone': c.client ? (c.client?.phone ?? c.client?.mobile ?? '') : (c.prospect?.phone ?? ''),
+    'client.email': c.client ? (c.client?.email ?? '') : (c.prospect?.email ?? ''),
     'client.adresse': c.client?.address ?? '',
     'client.ville': c.client?.city ?? '',
     'client.pays': countryName(c.client?.country),

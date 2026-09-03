@@ -91,8 +91,14 @@ export default function OperationFormPage() {
   const [files, setFiles] = useState<File[]>([]);
   const [dragOver, setDragOver] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const addFiles = (list: FileList | File[]) =>
-    setFiles((prev) => [...prev, ...Array.from(list)]);
+  const addFiles = (list: FileList | File[]) => {
+    // `list` peut être un FileList — référence live vers l'input, vidée dès
+    // que l'appelant réinitialise `input.value` juste après cet appel. La
+    // matérialiser immédiatement plutôt que dans le callback (différé) de
+    // `setFiles` évite de lire un FileList déjà vidé.
+    const captured = Array.from(list);
+    setFiles((prev) => [...prev, ...captured]);
+  };
 
   // Devient vrai dès que l'utilisateur choisit un compte manuellement : on cesse
   // alors de reprendre automatiquement le compte par défaut au changement de sens.

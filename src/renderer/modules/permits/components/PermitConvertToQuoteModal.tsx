@@ -14,13 +14,20 @@ import { useAuthStore } from '../../../shared/stores/auth.store';
 const clientLabel = (c: any) => formatPersonName(c, '');
 const prospectLabel = (p: any) => `${p.firstName ?? ''} ${p.lastName ?? ''}`.trim();
 
+/** Date du jour + 30 jours (format `yyyy-mm-dd`), valeur par défaut de « Validité jusqu'au ». */
+function defaultValidUntil(): string {
+  const d = new Date();
+  d.setDate(d.getDate() + 30);
+  return d.toISOString().slice(0, 10);
+}
+
 export default function PermitConvertToQuoteModal({ open, onClose, estimate }: { open: boolean; onClose: () => void; estimate: any }) {
   const navigate = useNavigate();
   const token = useAuthStore((s) => s.token);
   const [clientId, setClientId] = useState(estimate?.project?.clientId ? String(estimate.project.clientId) : '');
   const [prospectId, setProspectId] = useState(estimate?.project?.prospectId ? String(estimate.project.prospectId) : '');
   const [taxRate, setTaxRate] = useState('18');
-  const [validUntil, setValidUntil] = useState('');
+  const [validUntil, setValidUntil] = useState(defaultValidUntil());
 
   const { data: clientsRes } = useClients({}, 1, 500);
   const { data: prospectsRes } = useProspects({}, 1, 500);

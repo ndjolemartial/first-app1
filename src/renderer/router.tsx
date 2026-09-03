@@ -71,6 +71,8 @@ import AmlWatchlistPage from './modules/aml/pages/AmlWatchlistPage';
 import QuoteDetailPage from './modules/quotes/pages/QuoteDetailPage';
 import QuoteDocumentPage from './modules/quotes/pages/QuoteDocumentPage';
 import QuoteTemplateFormPage from './modules/quotes/pages/QuoteTemplateFormPage';
+import ProformaListPage from './modules/proforma/pages/ProformaListPage';
+import ProformaDetailPage from './modules/proforma/pages/ProformaDetailPage';
 
 // Communication
 import CommunicationPage from './modules/communication/pages/CommunicationPage';
@@ -310,6 +312,13 @@ export const router = createHashRouter([
               { path: 'quotes/templates/:id/edit', element: <QuoteTemplateFormPage /> },
             ],
           },
+
+          // Factures Proforma — document optionnel émis depuis un devis ou une
+          // convention Brouillon ; consultation ouverte à tous les rôles
+          // authentifiés (périmètre par auteur appliqué côté IPC pour les rôles
+          // hors SUPER_ADMIN/ADMIN/MANAGER/ACCOUNTANT, même principe que Devis).
+          { path: 'proforma', element: <ProformaListPage /> },
+          { path: 'proforma/:id', element: <ProformaDetailPage /> },
 
           // Devis construction (Module 17) — consultation : tous les rôles authentifiés (périmètre
           // par référent commercial appliqué côté IPC pour les rôles hors SUPER_ADMIN/ADMIN/MANAGER/ACCOUNTANT).

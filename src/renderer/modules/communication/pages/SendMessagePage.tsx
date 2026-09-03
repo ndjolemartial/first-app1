@@ -310,7 +310,14 @@ function EmailForm({ target, setTarget, onSuccess }: {
               tabIndex={-1}
               className="hidden"
               onChange={(e) => {
-                if (e.target.files?.length) setFiles((prev) => [...prev, ...Array.from(e.target.files!)]);
+                // `e.target.files` est une référence live vers l'input : la
+                // matérialiser immédiatement (pas dans le callback différé de
+                // `setFiles`) — le remontage ci-dessous (nouvelle key) ne doit
+                // pas risquer de la vider avant que `Array.from` ne s'exécute.
+                if (e.target.files?.length) {
+                  const captured = Array.from(e.target.files);
+                  setFiles((prev) => [...prev, ...captured]);
+                }
                 // Remonte un input natif « vierge » plutôt que de réinitialiser
                 // `e.target.value` : après un retrait de fichier (bouton
                 // Retirer), l'ancien input pouvait rester bloqué (le dialogue

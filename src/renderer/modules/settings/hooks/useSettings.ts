@@ -239,6 +239,46 @@ export function useUpdateLatenessSettings() {
   });
 }
 
+export function useAttendanceSpecialDays() {
+  const token = useAuthStore((s) => s.token)!;
+  return useQuery({
+    queryKey: ['settings', 'attendance-special-days'],
+    queryFn:  () => ipc().listAttendanceSpecialDays(token),
+    enabled:  !!token,
+  });
+}
+
+export function useCreateAttendanceSpecialDay() {
+  const token = useAuthStore((s) => s.token)!;
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: { date: string; expectedDeparture: string; expectedArrival?: string | null; label?: string | null }) =>
+      ipc().createAttendanceSpecialDay(token, payload),
+    onSuccess: (res) => {
+      if (res.success) {
+        qc.invalidateQueries({ queryKey: ['settings', 'attendance-special-days'] });
+        qc.invalidateQueries({ queryKey: ['lateness'] });
+        toast.success('Journée à horaire réduit ajoutée');
+      } else toast.error(String(res.error));
+    },
+  });
+}
+
+export function useDeleteAttendanceSpecialDay() {
+  const token = useAuthStore((s) => s.token)!;
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: number) => ipc().deleteAttendanceSpecialDay(token, id),
+    onSuccess: (res) => {
+      if (res.success) {
+        qc.invalidateQueries({ queryKey: ['settings', 'attendance-special-days'] });
+        qc.invalidateQueries({ queryKey: ['lateness'] });
+        toast.success('Journée supprimée');
+      } else toast.error(String(res.error));
+    },
+  });
+}
+
 interface VisitorQrPayload {
   enabled: boolean;
   baseUrl: string;

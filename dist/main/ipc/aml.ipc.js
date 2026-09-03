@@ -1248,7 +1248,10 @@ function registerAmlIPC() {
                 where.OR = [{ topic: { contains: filters.search } }, { provider: { contains: filters.search } }];
             }
             const [rows, total] = await db.$transaction([
-                db.amlTraining.findMany({ where, skip: (page - 1) * limit, take: limit, orderBy: { trainingDate: 'desc' } }),
+                db.amlTraining.findMany({
+                    where, skip: (page - 1) * limit, take: limit, orderBy: { trainingDate: 'desc' },
+                    include: { _count: { select: { documents: { where: { deletedAt: null } } } } },
+                }),
                 db.amlTraining.count({ where }),
             ]);
             const names = await resolveUserNames(db, rows.flatMap((r) => [r.userId, r.recordedById]));

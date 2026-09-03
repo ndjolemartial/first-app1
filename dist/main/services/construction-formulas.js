@@ -337,7 +337,7 @@ exports.FORMULAS['QTE_VRD_SURFACE'] = ({ p, d, r }) => {
     const qty = base * r('COEF_VRD_PART');
     return { qty, trace: `max(${f(p.terrainSurface ?? 0)} m² terrain, ${f(d.empriseAuSol * 1.5)} m² estimé) × ${r('COEF_VRD_PART')} (COEF_VRD_PART) = ${f(qty)} m²` };
 };
-// ── Clôture & portail (LOT19) ─────────────────────────────────────────────
+// ── Clôture (LOT19) ────────────────────────────────────────────────────────
 // La clôture est détaillée en rubriques distinctes plutôt qu'un seul ouvrage
 // lumpé, sur deux bases de quantité :
 //  - QTE_CLOTURE_ML : longueur brute — infrastructure (fouille, fondation,

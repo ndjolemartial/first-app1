@@ -201,6 +201,14 @@ export default function OwnerFormPage() {
   const [existingRc, setExistingRc] = useState<string | null>(null);
   const rcRef = useRef<HTMLInputElement>(null);
 
+  // Justificatif(s) d'origine des fonds — plusieurs fichiers possibles,
+  // s'ajoutant aux justificatifs déjà déposés (contrairement aux uploaders
+  // ci-dessus, à document unique remplacé à chaque envoi).
+  const [fundsProofFiles, setFundsProofFiles] = useState<File[]>([]);
+  const [fundsProofError, setFundsProofError] = useState<string | null>(null);
+  const [existingFundsProofs, setExistingFundsProofs] = useState<{ id: number; name: string; size: number }[]>([]);
+  const fundsProofRef = useRef<HTMLInputElement>(null);
+
   const { register, handleSubmit, reset, watch, control, setValue, formState: { errors, isSubmitting } } = useForm<FormData>({
     resolver: zodResolver(schema),
     defaultValues: { type: 'INDIVIDUEL', country: 'CI', sourceOfFunds: [], relationshipPurpose: [] },
@@ -251,6 +259,10 @@ export default function OwnerFormPage() {
       setExistingIdDoc(docs.find((d: any) => d.category === 'piece_identite')?.name ?? null);
       setExistingRepIdDoc(docs.find((d: any) => d.category === 'piece_identite_rep_legal')?.name ?? null);
       setExistingRc(docs.find((d: any) => d.category === 'registre_commerce')?.name ?? null);
+      setExistingFundsProofs(
+        docs.filter((d: any) => d.category === 'justificatif_origine_fonds')
+          .map((d: any) => ({ id: d.id, name: d.name, size: d.size }))
+      );
     }
   }, [res, isEdit, reset]);
 
@@ -316,6 +328,41 @@ export default function OwnerFormPage() {
     });
   }
 
+  function handleFundsProofChange(e: React.ChangeEvent<HTMLInputElement>) {
+    setFundsProofError(null);
+    const files = Array.from(e.target.files ?? []);
+    if (!files.length) return;
+    const invalid = files.find((f) => !ACCEPTED_TYPES.includes(f.type));
+    if (invalid) {
+      setFundsProofError('Format non accepté. Utilisez JPG, PNG, WEBP ou PDF.');
+    } else {
+      const tooBig = files.find((f) => f.size > MAX_MB * 1024 * 1024);
+      if (tooBig) setFundsProofError(`Fichier trop volumineux (max ${MAX_MB} Mo) : ${tooBig.name}`);
+      else setFundsProofFiles((prev) => [...prev, ...files]);
+    }
+    if (fundsProofRef.current) fundsProofRef.current.value = '';
+  }
+
+  function removeFundsProofFile(index: number) {
+    setFundsProofFiles((prev) => prev.filter((_, i) => i !== index));
+  }
+
+  /** Upload additif de plusieurs justificatifs d'origine des fonds (ne remplace jamais les précédents). */
+  async function uploadFundsProofs(ownerId: number) {
+    if (!fundsProofFiles.length) return;
+    const files = await Promise.all(fundsProofFiles.map((file) => new Promise<any>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve({
+        fileName: file.name, fileType: file.type, fileSize: file.size,
+        fileData: (reader.result as string).split(',')[1],
+      });
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    })));
+    await (window.electron as any).documents.uploadOwnerDocs(token, ownerId, 'justificatif_origine_fonds', files);
+    setFundsProofFiles([]);
+  }
+
   const onSubmit = async (data: FormData) => {
     // Coercer les FK de types de pièces (chaîne du Select) en number|null.
     const { idTypeId, legalRepIdTypeId, ...rest } = data;
@@ -341,6 +388,7 @@ export default function OwnerFormPage() {
           uploadDoc(oid, idDocFile, 'piece_identite'),
           uploadDoc(oid, repIdDocFile, 'piece_identite_rep_legal'),
           uploadDoc(oid, rcFile, 'registre_commerce'),
+          uploadFundsProofs(oid),
         ]);
       }
     } else {
@@ -351,6 +399,7 @@ export default function OwnerFormPage() {
           uploadDoc(oid, idDocFile, 'piece_identite'),
           uploadDoc(oid, repIdDocFile, 'piece_identite_rep_legal'),
           uploadDoc(oid, rcFile, 'registre_commerce'),
+          uploadFundsProofs(oid),
         ]);
       }
     }
@@ -493,6 +542,53 @@ export default function OwnerFormPage() {
                     <Input label="Précisez" {...register('sourceOfFundsOther')} />
                   </div>
                 )}
+                <div className="mt-3">
+                  <label className="block text-sm font-medium text-slate-700 mb-1">Justificatif(s) d'origine des fonds</label>
+                  {existingFundsProofs.length > 0 && (
+                    <ul className="mb-2 space-y-1.5">
+                      {existingFundsProofs.map((doc) => (
+                        <li key={doc.id} className="flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+                          <FileText className="h-4 w-4 shrink-0 text-slate-400" />
+                          <span className="flex-1 truncate text-sm text-slate-700">{doc.name}</span>
+                          <span className="text-xs text-slate-400">{formatBytes(doc.size)}</span>
+                          <button type="button" className="text-xs text-blue-600 hover:underline"
+                            onClick={() => window.electron.documents.open(token, doc.id)}>Ouvrir</button>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                  {fundsProofFiles.length > 0 && (
+                    <ul className="mb-2 space-y-1.5">
+                      {fundsProofFiles.map((file, i) => (
+                        <li key={i} className="flex items-center gap-2 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2">
+                          <FileText className="h-4 w-4 shrink-0 text-blue-600" />
+                          <span className="flex-1 truncate text-sm text-blue-800">{file.name}</span>
+                          <span className="text-xs text-blue-600">{formatBytes(file.size)}</span>
+                          <button type="button" onClick={() => removeFundsProofFile(i)} className="text-blue-400 hover:text-red-500 transition-colors">
+                            <X className="h-4 w-4" />
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                  <input
+                    ref={fundsProofRef}
+                    type="file"
+                    multiple
+                    accept={ACCEPTED_TYPES.join(',')}
+                    className="hidden"
+                    onChange={handleFundsProofChange}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => fundsProofRef.current?.click()}
+                    className="w-full flex items-center gap-2 p-3 border-2 border-dashed border-slate-300 rounded-lg text-slate-500 hover:border-blue-400 hover:text-blue-600 transition-colors"
+                  >
+                    <Upload className="h-4 w-4" />
+                    <span className="text-sm">Scanner / joindre un ou plusieurs justificatifs (JPG, PNG, PDF — max {MAX_MB} Mo chacun)</span>
+                  </button>
+                  {fundsProofError && <p className="mt-1 text-xs text-red-600">{fundsProofError}</p>}
+                </div>
               </div>
               <Textarea label="Origine du patrimoine" rows={2} {...register('sourceOfWealth')} />
               <div>

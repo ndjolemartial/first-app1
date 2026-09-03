@@ -158,6 +158,7 @@ function EditPayslipModal({ payslip, onClose }: { payslip: any; onClose: () => v
       sursalaire: lineAmount(lines, 'Sursalaire') || '',
       taxablePrime: lineAmount(lines, 'Primes imposables') || '',
       transportAllowance: lineAmount(lines, 'Indemnité de transport (non imposable)') || '',
+      commissionsVente: lineAmount(lines, 'Commissions sur vente') || '',
       includeOvertime: lineAmount(lines, 'Heures supplémentaires') > 0,
     },
   });
@@ -167,6 +168,7 @@ function EditPayslipModal({ payslip, onClose }: { payslip: any; onClose: () => v
       sursalaire: d.sursalaire ? Number(d.sursalaire) : 0,
       taxablePrime: d.taxablePrime ? Number(d.taxablePrime) : 0,
       transportAllowance: d.transportAllowance ? Number(d.transportAllowance) : 0,
+      commissionsVente: d.commissionsVente ? Number(d.commissionsVente) : 0,
       includeOvertime: !!d.includeOvertime,
     };
     const r = await update.mutateAsync({ id: payslip.id, payload });
@@ -190,6 +192,7 @@ function EditPayslipModal({ payslip, onClose }: { payslip: any; onClose: () => v
         <Input label="Sursalaire (FCFA)" type="number" step="1000" min="0" {...register('sursalaire')} />
         <Input label="Prime imposable (FCFA)" type="number" step="1000" min="0" {...register('taxablePrime')} />
         <Input label="Indemnité transport (FCFA)" type="number" step="1000" min="0" {...register('transportAllowance')} />
+        <Input label="Commissions sur vente (FCFA)" type="number" step="1000" min="0" {...register('commissionsVente')} />
       </div>
       <label className="mt-3 flex items-center gap-2 text-sm text-slate-700">
         <input type="checkbox" {...register('includeOvertime')} />

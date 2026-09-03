@@ -158,9 +158,11 @@ export const TABS: TabDef[] = [
   // ─────────────────────────────────────────────────────────────
   { key: 'attendanceQr',         label: 'Pointage QR (personnel)', icon: <QrCode className="h-4 w-4" /> },
   { key: 'visitorQr',            label: 'QR Visiteurs',            icon: <QrCode className="h-4 w-4" /> },
-  { key: 'lateness',             label: 'Retards & Départs précipités', icon: <AlarmClockOff className="h-4 w-4" /> },
+  // MANAGER n'y voit/gère que la limite de tolérance et les journées à
+  // horaire réduit — l'inclusion des employés liés à un compte
+  // SUPER_ADMIN/ADMIN/MANAGER reste réservée à SUPER_ADMIN/ADMIN (cf. LatenessSettingsTab.tsx).
+  { key: 'lateness',             label: 'Retards & Départs précipités', icon: <AlarmClockOff className="h-4 w-4" />, roles: ['SUPER_ADMIN', 'ADMIN', 'MANAGER'] },
   { key: 'careerProfiles',       label: 'Profils de carrière',      icon: <TrendingUp className="h-4 w-4" /> },
-  { key: 'kycAccess',            label: 'Fiche KYC — accès',        icon: <ShieldCheck className="h-4 w-4" /> },
   // ── Groupe « Moteur de devis construction » (Module 17) — admin uniquement
   { key: 'constructionLots',            label: 'Lots de travaux',         icon: <Layers className="h-4 w-4" />,             group: 'construction', roles: ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ACCOUNTANT'] },
   { key: 'constructionResources',       label: 'Bordereau des prix',      icon: <Wrench className="h-4 w-4" />,             group: 'construction', roles: ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ACCOUNTANT'] },
@@ -175,6 +177,10 @@ export const TABS: TabDef[] = [
   // ── Groupe « Conformité LBC/FT » (Module 19) ─────────────
   { key: 'amlRiskFactors',              label: 'Catalogue des facteurs de risque', icon: <ListChecks className="h-4 w-4" />, group: 'aml', roles: ['SUPER_ADMIN', 'ADMIN', 'CONFORMITE', 'MANAGER', 'ACCOUNTANT'] },
   { key: 'amlThresholds',               label: 'Seuils de scoring',        icon: <SlidersHorizontal className="h-4 w-4" />, group: 'aml', roles: ['SUPER_ADMIN', 'ADMIN', 'CONFORMITE', 'MANAGER', 'ACCOUNTANT'] },
+  // Accès individuel (hors AML à proprement parler, mais même exigence de confidentialité que le
+  // reste de ce groupe) — réservé SUPER_ADMIN/ADMIN, sans les équivalences CONFORMITE/MANAGER/ACCOUNTANT
+  // des 2 tabs ci-dessus.
+  { key: 'kycAccess',                   label: 'Fiche KYC — accès',        icon: <ShieldCheck className="h-4 w-4" />,        group: 'aml' },
   // ─────────────────────────────────────────────────────────────
 ];
 

@@ -292,7 +292,13 @@ function registerCrmIPC() {
                     description: d.description,
                     status: d.status,
                     dueDate: d.dueDate ? new Date(d.dueDate) : null,
-                    completedAt: d.completedAt ? new Date(d.completedAt) : null,
+                    // Le formulaire « Nouvelle activité » n'a pas de champ dédié « Date
+                    // terminée » — une activité créée directement au statut Traité doit
+                    // néanmoins recevoir une date de complétion, sous peine de rester
+                    // invisible partout où completedAt fait foi (justification des
+                    // retards/départs précipités sur une VISITE traitée, KPI « Activités
+                    // CRM traitées »…). Seul `crm:completeActivity` la posait jusqu'ici.
+                    completedAt: d.completedAt ? new Date(d.completedAt) : (d.status === 'TRAITE' ? new Date() : null),
                     userId: d.userId ?? null,
                     prospectId: d.prospectId ?? null,
                     clientId: d.clientId ?? null,
@@ -335,7 +341,7 @@ function registerCrmIPC() {
                 : { id };
             const existing = await db.crmActivity.findFirst({
                 where: lookupWhere,
-                select: { id: true, type: true, status: true, objectiveId: true, objectiveRealized: true },
+                select: { id: true, type: true, status: true, objectiveId: true, objectiveRealized: true, completedAt: true },
             });
             if (!existing)
                 return { success: false, error: 'Activité introuvable ou inaccessible' };
@@ -350,6 +356,12 @@ function registerCrmIPC() {
                 ? (d.objectiveRealized ?? null)
                 : (existing.objectiveRealized != null ? Number(existing.objectiveRealized) : null);
             const finalStatus = d.status ?? existing.status;
+            // Même repli qu'à la création (cf. crm:createActivity) : le statut passe
+            // à Traité (via le formulaire d'édition, sans champ dédié « Date
+            // terminée ») sans qu'une date de complétion n'ait jamais été posée.
+            if (finalStatus === 'TRAITE' && existing.completedAt == null && !d.completedAt) {
+                d.completedAt = new Date();
+            }
             let objTarget = null;
             let objMeasureType = null;
             if (finalObjectiveId != null) {

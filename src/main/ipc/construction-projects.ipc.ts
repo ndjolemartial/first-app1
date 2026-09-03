@@ -333,7 +333,10 @@ function buildQuoteItems(
 async function buildQuoteFromEstimate(
   tx: any,
   session: { userId: number },
-  estimate: { id: number; reference: string; projectId: number },
+  estimate: {
+    id: number; reference: string; projectId: number;
+    discountAmount: unknown; discountIsPercent: boolean; discountPercent: unknown;
+  },
   projectNom: string,
   lines: EstimateLineForQuote[],
   payload: z.infer<typeof toQuoteSchema>['payload'],
@@ -342,9 +345,15 @@ async function buildQuoteFromEstimate(
     throw new Error('Sélectionnez un client ou un prospect destinataire du devis.');
   }
   const quoteItems = buildQuoteItems(lines, payload.splitLaborByLot ?? false);
-  const { subtotal, taxAmount, total } = resolveQuoteAmounts(
+  // La remise éventuelle de l'estimation (ConstructionEstimate.discount*) doit
+  // se répercuter sur le devis généré, sous peine que le TOTAL du devis ne
+  // corresponde plus au Total HT de l'estimation dont il est issu.
+  const discountIsPercent = estimate.discountIsPercent;
+  const discountPercent = estimate.discountPercent != null ? Number(estimate.discountPercent) : null;
+  const discountAmount = Number(estimate.discountAmount ?? 0);
+  const { subtotal, taxAmount, total, discountAmount: resolvedDiscountAmount } = resolveQuoteAmounts(
     quoteItems.map((it) => ({ quantity: it.quantity, unitPrice: it.unitPrice })),
-    { taxRate: payload.taxRate ?? 0 },
+    { taxRate: payload.taxRate ?? 0, discountAmount, discountIsPercent, discountPercent },
   );
   const reference = await nextQuoteReference(tx as any);
   const quote = await tx.quote.create({
@@ -359,6 +368,9 @@ async function buildQuoteFromEstimate(
       validUntil: payload.validUntil ? new Date(payload.validUntil) : null,
       taxRate: dec(payload.taxRate ?? 0) as never,
       subtotal: dec(subtotal) as never,
+      discountAmount: dec(resolvedDiscountAmount) as never,
+      discountIsPercent,
+      discountPercent: discountPercent != null ? (dec(discountPercent) as never) : null,
       taxAmount: dec(taxAmount) as never,
       total: dec(total) as never,
       templateId: payload.templateId ?? null,

@@ -256,7 +256,36 @@ function ContractModal({
     setValue('endDate', fmt(new Date(parse(startStr).getTime() + dur * 86_400_000)));
   };
 
-  /** Au choix de l'essai initial : pré-remplit le début (lendemain de la fin) puis la fin. */
+  /**
+   * Reprend les informations du contrat ESSAI choisi (poste, catégorie,
+   * horaires, rémunération, autorité/fonction/objectifs, commissions,
+   * notes) sur le renouvellement en cours de création — modifiable ensuite
+   * librement. Ne s'applique qu'à la création (jamais en édition, pour ne
+   * pas écraser les valeurs déjà propres à un renouvellement existant).
+   */
+  const applyEssaiParentDefaults = (parent?: EmploymentContract) => {
+    if (!parent || isEdit) return;
+    setValue('poste', parent.poste ?? '');
+    setValue('categorie', parent.categorie ?? '');
+    if (parent.weeklyHours != null) setValue('weeklyHours', String(parent.weeklyHours));
+    if (parent.baseSalary != null) setValue('baseSalary', String(parent.baseSalary));
+    setValue('sursalaire', numOrEmpty(parent.sursalaire));
+    setValue('primeAnciennete', numOrEmpty(parent.primeAnciennete));
+    setValue('transportAllowance', numOrEmpty(parent.transportAllowance));
+    setValue('grossSalary', numOrEmpty(parent.grossSalary));
+    setValue('its', numOrEmpty(parent.its));
+    setValue('cnps', numOrEmpty(parent.cnps));
+    setValue('cmu', numOrEmpty(parent.cmu));
+    setValue('totalDeductions', numOrEmpty(parent.totalDeductions));
+    setValue('netSalary', numOrEmpty(parent.netSalary));
+    if (parent.responsibleAuthorityId != null) setValue('responsibleAuthorityId', String(parent.responsibleAuthorityId));
+    if (parent.functionId != null) setValue('functionId', String(parent.functionId));
+    if (parent.objectiveId != null) setValue('objectiveId', String(parent.objectiveId));
+    if (Array.isArray(parent.activityCommissions)) setActivityCommissions(parent.activityCommissions);
+    if (parent.notes) setValue('notes', parent.notes);
+  };
+
+  /** Au choix de l'essai initial : pré-remplit le début (lendemain de la fin), la fin, puis les autres informations. */
   const onPickRenewalParent = (parentId: string) => {
     const parent = contracts.find((c) => String(c.id) === parentId);
     const pEnd = essaiEnd(parent);
@@ -266,6 +295,14 @@ function ContractModal({
       setValue('startDate', startStr);
     }
     autofillRenewalEnd(parentId, startStr);
+    applyEssaiParentDefaults(parent);
+  };
+
+  /** Contrat ESSAI « en cours » (statut ACTIF) le plus récent, à défaut le plus récent tout court. */
+  const pickDefaultEssaiContract = (): EmploymentContract | undefined => {
+    const sorted = [...essaiOptions.map((o) => contracts.find((c) => String(c.id) === o.value)!)]
+      .sort((a, b) => new Date(b.startDate).getTime() - new Date(a.startDate).getTime());
+    return sorted.find((c) => c.status === 'ACTIF') ?? sorted[0];
   };
 
   const onSubmit = async (data: ContractForm) => {
@@ -298,6 +335,7 @@ function ContractModal({
     if (r.success) onClose();
   };
 
+  const typeReg = register('type');
   const catReg = register('categorie');
   const startReg = register('startDate');
   const parentReg = register('parentContractId');
@@ -328,7 +366,21 @@ function ContractModal({
       }
     >
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-        <Select label="Type de contrat" options={CONTRACT_TYPE_OPTIONS} {...register('type')} />
+        <Select
+          label="Type de contrat" options={CONTRACT_TYPE_OPTIONS} {...typeReg}
+          onChange={(e) => {
+            typeReg.onChange(e);
+            // Nouveau renouvellement d'essai : présélectionne l'essai en cours
+            // (ou le plus récent) de l'employé et en reprend les informations.
+            if (!isEdit && e.target.value === 'RENOUVELLEMENT_ESSAI' && !watch('parentContractId')) {
+              const def = pickDefaultEssaiContract();
+              if (def) {
+                setValue('parentContractId', String(def.id));
+                onPickRenewalParent(String(def.id));
+              }
+            }
+          }}
+        />
         <Select label="Statut" options={CONTRACT_STATUS_OPTIONS} {...register('status')} />
         <Input label="Poste" {...register('poste')} />
         <Input
@@ -460,9 +512,17 @@ function ContractModal({
             {...parentReg}
             onChange={(e) => { parentReg.onChange(e); onPickRenewalParent(e.target.value); }}
           />
-          {essaiOptions.length === 0 && (
+          {essaiOptions.length === 0 ? (
             <p className="mt-1 text-xs text-indigo-700">
-              Aucun contrat ESSAI enregistré pour cet employé : créez d'abord le contrat à l'essai.
+              Aucun contrat ESSAI enregistré pour cet employé. Vous pouvez renseigner les autres
+              informations du renouvellement manuellement ci-dessous, mais un contrat à l'essai initial
+              devra être créé puis sélectionné ici avant de pouvoir enregistrer ce renouvellement.
+            </p>
+          ) : (
+            <p className="mt-1 text-xs text-indigo-700">
+              L'essai en cours (ou le plus récent) est présélectionné et ses informations (poste,
+              rémunération…) sont reprises ci-dessous — modifiables librement. Choisissez un autre essai
+              ci-dessus pour reprendre ses informations à la place.
             </p>
           )}
           <p className="mt-2 text-xs text-indigo-700">

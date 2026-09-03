@@ -20,7 +20,13 @@ import { Clock, CheckCircle2, XCircle, ShieldCheck } from 'lucide-react';
 const LATENESS_FULL_ACCESS_ROLES = ['SUPER_ADMIN', 'ADMIN', 'MANAGER'];
 
 const now = new Date();
-const YEAR_OPTIONS = Array.from({ length: 4 }, (_, i) => ({ value: String(now.getFullYear() - i), label: String(now.getFullYear() - i) }));
+// '0' = sentinel « toutes les années » / « tous les mois » (0 est une valeur
+// falsy, traitée côté IPC exactement comme une absence de filtre).
+const YEAR_OPTIONS = [
+  { value: '0', label: 'Toutes les années' },
+  ...Array.from({ length: 4 }, (_, i) => ({ value: String(now.getFullYear() - i), label: String(now.getFullYear() - i) })),
+];
+const LATENESS_MONTH_OPTIONS = [{ value: '0', label: 'Tous les mois' }, ...MONTH_OPTIONS];
 
 /** Heure 'HH:MM' à partir d'un horodatage ISO, ou '—'. */
 const hhmm = (v?: string | null): string =>
@@ -68,7 +74,9 @@ export default function LatenessPage() {
     for (const l of lines) seen.set(l.employeeId, l.employeeName);
     return [
       { value: '', label: 'Tous les collaborateurs' },
-      ...[...seen.entries()].map(([id, name]) => ({ value: String(id), label: name })),
+      ...[...seen.entries()]
+        .map(([id, name]) => ({ value: String(id), label: name }))
+        .sort((a, b) => a.label.localeCompare(b.label, 'fr')),
     ];
   }, [lines]);
 
@@ -102,7 +110,7 @@ export default function LatenessPage() {
           <Select label="Année" options={YEAR_OPTIONS} value={String(year)} onChange={(e) => setYear(Number(e.target.value))} />
         </div>
         <div className="w-44">
-          <Select label="Mois" options={MONTH_OPTIONS} value={String(month)} onChange={(e) => setMonth(Number(e.target.value))} />
+          <Select label="Mois" options={LATENESS_MONTH_OPTIONS} value={String(month)} onChange={(e) => setMonth(Number(e.target.value))} />
         </div>
         {isFullAccess && (
           <div className="w-60">

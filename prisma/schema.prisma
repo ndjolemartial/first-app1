@@ -101,6 +101,7 @@ model User {
   socialSnapshotsRecorded     SocialFollowerSnapshot[]           @relation("SocialSnapshotRecordedBy")
   delayJustificationsMade     AttendanceDelayJustification[]     @relation("AttendanceDelayJustifiedBy")
   delayTolerationsMade        AttendanceDelayJustification[]     @relation("AttendanceDelayToleratedBy")
+  attendanceSpecialDaysCreated AttendanceSpecialDay[]
   constructionProjectsAgent   ConstructionProject[]              @relation("ConstructionProjectAgent")
   constructionProjectsCreated ConstructionProject[]              @relation("ConstructionProjectCreatedBy")
   constructionEstimates       ConstructionEstimate[]             @relation("ConstructionEstimateGeneratedBy")
@@ -1262,6 +1263,56 @@ enum QuoteStatus {
   REFUSE
   EXPIRE
   ANNULE
+}
+
+// ── FACTURES PROFORMA ──────────────────────────────────────────
+// Document optionnel, non comptable, produit avant un achat de terrain ou de
+// bien immobilier, à la demande d'un client/prospect (justificatif de
+// décaissement auprès d'une banque, par exemple). Toujours un instantané figé
+// au moment de l'émission (montants/désignation ne suivent plus la source si
+// celle-ci change ensuite) — d'où l'absence volontaire de FK Prisma vers
+// Quote/Convention/Client/Prospect (scalaires découplés, même principe que
+// Quote.convertedConventionId/convertedInvoiceId) : la source d'une proforma
+// n'a pas besoin d'être « vivante » ni jointe pour que le document reste lisible.
+model ProformaInvoice {
+  id                  Int                @id @default(autoincrement())
+  uuid                String             @unique @default(cuid())
+  reference           String             @unique // Ex: PRO-2026-0001
+  sourceType          ProformaSourceType
+  quoteId             Int?
+  quoteReference      String?
+  conventionId        Int?
+  conventionReference String?
+  clientId            Int?
+  prospectId          Int?
+  // Destinataire figé à l'émission (nom, contacts) — un particulier ou une entreprise.
+  recipientLabel      String
+  recipientPhone      String?
+  recipientEmail      String?
+  // Désignation du terrain/bien concerné (texte libre figé, ex. « Terrain TER-2026-0012 — Lotissement X »).
+  designation         String             @db.Text
+  // Lignes figées au format [{ designation, quantity, unit, unitPrice, total }].
+  items               Json
+  subtotal            Decimal            @db.Decimal(15, 2)
+  taxRate             Decimal            @default(0) @db.Decimal(5, 2)
+  taxAmount           Decimal            @default(0) @db.Decimal(15, 2)
+  total               Decimal            @db.Decimal(15, 2)
+  issueDate           DateTime           @default(now())
+  validUntil          DateTime?
+  notes               String?            @db.Text
+  createdById         Int?
+  createdAt           DateTime           @default(now())
+  deletedAt           DateTime?
+
+  @@index([quoteId])
+  @@index([conventionId])
+  @@index([clientId])
+  @@index([prospectId])
+}
+
+enum ProformaSourceType {
+  QUOTE
+  CONVENTION
 }
 
 // ── CATALOGUE PRESTATIONS / PRODUITS ──────────────────────────
@@ -3736,6 +3787,25 @@ model AttendanceDelayJustification {
 
   @@unique([employeeId, date])
   @@index([employeeId])
+}
+
+// Journée à horaire de départ (et éventuellement d'arrivée) réduit, valable
+// pour toute l'entreprise — ex. journée continue se terminant à 12h ou 14h
+// (veille de fête, période spécifique…). Remplace, pour cette seule date, les
+// seuils globaux `attendance.expectedArrival`/`expectedDeparture` dans le
+// calcul des Retards & Départs précipités (`computeLatenessLinesForEmployee`),
+// afin de ne pas comptabiliser à tort un départ légitimement anticipé comme un
+// départ précipité par rapport aux 17h par défaut.
+model AttendanceSpecialDay {
+  id                Int       @id @default(autoincrement())
+  date              DateTime  @unique @db.Date
+  expectedDeparture String // 'HH:MM' — remplace le seuil de départ par défaut ce jour-là
+  expectedArrival   String? // 'HH:MM' optionnel — remplace le seuil d'arrivée par défaut ce jour-là
+  label             String? // ex. « Journée continue — veille de fête »
+  createdById       Int?
+  createdAt         DateTime  @default(now())
+
+  createdBy User? @relation(fields: [createdById], references: [id])
 }
 
 // ── INNOVATIONS IT (Module 16) ──────────────────────────────────────────────

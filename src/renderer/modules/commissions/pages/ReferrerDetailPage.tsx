@@ -18,7 +18,7 @@ import { useCompanySettings, useLogoData } from '../../settings/hooks/useSetting
 import { buildReferrerKycDocumentHtml, buildReferrerKycFooterTemplate, formatSourceOfFunds, formatRelationshipPurpose } from '../utils/referrerKycDocument';
 import { useKycAccess } from '../../../shared/hooks/useKycAccess';
 import { PEP_CATEGORY_LABEL } from '../../aml/utils/aml.utils';
-import { Edit, Trash2, Receipt, History, Printer, ShieldCheck, Users, Plus } from 'lucide-react';
+import { Edit, Trash2, Receipt, History, Printer, ShieldCheck, Users, Plus, FileText } from 'lucide-react';
 import EntityDocumentsCard from '../../archiving/components/EntityDocumentsCard';
 
 export default function ReferrerDetailPage() {
@@ -129,12 +129,15 @@ export default function ReferrerDetailPage() {
     }
   };
 
+  const fundsProofDocs = (r.documents ?? []).filter((d: any) => d.category === 'justificatif_origine_fonds');
+
   const hasKycInfo = Boolean(
     r.employerName || r.monthlyIncome != null
     || (Array.isArray(r.sourceOfFunds) && r.sourceOfFunds.length > 0) || r.sourceOfWealth
     || (Array.isArray(r.relationshipPurpose) && r.relationshipPurpose.length > 0)
     || r.expectedTransactionVolume != null || r.acquisitionChannel
     || r.isPep || r.hasRiskyCountryLink || r.kycSignedAt || r.kycSignedPlace
+    || fundsProofDocs.length > 0
   );
 
   return (
@@ -366,6 +369,27 @@ export default function ReferrerDetailPage() {
               <div className="mt-4 pt-4 border-t border-indigo-100">
                 <p className="text-xs font-semibold text-indigo-900/70 uppercase tracking-wide mb-1">Objet de la relation d'affaires</p>
                 <p className="text-sm text-slate-700">{formatRelationshipPurpose(r.relationshipPurpose, r.relationshipPurposeOther)}</p>
+              </div>
+            )}
+
+            {fundsProofDocs.length > 0 && (
+              <div className="mt-4 pt-4 border-t border-indigo-100">
+                <p className="text-xs font-semibold text-indigo-900/70 uppercase tracking-wide mb-2">
+                  Justificatif(s) d'origine des fonds ({fundsProofDocs.length})
+                </p>
+                <div className="space-y-2">
+                  {fundsProofDocs.map((doc: any) => (
+                    <div key={doc.id} className="flex items-center gap-3 rounded-lg border border-slate-200 bg-white px-3 py-2">
+                      <FileText className="h-4 w-4 shrink-0 text-slate-400" />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium text-slate-800 truncate">{doc.name}</p>
+                        <p className="text-xs text-slate-400">{formatDate(doc.uploadedAt)}</p>
+                      </div>
+                      <button type="button" className="text-xs font-medium text-blue-600 hover:underline shrink-0"
+                        onClick={() => window.electron.documents.open(token, doc.id)}>Ouvrir</button>
+                    </div>
+                  ))}
+                </div>
               </div>
             )}
           </Card>

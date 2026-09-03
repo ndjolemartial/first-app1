@@ -23,6 +23,9 @@ const zod_1 = require("zod");
 const WRITE_ROLES = ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'AGENT'];
 const READ_ROLES = [...WRITE_ROLES, 'ACCOUNTANT', 'READONLY'];
 const CONVERT_ROLES = ['SUPER_ADMIN', 'ADMIN', 'MANAGER'];
+/** Suppression d'un devis : réservée à SUPER_ADMIN/ADMIN/MANAGER (AGENT exclu, contrairement à l'écriture courante), et uniquement en statut Brouillon ou Expiré. */
+const DELETE_ROLES = ['SUPER_ADMIN', 'ADMIN', 'MANAGER'];
+const DELETABLE_STATUSES = ['BROUILLON', 'EXPIRE'];
 /**
  * Rôles ayant accès à TOUS les devis. Les autres rôles (AGENT, AGENT_TECHNIQUE,
  * ASSISTANTE_DIRECTION, READONLY) ne voient et ne manipulent que les devis
@@ -557,13 +560,16 @@ function registerQuotesIPC() {
             const session = (0, auth_service_1.getSession)(token);
             if (!session)
                 return { success: false, error: 'Session expirée' };
-            (0, auth_service_1.checkRole)(session, WRITE_ROLES);
+            (0, auth_service_1.checkRole)(session, DELETE_ROLES);
             const db = (0, db_service_1.getDb)();
-            const existing = await db.quote.findUnique({ where: { id: Number(id) }, select: { createdById: true, deletedAt: true } });
+            const existing = await db.quote.findUnique({ where: { id: Number(id) }, select: { createdById: true, deletedAt: true, status: true } });
             if (!existing || existing.deletedAt)
                 return { success: false, error: 'Devis introuvable' };
             if (!canAccessQuote(session, existing.createdById))
                 return { success: false, error: 'Devis inaccessible' };
+            if (!DELETABLE_STATUSES.includes(existing.status)) {
+                return { success: false, error: 'Seul un devis en statut Brouillon ou Expiré peut être supprimé.' };
+            }
             await db.quote.update({ where: { id: Number(id) }, data: { deletedAt: new Date() } });
             // ConstructionEstimate.quoteId est un scalaire sans FK Prisma (découplage
             // volontaire, cf. Module 17) : la suppression du devis ne le nettoie pas

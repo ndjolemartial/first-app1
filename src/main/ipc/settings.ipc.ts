@@ -1234,9 +1234,25 @@ export function registerSettingsIPC(): void {
   const DEFAULT_LATENESS_TOLERANCE_MINUTES = 15;
   // Lecture élargie à MANAGER : la page « Retards & Départs précipités » a
   // besoin de la limite de tolérance pour proposer l'action « Tolérer »
-  // (réservée à SUPER_ADMIN/ADMIN/MANAGER), même si l'onglet Paramètres reste
-  // masqué pour ce rôle. L'écriture (`updateLatenessSettings`) reste ADMIN_ROLES.
+  // (réservée à SUPER_ADMIN/ADMIN/MANAGER). L'onglet Paramètres lui-même est
+  // désormais aussi accessible à MANAGER (cf. SettingsPage.tsx), qui peut y
+  // gérer la limite de tolérance et les journées à horaire réduit — mais pas
+  // l'inclusion des employés liés à un compte SUPER_ADMIN/ADMIN/MANAGER,
+  // réservée à SUPER_ADMIN/ADMIN (cf. `settings:updateLatenessSettings`).
   const LATENESS_SETTINGS_READ_ROLES = [...ADMIN_ROLES, 'MANAGER'];
+
+  /**
+   * Contrôle de rôle EXACT pour l'écriture des sous-parties de « Retards &
+   * Départs précipités » ouvertes à MANAGER (tolérance, journées à horaire
+   * réduit) — un simple `.includes()`, pas `checkRole()`, pour ne pas laisser
+   * son équivalence MANAGER→ACCOUNTANT/ASSISTANTE_DIRECTION élargir cet accès
+   * à des rôles non demandés.
+   */
+  function assertLatenessManagerWrite(session: { role: string }): void {
+    if (!LATENESS_SETTINGS_READ_ROLES.includes(session.role)) {
+      throw new Error('Permission insuffisante');
+    }
+  }
 
   /** Lit les paramètres de « Retards & Départs précipités » (inclusion management + limite de tolérance). */
   ipcMain.handle('settings:getLatenessSettings', async (_event, { token }: any) => {
@@ -1262,26 +1278,104 @@ export function registerSettingsIPC(): void {
   /**
    * Met à jour les paramètres de « Retards & Départs précipités » :
    *  - inclusion des employés liés à un compte SUPER_ADMIN/ADMIN/MANAGER
-   *    (exclus par défaut, aussi bien du calcul que de l'affichage) ;
+   *    (exclus par défaut, aussi bien du calcul que de l'affichage) —
+   *    réservée à SUPER_ADMIN/ADMIN, MANAGER ne peut pas la modifier
+   *    (ignorée côté serveur si envoyée par un MANAGER, quel que soit le
+   *    payload, l'onglet ne lui affichant de toute façon pas ce contrôle) ;
    *  - limite de tolérance (minutes) en deçà de laquelle une journée peut être
-   *    marquée « Tolérée » par SUPER_ADMIN/ADMIN/MANAGER.
+   *    marquée « Tolérée » — ouverte à SUPER_ADMIN/ADMIN/MANAGER.
    */
   ipcMain.handle('settings:updateLatenessSettings', async (_event, { token, payload }: any) => {
     try {
       const session = getSession(token);
       if (!session) return { success: false, error: 'Session expirée' };
-      checkRole(session, ADMIN_ROLES);
+      assertLatenessManagerWrite(session);
       const schema = z.object({ includeManagementRoles: z.boolean(), toleranceMinutes: z.number().int().min(0).max(1440) });
       const parsed = schema.safeParse(payload);
       if (!parsed.success) return { success: false, error: parsed.error.issues.map((i) => i.message).join(', ') };
-      await setSettings([
-        { key: SettingsKeys.latenessIncludeManagementRoles, value: parsed.data.includeManagementRoles ? 'true' : 'false' },
+      const updates: Array<{ key: string; value: string }> = [
         { key: SettingsKeys.latenessToleranceMinutes, value: String(parsed.data.toleranceMinutes) },
-      ]);
-      logger.info(`Retards & Départs précipités — inclusion SUPER_ADMIN/ADMIN/MANAGER : ${parsed.data.includeManagementRoles}, tolérance : ${parsed.data.toleranceMinutes} min`);
+      ];
+      if (ADMIN_ROLES.includes(session.role)) {
+        updates.push({ key: SettingsKeys.latenessIncludeManagementRoles, value: parsed.data.includeManagementRoles ? 'true' : 'false' });
+      }
+      await setSettings(updates);
+      logger.info(`Retards & Départs précipités — tolérance : ${parsed.data.toleranceMinutes} min${ADMIN_ROLES.includes(session.role) ? `, inclusion SUPER_ADMIN/ADMIN/MANAGER : ${parsed.data.includeManagementRoles}` : ''}`);
       return { success: true };
     } catch (err: any) {
       logger.error('settings:updateLatenessSettings', err.message);
+      return { success: false, error: err.message };
+    }
+  });
+
+  const HHMM_RE = /^([01]?\d|2[0-3]):([0-5]\d)$/;
+
+  /**
+   * Journées à horaire de départ (et éventuellement d'arrivée) réduit, valables
+   * pour toute l'entreprise (ex. journée continue se terminant à 12h/14h) —
+   * remplacent, pour cette seule date, les seuils globaux
+   * attendance.expectedArrival/expectedDeparture dans le calcul des Retards &
+   * Départs précipités (`computeLatenessLinesForEmployee`), afin qu'un départ
+   * légitimement anticipé ne soit pas compté à tort comme un départ précipité.
+   */
+  ipcMain.handle('settings:listAttendanceSpecialDays', async (_event, { token }: any) => {
+    try {
+      const session = getSession(token);
+      if (!session) return { success: false, error: 'Session expirée' };
+      checkRole(session, LATENESS_SETTINGS_READ_ROLES);
+      const db = getDb();
+      const data = await db.attendanceSpecialDay.findMany({ orderBy: { date: 'desc' } });
+      return { success: true, data };
+    } catch (err: any) {
+      logger.error('settings:listAttendanceSpecialDays', err.message);
+      return { success: false, error: err.message };
+    }
+  });
+
+  ipcMain.handle('settings:createAttendanceSpecialDay', async (_event, { token, payload }: any) => {
+    try {
+      const session = getSession(token);
+      if (!session) return { success: false, error: 'Session expirée' };
+      assertLatenessManagerWrite(session);
+      const schema = z.object({
+        date: z.string().min(1, 'Date requise'),
+        expectedDeparture: z.string().regex(HHMM_RE, 'Heure de départ invalide (HH:MM)'),
+        expectedArrival: z.string().regex(HHMM_RE, "Heure d'arrivée invalide (HH:MM)").nullable().optional(),
+        label: z.string().max(191).nullable().optional(),
+      });
+      const parsed = schema.safeParse(payload);
+      if (!parsed.success) return { success: false, error: parsed.error.issues.map((i) => i.message).join(', ') };
+      const db = getDb();
+      const d = parsed.data;
+      const existing = await db.attendanceSpecialDay.findUnique({ where: { date: new Date(d.date) } });
+      if (existing) return { success: false, error: 'Une journée à horaire réduit existe déjà pour cette date.' };
+      const created = await db.attendanceSpecialDay.create({
+        data: {
+          date: new Date(d.date),
+          expectedDeparture: d.expectedDeparture,
+          expectedArrival: d.expectedArrival || null,
+          label: d.label?.trim() || null,
+          createdById: session.userId,
+        },
+      });
+      logger.info(`Journée à horaire réduit ajoutée : ${d.date} (départ ${d.expectedDeparture})`);
+      return { success: true, data: created };
+    } catch (err: any) {
+      logger.error('settings:createAttendanceSpecialDay', err.message);
+      return { success: false, error: err.message };
+    }
+  });
+
+  ipcMain.handle('settings:deleteAttendanceSpecialDay', async (_event, { token, id }: any) => {
+    try {
+      const session = getSession(token);
+      if (!session) return { success: false, error: 'Session expirée' };
+      assertLatenessManagerWrite(session);
+      const db = getDb();
+      await db.attendanceSpecialDay.delete({ where: { id: Number(id) } });
+      return { success: true };
+    } catch (err: any) {
+      logger.error('settings:deleteAttendanceSpecialDay', err.message);
       return { success: false, error: err.message };
     }
   });

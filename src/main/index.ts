@@ -16,6 +16,7 @@ import { registerAttestationTemplatesIPC } from './ipc/attestation-templates.ipc
 import { registerAttestationsIPC } from './ipc/attestations.ipc';
 import { registerQuotesIPC } from './ipc/quotes.ipc';
 import { registerQuoteTemplatesIPC } from './ipc/quote-templates.ipc';
+import { registerProformaIPC } from './ipc/proforma.ipc';
 import { registerCatalogIPC } from './ipc/catalog.ipc';
 import { registerAccountingIPC } from './ipc/accounting.ipc';
 import { registerBilanIPC } from './ipc/bilan.ipc';
@@ -135,6 +136,7 @@ function registerIPC(): void {
   registerAttestationsIPC();
   registerQuotesIPC();
   registerQuoteTemplatesIPC();
+  registerProformaIPC();
   registerCatalogIPC();
   registerAccountingIPC();
   registerBilanIPC();

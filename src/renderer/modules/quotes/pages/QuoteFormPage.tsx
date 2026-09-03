@@ -42,6 +42,16 @@ interface Line {
   unitLocked: boolean;
   /** Article du catalogue d'origine (null si ligne manuelle) — empêche de le sélectionner deux fois. */
   catalogItemId: number | null;
+  /**
+   * Terrain/bien d'origine (null si ligne manuelle ou catalogue) — ligne
+   * ajoutée automatiquement depuis le sélecteur « Terrain(s) »/« Bien(s) »,
+   * retirée automatiquement si l'élément est désélectionné. Purement une
+   * commodité de saisie (non persistée sur QuoteItem) : à l'édition d'un
+   * devis existant, ces lignes rechargées depuis la base redeviennent des
+   * lignes manuelles ordinaires (pas de re-synchronisation rétroactive).
+   */
+  assetId?: number | null;
+  assetKind?: 'TERRAIN' | 'PROPERTY' | null;
 }
 
 /** Extrait le premier message d'une erreur Zod `.format()` (objet imbriqué `{ _errors: [...] }`). */
@@ -55,6 +65,13 @@ function extractZodMessage(err: unknown): string | null {
     if (found) return found;
   }
   return null;
+}
+
+/** Date du jour + 30 jours (format `yyyy-mm-dd`), valeur par défaut de « Validité (jusqu'au) ». */
+function defaultValidUntil(): string {
+  const d = new Date();
+  d.setDate(d.getDate() + 30);
+  return d.toISOString().slice(0, 10);
 }
 
 function toDateInput(v?: string | Date | null): string {
@@ -194,7 +211,14 @@ export default function QuoteFormPage() {
     searchParams.get('terrainId') ? [Number(searchParams.get('terrainId'))] : [],
   );
   const [propertyIds, setPropertyIds] = useState<number[]>([]);
-  const [validUntil, setValidUntil] = useState('');
+  // Cache des objets terrain/bien complets (prix de vente, lotissement/programme…)
+  // vus jusqu'ici — préchargement (terrainsRes/propertiesRes) + résultats de
+  // recherche distante (celle-ci ne renvoie qu'un { value, label } léger pour le
+  // sélecteur) — afin de pouvoir construire une ligne de devis correctement
+  // valorisée quelle que soit l'origine de la sélection.
+  const [terrainCache, setTerrainCache] = useState<Record<number, any>>({});
+  const [propertyCache, setPropertyCache] = useState<Record<number, any>>({});
+  const [validUntil, setValidUntil] = useState(defaultValidUntil());
   const [discountAmount, setDiscountAmount] = useState('0');
   const [discountIsPercent, setDiscountIsPercent] = useState(false);
   const [discountPercent, setDiscountPercent] = useState('0');
@@ -220,6 +244,27 @@ export default function QuoteFormPage() {
     if (searchParams.get('prospectId')) setRecipientType('PROSPECT');
     if (searchParams.get('terrainId')) setAssetType('TERRAIN');
   }, [searchParams]);
+
+  // Alimente le cache terrain/bien avec le préchargement initial (les résultats
+  // de recherche distante l'alimentent aussi, cf. searchTerrainsMulti/searchPropertiesMulti).
+  useEffect(() => {
+    const list: any[] = terrainsRes?.data ?? [];
+    if (!list.length) return;
+    setTerrainCache((prev) => {
+      const next = { ...prev };
+      for (const t of list) next[t.id] = t;
+      return next;
+    });
+  }, [terrainsRes]);
+  useEffect(() => {
+    const list: any[] = propertiesRes?.data ?? [];
+    if (!list.length) return;
+    setPropertyCache((prev) => {
+      const next = { ...prev };
+      for (const p of list) next[p.id] = p;
+      return next;
+    });
+  }, [propertiesRes]);
 
   useEffect(() => {
     if (isEdit && res?.data) {
@@ -304,6 +349,61 @@ export default function QuoteFormPage() {
   const propertyLabel = (p: any) =>
     `${p.reference} — ${p.address ?? ''}${p.city ? `, ${p.city}` : ''}${p.programme?.nom ? ` (${p.programme.nom})` : ''}`;
 
+  // Construit une ligne de devis valorisée à partir d'un terrain/bien complet
+  // (prix de vente, lotissement/programme pour la catégorie) — utilisées par
+  // syncAssetLines() ci-dessous pour ajouter/retirer automatiquement une ligne
+  // quand la sélection « Terrain(s) »/« Bien(s) » change.
+  const terrainToLine = (t: any): Line => ({
+    lineType: 'ARTICLE', designation: terrainLabel(t), reference: t.reference ?? '',
+    category: t.lotissement?.nom ?? '', quantity: '1', unit: '',
+    unitPrice: String(Math.round(Number(t.prixVente ?? 0))),
+    unitLocked: false, catalogItemId: null, assetId: t.id, assetKind: 'TERRAIN',
+  });
+  const propertyToLine = (p: any): Line => ({
+    lineType: 'ARTICLE', designation: propertyLabel(p), reference: p.reference ?? '',
+    category: p.programme?.nom ?? '', quantity: '1', unit: '',
+    unitPrice: String(Math.round(Number(p.salePrice ?? 0))),
+    unitLocked: false, catalogItemId: null, assetId: p.id, assetKind: 'PROPERTY',
+  });
+
+  /**
+   * Ajoute/retire les lignes de devis correspondant à la sélection « Terrain(s) »/
+   * « Bien(s) » : une ligne par élément ajouté (valorisée depuis le cache), les
+   * lignes des éléments retirés sont supprimées. Les autres lignes (manuelles,
+   * catalogue, titres/sous-titres) ne sont jamais affectées.
+   */
+  function syncAssetLines(
+    prevItems: Line[], prevIds: number[], nextIds: number[],
+    cache: Record<number, any>, kind: 'TERRAIN' | 'PROPERTY', toLine: (o: any) => Line,
+  ): Line[] {
+    const removedIds = prevIds.filter((id) => !nextIds.includes(id));
+    const addedIds = nextIds.filter((id) => !prevIds.includes(id));
+    let next = removedIds.length
+      ? prevItems.filter((l) => !(l.assetKind === kind && l.assetId != null && removedIds.includes(l.assetId)))
+      : prevItems;
+    if (addedIds.length) {
+      const newLines = addedIds.map((id) => cache[id]).filter(Boolean).map(toLine);
+      next = [...next, ...newLines];
+    }
+    return next;
+  }
+  // La synchronisation automatique des lignes n'a lieu que pour un devis de
+  // vente du bien concerné (Vente terrain ↔ terrain sélectionné, Vente bien ↔
+  // bien sélectionné) — pour les autres types (Prestation, Frais…), le terrain/
+  // bien peut être rattaché à titre indicatif sans en faire une ligne facturée.
+  const handleTerrainIdsChange = (next: number[]) => {
+    if (type === 'VENTE_TERRAIN') {
+      setItems((prev) => syncAssetLines(prev, terrainIds, next, terrainCache, 'TERRAIN', terrainToLine));
+    }
+    setTerrainIds(next);
+  };
+  const handlePropertyIdsChange = (next: number[]) => {
+    if (type === 'VENTE_BIEN') {
+      setItems((prev) => syncAssetLines(prev, propertyIds, next, propertyCache, 'PROPERTY', propertyToLine));
+    }
+    setPropertyIds(next);
+  };
+
   // Sélection multiple « Terrain(s) » / « Bien(s) » — verrouillée sur le
   // lotissement du 1ᵉʳ terrain choisi / le programme immobilier du 1ᵉʳ bien
   // choisi (s'il en a un), même principe que les Attestations.
@@ -338,13 +438,15 @@ export default function QuoteFormPage() {
   const searchTerrainsMulti = async (q: string) => {
     const filters: any = { ...(q ? { search: q } : {}), ...(lockedLotissementId != null ? { lotissementId: lockedLotissementId } : {}) };
     const r: any = await window.electron.terrains.list(token, filters, 1, 100);
-    return (r?.data ?? []).map((t: any) => ({ value: String(t.id), label: terrainLabel(t) }));
+    const list: any[] = r?.data ?? [];
+    if (list.length) setTerrainCache((prev) => { const next = { ...prev }; for (const t of list) next[t.id] = t; return next; });
+    return list.map((t: any) => ({ value: String(t.id), label: terrainLabel(t) }));
   };
   const searchPropertiesMulti = async (q: string) => {
     const r: any = await window.electron.properties.list(token, q ? { search: q } : {}, 1, 100);
-    return (r?.data ?? [])
-      .filter((p: any) => lockedProgrammeId == null || p.programmeId === lockedProgrammeId)
-      .map((p: any) => ({ value: String(p.id), label: propertyLabel(p) }));
+    const list: any[] = (r?.data ?? []).filter((p: any) => lockedProgrammeId == null || p.programmeId === lockedProgrammeId);
+    if (list.length) setPropertyCache((prev) => { const next = { ...prev }; for (const p of list) next[p.id] = p; return next; });
+    return list.map((p: any) => ({ value: String(p.id), label: propertyLabel(p) }));
   };
 
   // Recherche côté serveur : l'élément s'affiche quel que soit le volume.
@@ -463,6 +565,7 @@ export default function QuoteFormPage() {
               options={[{ value: 'NONE', label: 'Aucun' }, { value: 'TERRAIN', label: 'Un terrain' }, { value: 'PROPERTY', label: 'Un bien' }]}
               onChange={(e) => {
                 setAssetType(e.target.value as any);
+                setItems((prev) => prev.filter((l) => !l.assetKind));
                 setTerrainIds([]);
                 setPropertyIds([]);
               }} />
@@ -475,11 +578,14 @@ export default function QuoteFormPage() {
                 label="Terrain(s)"
                 options={terrainOptionsMulti}
                 values={terrainIds}
-                onChange={setTerrainIds}
+                onChange={handleTerrainIdsChange}
                 onSearch={searchTerrainsMulti}
                 placeholder="Rechercher un terrain…"
               />
               <p className="mt-1 text-xs text-slate-500">Tous les terrains sélectionnés doivent provenir du même lotissement.</p>
+              {type === 'VENTE_TERRAIN' && (
+                <p className="mt-1 text-xs text-slate-500">Une ligne est ajoutée/retirée automatiquement au devis pour chaque terrain sélectionné, avec son prix de vente.</p>
+              )}
               {hasMixedLotissements && (
                 <p className="mt-1 text-xs text-red-700 bg-red-50 border border-red-200 rounded px-3 py-2">
                   Les terrains sélectionnés proviennent de lotissements différents. Retirez ceux qui n'appartiennent pas au même lotissement avant d'enregistrer.
@@ -493,11 +599,14 @@ export default function QuoteFormPage() {
                 label="Bien(s)"
                 options={propertyOptionsMulti}
                 values={propertyIds}
-                onChange={setPropertyIds}
+                onChange={handlePropertyIdsChange}
                 onSearch={searchPropertiesMulti}
                 placeholder="Rechercher un bien…"
               />
               <p className="mt-1 text-xs text-slate-500">Si le premier bien choisi appartient à un programme immobilier, les suivants doivent en provenir également.</p>
+              {type === 'VENTE_BIEN' && (
+                <p className="mt-1 text-xs text-slate-500">Une ligne est ajoutée/retirée automatiquement au devis pour chaque bien sélectionné, avec son prix de vente.</p>
+              )}
               {hasMixedProgrammes && (
                 <p className="mt-1 text-xs text-red-700 bg-red-50 border border-red-200 rounded px-3 py-2">
                   Les biens sélectionnés proviennent de programmes immobiliers différents. Retirez ceux qui n'appartiennent pas au même programme avant d'enregistrer.

@@ -524,6 +524,94 @@ export function registerDocumentsIPC(): void {
   });
 
   /**
+   * Upload de plusieurs documents pour un propriétaire, sous une même
+   * catégorie — chaque appel s'ajoute aux documents déjà présents (ne
+   * remplace pas), même principe que `documents:uploadClientDocs`.
+   * Utilisé pour les justificatifs d'origine des fonds.
+   */
+  ipcMain.handle('documents:uploadOwnerDocs', async (_event, { token, ownerId, category, files }: any) => {
+    try {
+      const session = getSession(token);
+      if (!session) return { success: false, error: 'Session expirée' };
+      checkRole(session, WRITE_ROLES);
+      if (!Array.isArray(files) || files.length === 0) return { success: false, error: 'Aucun fichier' };
+
+      const maxBytes = parseInt(process.env.MAX_FILE_SIZE_MB ?? '10', 10) * 1024 * 1024;
+      const oversized = files.find((f: any) => f.fileSize > maxBytes);
+      if (oversized) return { success: false, error: `Fichier trop volumineux (max ${process.env.MAX_FILE_SIZE_MB ?? 10} Mo) : ${oversized.fileName}` };
+
+      const storagePath = process.env.STORAGE_PATH ?? './data/storage';
+      const dir = path.resolve(storagePath, 'owners', String(ownerId), category);
+      fs.mkdirSync(dir, { recursive: true });
+
+      const db = getDb();
+      const created: any[] = [];
+      for (let i = 0; i < files.length; i++) {
+        const f = files[i];
+        const ext = path.extname(f.fileName);
+        const uniqueName = `${category}_${Date.now()}_${i}${ext}`;
+        const absPath = path.join(dir, uniqueName);
+        const relativePath = path.posix.join('owners', String(ownerId), category, uniqueName);
+        fs.writeFileSync(absPath, Buffer.from(f.fileData, 'base64'));
+        const document = await db.document.create({
+          data: { name: f.fileName, type: f.fileType, path: relativePath, size: f.fileSize, category, ownerId },
+        });
+        created.push(document);
+      }
+
+      logger.info(`Documents propriétaire #${ownerId} [${category}] ajoutés : ${created.length}`);
+      return { success: true, data: created };
+    } catch (error: any) {
+      logger.error('documents:uploadOwnerDocs error', error.message);
+      return { success: false, error: error.message };
+    }
+  });
+
+  /**
+   * Upload de plusieurs documents pour un apporteur d'affaire, sous une même
+   * catégorie — chaque appel s'ajoute aux documents déjà présents (ne
+   * remplace pas), même principe que `documents:uploadClientDocs`.
+   * Utilisé pour les justificatifs d'origine des fonds.
+   */
+  ipcMain.handle('documents:uploadReferrerDocs', async (_event, { token, referrerId, category, files }: any) => {
+    try {
+      const session = getSession(token);
+      if (!session) return { success: false, error: 'Session expirée' };
+      checkRole(session, WRITE_ROLES);
+      if (!Array.isArray(files) || files.length === 0) return { success: false, error: 'Aucun fichier' };
+
+      const maxBytes = parseInt(process.env.MAX_FILE_SIZE_MB ?? '10', 10) * 1024 * 1024;
+      const oversized = files.find((f: any) => f.fileSize > maxBytes);
+      if (oversized) return { success: false, error: `Fichier trop volumineux (max ${process.env.MAX_FILE_SIZE_MB ?? 10} Mo) : ${oversized.fileName}` };
+
+      const storagePath = process.env.STORAGE_PATH ?? './data/storage';
+      const dir = path.resolve(storagePath, 'referrers', String(referrerId), category);
+      fs.mkdirSync(dir, { recursive: true });
+
+      const db = getDb();
+      const created: any[] = [];
+      for (let i = 0; i < files.length; i++) {
+        const f = files[i];
+        const ext = path.extname(f.fileName);
+        const uniqueName = `${category}_${Date.now()}_${i}${ext}`;
+        const absPath = path.join(dir, uniqueName);
+        const relativePath = path.posix.join('referrers', String(referrerId), category, uniqueName);
+        fs.writeFileSync(absPath, Buffer.from(f.fileData, 'base64'));
+        const document = await db.document.create({
+          data: { name: f.fileName, type: f.fileType, path: relativePath, size: f.fileSize, category, referrerId },
+        });
+        created.push(document);
+      }
+
+      logger.info(`Documents apporteur d'affaire #${referrerId} [${category}] ajoutés : ${created.length}`);
+      return { success: true, data: created };
+    } catch (error: any) {
+      logger.error('documents:uploadReferrerDocs error', error.message);
+      return { success: false, error: error.message };
+    }
+  });
+
+  /**
    * Upload d'un document scanné pour un terrain.
    * category: 'dm_scan' | 'tf_scan' | 'acd_scan'
    */

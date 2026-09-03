@@ -105,6 +105,7 @@ const navItems: NavEntry[] = [
       { label: 'Devis', to: '/quotes', icon: <FileSpreadsheet className="h-5 w-5" /> },
       { label: 'Devis construction', to: '/construction', icon: <HardHat className="h-5 w-5" /> },
       { label: 'Devis permis de construire', to: '/permits', icon: <Scale className="h-5 w-5" /> },
+      { label: 'Factures Proforma', to: '/proforma', icon: <ReceiptText className="h-5 w-5" /> },
     ],
   },
   { label: 'Conventions / Attestations', to: '/conventions', icon: <FileText className="h-5 w-5" />, roles: ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ACCOUNTANT', 'ASSISTANTE_DIRECTION', 'AGENT', 'AGENT_TECHNIQUE'] },

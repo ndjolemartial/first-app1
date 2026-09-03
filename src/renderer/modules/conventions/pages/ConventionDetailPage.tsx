@@ -13,12 +13,17 @@ import { toast } from '../../../shared/components/ui/Toast';
 import { usePrintInvoice } from '../../accounting/hooks/useAccounting';
 import { formatDate, formatCurrency } from '../../../shared/utils/format';
 import EditInstallmentsModal from '../components/EditInstallmentsModal';
-import { Edit, Trash2, FileText, User, Building2, MapPin, Link2, Printer, RefreshCw, FilePlus, PencilLine } from 'lucide-react';
+import { Edit, Trash2, FileText, User, Building2, MapPin, Link2, Printer, RefreshCw, FilePlus, PencilLine, ReceiptText } from 'lucide-react';
 import EntityDocumentsCard from '../../archiving/components/EntityDocumentsCard';
 import AmlReviewBadge from '../../aml/components/AmlReviewBadge';
 import ReportSuspicionButton from '../../aml/components/ReportSuspicionButton';
 import { ATTESTATION_TYPE_LABELS } from '../utils/attestationTemplate';
 import { Award } from 'lucide-react';
+import CreateProformaModal from '../../proforma/components/CreateProformaModal';
+import { useCreateProformaFromConvention } from '../../proforma/hooks/useProforma';
+
+// Types de convention pouvant donner lieu à une facture Proforma (achat d'un terrain ou d'un bien), avant signature.
+const PROFORMA_CONVENTION_TYPES = ['SALE', 'SOUSCRIPTION'];
 
 const STATUS_VARIANT: Record<string, 'success' | 'info' | 'warning' | 'danger' | 'default'> = {
   ACTIVE: 'success', BROUILLON: 'info', ATTENTE_SIGNATURE: 'warning',
@@ -70,15 +75,22 @@ export default function ConventionDetailPage() {
   const updateConvention = useUpdateConvention();
   const generateInstallments = useGenerateInstallments();
   const printInvoice = usePrintInvoice();
+  const createProforma = useCreateProformaFromConvention();
   const [showDelete, setShowDelete] = useState(false);
   const [showAttestationMenu, setShowAttestationMenu] = useState(false);
   const [showStatusMenu, setShowStatusMenu] = useState(false);
   const [showEditInstallments, setShowEditInstallments] = useState(false);
+  const [proformaOpen, setProformaOpen] = useState(false);
 
   if (isLoading) return <div className="p-8"><SkeletonTable rows={6} /></div>;
 
   const c = res?.data;
   if (!c) return <div className="p-8 text-slate-500">Convention introuvable.</div>;
+
+  // Émission d'une facture Proforma : réservée à SUPER_ADMIN/ADMIN/MANAGER/
+  // ACCOUNTANT (= canWrite ci-dessus), comme sur les devis — un AGENT/
+  // AGENT_TECHNIQUE référent de la convention ne peut plus en émettre.
+  const canIssueProforma = c.status === 'BROUILLON' && PROFORMA_CONVENTION_TYPES.includes(c.type) && canWrite;
 
   const isSale = c.type === 'SALE';
   const clientName = c.client?.type === 'INDIVIDUEL'
@@ -161,6 +173,11 @@ export default function ConventionDetailPage() {
           {canExportPrint(role) && (
             <Button variant="secondary" icon={<Printer className="h-4 w-4" />} onClick={() => navigate(`/conventions/${id}/document`)}>
               Générer le document
+            </Button>
+          )}
+          {canIssueProforma && (
+            <Button variant="secondary" icon={<ReceiptText className="h-4 w-4" />} onClick={() => setProformaOpen(true)}>
+              Facture Proforma
             </Button>
           )}
           {canWrite && (
@@ -647,6 +664,14 @@ export default function ConventionDetailPage() {
           apportInitial={c.apportInitial ? Number(c.apportInitial) : undefined}
         />
       )}
+
+      <CreateProformaModal
+        open={proformaOpen} onClose={() => setProformaOpen(false)} loading={createProforma.isPending} showTaxRate
+        onConfirm={async ({ validUntil, notes, taxRate }) => {
+          const r = await createProforma.mutateAsync({ conventionId: c.id, validUntil: validUntil || null, notes: notes || null, taxRate });
+          if (r.success) { setProformaOpen(false); navigate(`/proforma/${r.data.id}`); }
+        }}
+      />
     </PageLayout>
   );
 }

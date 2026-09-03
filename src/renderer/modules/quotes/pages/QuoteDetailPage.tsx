@@ -15,9 +15,20 @@ import {
 } from '../utils/quoteTemplate';
 import { formatCurrency, formatDate, formatPersonName } from '../../../shared/utils/format';
 import { useAuthStore } from '../../../shared/stores/auth.store';
-import { Send, Check, X, Ban, Repeat, Pencil, Trash2, FileText } from 'lucide-react';
+import { Send, Check, X, Ban, Repeat, Pencil, Trash2, FileText, ReceiptText } from 'lucide-react';
+import CreateProformaModal from '../../proforma/components/CreateProformaModal';
+import { useCreateProformaFromQuote } from '../../proforma/hooks/useProforma';
+
+// Types de devis pouvant donner lieu à une facture Proforma (vente d'un terrain ou d'un bien).
+const PROFORMA_QUOTE_TYPES = ['VENTE_TERRAIN', 'VENTE_BIEN'];
+// Émission d'une facture Proforma : réservée à SUPER_ADMIN/ADMIN/MANAGER/ACCOUNTANT
+// (rôle exact — AGENT, AGENT_TECHNIQUE, ASSISTANTE_DIRECTION et READONLY exclus).
+const PROFORMA_ROLES = ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ACCOUNTANT'];
 
 const WRITE_ROLES = ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ACCOUNTANT', 'AGENT', 'AGENT_TECHNIQUE'];
+// Suppression : réservée à SUPER_ADMIN/ADMIN/MANAGER, et seulement en statut Brouillon ou Expiré.
+const DELETE_ROLES = ['SUPER_ADMIN', 'ADMIN', 'MANAGER'];
+const DELETABLE_STATUSES = ['BROUILLON', 'EXPIRE'];
 const CONVERT_ROLES = ['SUPER_ADMIN', 'ADMIN', 'MANAGER'];
 
 function ConvertModal({ quote, onClose }: { quote: any; onClose: () => void }) {
@@ -197,6 +208,8 @@ export default function QuoteDetailPage() {
   const role = useAuthStore((s) => s.user?.role);
   const canWrite = !!role && WRITE_ROLES.includes(role);
   const canConvert = !!role && CONVERT_ROLES.includes(role);
+  const canDelete = !!role && DELETE_ROLES.includes(role);
+  const canIssueProforma = !!role && PROFORMA_ROLES.includes(role);
 
   const { data: res, isLoading } = useQuote(Number(id));
   const send = useSendQuote();
@@ -204,11 +217,13 @@ export default function QuoteDetailPage() {
   const refuse = useRefuseQuote();
   const cancel = useCancelQuote();
   const del = useDeleteQuote();
+  const createProforma = useCreateProformaFromQuote();
   const [refuseOpen, setRefuseOpen] = useState(false);
   const [refuseReason, setRefuseReason] = useState('');
   const [cancelOpen, setCancelOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [convertOpen, setConvertOpen] = useState(false);
+  const [proformaOpen, setProformaOpen] = useState(false);
 
   if (isLoading) return <div className="p-8"><SkeletonTable rows={6} /></div>;
   const q = res?.data;
@@ -248,7 +263,10 @@ export default function QuoteDetailPage() {
           {canWrite && !isConverted && !['ANNULE', 'REFUSE'].includes(q.status) && (
             <Button variant="secondary" icon={<Ban className="h-4 w-4" />} onClick={() => setCancelOpen(true)}>Annuler</Button>
           )}
-          {canWrite && q.status === 'BROUILLON' && (
+          {canIssueProforma && PROFORMA_QUOTE_TYPES.includes(q.type) && (
+            <Button variant="secondary" icon={<ReceiptText className="h-4 w-4" />} onClick={() => setProformaOpen(true)}>Facture Proforma</Button>
+          )}
+          {canDelete && DELETABLE_STATUSES.includes(q.status) && (
             <Button variant="danger" icon={<Trash2 className="h-4 w-4" />} onClick={() => setDeleteOpen(true)}>Supprimer</Button>
           )}
         </div>
@@ -347,10 +365,18 @@ export default function QuoteDetailPage() {
         onClose={() => setCancelOpen(false)} />
 
       <ConfirmDialog open={deleteOpen} title="Supprimer le devis"
-        message={`Supprimer définitivement le brouillon ${q.reference} ?`}
+        message={`Supprimer définitivement le devis ${q.reference} ?`}
         confirmLabel="Supprimer" loading={del.isPending}
         onConfirm={async () => { const r = await del.mutateAsync(q.id); if (r.success) navigate('/quotes'); }}
         onClose={() => setDeleteOpen(false)} />
+
+      <CreateProformaModal
+        open={proformaOpen} onClose={() => setProformaOpen(false)} loading={createProforma.isPending}
+        onConfirm={async ({ validUntil, notes }) => {
+          const r = await createProforma.mutateAsync({ quoteId: q.id, validUntil: validUntil || null, notes: notes || null });
+          if (r.success) { setProformaOpen(false); navigate(`/proforma/${r.data.id}`); }
+        }}
+      />
     </PageLayout>
   );
 }

@@ -45,7 +45,7 @@ try {
   <div class="card">
     <?php if ($hasLogo): ?><img class="logo" src="logo.png" alt="" /><?php endif; ?>
     <h1>Enregistrement des visiteurs</h1>
-    <p class="sub">Merci de renseigner les informations ci-dessous. La date et l'heure sont enregistrées automatiquement.</p>
+    <p class="sub" id="subtext">Merci de renseigner les informations ci-dessous. La date et l'heure sont enregistrées automatiquement.</p>
 
     <div id="form">
       <div class="grid2">
@@ -93,6 +93,7 @@ try {
       var r=await fetch(API_BASE+'api.php?action=submit',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
       var d=await r.json();
       if(!d.ok){ show('err', d.error||'Échec de l\'enregistrement.'); return; }
+      document.getElementById('subtext').style.display='none';
       document.getElementById('form').innerHTML='<div class="msg ok">'+(d.message||'Visite enregistrée. Merci !')+'</div>';
     }catch(e){ show('err','Serveur injoignable.'); }
   }

@@ -59,7 +59,7 @@ function GenerateModal({ onClose }: { onClose: () => void }) {
   const { register, handleSubmit, formState: { isSubmitting } } = useForm({
     defaultValues: {
       employeeId: '', periodYear: String(now.getFullYear()), periodMonth: String(now.getMonth() + 1),
-      sursalaire: '', taxablePrime: '', transportAllowance: '', includeOvertime: true,
+      sursalaire: '', taxablePrime: '', transportAllowance: '', commissionsVente: '', includeOvertime: true,
     },
   });
 
@@ -72,6 +72,7 @@ function GenerateModal({ onClose }: { onClose: () => void }) {
       sursalaire: d.sursalaire ? Number(d.sursalaire) : 0,
       taxablePrime: d.taxablePrime ? Number(d.taxablePrime) : 0,
       transportAllowance: d.transportAllowance ? Number(d.transportAllowance) : 0,
+      commissionsVente: d.commissionsVente ? Number(d.commissionsVente) : 0,
       includeOvertime: !!d.includeOvertime,
     };
     const r = await generate.mutateAsync(payload);
@@ -107,6 +108,7 @@ function GenerateModal({ onClose }: { onClose: () => void }) {
         <Input label="Sursalaire (FCFA)" type="number" step="1000" min="0" {...register('sursalaire')} />
         <Input label="Prime imposable (FCFA)" type="number" step="1000" min="0" {...register('taxablePrime')} />
         <Input label="Indemnité transport (FCFA)" type="number" step="1000" min="0" {...register('transportAllowance')} />
+        <Input label="Commissions sur vente (FCFA)" type="number" step="1000" min="0" {...register('commissionsVente')} />
       </div>
       <label className="mt-3 flex items-center gap-2 text-sm text-slate-700">
         <input type="checkbox" {...register('includeOvertime')} />

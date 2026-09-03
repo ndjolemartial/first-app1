@@ -178,6 +178,7 @@ export interface PayrollInput {
   taxablePrime?: number;       // primes imposables (soumises à cotisations/ITS)
   overtimeAmount?: number;     // heures supplémentaires (imposables) issues du pointage
   transportAllowance?: number; // indemnité de transport (non imposable)
+  commissionsVente?: number;   // commissions sur vente (gain imposable)
 }
 
 /**
@@ -244,13 +245,14 @@ export function computePayroll(input: PayrollInput, rates: PayrollRates): Payrol
   const taxablePrime = Math.max(0, round(input.taxablePrime || 0));
   const overtime = Math.max(0, round(input.overtimeAmount || 0));
   const transport = Math.max(0, round(input.transportAllowance || 0));
+  const commissionsVente = Math.max(0, round(input.commissionsVente || 0));
 
   // Indemnité de transport : exonérée jusqu'au plafond, surplus imposable.
   const transportCeiling = rates.transportExemptCeiling ?? 30_000;
   const transportExempt = Math.min(transport, transportCeiling);
   const transportTaxable = Math.max(0, transport - transportCeiling);
 
-  const grossTaxable = baseSalary + sursalaire + primeAnciennete + taxablePrime + overtime + transportTaxable;
+  const grossTaxable = baseSalary + sursalaire + primeAnciennete + taxablePrime + overtime + transportTaxable + commissionsVente;
   const totalGains = grossTaxable + transportExempt;
 
   // Retenues salariales
@@ -286,6 +288,7 @@ export function computePayroll(input: PayrollInput, rates: PayrollRates): Payrol
   if (taxablePrime > 0) lines.push({ type: 'GAIN', label: 'Primes imposables', amount: taxablePrime, order: o++ });
   if (overtime > 0) lines.push({ type: 'GAIN', label: 'Heures supplémentaires', amount: overtime, order: o++ });
   if (transportExempt > 0) lines.push({ type: 'GAIN', label: 'Indemnité de transport (non imposable)', amount: transportExempt, order: o++ });
+  if (commissionsVente > 0) lines.push({ type: 'GAIN', label: 'Commissions sur vente', amount: commissionsVente, order: o++ });
   if (transportTaxable > 0) lines.push({ type: 'GAIN', label: 'Indemnité de transport (part imposable)', amount: transportTaxable, order: o++ });
   lines.push({ type: 'RETENUE', label: 'CNPS (retraite) — part salarié', base: cnpsBase, rate: rates.cnpsEmployeeRate, amount: cnpsEmployee, order: o++ });
   lines.push({ type: 'RETENUE', label: 'ITS salarié', base: grossTaxable, amount: its, order: o++ });

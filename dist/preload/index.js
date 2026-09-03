@@ -135,6 +135,16 @@ const quotes = {
     convert: (token, id, options) => api.invoke('quotes:convert', { token, id, options }),
     listUnits: (token, includeInactive) => api.invoke('quotes:listUnits', { token, includeInactive }),
 };
+// Factures Proforma — document optionnel, non comptable, émis avant un achat
+// de terrain/bien depuis un devis (Vente terrain/bien) ou une convention
+// encore en Brouillon.
+const proforma = {
+    list: (token, filters, page, limit) => api.invoke('proforma:list', { token, filters, page, limit }),
+    getById: (token, id) => api.invoke('proforma:getById', { token, id }),
+    createFromQuote: (token, payload) => api.invoke('proforma:createFromQuote', { token, payload }),
+    createFromConvention: (token, payload) => api.invoke('proforma:createFromConvention', { token, payload }),
+    delete: (token, id) => api.invoke('proforma:delete', { token, id }),
+};
 const quoteTemplates = {
     list: (token, filters, page, limit) => api.invoke('quoteTemplates:list', { token, filters, page, limit }),
     getById: (token, id) => api.invoke('quoteTemplates:getById', { token, id }),
@@ -927,6 +937,9 @@ const settings = {
     myKycAccess: (token) => api.invoke('settings:myKycAccess', { token }),
     getLatenessSettings: (token) => api.invoke('settings:getLatenessSettings', { token }),
     updateLatenessSettings: (token, payload) => api.invoke('settings:updateLatenessSettings', { token, payload }),
+    listAttendanceSpecialDays: (token) => api.invoke('settings:listAttendanceSpecialDays', { token }),
+    createAttendanceSpecialDay: (token, payload) => api.invoke('settings:createAttendanceSpecialDay', { token, payload }),
+    deleteAttendanceSpecialDay: (token, id) => api.invoke('settings:deleteAttendanceSpecialDay', { token, id }),
     getVisitorQr: (token) => api.invoke('settings:getVisitorQr', { token }),
     updateVisitorQr: (token, payload) => api.invoke('settings:updateVisitorQr', { token, payload }),
     getAmlRiskThresholds: (token) => api.invoke('settings:getAmlRiskThresholds', { token }),
@@ -970,7 +983,9 @@ const documents = {
     uploadClientDocs: (token, clientId, category, files) => api.invoke('documents:uploadClientDocs', { token, clientId, category, files }),
     getByClient: (token, clientId) => api.invoke('documents:getByClient', { token, clientId }),
     uploadOwnerDoc: (token, ownerId, category, payload) => api.invoke('documents:uploadOwnerDoc', { token, ownerId, category, ...payload }),
+    uploadOwnerDocs: (token, ownerId, category, files) => api.invoke('documents:uploadOwnerDocs', { token, ownerId, category, files }),
     getByOwner: (token, ownerId) => api.invoke('documents:getByOwner', { token, ownerId }),
+    uploadReferrerDocs: (token, referrerId, category, files) => api.invoke('documents:uploadReferrerDocs', { token, referrerId, category, files }),
     uploadTerrainDoc: (token, terrainId, category, payload) => api.invoke('documents:uploadTerrainDoc', { token, terrainId, category, ...payload }),
     getByTerrain: (token, terrainId) => api.invoke('documents:getByTerrain', { token, terrainId }),
     openFile: (token, relativePath) => api.invoke('documents:openFile', { token, relativePath }),
@@ -1008,4 +1023,4 @@ const careerProfiles = {
     delete: (token, id) => api.invoke('careerProfiles:delete', { token, id }),
     duplicate: (token, id) => api.invoke('careerProfiles:duplicate', { token, id }),
 };
-electron_1.contextBridge.exposeInMainWorld('electron', { auth, users, prospects, clients, owners, properties, conventions, conventionTemplates, attestationTemplates, attestations, quotes, quoteTemplates, catalog, accounting, bilan, communication, crm, archiving, documents, documentExport, lotissements, terrains, programmes, projects, hr, careerProfiles, performance, visitors, calls, socialMedia, innovations, constructionLibrary, construction, permitLibrary, permits, aml, geo, countries, commissions, expenses, analytics, exporter, invoiceTemplates, listExportTemplates, wireTransfer, treasury, budget, dashboard, settings, reminders, mailAccount, config });
+electron_1.contextBridge.exposeInMainWorld('electron', { auth, users, prospects, clients, owners, properties, conventions, conventionTemplates, attestationTemplates, attestations, quotes, quoteTemplates, proforma, catalog, accounting, bilan, communication, crm, archiving, documents, documentExport, lotissements, terrains, programmes, projects, hr, careerProfiles, performance, visitors, calls, socialMedia, innovations, constructionLibrary, construction, permitLibrary, permits, aml, geo, countries, commissions, expenses, analytics, exporter, invoiceTemplates, listExportTemplates, wireTransfer, treasury, budget, dashboard, settings, reminders, mailAccount, config });

@@ -148,14 +148,14 @@ export const FORMULA_CATALOG: FormulaCatalogEntry[] = [
   { code: 'QTE_VRD_SURFACE', category: 'Assainissement / VRD', label: 'Surface VRD',
     description: "Maximum entre la surface du terrain renseignée et 1,5 × l'emprise au sol (estimation à défaut), × part VRD." },
 
-  // ── Clôture & portail ────────────────────────────────────────────────
-  { code: 'QTE_CLOTURE_ML', category: 'Clôture & portail', label: 'Clôture — infrastructure (ml)',
+  // ── Clôture ───────────────────────────────────────────────────────────
+  { code: 'QTE_CLOTURE_ML', category: 'Clôture', label: 'Clôture — infrastructure (ml)',
     description: "= longueur de clôture renseignée — base des rubriques fouille, fondation, ferraillage et chaînage bas, dimensionnées indépendamment de la hauteur du mur." },
-  { code: 'QTE_CLOTURE_SURFACE', category: 'Clôture & portail', label: 'Clôture — surface du mur (m²)',
+  { code: 'QTE_CLOTURE_SURFACE', category: 'Clôture', label: 'Clôture — surface du mur (m²)',
     description: "= longueur de clôture × hauteur de clôture (2,00 m par défaut si non renseignée) — base des rubriques montage du mur et crépissage : c'est ici que la hauteur pèse sur le montant du devis." },
-  { code: 'QTE_CLOTURE_POTEAUX', category: 'Clôture & portail', label: 'Clôture — poteaux',
+  { code: 'QTE_CLOTURE_POTEAUX', category: 'Clôture', label: 'Clôture — poteaux',
     description: "= nombre de poteaux, à raison d'un poteau tous les 3 ml plus les deux extrémités (indépendant de la hauteur) — type sortant ou simple selon le choix renseigné sur le projet." },
-  { code: 'QTE_PORTAILS', category: 'Clôture & portail', label: 'Portails',
+  { code: 'QTE_PORTAILS', category: 'Clôture', label: 'Portails',
     description: "= nombre de portails renseigné sur le projet." },
 
   // ── Aménagements extérieurs ──────────────────────────────────────────

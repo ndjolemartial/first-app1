@@ -423,6 +423,15 @@ function formatAmount(n: number | string | null | undefined): string {
   return new Intl.NumberFormat('fr-FR').format(Math.round(num));
 }
 
+// Solde restant dû d'une échéance (montant − déjà encaissé). Une échéance
+// PARTIEL n'est due, et ne doit être relancée, qu'à hauteur de ce reliquat —
+// jamais du montant initial de l'échéance.
+function remainingInstallmentAmount(inst: { amount: any; paidAmount?: any }): number {
+  const amount = Number(inst.amount ?? 0);
+  const paid = Number(inst.paidAmount ?? 0);
+  return Math.max(0, amount - paid);
+}
+
 // ── Rendu des templates ──────────────────────────────────────────────────────
 
 function render(template: string, vars: Record<string, string | number | null | undefined>): string {
@@ -517,7 +526,7 @@ export async function applyReminderRules(opts: { force?: boolean } = {}): Promis
               conventionRef:      inst.convention?.reference ?? '',
               installmentNumber:  inst.installmentNumber,
               dueDate:            formatDateFr(inst.dueDate),
-              amount:             formatAmount(inst.amount as any),
+              amount:             formatAmount(remainingInstallmentAmount(inst)),
               daysLate:           rule.offsetDays > 0 ? rule.offsetDays : 0,
               companyName,
             },
@@ -558,7 +567,7 @@ export async function applyReminderRules(opts: { force?: boolean } = {}): Promis
               conventionRef:      inst.detailsSouscription ?? '',
               installmentNumber:  inst.installmentNumber,
               dueDate:            formatDateFr(inst.dueDate),
-              amount:             formatAmount(inst.amount as any),
+              amount:             formatAmount(remainingInstallmentAmount(inst)),
               daysLate:           rule.offsetDays > 0 ? rule.offsetDays : 0,
               companyName,
             },

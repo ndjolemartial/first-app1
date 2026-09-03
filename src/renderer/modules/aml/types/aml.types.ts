@@ -193,6 +193,7 @@ export interface AmlTraining {
   recordedByName?: string | null;
   createdAt: string;
   documents?: any[];
+  _count?: { documents: number };
 }
 
 export interface AmlSuspiciousReport {
