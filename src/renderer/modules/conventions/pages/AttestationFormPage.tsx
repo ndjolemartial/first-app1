@@ -87,9 +87,12 @@ function computeSubscriptionBalance(c: any): number | null {
   }
   const sale = Number(c.saleAmount ?? 0);
   if (!sale) return null;
-  const fraisOuv = Number(c.fraisOuvertureDossier ?? 0);
   const additional = Number(c.additionalAmount ?? 0);
-  const totalDu = sale + fraisOuv + additional;
+  // Les frais d'ouverture de dossier sont facturés et réglés séparément
+  // (hors apport/échéancier, cf. conventions:generateInstallments qui
+  // finance uniquement saleAmount − apportInitial) : les inclure ici
+  // créait un solde fantôme égal à leur montant.
+  const totalDu = sale + additional;
   if (c.paymentModalites === 'CASH') return 0;
   const apport = Number(c.apportInitial ?? 0);
   const installments: any[] = c.installments ?? [];

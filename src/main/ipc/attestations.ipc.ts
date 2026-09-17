@@ -320,8 +320,12 @@ const INCLUDE = {
  *      RESILIATION — quel que soit le type d'attestation.
  *   2. Une attestation SOLDE ou TRANSFERT_PROPRIETE ne peut être émise que
  *      lorsque le solde de la souscription liée est strictement à zéro
- *      (prix de vente + frais d'ouverture + frais supplémentaires
- *      − apport − échéances payées ; les frais ACD ne sont jamais comptés).
+ *      (prix de vente + frais supplémentaires − apport − échéances payées).
+ *      Les frais d'ouverture de dossier (et les frais ACD) ne sont jamais
+ *      comptés : facturés et réglés séparément (leur propre facture, hors
+ *      apport/échéancier — cf. `conventions:generateInstallments`, qui
+ *      finance uniquement `saleAmount − apportInitial`), les inclure ici
+ *      créait un solde fantôme égal au montant de ces frais.
  *
  * Lève une `Error` lisible en cas de violation.
  */
@@ -374,9 +378,7 @@ async function assertConventionEligibleForAttestation(
     if (c.paymentModalites === 'CASH') {
       balance = 0;
     } else {
-      const totalDu = sale
-        + Number(c.fraisOuvertureDossier ?? 0)
-        + Number(c.additionalAmount ?? 0);
+      const totalDu = sale + Number(c.additionalAmount ?? 0);
       const apport = Number(c.apportInitial ?? 0);
       const paid = (c.installments ?? [])
         .filter((i) => i.status === 'PAYE')
