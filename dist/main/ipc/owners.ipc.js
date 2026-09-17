@@ -43,10 +43,12 @@ const ownerBaseSchema = zod_1.z.object({
     employerName: zod_1.z.string().optional(),
     monthlyIncome: zod_1.z.coerce.number().min(0).nullable().optional(),
     sourceOfFunds: zod_1.z.array(zod_1.z.string()).optional(),
-    sourceOfFundsOther: zod_1.z.string().optional(),
+    // Nullable : le formulaire envoie explicitement `null` pour effacer la
+    // précision « Autre » dès que la case correspondante est décochée.
+    sourceOfFundsOther: zod_1.z.string().nullable().optional(),
     sourceOfWealth: zod_1.z.string().optional(),
     relationshipPurpose: zod_1.z.array(zod_1.z.string()).optional(),
-    relationshipPurposeOther: zod_1.z.string().optional(),
+    relationshipPurposeOther: zod_1.z.string().nullable().optional(),
     expectedTransactionVolume: zod_1.z.coerce.number().min(0).nullable().optional(),
     acquisitionChannel: zod_1.z.string().optional(),
     isPep: zod_1.z.boolean().optional(),

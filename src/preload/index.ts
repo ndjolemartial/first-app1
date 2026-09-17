@@ -2,8 +2,45 @@ import { contextBridge, ipcRenderer, webUtils } from 'electron';
 
 type IpcArgs = Record<string, unknown>;
 
+/**
+ * Aplatit une erreur non-string (typiquement `ZodError.format()`, renvoyée
+ * telle quelle par de nombreux handlers IPC via `{ error: parsed.error.format() }`)
+ * en un message lisible. Sans ça, le renderer affiche « [object Object] » (tous
+ * les hooks font `toast.error(String(res.error))`, ce qui coerce un objet en
+ * cette chaîne littérale) — ex. mise à jour d'un client converti depuis un
+ * prospect sans pièce d'identité renseignée (champ requis pour un particulier).
+ */
+function flattenApiError(error: unknown): string {
+  if (typeof error === 'string') return error;
+  if (error == null) return 'Erreur inconnue';
+  if (typeof error !== 'object') return String(error);
+  const messages: string[] = [];
+  const walk = (node: any, path: string[]): void => {
+    if (!node || typeof node !== 'object') return;
+    if (Array.isArray(node._errors) && node._errors.length) {
+      for (const msg of node._errors) messages.push(path.length ? `${path.join('.')} : ${msg}` : String(msg));
+    }
+    for (const key of Object.keys(node)) {
+      if (key === '_errors') continue;
+      walk(node[key], [...path, key]);
+    }
+  };
+  walk(error, []);
+  if (messages.length) return messages.join(' ; ');
+  const anyError = error as any;
+  if (typeof anyError.message === 'string') return anyError.message;
+  try { return JSON.stringify(error); } catch { return String(error); }
+}
+
 const api = {
-  invoke: (channel: string, args?: IpcArgs) => ipcRenderer.invoke(channel, args ?? {}),
+  invoke: async (channel: string, args?: IpcArgs) => {
+    const result = await ipcRenderer.invoke(channel, args ?? {});
+    if (result && typeof result === 'object' && result.success === false
+      && result.error != null && typeof result.error !== 'string') {
+      return { ...result, error: flattenApiError(result.error) };
+    }
+    return result;
+  },
 };
 
 // Auth

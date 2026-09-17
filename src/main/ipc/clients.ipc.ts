@@ -55,10 +55,12 @@ const clientBaseSchema = z.object({
   employerName: z.string().optional(),
   monthlyIncome: z.coerce.number().min(0).nullable().optional(),
   sourceOfFunds: z.array(z.string()).optional(),
-  sourceOfFundsOther: z.string().optional(),
+  // Nullable : le formulaire envoie explicitement `null` pour effacer la
+  // précision « Autre » dès que la case correspondante est décochée.
+  sourceOfFundsOther: z.string().nullable().optional(),
   sourceOfWealth: z.string().optional(),
   relationshipPurpose: z.array(z.string()).optional(),
-  relationshipPurposeOther: z.string().optional(),
+  relationshipPurposeOther: z.string().nullable().optional(),
   expectedTransactionVolume: z.coerce.number().min(0).nullable().optional(),
   acquisitionChannel: z.string().optional(),
   isPep: z.boolean().optional(),
