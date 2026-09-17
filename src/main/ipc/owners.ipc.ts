@@ -2,6 +2,7 @@ import { ipcMain } from 'electron';
 import { getDb } from '../services/db.service';
 import { getSession, checkRole } from '../services/auth.service';
 import logger from '../utils/logger';
+import { screenEntity } from '../services/aml-screening.service';
 import { z } from 'zod';
 
 const ownerBaseSchema = z.object({
@@ -181,6 +182,8 @@ export function registerOwnersIPC(): void {
       if (data.kycSignedAt) data.kycSignedAt = new Date(data.kycSignedAt);
       const owner = await db.owner.create({ data });
       logger.info(`Owner created: id=${owner.id}`);
+      screenEntity('OWNER', owner.id, { operatorId: session.userId })
+        .catch((e) => logger.error(`aml screening after owners:create: ${e.message}`));
       return { success: true, data: ser(owner) };
     } catch (error: any) {
       return { success: false, error: error.message };

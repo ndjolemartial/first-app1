@@ -57,7 +57,7 @@ export function buildClientKycDocumentHtml(
 
   const professionalSection = section('3. Situation professionnelle et revenus', ''
     + rowPair('Profession', client.profession, 'Employeur / activité', client.employerName)
-    + rowPair('Revenu mensuel déclaré', client.monthlyIncome != null ? formatCurrency(Number(client.monthlyIncome)) : null, '', ''));
+    + rowPair('Revenu mensuel déclaré (Optionnel)', client.monthlyIncome != null ? formatCurrency(Number(client.monthlyIncome)) : null, '', ''));
 
   const fundsSection = section('4. Origine des fonds et du patrimoine', ''
     + row('Origine des fonds', formatSourceOfFunds(client.sourceOfFunds, client.sourceOfFundsOther))
@@ -128,7 +128,7 @@ export function buildBlankKycDocumentHtml(
   const professionalSection = `
     ${blockTitle('4. Situation professionnelle et revenus')}
     ${blankPair('Profession', 'Employeur / activité')}
-    ${blankLine('Revenu mensuel déclaré (FCFA)')}`;
+    ${blankLine('Revenu mensuel déclaré (FCFA) (Optionnel)')}`;
 
   const fundsSection = `
     ${blockTitle('5. Origine des fonds et du patrimoine')}

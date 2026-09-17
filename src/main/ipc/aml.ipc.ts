@@ -3,6 +3,13 @@ import { z } from 'zod';
 import { getDb } from '../services/db.service';
 import { getSession, checkRole } from '../services/auth.service';
 import { getAmlRiskThresholds, setAmlRiskThresholds, recomputeProfileRisk } from '../services/aml-risk-engine.service';
+import {
+  runScreening,
+  getAmlScreeningSchedule,
+  setAmlScreeningSchedule,
+  type AmlScreeningSchedule,
+} from '../services/aml-screening.service';
+import { getSetting, setSetting, SettingsKeys } from '../services/settings.service';
 import logger from '../utils/logger';
 
 type Db = ReturnType<typeof getDb>;
@@ -38,6 +45,96 @@ const AML_RESTRICTED_ROLES = ['AGENT', 'AGENT_TECHNIQUE', 'ASSISTANTE_DIRECTION'
 // conformément à son rôle, n'écrit jamais nulle part dans le module).
 const WATCHLIST_RESTRICTED_WRITE_ROLES = ['AGENT_TECHNIQUE'];
 
+// « Nos Procédures LBC/FT » — bibliothèque documentaire consultable par TOUT
+// utilisateur authentifié (y compris RH, autrement exclusif à son module ; cf.
+// aml:procedures:list/getById, sans aucun contrôle de rôle). Seuls joindre
+// (create + documents:import) et supprimer sont réservés à ces 4 rôles —
+// rôle EXACT (checkExactRole), volontairement sans l'équivalence
+// ACCOUNTANT/ASSISTANTE_DIRECTION → MANAGER de checkRole, pour exclure
+// ACCOUNTANT comme demandé.
+const PROCEDURE_WRITE_ROLES = ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ASSISTANTE_DIRECTION'];
+
+// « Registres LBC/FT » (notifications, échanges CENTIF-CI, DSTE, opérations
+// suspectes) — accès (enregistrement + visualisation + impression, un seul
+// niveau, non distingué) géré **indépendamment des rôles** : les rôles à
+// plein accès du module (AML_ROLES) l'ont par défaut ; un administrateur
+// (SUPER_ADMIN/ADMIN uniquement) peut en plus désigner individuellement
+// n'importe quel autre employé depuis Paramètres → « Registres LBC/FT —
+// accès » — même principe que l'accès individuel à la Fiche KYC.
+const REGISTERS_ADMIN_ROLES = ['SUPER_ADMIN', 'ADMIN'];
+
+async function registersAuthorizedUserIds(db: Db): Promise<number[]> {
+  const raw = await getSetting(SettingsKeys.registersAuthorizedUserIds);
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed.filter((n: any) => Number.isInteger(n)) : [];
+  } catch {
+    return [];
+  }
+}
+
+/** Rejette si l'utilisateur n'a ni le rôle à plein accès du module, ni une désignation individuelle. */
+async function assertRegistersAccess(db: Db, session: { role: string; userId: number }): Promise<void> {
+  if (AML_ROLES.includes(session.role)) return;
+  const ids = await registersAuthorizedUserIds(db);
+  if (!ids.includes(session.userId)) throw new Error('Permission insuffisante');
+}
+
+// « Criblage » (`/aml/screening`) — contrairement au reste du module, la vue
+// complète (AML_ROLES) n'est pas le rôle par défaut : seuls SUPER_ADMIN,
+// ADMIN et MANAGER y accèdent d'office. Tous les autres rôles — y compris
+// CONFORMITE et ACCOUNTANT, pourtant en plein accès sur le reste du module 19
+// — n'y accèdent que par désignation individuelle depuis Paramètres →
+// « Criblage — accès » (même mécanisme que Registres LBC/FT / Fiche KYC).
+const SCREENING_ROLES = ['SUPER_ADMIN', 'ADMIN', 'MANAGER'];
+const SCREENING_ADMIN_ROLES = ['SUPER_ADMIN', 'ADMIN'];
+
+async function screeningAuthorizedUserIds(db: Db): Promise<number[]> {
+  const raw = await getSetting(SettingsKeys.screeningAuthorizedUserIds);
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed.filter((n: any) => Number.isInteger(n)) : [];
+  } catch {
+    return [];
+  }
+}
+
+/** Rejette si l'utilisateur n'a ni SUPER_ADMIN/ADMIN/MANAGER, ni une désignation individuelle. */
+async function assertScreeningAccess(db: Db, session: { role: string; userId: number }): Promise<void> {
+  if (SCREENING_ROLES.includes(session.role)) return;
+  const ids = await screeningAuthorizedUserIds(db);
+  if (!ids.includes(session.userId)) throw new Error('Permission insuffisante');
+}
+
+// « Alertes » (`/aml/alerts`) — même principe restrictif que Criblage
+// ci-dessus : seuls SUPER_ADMIN, ADMIN et MANAGER y accèdent d'office
+// (CONFORMITE et ACCOUNTANT en sont exclus par défaut, contrairement au
+// reste du module 19), les autres via désignation individuelle depuis
+// Paramètres → « Alertes — accès ». Couvre tout le CRUD (y compris la
+// suppression, auparavant réservée à AML_ADMIN_ONLY).
+const ALERTS_ROLES = ['SUPER_ADMIN', 'ADMIN', 'MANAGER'];
+const ALERTS_ADMIN_ROLES = ['SUPER_ADMIN', 'ADMIN'];
+
+async function alertsAuthorizedUserIds(db: Db): Promise<number[]> {
+  const raw = await getSetting(SettingsKeys.alertsAuthorizedUserIds);
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed.filter((n: any) => Number.isInteger(n)) : [];
+  } catch {
+    return [];
+  }
+}
+
+/** Rejette si l'utilisateur n'a ni SUPER_ADMIN/ADMIN/MANAGER, ni une désignation individuelle. */
+async function assertAlertsAccess(db: Db, session: { role: string; userId: number }): Promise<void> {
+  if (ALERTS_ROLES.includes(session.role)) return;
+  const ids = await alertsAuthorizedUserIds(db);
+  if (!ids.includes(session.userId)) throw new Error('Permission insuffisante');
+}
+
 /** Vérifie un rôle exact (pas d'équivalence ACCOUNTANT/ASSISTANTE_DIRECTION → MANAGER). */
 function checkExactRole(session: { role: string }, allowed: string[]): void {
   if (!allowed.includes(session.role)) throw new Error('Permission insuffisante');
@@ -49,7 +146,13 @@ const ser = <T>(v: T): T => JSON.parse(JSON.stringify(v));
 
 const subjectTypeSchema = z.enum(['CLIENT', 'OWNER']);
 
-async function nextReference(db: Db, model: 'amlProfile' | 'amlTransactionReview' | 'amlSuspiciousReport' | 'amlTraining', prefix: string): Promise<string> {
+async function nextReference(
+  db: Db,
+  model:
+    | 'amlProfile' | 'amlTransactionReview' | 'amlSuspiciousReport' | 'amlTraining' | 'amlProcedure'
+    | 'amlNotificationRecord' | 'amlCentifExchange' | 'amlDsteRecord' | 'amlSuspiciousOperationRecord',
+  prefix: string,
+): Promise<string> {
   const year = new Date().getFullYear();
   const last = await (db[model] as any).findFirst({
     where: { reference: { startsWith: `${prefix}-${year}-` } },
@@ -128,6 +231,7 @@ const thresholdsSchema = z.object({
   faibleMax: z.coerce.number().int().min(0),
   moyenMax: z.coerce.number().int().min(0),
   amountThreshold: z.coerce.number().min(0),
+  dsteThreshold: z.coerce.number().min(0),
 }).refine((d) => d.moyenMax >= d.faibleMax, { message: 'Le seuil moyen doit être supérieur ou égal au seuil faible', path: ['moyenMax'] });
 
 const watchlistSchema = z.object({
@@ -219,6 +323,111 @@ const trainingCreateSchema = trainingBaseSchema.extend({
 });
 // Modification : une ligne = un participant, le participant reste modifiable individuellement.
 const trainingUpdateSchema = trainingBaseSchema.extend({ userId: z.coerce.number().int().positive() }).partial();
+
+// Alerte CENTIF-CI / mise à jour d'une liste SFC — un enregistrement = une
+// version de la base de criblage.
+const alertBaseSchema = z.object({
+  source: z.enum(['CENTIF_CI', 'SFC', 'ONU', 'UE', 'GIABA', 'AUTRE']),
+  title: z.string().min(1, 'Intitulé requis'),
+  centifPublicationDate: z.preprocess(emptyToNull, z.coerce.date().nullable().optional()),
+  fileDownloadedAt: z.preprocess(emptyToNull, z.coerce.date().nullable().optional()),
+  integratedAt: z.preprocess(emptyToNull, z.coerce.date().nullable().optional()),
+  operatorId: z.preprocess(emptyToNull, z.coerce.number().int().positive().nullable().optional()),
+  operatorName: z.preprocess(emptyToNull, z.string().nullable().optional()),
+  entriesAdded: z.preprocess(emptyToNull, z.coerce.number().int().min(0).nullable().optional()),
+  entriesModified: z.preprocess(emptyToNull, z.coerce.number().int().min(0).nullable().optional()),
+  notes: z.preprocess(emptyToNull, z.string().nullable().optional()),
+});
+const alertCreateSchema = alertBaseSchema;
+const alertUpdateSchema = alertBaseSchema.partial();
+
+// Procédure interne LBC/FT — métadonnées seules (le/les fichier(s) sont
+// joints séparément via documents:import avec amlProcedureId).
+const procedureBaseSchema = z.object({
+  title: z.string().min(1, 'Intitulé requis'),
+  category: z.preprocess(emptyToNull, z.string().nullable().optional()),
+  description: z.preprocess(emptyToNull, z.string().nullable().optional()),
+});
+const procedureCreateSchema = procedureBaseSchema;
+const procedureUpdateSchema = procedureBaseSchema.partial();
+
+/* ─── Registres LBC/FT ──────────────────────────────────────── */
+
+// 1. Registre de suivi des notifications.
+const notificationBaseSchema = z.object({
+  updateDate: z.coerce.date(),
+  updateDescription: z.string().min(1, 'Description de la mise à jour requise'),
+  notificationDate: z.preprocess(emptyToNull, z.coerce.date().nullable().optional()),
+  transmissionMode: z.preprocess(emptyToNull, z.string().nullable().optional()),
+  ackReceived: z.boolean().optional(),
+  notes: z.preprocess(emptyToNull, z.string().nullable().optional()),
+});
+const notificationCreateSchema = notificationBaseSchema;
+const notificationUpdateSchema = notificationBaseSchema.partial();
+
+// 2. Registre de suivi des échanges avec la CENTIF-CI.
+const exchangeBaseSchema = z.object({
+  exchangeDate: z.coerce.date(),
+  direction: z.enum(['ENTRANT', 'SORTANT']),
+  nature: z.string().min(1, "Nature de l'échange requise"),
+  channel: z.preprocess(emptyToNull, z.string().nullable().optional()),
+  status: z.enum(['EN_COURS', 'CLOTURE', 'SANS_SUITE']).optional(),
+  closedAt: z.preprocess(emptyToNull, z.coerce.date().nullable().optional()),
+  notes: z.preprocess(emptyToNull, z.string().nullable().optional()),
+});
+const exchangeCreateSchema = exchangeBaseSchema;
+const exchangeUpdateSchema = exchangeBaseSchema.partial();
+
+// 3. Grille de recensement des transactions en espèces éligibles à la DSTE.
+const dsteBaseSchema = z.object({
+  transactionDate: z.coerce.date(),
+  subjectLabel: z.string().min(1, 'Client / dossier concerné requis'),
+  amount: z.coerce.number().positive('Montant requis'),
+  description: z.preprocess(emptyToNull, z.string().nullable().optional()),
+  notes: z.preprocess(emptyToNull, z.string().nullable().optional()),
+});
+const dsteCreateSchema = dsteBaseSchema;
+const dsteUpdateSchema = dsteBaseSchema.partial();
+
+// 4. Registre des opérations suspectes.
+const suspiciousOperationBaseSchema = z.object({
+  detectionDate: z.coerce.date(),
+  subjectLabel: z.string().min(1, 'Client / dossier concerné requis'),
+  description: z.string().min(1, 'Description des faits requise'),
+  decision: z.enum(['DOS_TRANSMISE', 'DOS_NON_RETENUE']).nullable().optional(),
+  dosExchangeId: z.preprocess(emptyToNull, z.coerce.number().int().positive().nullable().optional()),
+  notes: z.preprocess(emptyToNull, z.string().nullable().optional()),
+});
+const suspiciousOperationCreateSchema = suspiciousOperationBaseSchema;
+const suspiciousOperationUpdateSchema = suspiciousOperationBaseSchema.partial();
+
+const hitReviewSchema = z.object({
+  status: z.enum(['A_VERIFIER', 'CONFIRME', 'FAUX_POSITIF']),
+  notes: z.preprocess(emptyToNull, z.string().nullable().optional()),
+});
+
+const screeningScheduleSchema = z.object({
+  enabled: z.boolean(),
+  frequency: z.enum(['DAILY', 'WEEKLY', 'MONTHLY']),
+  weekday: z.coerce.number().int().min(0).max(6),
+  monthday: z.coerce.number().int().min(1).max(28),
+  hour: z.coerce.number().int().min(0).max(23),
+});
+
+async function nextAlertReference(db: Db): Promise<string> {
+  const year = new Date().getFullYear();
+  const last = await db.amlWatchlistAlert.findFirst({
+    where: { reference: { startsWith: `MAJ-${year}-` } },
+    orderBy: { reference: 'desc' },
+    select: { reference: true },
+  });
+  const seq = last ? parseInt(last.reference.split('-')[2], 10) + 1 : 1;
+  return `MAJ-${year}-${String(seq).padStart(4, '0')}`;
+}
+
+const SCREENING_ENTITY_LABEL: Record<string, string> = {
+  CLIENT: 'Client', PROSPECT: 'Prospect', OWNER: 'Propriétaire', REFERRER: "Apporteur d'affaires",
+};
 
 /** Enregistre les handlers IPC du module Conformité LBC/FT (Module 19). */
 export function registerAmlIPC(): void {
@@ -631,15 +840,21 @@ export function registerAmlIPC(): void {
       if (filters.listType) where.listType = filters.listType;
       if (filters.personType) where.personType = filters.personType;
       let data = await db.amlWatchlist.findMany({ where, orderBy: { name: 'asc' } });
-      // Recherche élargie — nom, alias, nationalité, pays de résidence habituel —
-      // appliquée en mémoire (comme `aml:watchlist:screen` ci-dessous) : le
-      // filtre JSON "contains" de Prisma/MySQL ne permet de tester qu'une
-      // égalité exacte d'élément de tableau, pas une sous-chaîne au sein d'un
-      // alias.
+      // Recherche élargie — nom, alias, nationalité, pays de résidence habituel,
+      // référence dans la liste source — appliquée en mémoire (comme
+      // `aml:watchlist:screen` ci-dessous) : le filtre JSON "contains" de
+      // Prisma/MySQL ne permet de tester qu'une égalité exacte d'élément de
+      // tableau, pas une sous-chaîne au sein d'un alias.
       if (filters.search) {
         const term = String(filters.search).toLowerCase();
         data = data.filter((w) => {
-          const haystacks = [w.name, ...(Array.isArray(w.aliases) ? (w.aliases as string[]) : []), w.nationality, w.residenceCountry];
+          const haystacks = [
+            w.name,
+            ...(Array.isArray(w.aliases) ? (w.aliases as string[]) : []),
+            w.nationality,
+            w.residenceCountry,
+            w.sourceRef,
+          ];
           return haystacks.some((v) => typeof v === 'string' && v.toLowerCase().includes(term));
         });
       }
@@ -674,6 +889,7 @@ export function registerAmlIPC(): void {
       if (!parsed.success) return { success: false, error: parsed.error.format() };
       const db = getDb();
       const data = await db.amlWatchlist.create({ data: parsed.data });
+      runScreening({ trigger: 'REFERENTIEL_MAJ', operatorId: session.userId }).catch((e) => logger.error(`aml screening after watchlist:create: ${e.message}`));
       return ser({ success: true, data });
     } catch (error: any) {
       logger.error('aml:watchlist:create', error.message);
@@ -690,6 +906,7 @@ export function registerAmlIPC(): void {
       if (!parsed.success) return { success: false, error: parsed.error.format() };
       const db = getDb();
       const data = await db.amlWatchlist.update({ where: { id: Number(id) }, data: parsed.data });
+      runScreening({ trigger: 'REFERENTIEL_MAJ', operatorId: session.userId }).catch((e) => logger.error(`aml screening after watchlist:update: ${e.message}`));
       return ser({ success: true, data });
     } catch (error: any) {
       logger.error('aml:watchlist:update', error.message);
@@ -704,6 +921,7 @@ export function registerAmlIPC(): void {
       checkExactRole(session, [...AML_ROLES, ...WATCHLIST_RESTRICTED_WRITE_ROLES]);
       const db = getDb();
       await db.amlWatchlist.update({ where: { id: Number(id) }, data: { deletedAt: new Date(), isActive: false } });
+      runScreening({ trigger: 'REFERENTIEL_MAJ', operatorId: session.userId }).catch((e) => logger.error(`aml screening after watchlist:delete: ${e.message}`));
       return { success: true };
     } catch (error: any) {
       logger.error('aml:watchlist:delete', error.message);
@@ -1296,6 +1514,931 @@ export function registerAmlIPC(): void {
     }
   });
 
+  /* ─── Alertes CENTIF-CI / mises à jour des listes SFC ─────── */
+
+  ipcMain.handle('aml:alerts:list', async (_event, { token, page = 1, limit = 50 }: any) => {
+    try {
+      const session = getSession(token);
+      if (!session) return { success: false, error: 'Session expirée' };
+      const db = getDb();
+      await assertAlertsAccess(db, session);
+      const where = { deletedAt: null };
+      const [rows, total] = await db.$transaction([
+        db.amlWatchlistAlert.findMany({
+          where, skip: (page - 1) * limit, take: limit, orderBy: [{ integratedAt: 'desc' }, { createdAt: 'desc' }],
+          include: { _count: { select: { documents: { where: { deletedAt: null } } } } },
+        }),
+        db.amlWatchlistAlert.count({ where }),
+      ]);
+      const names = await resolveUserNames(db, rows.flatMap((r) => [r.operatorId, r.createdById]));
+      const current = await db.amlWatchlistAlert.findFirst({
+        where: { deletedAt: null, integratedAt: { not: null } }, orderBy: { integratedAt: 'desc' }, select: { id: true },
+      });
+      const data = rows.map((r) => ({
+        ...r,
+        operatorDisplayName: r.operatorId ? names.get(r.operatorId) ?? null : r.operatorName ?? null,
+        createdByName: r.createdById ? names.get(r.createdById) ?? null : null,
+        isCurrent: current?.id === r.id,
+      }));
+      return ser({ success: true, data, total });
+    } catch (error: any) {
+      logger.error('aml:alerts:list', error.message);
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle('aml:alerts:getById', async (_event, { token, id }: any) => {
+    try {
+      const session = getSession(token);
+      if (!session) return { success: false, error: 'Session expirée' };
+      const db = getDb();
+      await assertAlertsAccess(db, session);
+      const alert = await db.amlWatchlistAlert.findFirst({
+        where: { id: Number(id), deletedAt: null },
+        include: { documents: { where: { deletedAt: null }, orderBy: { uploadedAt: 'desc' } } },
+      });
+      if (!alert) return { success: false, error: 'Alerte introuvable' };
+      return ser({ success: true, data: alert });
+    } catch (error: any) {
+      logger.error('aml:alerts:getById', error.message);
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle('aml:alerts:create', async (_event, { token, payload }: any) => {
+    try {
+      const session = getSession(token);
+      if (!session) return { success: false, error: 'Session expirée' };
+      const db = getDb();
+      await assertAlertsAccess(db, session);
+      const parsed = alertCreateSchema.safeParse(payload);
+      if (!parsed.success) return { success: false, error: parsed.error.format() };
+      const reference = await nextAlertReference(db);
+      const alert = await db.amlWatchlistAlert.create({ data: { reference, ...parsed.data, createdById: session.userId } });
+      logger.info(`Alerte LBC/FT enregistrée : ${alert.reference}`);
+      // Une alerte intégrée = une nouvelle version de la base de criblage →
+      // re-cribler l'ensemble du portefeuille (le run se rattache
+      // automatiquement à cette alerte via `baseAlertId`, cf. runScreening).
+      if (alert.integratedAt) {
+        runScreening({ trigger: 'REFERENTIEL_MAJ', operatorId: session.userId })
+          .catch((e) => logger.error(`aml screening after alerts:create: ${e.message}`));
+      }
+      return ser({ success: true, data: alert });
+    } catch (error: any) {
+      logger.error('aml:alerts:create', error.message);
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle('aml:alerts:update', async (_event, { token, id, payload }: any) => {
+    try {
+      const session = getSession(token);
+      if (!session) return { success: false, error: 'Session expirée' };
+      const db = getDb();
+      await assertAlertsAccess(db, session);
+      const parsed = alertUpdateSchema.safeParse(payload);
+      if (!parsed.success) return { success: false, error: parsed.error.format() };
+      const existing = await db.amlWatchlistAlert.findFirst({ where: { id: Number(id), deletedAt: null } });
+      if (!existing) return { success: false, error: 'Alerte introuvable' };
+      const alert = await db.amlWatchlistAlert.update({ where: { id: existing.id }, data: parsed.data });
+      // Re-cribler si l'alerte est (ou devient) intégrée ET que sa date
+      // d'intégration a changé — c.-à-d. que la version courante de la base
+      // de criblage a bougé. Une simple retouche de notes n'y suffit pas.
+      const integratedChanged =
+        !!alert.integratedAt &&
+        (!existing.integratedAt || existing.integratedAt.getTime() !== alert.integratedAt.getTime());
+      if (integratedChanged) {
+        runScreening({ trigger: 'REFERENTIEL_MAJ', operatorId: session.userId })
+          .catch((e) => logger.error(`aml screening after alerts:update: ${e.message}`));
+      }
+      return ser({ success: true, data: alert });
+    } catch (error: any) {
+      logger.error('aml:alerts:update', error.message);
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle('aml:alerts:delete', async (_event, { token, id }: any) => {
+    try {
+      const session = getSession(token);
+      if (!session) return { success: false, error: 'Session expirée' };
+      const db = getDb();
+      await assertAlertsAccess(db, session);
+      await db.amlWatchlistAlert.update({ where: { id: Number(id) }, data: { deletedAt: new Date() } });
+      return { success: true };
+    } catch (error: any) {
+      logger.error('aml:alerts:delete', error.message);
+      return { success: false, error: error.message };
+    }
+  });
+
+  /* ─── Criblage de masse ────────────────────────────────────── */
+
+  ipcMain.handle('aml:screening:run', async (_event, { token }: any) => {
+    try {
+      const session = getSession(token);
+      if (!session) return { success: false, error: 'Session expirée' };
+      await assertScreeningAccess(getDb(), session);
+      const result = await runScreening({ trigger: 'MANUEL', operatorId: session.userId });
+      return ser({ success: true, data: result });
+    } catch (error: any) {
+      logger.error('aml:screening:run', error.message);
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle('aml:screening:runs:list', async (_event, { token, filters = {}, page = 1, limit = 30 }: any) => {
+    try {
+      const session = getSession(token);
+      if (!session) return { success: false, error: 'Session expirée' };
+      const db = getDb();
+      await assertScreeningAccess(db, session);
+      const where: any = {};
+      if (filters.trigger) where.trigger = filters.trigger;
+      const [rows, total] = await db.$transaction([
+        db.amlScreeningRun.findMany({
+          where, skip: (page - 1) * limit, take: limit, orderBy: { startedAt: 'desc' },
+          include: { baseAlert: { select: { reference: true, title: true } } },
+        }),
+        db.amlScreeningRun.count({ where }),
+      ]);
+      const names = await resolveUserNames(db, rows.map((r) => r.operatorId));
+      const data = rows.map((r) => ({
+        ...r,
+        operatorDisplayName: r.operatorId ? names.get(r.operatorId) ?? null : r.operatorName ?? null,
+      }));
+      return ser({ success: true, data, total });
+    } catch (error: any) {
+      logger.error('aml:screening:runs:list', error.message);
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle('aml:screening:runs:getById', async (_event, { token, id }: any) => {
+    try {
+      const session = getSession(token);
+      if (!session) return { success: false, error: 'Session expirée' };
+      const db = getDb();
+      await assertScreeningAccess(db, session);
+      const run = await db.amlScreeningRun.findFirst({
+        where: { id: Number(id) },
+        include: { baseAlert: { select: { reference: true, title: true } }, hits: { include: { watchlist: true }, orderBy: { lastDetectedAt: 'desc' } } },
+      });
+      if (!run) return { success: false, error: 'Criblage introuvable' };
+      const names = await resolveUserNames(db, [run.operatorId]);
+      return ser({ success: true, data: { ...run, operatorDisplayName: run.operatorId ? names.get(run.operatorId) ?? null : run.operatorName ?? null } });
+    } catch (error: any) {
+      logger.error('aml:screening:runs:getById', error.message);
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle('aml:screening:summary', async (_event, { token }: any) => {
+    try {
+      const session = getSession(token);
+      if (!session) return { success: false, error: 'Session expirée' };
+      const db = getDb();
+      await assertScreeningAccess(db, session);
+      const [lastRun, currentAlert, byStatus, stale, clients, prospects, owners, referrers, watchlistCount] = await Promise.all([
+        db.amlScreeningRun.findFirst({ orderBy: { startedAt: 'desc' } }),
+        db.amlWatchlistAlert.findFirst({ where: { deletedAt: null, integratedAt: { not: null } }, orderBy: { integratedAt: 'desc' } }),
+        db.amlScreeningHit.groupBy({ by: ['status'], where: { stillMatching: true }, _count: true }),
+        db.amlScreeningHit.count({ where: { stillMatching: false } }),
+        db.client.count({ where: { deletedAt: null } }),
+        db.prospect.count({ where: { deletedAt: null } }),
+        db.owner.count({ where: { deletedAt: null } }),
+        db.businessReferrer.count({ where: { deletedAt: null } }),
+        db.amlWatchlist.count({ where: { deletedAt: null, isActive: true } }),
+      ]);
+      return ser({
+        success: true,
+        data: {
+          lastRun,
+          currentBaseVersion: currentAlert
+            ? `${currentAlert.reference} — ${currentAlert.title}`
+            : null,
+          currentBaseIntegratedAt: currentAlert?.integratedAt ?? null,
+          hitsByStatus: Object.fromEntries(byStatus.map((r) => [r.status, r._count])),
+          hitsStale: stale,
+          watchlistCount,
+          scopeCounts: { CLIENT: clients, PROSPECT: prospects, OWNER: owners, REFERRER: referrers },
+        },
+      });
+    } catch (error: any) {
+      logger.error('aml:screening:summary', error.message);
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle('aml:screening:hits:list', async (_event, { token, filters = {}, page = 1, limit = 50 }: any) => {
+    try {
+      const session = getSession(token);
+      if (!session) return { success: false, error: 'Session expirée' };
+      const db = getDb();
+      await assertScreeningAccess(db, session);
+      const where: any = {};
+      if (filters.status) where.status = filters.status;
+      if (filters.entityType) where.entityType = filters.entityType;
+      if (filters.runId) where.runId = Number(filters.runId);
+      if (filters.stillMatching === true || filters.stillMatching === false) where.stillMatching = filters.stillMatching;
+      if (filters.search) {
+        where.OR = [
+          { entityLabel: { contains: filters.search } },
+          { matchedOn: { contains: filters.search } },
+        ];
+      }
+      const [rows, total] = await db.$transaction([
+        db.amlScreeningHit.findMany({
+          where, skip: (page - 1) * limit, take: limit,
+          orderBy: [{ status: 'asc' }, { lastDetectedAt: 'desc' }],
+          include: { watchlist: { select: { id: true, name: true, listType: true, personType: true } } },
+        }),
+        db.amlScreeningHit.count({ where }),
+      ]);
+      const names = await resolveUserNames(db, rows.map((r) => r.reviewedById));
+      const data = rows.map((r) => ({
+        ...r,
+        entityTypeLabel: SCREENING_ENTITY_LABEL[r.entityType] ?? r.entityType,
+        reviewedByName: r.reviewedById ? names.get(r.reviewedById) ?? null : null,
+      }));
+      return ser({ success: true, data, total });
+    } catch (error: any) {
+      logger.error('aml:screening:hits:list', error.message);
+      return { success: false, error: error.message };
+    }
+  });
+
+  // Qualification d'une correspondance. Sur CONFIRME d'un Client/Owner : crée
+  // (si absent) un AmlProfile en vigilance renforcée, y attache une
+  // AmlWatchlistMatch CONFIRME et recalcule le score (moteur existant).
+  ipcMain.handle('aml:screening:hits:review', async (_event, { token, id, payload }: any) => {
+    try {
+      const session = getSession(token);
+      if (!session) return { success: false, error: 'Session expirée' };
+      const db = getDb();
+      await assertScreeningAccess(db, session);
+      const parsed = hitReviewSchema.safeParse(payload);
+      if (!parsed.success) return { success: false, error: parsed.error.format() };
+      const hit = await db.amlScreeningHit.findFirst({ where: { id: Number(id) } });
+      if (!hit) return { success: false, error: 'Correspondance introuvable' };
+
+      let amlProfileId = hit.amlProfileId;
+      if (parsed.data.status === 'CONFIRME' && (hit.entityType === 'CLIENT' || hit.entityType === 'OWNER')) {
+        const subjectType = hit.entityType; // 'CLIENT' | 'OWNER'
+        let profile = await db.amlProfile.findFirst({ where: { subjectType, subjectId: hit.entityId, deletedAt: null } });
+        if (!profile) {
+          const reference = await nextReference(db, 'amlProfile', 'LBC');
+          profile = await db.amlProfile.create({
+            data: {
+              reference, subjectType, subjectId: hit.entityId,
+              vigilanceType: 'RENFORCEE', status: 'EN_COURS', createdById: session.userId,
+              notes: `Profil créé automatiquement suite à une correspondance de criblage confirmée (${hit.entityLabel} ↔ ${hit.matchedOn}).`,
+            },
+          });
+          logger.info(`Profil LBC/FT créé (criblage confirmé) : ${profile.reference}`);
+        }
+        amlProfileId = profile.id;
+        const already = await db.amlWatchlistMatch.findFirst({ where: { profileId: profile.id, watchlistId: hit.watchlistId } });
+        if (!already) {
+          await db.amlWatchlistMatch.create({
+            data: { profileId: profile.id, watchlistId: hit.watchlistId, status: 'CONFIRME', reviewedById: session.userId, reviewedAt: new Date() },
+          });
+        } else if (already.status !== 'CONFIRME') {
+          await db.amlWatchlistMatch.update({ where: { id: already.id }, data: { status: 'CONFIRME', reviewedById: session.userId, reviewedAt: new Date() } });
+        }
+        await recomputeProfileRisk(db, profile.id);
+      }
+
+      const updated = await db.amlScreeningHit.update({
+        where: { id: hit.id },
+        data: {
+          status: parsed.data.status,
+          notes: parsed.data.notes,
+          reviewedById: session.userId,
+          reviewedAt: new Date(),
+          amlProfileId,
+        },
+      });
+      return ser({ success: true, data: updated });
+    } catch (error: any) {
+      logger.error('aml:screening:hits:review', error.message);
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle('settings:getAmlScreeningSchedule', async (_event, { token }: any) => {
+    try {
+      const session = getSession(token);
+      if (!session) return { success: false, error: 'Session expirée' };
+      checkExactRole(session, AML_ROLES);
+      const data = await getAmlScreeningSchedule(getDb());
+      return ser({ success: true, data });
+    } catch (error: any) {
+      logger.error('settings:getAmlScreeningSchedule', error.message);
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle('settings:updateAmlScreeningSchedule', async (_event, { token, payload }: any) => {
+    try {
+      const session = getSession(token);
+      if (!session) return { success: false, error: 'Session expirée' };
+      checkExactRole(session, AML_ADMIN_ONLY);
+      const parsed = screeningScheduleSchema.safeParse(payload);
+      if (!parsed.success) return { success: false, error: parsed.error.format() };
+      await setAmlScreeningSchedule(parsed.data as AmlScreeningSchedule, getDb());
+      return { success: true, data: parsed.data };
+    } catch (error: any) {
+      logger.error('settings:updateAmlScreeningSchedule', error.message);
+      return { success: false, error: error.message };
+    }
+  });
+
+  /* ─── Procédures internes LBC/FT/FP ────────────────────────── */
+  // Consultation ouverte à TOUT utilisateur authentifié — aucun checkRole/
+  // checkExactRole ici, contrairement au reste du module (cf. commentaire
+  // sur PROCEDURE_WRITE_ROLES). Seuls create/update/delete (et le
+  // documents:import associé, cf. documents.ipc.ts) sont restreints.
+
+  ipcMain.handle('aml:procedures:list', async (_event, { token, filters = {}, page = 1, limit = 50 }: any) => {
+    try {
+      const session = getSession(token);
+      if (!session) return { success: false, error: 'Session expirée' };
+      const db = getDb();
+      const where: any = { deletedAt: null };
+      if (filters.category) where.category = filters.category;
+      if (filters.search) {
+        where.OR = [
+          { title: { contains: filters.search } },
+          { description: { contains: filters.search } },
+        ];
+      }
+      const [rows, total] = await db.$transaction([
+        db.amlProcedure.findMany({
+          where, skip: (page - 1) * limit, take: limit, orderBy: { createdAt: 'desc' },
+          include: { _count: { select: { documents: { where: { deletedAt: null } } } } },
+        }),
+        db.amlProcedure.count({ where }),
+      ]);
+      const names = await resolveUserNames(db, rows.map((r) => r.createdById));
+      const data = rows.map((r) => ({ ...r, createdByName: r.createdById ? names.get(r.createdById) ?? null : null }));
+      return ser({ success: true, data, total });
+    } catch (error: any) {
+      logger.error('aml:procedures:list', error.message);
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle('aml:procedures:getById', async (_event, { token, id }: any) => {
+    try {
+      const session = getSession(token);
+      if (!session) return { success: false, error: 'Session expirée' };
+      const db = getDb();
+      const procedure = await db.amlProcedure.findFirst({
+        where: { id: Number(id), deletedAt: null },
+        include: { documents: { where: { deletedAt: null }, orderBy: { uploadedAt: 'desc' } } },
+      });
+      if (!procedure) return { success: false, error: 'Procédure introuvable' };
+      return ser({ success: true, data: procedure });
+    } catch (error: any) {
+      logger.error('aml:procedures:getById', error.message);
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle('aml:procedures:create', async (_event, { token, payload }: any) => {
+    try {
+      const session = getSession(token);
+      if (!session) return { success: false, error: 'Session expirée' };
+      checkExactRole(session, PROCEDURE_WRITE_ROLES);
+      const parsed = procedureCreateSchema.safeParse(payload);
+      if (!parsed.success) return { success: false, error: parsed.error.format() };
+      const db = getDb();
+      const reference = await nextReference(db, 'amlProcedure', 'PROC');
+      const procedure = await db.amlProcedure.create({ data: { reference, ...parsed.data, createdById: session.userId } });
+      logger.info(`Procédure LBC/FT enregistrée : ${procedure.reference}`);
+      return ser({ success: true, data: procedure });
+    } catch (error: any) {
+      logger.error('aml:procedures:create', error.message);
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle('aml:procedures:update', async (_event, { token, id, payload }: any) => {
+    try {
+      const session = getSession(token);
+      if (!session) return { success: false, error: 'Session expirée' };
+      checkExactRole(session, PROCEDURE_WRITE_ROLES);
+      const parsed = procedureUpdateSchema.safeParse(payload);
+      if (!parsed.success) return { success: false, error: parsed.error.format() };
+      const db = getDb();
+      const existing = await db.amlProcedure.findFirst({ where: { id: Number(id), deletedAt: null } });
+      if (!existing) return { success: false, error: 'Procédure introuvable' };
+      const procedure = await db.amlProcedure.update({ where: { id: existing.id }, data: parsed.data });
+      return ser({ success: true, data: procedure });
+    } catch (error: any) {
+      logger.error('aml:procedures:update', error.message);
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle('aml:procedures:delete', async (_event, { token, id }: any) => {
+    try {
+      const session = getSession(token);
+      if (!session) return { success: false, error: 'Session expirée' };
+      checkExactRole(session, PROCEDURE_WRITE_ROLES);
+      const db = getDb();
+      await db.amlProcedure.update({ where: { id: Number(id) }, data: { deletedAt: new Date() } });
+      return { success: true };
+    } catch (error: any) {
+      logger.error('aml:procedures:delete', error.message);
+      return { success: false, error: error.message };
+    }
+  });
+
+  /* ─── Registres LBC/FT — accès individuel (Paramètres) ─────── */
+
+  ipcMain.handle('settings:getRegistersAuthorizedUsers', async (_event, { token }: any) => {
+    try {
+      const session = getSession(token);
+      if (!session) return { success: false, error: 'Session expirée' };
+      checkExactRole(session, REGISTERS_ADMIN_ROLES);
+      const db = getDb();
+      const userIds = await registersAuthorizedUserIds(db);
+      return { success: true, data: { userIds } };
+    } catch (error: any) {
+      logger.error('settings:getRegistersAuthorizedUsers', error.message);
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle('settings:updateRegistersAuthorizedUsers', async (_event, { token, userIds }: any) => {
+    try {
+      const session = getSession(token);
+      if (!session) return { success: false, error: 'Session expirée' };
+      checkExactRole(session, REGISTERS_ADMIN_ROLES);
+      const ids = Array.isArray(userIds)
+        ? Array.from(new Set(userIds.map((v: any) => Number(v)).filter((n: number) => Number.isInteger(n) && n > 0)))
+        : [];
+      const db = getDb();
+      const validUsers = ids.length
+        ? await db.user.findMany({ where: { id: { in: ids }, deletedAt: null }, select: { id: true } })
+        : [];
+      const validIds = validUsers.map((u) => u.id);
+      await setSetting(SettingsKeys.registersAuthorizedUserIds, JSON.stringify(validIds));
+      logger.info(`Utilisateurs désignés (accès Registres LBC/FT) mis à jour (${validIds.length} utilisateur(s))`);
+      return { success: true, data: { userIds: validIds } };
+    } catch (error: any) {
+      logger.error('settings:updateRegistersAuthorizedUsers', error.message);
+      return { success: false, error: error.message };
+    }
+  });
+
+  /** Accessible à tout utilisateur authentifié — pilote l'affichage du sous-menu/la garde de route. */
+  ipcMain.handle('settings:myRegistersAccess', async (_event, { token }: any) => {
+    try {
+      const session = getSession(token);
+      if (!session) return { success: false, error: 'Session expirée' };
+      const db = getDb();
+      let hasAccess = AML_ROLES.includes(session.role);
+      if (!hasAccess) {
+        const ids = await registersAuthorizedUserIds(db);
+        hasAccess = ids.includes(session.userId);
+      }
+      return { success: true, data: { hasAccess } };
+    } catch (error: any) {
+      logger.error('settings:myRegistersAccess', error.message);
+      return { success: false, error: error.message };
+    }
+  });
+
+  /* ─── Criblage — accès individuel (Paramètres) ──────────────── */
+
+  ipcMain.handle('settings:getScreeningAuthorizedUsers', async (_event, { token }: any) => {
+    try {
+      const session = getSession(token);
+      if (!session) return { success: false, error: 'Session expirée' };
+      checkExactRole(session, SCREENING_ADMIN_ROLES);
+      const db = getDb();
+      const userIds = await screeningAuthorizedUserIds(db);
+      return { success: true, data: { userIds } };
+    } catch (error: any) {
+      logger.error('settings:getScreeningAuthorizedUsers', error.message);
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle('settings:updateScreeningAuthorizedUsers', async (_event, { token, userIds }: any) => {
+    try {
+      const session = getSession(token);
+      if (!session) return { success: false, error: 'Session expirée' };
+      checkExactRole(session, SCREENING_ADMIN_ROLES);
+      const ids = Array.isArray(userIds)
+        ? Array.from(new Set(userIds.map((v: any) => Number(v)).filter((n: number) => Number.isInteger(n) && n > 0)))
+        : [];
+      const db = getDb();
+      const validUsers = ids.length
+        ? await db.user.findMany({ where: { id: { in: ids }, deletedAt: null }, select: { id: true } })
+        : [];
+      const validIds = validUsers.map((u) => u.id);
+      await setSetting(SettingsKeys.screeningAuthorizedUserIds, JSON.stringify(validIds));
+      logger.info(`Utilisateurs désignés (accès Criblage) mis à jour (${validIds.length} utilisateur(s))`);
+      return { success: true, data: { userIds: validIds } };
+    } catch (error: any) {
+      logger.error('settings:updateScreeningAuthorizedUsers', error.message);
+      return { success: false, error: error.message };
+    }
+  });
+
+  /** Accessible à tout utilisateur authentifié — pilote l'affichage du sous-menu/la garde de route. */
+  ipcMain.handle('settings:myScreeningAccess', async (_event, { token }: any) => {
+    try {
+      const session = getSession(token);
+      if (!session) return { success: false, error: 'Session expirée' };
+      const db = getDb();
+      let hasAccess = SCREENING_ROLES.includes(session.role);
+      if (!hasAccess) {
+        const ids = await screeningAuthorizedUserIds(db);
+        hasAccess = ids.includes(session.userId);
+      }
+      return { success: true, data: { hasAccess } };
+    } catch (error: any) {
+      logger.error('settings:myScreeningAccess', error.message);
+      return { success: false, error: error.message };
+    }
+  });
+
+  /* ─── Alertes — accès individuel (Paramètres) ───────────────── */
+
+  ipcMain.handle('settings:getAlertsAuthorizedUsers', async (_event, { token }: any) => {
+    try {
+      const session = getSession(token);
+      if (!session) return { success: false, error: 'Session expirée' };
+      checkExactRole(session, ALERTS_ADMIN_ROLES);
+      const db = getDb();
+      const userIds = await alertsAuthorizedUserIds(db);
+      return { success: true, data: { userIds } };
+    } catch (error: any) {
+      logger.error('settings:getAlertsAuthorizedUsers', error.message);
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle('settings:updateAlertsAuthorizedUsers', async (_event, { token, userIds }: any) => {
+    try {
+      const session = getSession(token);
+      if (!session) return { success: false, error: 'Session expirée' };
+      checkExactRole(session, ALERTS_ADMIN_ROLES);
+      const ids = Array.isArray(userIds)
+        ? Array.from(new Set(userIds.map((v: any) => Number(v)).filter((n: number) => Number.isInteger(n) && n > 0)))
+        : [];
+      const db = getDb();
+      const validUsers = ids.length
+        ? await db.user.findMany({ where: { id: { in: ids }, deletedAt: null }, select: { id: true } })
+        : [];
+      const validIds = validUsers.map((u) => u.id);
+      await setSetting(SettingsKeys.alertsAuthorizedUserIds, JSON.stringify(validIds));
+      logger.info(`Utilisateurs désignés (accès Alertes) mis à jour (${validIds.length} utilisateur(s))`);
+      return { success: true, data: { userIds: validIds } };
+    } catch (error: any) {
+      logger.error('settings:updateAlertsAuthorizedUsers', error.message);
+      return { success: false, error: error.message };
+    }
+  });
+
+  /** Accessible à tout utilisateur authentifié — pilote l'affichage du sous-menu/la garde de route. */
+  ipcMain.handle('settings:myAlertsAccess', async (_event, { token }: any) => {
+    try {
+      const session = getSession(token);
+      if (!session) return { success: false, error: 'Session expirée' };
+      const db = getDb();
+      let hasAccess = ALERTS_ROLES.includes(session.role);
+      if (!hasAccess) {
+        const ids = await alertsAuthorizedUserIds(db);
+        hasAccess = ids.includes(session.userId);
+      }
+      return { success: true, data: { hasAccess } };
+    } catch (error: any) {
+      logger.error('settings:myAlertsAccess', error.message);
+      return { success: false, error: error.message };
+    }
+  });
+
+  /* ─── 1. Registre de suivi des notifications ───────────────── */
+
+  ipcMain.handle('aml:notifications:list', async (_event, { token, filters = {}, page = 1, limit = 50 }: any) => {
+    try {
+      const session = getSession(token);
+      if (!session) return { success: false, error: 'Session expirée' };
+      const db = getDb();
+      await assertRegistersAccess(db, session);
+      const where: any = { deletedAt: null };
+      if (filters.search) where.updateDescription = { contains: filters.search };
+      const [rows, total] = await db.$transaction([
+        db.amlNotificationRecord.findMany({ where, skip: (page - 1) * limit, take: limit, orderBy: { updateDate: 'desc' } }),
+        db.amlNotificationRecord.count({ where }),
+      ]);
+      const names = await resolveUserNames(db, rows.map((r) => r.recordedById));
+      const data = rows.map((r) => ({ ...r, recordedByName: r.recordedById ? names.get(r.recordedById) ?? null : null }));
+      return ser({ success: true, data, total });
+    } catch (error: any) {
+      logger.error('aml:notifications:list', error.message);
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle('aml:notifications:create', async (_event, { token, payload }: any) => {
+    try {
+      const session = getSession(token);
+      if (!session) return { success: false, error: 'Session expirée' };
+      const db = getDb();
+      await assertRegistersAccess(db, session);
+      const parsed = notificationCreateSchema.safeParse(payload);
+      if (!parsed.success) return { success: false, error: parsed.error.format() };
+      const reference = await nextReference(db, 'amlNotificationRecord', 'NOTIF');
+      const record = await db.amlNotificationRecord.create({ data: { reference, ...parsed.data, recordedById: session.userId } });
+      return ser({ success: true, data: record });
+    } catch (error: any) {
+      logger.error('aml:notifications:create', error.message);
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle('aml:notifications:update', async (_event, { token, id, payload }: any) => {
+    try {
+      const session = getSession(token);
+      if (!session) return { success: false, error: 'Session expirée' };
+      const db = getDb();
+      await assertRegistersAccess(db, session);
+      const parsed = notificationUpdateSchema.safeParse(payload);
+      if (!parsed.success) return { success: false, error: parsed.error.format() };
+      const existing = await db.amlNotificationRecord.findFirst({ where: { id: Number(id), deletedAt: null } });
+      if (!existing) return { success: false, error: 'Enregistrement introuvable' };
+      const record = await db.amlNotificationRecord.update({ where: { id: existing.id }, data: parsed.data });
+      return ser({ success: true, data: record });
+    } catch (error: any) {
+      logger.error('aml:notifications:update', error.message);
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle('aml:notifications:delete', async (_event, { token, id }: any) => {
+    try {
+      const session = getSession(token);
+      if (!session) return { success: false, error: 'Session expirée' };
+      const db = getDb();
+      await assertRegistersAccess(db, session);
+      await db.amlNotificationRecord.update({ where: { id: Number(id) }, data: { deletedAt: new Date() } });
+      return { success: true };
+    } catch (error: any) {
+      logger.error('aml:notifications:delete', error.message);
+      return { success: false, error: error.message };
+    }
+  });
+
+  /* ─── 2. Registre de suivi des échanges avec la CENTIF-CI ──── */
+
+  ipcMain.handle('aml:centifExchanges:list', async (_event, { token, filters = {}, page = 1, limit = 50 }: any) => {
+    try {
+      const session = getSession(token);
+      if (!session) return { success: false, error: 'Session expirée' };
+      const db = getDb();
+      await assertRegistersAccess(db, session);
+      const where: any = { deletedAt: null };
+      if (filters.direction) where.direction = filters.direction;
+      if (filters.status) where.status = filters.status;
+      if (filters.search) where.nature = { contains: filters.search };
+      const [rows, total] = await db.$transaction([
+        db.amlCentifExchange.findMany({ where, skip: (page - 1) * limit, take: limit, orderBy: { exchangeDate: 'desc' } }),
+        db.amlCentifExchange.count({ where }),
+      ]);
+      const names = await resolveUserNames(db, rows.map((r) => r.recordedById));
+      const data = rows.map((r) => ({ ...r, recordedByName: r.recordedById ? names.get(r.recordedById) ?? null : null }));
+      return ser({ success: true, data, total });
+    } catch (error: any) {
+      logger.error('aml:centifExchanges:list', error.message);
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle('aml:centifExchanges:create', async (_event, { token, payload }: any) => {
+    try {
+      const session = getSession(token);
+      if (!session) return { success: false, error: 'Session expirée' };
+      const db = getDb();
+      await assertRegistersAccess(db, session);
+      const parsed = exchangeCreateSchema.safeParse(payload);
+      if (!parsed.success) return { success: false, error: parsed.error.format() };
+      const reference = await nextReference(db, 'amlCentifExchange', 'ECH');
+      const record = await db.amlCentifExchange.create({ data: { reference, ...parsed.data, recordedById: session.userId } });
+      return ser({ success: true, data: record });
+    } catch (error: any) {
+      logger.error('aml:centifExchanges:create', error.message);
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle('aml:centifExchanges:update', async (_event, { token, id, payload }: any) => {
+    try {
+      const session = getSession(token);
+      if (!session) return { success: false, error: 'Session expirée' };
+      const db = getDb();
+      await assertRegistersAccess(db, session);
+      const parsed = exchangeUpdateSchema.safeParse(payload);
+      if (!parsed.success) return { success: false, error: parsed.error.format() };
+      const existing = await db.amlCentifExchange.findFirst({ where: { id: Number(id), deletedAt: null } });
+      if (!existing) return { success: false, error: 'Échange introuvable' };
+      const record = await db.amlCentifExchange.update({ where: { id: existing.id }, data: parsed.data });
+      return ser({ success: true, data: record });
+    } catch (error: any) {
+      logger.error('aml:centifExchanges:update', error.message);
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle('aml:centifExchanges:delete', async (_event, { token, id }: any) => {
+    try {
+      const session = getSession(token);
+      if (!session) return { success: false, error: 'Session expirée' };
+      const db = getDb();
+      await assertRegistersAccess(db, session);
+      await db.amlCentifExchange.update({ where: { id: Number(id) }, data: { deletedAt: new Date() } });
+      return { success: true };
+    } catch (error: any) {
+      logger.error('aml:centifExchanges:delete', error.message);
+      return { success: false, error: error.message };
+    }
+  });
+
+  /** Sélecteur « Référence DOS » du registre des opérations suspectes. */
+  ipcMain.handle('aml:centifExchanges:listSelectable', async (_event, { token }: any) => {
+    try {
+      const session = getSession(token);
+      if (!session) return { success: false, error: 'Session expirée' };
+      const db = getDb();
+      await assertRegistersAccess(db, session);
+      const data = await db.amlCentifExchange.findMany({
+        where: { deletedAt: null },
+        orderBy: { exchangeDate: 'desc' },
+        select: { id: true, reference: true, exchangeDate: true, nature: true },
+        take: 500,
+      });
+      return ser({ success: true, data });
+    } catch (error: any) {
+      logger.error('aml:centifExchanges:listSelectable', error.message);
+      return { success: false, error: error.message };
+    }
+  });
+
+  /* ─── 3. Grille de recensement DSTE ─────────────────────────── */
+
+  ipcMain.handle('aml:dste:list', async (_event, { token, filters = {}, page = 1, limit = 50 }: any) => {
+    try {
+      const session = getSession(token);
+      if (!session) return { success: false, error: 'Session expirée' };
+      const db = getDb();
+      await assertRegistersAccess(db, session);
+      const where: any = { deletedAt: null };
+      if (filters.search) where.subjectLabel = { contains: filters.search };
+      const [rows, total] = await db.$transaction([
+        db.amlDsteRecord.findMany({ where, skip: (page - 1) * limit, take: limit, orderBy: { transactionDate: 'desc' } }),
+        db.amlDsteRecord.count({ where }),
+      ]);
+      const names = await resolveUserNames(db, rows.map((r) => r.recordedById));
+      const thresholds = await getAmlRiskThresholds(db);
+      const data = rows.map((r) => ({ ...r, recordedByName: r.recordedById ? names.get(r.recordedById) ?? null : null }));
+      return ser({ success: true, data, total, dsteThreshold: thresholds.dsteThreshold });
+    } catch (error: any) {
+      logger.error('aml:dste:list', error.message);
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle('aml:dste:create', async (_event, { token, payload }: any) => {
+    try {
+      const session = getSession(token);
+      if (!session) return { success: false, error: 'Session expirée' };
+      const db = getDb();
+      await assertRegistersAccess(db, session);
+      const parsed = dsteCreateSchema.safeParse(payload);
+      if (!parsed.success) return { success: false, error: parsed.error.format() };
+      const reference = await nextReference(db, 'amlDsteRecord', 'DSTE');
+      const record = await db.amlDsteRecord.create({ data: { reference, ...parsed.data, recordedById: session.userId } });
+      return ser({ success: true, data: record });
+    } catch (error: any) {
+      logger.error('aml:dste:create', error.message);
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle('aml:dste:update', async (_event, { token, id, payload }: any) => {
+    try {
+      const session = getSession(token);
+      if (!session) return { success: false, error: 'Session expirée' };
+      const db = getDb();
+      await assertRegistersAccess(db, session);
+      const parsed = dsteUpdateSchema.safeParse(payload);
+      if (!parsed.success) return { success: false, error: parsed.error.format() };
+      const existing = await db.amlDsteRecord.findFirst({ where: { id: Number(id), deletedAt: null } });
+      if (!existing) return { success: false, error: 'Enregistrement introuvable' };
+      const record = await db.amlDsteRecord.update({ where: { id: existing.id }, data: parsed.data });
+      return ser({ success: true, data: record });
+    } catch (error: any) {
+      logger.error('aml:dste:update', error.message);
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle('aml:dste:delete', async (_event, { token, id }: any) => {
+    try {
+      const session = getSession(token);
+      if (!session) return { success: false, error: 'Session expirée' };
+      const db = getDb();
+      await assertRegistersAccess(db, session);
+      await db.amlDsteRecord.update({ where: { id: Number(id) }, data: { deletedAt: new Date() } });
+      return { success: true };
+    } catch (error: any) {
+      logger.error('aml:dste:delete', error.message);
+      return { success: false, error: error.message };
+    }
+  });
+
+  /* ─── 4. Registre des opérations suspectes ──────────────────── */
+
+  ipcMain.handle('aml:suspiciousOperations:list', async (_event, { token, filters = {}, page = 1, limit = 50 }: any) => {
+    try {
+      const session = getSession(token);
+      if (!session) return { success: false, error: 'Session expirée' };
+      const db = getDb();
+      await assertRegistersAccess(db, session);
+      const where: any = { deletedAt: null };
+      if (filters.decision) where.decision = filters.decision;
+      if (filters.search) where.subjectLabel = { contains: filters.search };
+      const [rows, total] = await db.$transaction([
+        db.amlSuspiciousOperationRecord.findMany({
+          where, skip: (page - 1) * limit, take: limit, orderBy: { detectionDate: 'desc' },
+          include: { dosExchange: { select: { id: true, reference: true, nature: true } } },
+        }),
+        db.amlSuspiciousOperationRecord.count({ where }),
+      ]);
+      const names = await resolveUserNames(db, rows.map((r) => r.recordedById));
+      const data = rows.map((r) => ({ ...r, recordedByName: r.recordedById ? names.get(r.recordedById) ?? null : null }));
+      return ser({ success: true, data, total });
+    } catch (error: any) {
+      logger.error('aml:suspiciousOperations:list', error.message);
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle('aml:suspiciousOperations:create', async (_event, { token, payload }: any) => {
+    try {
+      const session = getSession(token);
+      if (!session) return { success: false, error: 'Session expirée' };
+      const db = getDb();
+      await assertRegistersAccess(db, session);
+      const parsed = suspiciousOperationCreateSchema.safeParse(payload);
+      if (!parsed.success) return { success: false, error: parsed.error.format() };
+      const reference = await nextReference(db, 'amlSuspiciousOperationRecord', 'OPS');
+      const record = await db.amlSuspiciousOperationRecord.create({ data: { reference, ...parsed.data, recordedById: session.userId } });
+      return ser({ success: true, data: record });
+    } catch (error: any) {
+      logger.error('aml:suspiciousOperations:create', error.message);
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle('aml:suspiciousOperations:update', async (_event, { token, id, payload }: any) => {
+    try {
+      const session = getSession(token);
+      if (!session) return { success: false, error: 'Session expirée' };
+      const db = getDb();
+      await assertRegistersAccess(db, session);
+      const parsed = suspiciousOperationUpdateSchema.safeParse(payload);
+      if (!parsed.success) return { success: false, error: parsed.error.format() };
+      const existing = await db.amlSuspiciousOperationRecord.findFirst({ where: { id: Number(id), deletedAt: null } });
+      if (!existing) return { success: false, error: 'Enregistrement introuvable' };
+      const record = await db.amlSuspiciousOperationRecord.update({ where: { id: existing.id }, data: parsed.data });
+      return ser({ success: true, data: record });
+    } catch (error: any) {
+      logger.error('aml:suspiciousOperations:update', error.message);
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle('aml:suspiciousOperations:delete', async (_event, { token, id }: any) => {
+    try {
+      const session = getSession(token);
+      if (!session) return { success: false, error: 'Session expirée' };
+      const db = getDb();
+      await assertRegistersAccess(db, session);
+      await db.amlSuspiciousOperationRecord.update({ where: { id: Number(id) }, data: { deletedAt: new Date() } });
+      return { success: true };
+    } catch (error: any) {
+      logger.error('aml:suspiciousOperations:delete', error.message);
+      return { success: false, error: error.message };
+    }
+  });
+
   /* ─── Tableau de bord ──────────────────────────────────────── */
 
   ipcMain.handle('aml:dashboard:overview', async (_event, { token }: any) => {
@@ -1304,12 +2447,20 @@ export function registerAmlIPC(): void {
       if (!session) return { success: false, error: 'Session expirée' };
       checkExactRole(session, AML_ROLES);
       const db = getDb();
-      const [byRiskLevel, pepCount, matchesToVerify, reviewsOpen, reportsByStatus] = await Promise.all([
+      const [
+        byRiskLevel, pepCount, matchesToVerify, reviewsOpen, reportsByStatus, screeningHitsToVerify, lastScreening,
+        alertsCount, screeningRunsCount, screeningHitsCount,
+      ] = await Promise.all([
         db.amlProfile.groupBy({ by: ['riskLevel'], where: { deletedAt: null }, _count: true }),
         db.amlProfile.count({ where: { deletedAt: null, isPep: true } }),
         db.amlWatchlistMatch.count({ where: { status: 'A_VERIFIER' } }),
         db.amlTransactionReview.count({ where: { deletedAt: null, status: { in: ['OUVERTE', 'EN_COURS'] } } }),
         db.amlSuspiciousReport.groupBy({ by: ['status'], where: { deletedAt: null }, _count: true }),
+        db.amlScreeningHit.count({ where: { status: 'A_VERIFIER', stillMatching: true } }),
+        db.amlScreeningRun.findFirst({ orderBy: { startedAt: 'desc' }, select: { startedAt: true, reference: true, trigger: true } }),
+        db.amlWatchlistAlert.count({ where: { deletedAt: null } }),
+        db.amlScreeningRun.count(),
+        db.amlScreeningHit.count({ where: { stillMatching: true } }),
       ]);
       return ser({
         success: true,
@@ -1319,6 +2470,11 @@ export function registerAmlIPC(): void {
           matchesToVerify,
           reviewsOpen,
           reportsByStatus: Object.fromEntries(reportsByStatus.map((r) => [r.status, r._count])),
+          screeningHitsToVerify,
+          lastScreeningAt: lastScreening?.startedAt ?? null,
+          alertsCount,
+          screeningRunsCount,
+          screeningHitsCount,
         },
       });
     } catch (error: any) {

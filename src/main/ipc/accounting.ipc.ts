@@ -8,6 +8,7 @@ import { resolveInvoiceTemplate } from './invoice-templates.ipc';
 import { getSettings, SettingsKeys } from '../services/settings.service';
 import { recordTreasuryOperation, getOrCreateVersementCategory } from '../services/treasury.service';
 import { getDefaultRates, commissionTypeAndRate, accrueCollectionCommission } from '../services/commission.service';
+import { autoRecordDste } from '../services/aml-dste.service';
 import logger from '../utils/logger';
 import { z } from 'zod';
 
@@ -1047,6 +1048,20 @@ export function registerAccountingIPC(): void {
 
       logger.info(`Payment recorded: invoice=${d.invoiceId} amount=${d.amount}`);
 
+      // Registres LBC/FT — Grille DSTE : auto-recense l'encaissement s'il est
+      // en espèces et dépasse le seuil paramétrable. Fire-and-forget, ne
+      // bloque jamais l'encaissement.
+      if (d.method === 'ESPECE') {
+        autoRecordDste({
+          amount: d.amount,
+          transactionDate: paidAt,
+          clientId: invoice.clientId ?? null,
+          description: `Paiement en espèces — facture ${invoice.reference}`,
+          sourceType: 'PAYMENT',
+          sourceId: payment.id,
+        }, db).catch((e) => logger.error(`aml dste auto after accounting:addPayment: ${e.message}`));
+      }
+
       // Accrual de commission sur encaissement d'une facture de VENTE comptant
       // ou d'APPORT INITIAL (l'apport fait partie du prix de vente encaissé).
       // L'assiette suit le cumul encaissé sur la facture (totalPaid). Les
@@ -1797,6 +1812,23 @@ export function registerAccountingIPC(): void {
         `Installment payment: id=${d.installmentId} +${payAmount} réparti sur ${coveredCount} échéance(s) ` +
         `[${result.applied.map((a) => `#${a.installmentId}:${a.newPaid}${a.fullyPaid ? '✓' : '~'}`).join(', ')}]`,
       );
+
+      // Registres LBC/FT — Grille DSTE : auto-recense l'encaissement s'il est
+      // en espèces et dépasse le seuil paramétrable. Une seule ligne pour le
+      // montant réellement remis en espèces (payAmount), même s'il est
+      // réparti en base sur plusieurs échéances/factures — clé de
+      // déduplication sur l'échéance ciblée par cette action d'encaissement
+      // (d.installmentId), pas sur chaque Payment créé individuellement.
+      if (d.method === 'ESPECE') {
+        autoRecordDste({
+          amount: payAmount,
+          transactionDate: paidAt,
+          clientId: installmentClientId,
+          description: `Échéance(s) réglée(s) en espèces — ${installmentLabel}`,
+          sourceType: 'INSTALLMENT',
+          sourceId: d.installmentId,
+        }, db).catch((e) => logger.error(`aml dste auto after accounting:payInstallment: ${e.message}`));
+      }
 
       // Accrual de commission sur le montant encaissé (échéances de convention).
       // L'assiette suit le cumul réellement encaissé sur chaque échéance, pas le

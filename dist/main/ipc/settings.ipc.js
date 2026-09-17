@@ -201,15 +201,42 @@ function decodeBase64(payload, maxBytes) {
         throw new Error('Fichier vide ou base64 invalide');
     return buf;
 }
-/** Lecture initiale de `storage.path` au démarrage pour propager au storage.service. */
+/**
+ * Lecture initiale de `storage.path` au démarrage pour propager au
+ * storage.service. **Critique** : si la BDD est momentanément injoignable au
+ * lancement, on ne doit PAS retomber silencieusement sur le repli local — les
+ * fichiers écrits dans cet intervalle seraient perdus au prochain démarrage
+ * (cf. `markStorageRootPending`/`assertStorageRootReady`). On retente donc
+ * plusieurs fois, puis en tâche de fond jusqu'à obtenir une réponse.
+ */
 async function initStorageOverride() {
-    try {
-        const root = await (0, settings_service_1.getSetting)(settings_service_1.SettingsKeys.storagePath);
-        if (root)
-            (0, storage_service_1.setStorageRootOverride)(root);
+    const MAX_ATTEMPTS = 5;
+    for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+        try {
+            const root = await (0, settings_service_1.getSetting)(settings_service_1.SettingsKeys.storagePath);
+            (0, storage_service_1.setStorageRootOverride)(root && root.length > 0 ? root : null);
+            return;
+        }
+        catch (err) {
+            logger_1.default.warn(`initStorageOverride (tentative ${attempt}/${MAX_ATTEMPTS})`, err.message);
+            if (attempt < MAX_ATTEMPTS)
+                await new Promise((r) => setTimeout(r, 3000));
+        }
     }
-    catch (err) {
-        logger_1.default.warn('initStorageOverride', err.message);
+    (0, storage_service_1.markStorageRootPending)();
+    logger_1.default.error('initStorageOverride : racine de stockage NON résolue (BDD injoignable) — '
+        + "les écritures de fichiers sont bloquées jusqu'à résolution. Nouvelle tentative en tâche de fond.");
+    void retryStorageOverrideInBackground();
+}
+async function retryStorageOverrideInBackground() {
+    while ((0, storage_service_1.isStorageRootPending)()) {
+        await new Promise((r) => setTimeout(r, 30_000));
+        try {
+            const root = await (0, settings_service_1.getSetting)(settings_service_1.SettingsKeys.storagePath);
+            (0, storage_service_1.setStorageRootOverride)(root && root.length > 0 ? root : null);
+            logger_1.default.info('initStorageOverride : racine de stockage enfin résolue, écritures de fichiers rétablies.');
+        }
+        catch { /* la BDD est encore KO — on retente au prochain tour */ }
     }
 }
 // ── Enregistrement des handlers ──────────────────────────────────────────────

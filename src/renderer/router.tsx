@@ -68,6 +68,17 @@ import AmlSuspiciousReportsListPage from './modules/aml/pages/AmlSuspiciousRepor
 import AmlSuspiciousReportDetailPage from './modules/aml/pages/AmlSuspiciousReportDetailPage';
 import AmlTrainingListPage from './modules/aml/pages/AmlTrainingListPage';
 import AmlWatchlistPage from './modules/aml/pages/AmlWatchlistPage';
+import AmlScreeningPage from './modules/aml/pages/AmlScreeningPage';
+import AmlAuditPage from './modules/aml/pages/AmlAuditPage';
+import AmlAlertsPage from './modules/aml/pages/AmlAlertsPage';
+import AmlProceduresPage from './modules/aml/pages/AmlProceduresPage';
+import AmlRegistersGuard from './modules/aml/components/AmlRegistersGuard';
+import AmlScreeningGuard from './modules/aml/components/AmlScreeningGuard';
+import AmlAlertsGuard from './modules/aml/components/AmlAlertsGuard';
+import AmlNotificationsRegisterPage from './modules/aml/pages/AmlNotificationsRegisterPage';
+import AmlCentifExchangesPage from './modules/aml/pages/AmlCentifExchangesPage';
+import AmlDsteRegisterPage from './modules/aml/pages/AmlDsteRegisterPage';
+import AmlSuspiciousOperationsPage from './modules/aml/pages/AmlSuspiciousOperationsPage';
 import QuoteDetailPage from './modules/quotes/pages/QuoteDetailPage';
 import QuoteDocumentPage from './modules/quotes/pages/QuoteDocumentPage';
 import QuoteTemplateFormPage from './modules/quotes/pages/QuoteTemplateFormPage';
@@ -231,6 +242,13 @@ export const router = createHashRouter([
           // leur propre dossier (auto-consultation, sans filtre Collaborateur).
           { path: 'hr/lateness', element: <LatenessPage /> },
 
+          // « Nos Procédures LBC/FT » — accessible à TOUT utilisateur
+          // authentifié (y compris RH, sinon exclusif à son propre module),
+          // hors RoleGuard exprès. Écriture (joindre/supprimer une procédure)
+          // restreinte côté IPC à SUPER_ADMIN/ADMIN/MANAGER/ASSISTANTE_
+          // DIRECTION (PROCEDURE_WRITE_ROLES, aml.ipc.ts / documents.ipc.ts).
+          { path: 'aml/procedures', element: <AmlProceduresPage /> },
+
           // Users — ADMIN / SUPER_ADMIN (gestion complète) et AGENT_TECHNIQUE
           // (gestion limitée aux comptes AGENT / AGENT_TECHNIQUE / READONLY,
           // appliquée côté backend).
@@ -358,6 +376,7 @@ export const router = createHashRouter([
             element: <RoleGuard allowedRoles={['SUPER_ADMIN', 'ADMIN', 'CONFORMITE', 'MANAGER', 'ACCOUNTANT']} />,
             children: [
               { path: 'aml/dashboard', element: <AmlDashboardPage /> },
+              { path: 'aml/audit', element: <AmlAuditPage /> },
               { path: 'aml/profiles', element: <AmlProfilesListPage /> },
               { path: 'aml/profiles/new', element: <AmlProfileFormPage /> },
               { path: 'aml/profiles/:id', element: <AmlProfileDetailPage /> },
@@ -366,6 +385,27 @@ export const router = createHashRouter([
               { path: 'aml/reviews/:id', element: <AmlReviewDetailPage /> },
               { path: 'aml/suspicious-reports', element: <AmlSuspiciousReportsListPage /> },
               { path: 'aml/suspicious-reports/:id', element: <AmlSuspiciousReportDetailPage /> },
+            ],
+          },
+          // Criblage — accès géré indépendamment des rôles (SUPER_ADMIN/ADMIN/
+          // MANAGER par défaut + désignation individuelle via Paramètres),
+          // donc un guard dédié plutôt qu'un RoleGuard à liste de rôles
+          // statique — contrairement au reste du module, CONFORMITE et
+          // ACCOUNTANT n'y ont pas accès d'office. Même principe qu'AmlRegistersGuard.
+          {
+            element: <AmlScreeningGuard />,
+            children: [
+              { path: 'aml/screening', element: <AmlScreeningPage /> },
+            ],
+          },
+          // Alertes — même principe que Criblage ci-dessus : accès géré
+          // indépendamment des rôles (SUPER_ADMIN/ADMIN/MANAGER par défaut +
+          // désignation individuelle via Paramètres) — CONFORMITE et
+          // ACCOUNTANT n'y ont pas accès d'office.
+          {
+            element: <AmlAlertsGuard />,
+            children: [
+              { path: 'aml/alerts', element: <AmlAlertsPage /> },
             ],
           },
           // Conformité LBC/FT — accès restreint AGENT / AGENT_TECHNIQUE /
@@ -382,6 +422,18 @@ export const router = createHashRouter([
             children: [
               { path: 'aml/training', element: <AmlTrainingListPage /> },
               { path: 'aml/watchlist', element: <AmlWatchlistPage /> },
+            ],
+          },
+          // Registres LBC/FT — accès géré indépendamment des rôles (AML_ROLES
+          // par défaut + désignation individuelle via Paramètres), donc un
+          // guard dédié plutôt qu'un RoleGuard à liste de rôles statique.
+          {
+            element: <AmlRegistersGuard />,
+            children: [
+              { path: 'aml/registers/notifications', element: <AmlNotificationsRegisterPage /> },
+              { path: 'aml/registers/exchanges', element: <AmlCentifExchangesPage /> },
+              { path: 'aml/registers/dste', element: <AmlDsteRegisterPage /> },
+              { path: 'aml/registers/suspicious-operations', element: <AmlSuspiciousOperationsPage /> },
             ],
           },
 

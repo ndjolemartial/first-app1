@@ -8,6 +8,7 @@ const electron_1 = require("electron");
 const db_service_1 = require("../services/db.service");
 const auth_service_1 = require("../services/auth.service");
 const logger_1 = __importDefault(require("../utils/logger"));
+const aml_screening_service_1 = require("../services/aml-screening.service");
 const zod_1 = require("zod");
 const timeline_service_1 = require("../services/timeline.service");
 // ── Schéma ───────────────────────────────────────────────────────────────────
@@ -341,6 +342,8 @@ function registerClientsIPC() {
                 data.kycSignedAt = new Date(data.kycSignedAt);
             const client = await db.client.create({ data });
             logger_1.default.info(`Client created: id=${client.id}`);
+            (0, aml_screening_service_1.screenEntity)('CLIENT', client.id, { operatorId: session.userId })
+                .catch((e) => logger_1.default.error(`aml screening after clients:create: ${e.message}`));
             return { success: true, data: ser(client) };
         }
         catch (error) {

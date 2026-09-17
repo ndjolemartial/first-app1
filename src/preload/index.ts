@@ -682,6 +682,60 @@ const aml = {
     update: (token: string, id: number, payload: object) => api.invoke('aml:training:update', { token, id, payload }),
     delete: (token: string, id: number) => api.invoke('aml:training:delete', { token, id }),
   },
+  alerts: {
+    list: (token: string, page?: number, limit?: number) => api.invoke('aml:alerts:list', { token, page, limit }),
+    getById: (token: string, id: number) => api.invoke('aml:alerts:getById', { token, id }),
+    create: (token: string, payload: object) => api.invoke('aml:alerts:create', { token, payload }),
+    update: (token: string, id: number, payload: object) => api.invoke('aml:alerts:update', { token, id, payload }),
+    delete: (token: string, id: number) => api.invoke('aml:alerts:delete', { token, id }),
+  },
+  procedures: {
+    list: (token: string, filters?: object, page?: number, limit?: number) =>
+      api.invoke('aml:procedures:list', { token, filters, page, limit }),
+    getById: (token: string, id: number) => api.invoke('aml:procedures:getById', { token, id }),
+    create: (token: string, payload: object) => api.invoke('aml:procedures:create', { token, payload }),
+    update: (token: string, id: number, payload: object) => api.invoke('aml:procedures:update', { token, id, payload }),
+    delete: (token: string, id: number) => api.invoke('aml:procedures:delete', { token, id }),
+  },
+  notifications: {
+    list: (token: string, filters?: object, page?: number, limit?: number) =>
+      api.invoke('aml:notifications:list', { token, filters, page, limit }),
+    create: (token: string, payload: object) => api.invoke('aml:notifications:create', { token, payload }),
+    update: (token: string, id: number, payload: object) => api.invoke('aml:notifications:update', { token, id, payload }),
+    delete: (token: string, id: number) => api.invoke('aml:notifications:delete', { token, id }),
+  },
+  centifExchanges: {
+    list: (token: string, filters?: object, page?: number, limit?: number) =>
+      api.invoke('aml:centifExchanges:list', { token, filters, page, limit }),
+    create: (token: string, payload: object) => api.invoke('aml:centifExchanges:create', { token, payload }),
+    update: (token: string, id: number, payload: object) => api.invoke('aml:centifExchanges:update', { token, id, payload }),
+    delete: (token: string, id: number) => api.invoke('aml:centifExchanges:delete', { token, id }),
+    listSelectable: (token: string) => api.invoke('aml:centifExchanges:listSelectable', { token }),
+  },
+  dste: {
+    list: (token: string, filters?: object, page?: number, limit?: number) =>
+      api.invoke('aml:dste:list', { token, filters, page, limit }),
+    create: (token: string, payload: object) => api.invoke('aml:dste:create', { token, payload }),
+    update: (token: string, id: number, payload: object) => api.invoke('aml:dste:update', { token, id, payload }),
+    delete: (token: string, id: number) => api.invoke('aml:dste:delete', { token, id }),
+  },
+  suspiciousOperations: {
+    list: (token: string, filters?: object, page?: number, limit?: number) =>
+      api.invoke('aml:suspiciousOperations:list', { token, filters, page, limit }),
+    create: (token: string, payload: object) => api.invoke('aml:suspiciousOperations:create', { token, payload }),
+    update: (token: string, id: number, payload: object) => api.invoke('aml:suspiciousOperations:update', { token, id, payload }),
+    delete: (token: string, id: number) => api.invoke('aml:suspiciousOperations:delete', { token, id }),
+  },
+  screening: {
+    run: (token: string) => api.invoke('aml:screening:run', { token }),
+    summary: (token: string) => api.invoke('aml:screening:summary', { token }),
+    runsList: (token: string, filters?: object, page?: number, limit?: number) =>
+      api.invoke('aml:screening:runs:list', { token, filters, page, limit }),
+    runById: (token: string, id: number) => api.invoke('aml:screening:runs:getById', { token, id }),
+    hitsList: (token: string, filters?: object, page?: number, limit?: number) =>
+      api.invoke('aml:screening:hits:list', { token, filters, page, limit }),
+    hitReview: (token: string, id: number, payload: object) => api.invoke('aml:screening:hits:review', { token, id, payload }),
+  },
   dashboard: (token: string) => api.invoke('aml:dashboard:overview', { token }),
 };
 
@@ -1252,6 +1306,24 @@ const settings = {
     api.invoke('settings:updateKycAuthorizedUsers', { token, userIds }),
   myKycAccess: (token: string) => api.invoke('settings:myKycAccess', { token }),
 
+  getRegistersAuthorizedUsers: (token: string) =>
+    api.invoke('settings:getRegistersAuthorizedUsers', { token }),
+  updateRegistersAuthorizedUsers: (token: string, userIds: number[]) =>
+    api.invoke('settings:updateRegistersAuthorizedUsers', { token, userIds }),
+  myRegistersAccess: (token: string) => api.invoke('settings:myRegistersAccess', { token }),
+
+  getScreeningAuthorizedUsers: (token: string) =>
+    api.invoke('settings:getScreeningAuthorizedUsers', { token }),
+  updateScreeningAuthorizedUsers: (token: string, userIds: number[]) =>
+    api.invoke('settings:updateScreeningAuthorizedUsers', { token, userIds }),
+  myScreeningAccess: (token: string) => api.invoke('settings:myScreeningAccess', { token }),
+
+  getAlertsAuthorizedUsers: (token: string) =>
+    api.invoke('settings:getAlertsAuthorizedUsers', { token }),
+  updateAlertsAuthorizedUsers: (token: string, userIds: number[]) =>
+    api.invoke('settings:updateAlertsAuthorizedUsers', { token, userIds }),
+  myAlertsAccess: (token: string) => api.invoke('settings:myAlertsAccess', { token }),
+
   getLatenessSettings: (token: string) => api.invoke('settings:getLatenessSettings', { token }),
   updateLatenessSettings: (token: string, payload: object) =>
     api.invoke('settings:updateLatenessSettings', { token, payload }),
@@ -1268,6 +1340,9 @@ const settings = {
   getAmlRiskThresholds: (token: string) => api.invoke('settings:getAmlRiskThresholds', { token }),
   updateAmlRiskThresholds: (token: string, payload: object) =>
     api.invoke('settings:updateAmlRiskThresholds', { token, payload }),
+  getAmlScreeningSchedule: (token: string) => api.invoke('settings:getAmlScreeningSchedule', { token }),
+  updateAmlScreeningSchedule: (token: string, payload: object) =>
+    api.invoke('settings:updateAmlScreeningSchedule', { token, payload }),
 
   getEmail: (token: string) => api.invoke('settings:getEmail', { token }),
   updateEmail: (token: string, payload: object) =>

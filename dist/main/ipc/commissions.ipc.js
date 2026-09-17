@@ -11,6 +11,7 @@ const commission_service_1 = require("../services/commission.service");
 const treasury_service_1 = require("../services/treasury.service");
 const timeline_service_1 = require("../services/timeline.service");
 const logger_1 = __importDefault(require("../utils/logger"));
+const aml_screening_service_1 = require("../services/aml-screening.service");
 const zod_1 = require("zod");
 // Lecture : tous les rôles peuvent consulter le module — la visibilité est
 // ensuite restreinte aux commissions personnelles pour les rôles « simples ».
@@ -987,6 +988,8 @@ function registerCommissionsIPC() {
                 data: { ...d, email: d.email || null },
             });
             logger_1.default.info(`Apporteur d'affaire créé: id=${referrer.id}`);
+            (0, aml_screening_service_1.screenEntity)('REFERRER', referrer.id, { operatorId: session.userId })
+                .catch((e) => logger_1.default.error(`aml screening after commissions:createReferrer: ${e.message}`));
             return ser({ success: true, data: referrer });
         }
         catch (error) {

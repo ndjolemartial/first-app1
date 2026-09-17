@@ -45,6 +45,18 @@ export const WATCHLIST_TYPE_LABEL: Record<string, string> = {
   AUTRE: 'Autre',
 };
 
+export const MARITAL_STATUS_LABEL: Record<string, string> = {
+  CELIBATAIRE: 'Célibataire',
+  MARIEE: 'Marié(e)',
+  CONCUBINAGE: 'Concubinage',
+  DIVORCE: 'Divorcé(e)',
+  VEUF: 'Veuf/Veuve',
+};
+
+export const WATCHLIST_LIST_TYPE_VARIANT: Record<string, 'default' | 'success' | 'warning' | 'danger' | 'info' | 'purple'> = {
+  ONU: 'info', UE: 'purple', NATIONALE: 'success', GIABA: 'warning', AUTRE: 'default',
+};
+
 export const WATCHLIST_MATCH_STATUS_LABEL: Record<string, string> = {
   A_VERIFIER: 'À vérifier',
   CONFIRME: 'Confirmé',
@@ -122,6 +134,64 @@ export const REPORT_STATUS_VARIANT: Record<string, 'default' | 'warning' | 'dang
   VALIDEE_INTERNE: 'warning',
   TRANSMISE_CENTIF: 'danger',
   CLASSEE_SANS_SUITE: 'success',
+};
+
+/* ─── Criblage de masse / Alertes / Audit ─────────────────────── */
+
+export const ALERT_SOURCE_LABEL: Record<string, string> = {
+  CENTIF_CI: 'CENTIF-CI',
+  SFC: 'Sanctions Financières Ciblées (SFC)',
+  ONU: 'ONU',
+  UE: 'Union européenne',
+  GIABA: 'GIABA',
+  AUTRE: 'Autre',
+};
+
+export const SCREENING_TRIGGER_LABEL: Record<string, string> = {
+  MANUEL: 'Manuel',
+  ENTITE_AJOUTEE: 'Ajout d’une entité',
+  REFERENTIEL_MAJ: 'Mise à jour du référentiel',
+  PLANIFIE: 'Planifié',
+};
+
+export const SCREENING_ENTITY_TYPE_LABEL: Record<string, string> = {
+  CLIENT: 'Client',
+  PROSPECT: 'Prospect',
+  OWNER: 'Propriétaire',
+  REFERRER: 'Apporteur d’affaires',
+};
+
+/** Route de la fiche de l'entité criblée. */
+export function screeningEntityRoute(entityType: string, entityId: number): string {
+  switch (entityType) {
+    case 'CLIENT': return `/clients/${entityId}`;
+    case 'PROSPECT': return `/prospects/${entityId}`;
+    case 'OWNER': return `/owners/${entityId}`;
+    case 'REFERRER': return `/commissions/referrers/${entityId}`;
+    default: return '#';
+  }
+}
+
+export const HIT_STATUS_LABEL: Record<string, string> = {
+  A_VERIFIER: 'À vérifier',
+  CONFIRME: 'Confirmée',
+  FAUX_POSITIF: 'Faux positif',
+};
+
+export const HIT_STATUS_VARIANT: Record<string, 'default' | 'success' | 'danger'> = {
+  A_VERIFIER: 'default',
+  CONFIRME: 'danger',
+  FAUX_POSITIF: 'success',
+};
+
+export const SCREENING_FREQUENCY_LABEL: Record<string, string> = {
+  DAILY: 'Quotidien',
+  WEEKLY: 'Hebdomadaire',
+  MONTHLY: 'Mensuel',
+};
+
+export const WEEKDAY_LABEL: Record<number, string> = {
+  0: 'Dimanche', 1: 'Lundi', 2: 'Mardi', 3: 'Mercredi', 4: 'Jeudi', 5: 'Vendredi', 6: 'Samedi',
 };
 
 export function subjectDisplayName(subject: { type?: string; firstName?: string | null; lastName?: string | null; entreprise?: string | null; companyName?: string | null } | null | undefined): string {

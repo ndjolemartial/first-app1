@@ -65,6 +65,7 @@ const reminders_ipc_1 = require("./ipc/reminders.ipc");
 const reminders_service_1 = require("./services/reminders.service");
 const mail_account_ipc_1 = require("./ipc/mail-account.ipc");
 const mailbox_poller_service_1 = require("./services/mailbox-poller.service");
+const aml_screening_service_1 = require("./services/aml-screening.service");
 const attestation_templates_service_1 = require("./services/attestation-templates.service");
 const quote_templates_service_1 = require("./services/quote-templates.service");
 const hr_templates_service_1 = require("./services/hr-templates.service");
@@ -223,6 +224,9 @@ electron_1.app.whenReady().then(async () => {
     // Réception des réponses par email (boîte système + boîtes personnelles) —
     // cf. mailbox-poller.service.ts.
     (0, mailbox_poller_service_1.scheduleMailboxPolling)();
+    // Criblage LBC/FT planifié (présets quotidien/hebdo/mensuel) —
+    // cf. aml-screening.service.ts.
+    (0, aml_screening_service_1.scheduleAmlScreening)();
     // Modèle d'attestation de SOLDE par défaut (créé une seule fois si absent).
     (0, attestation_templates_service_1.seedDefaultAttestationTemplate)()
         .catch((e) => logger_1.default.error(`Attestation template bootstrap failed: ${e.message}`));

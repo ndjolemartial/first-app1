@@ -213,6 +213,114 @@ export function useMyKycAccess() {
   });
 }
 
+// ── Registres LBC/FT — utilisateurs désignés (accès individuel) ────────────
+
+export function useRegistersAuthorizedUsers() {
+  const token = useAuthStore((s) => s.token)!;
+  return useQuery({
+    queryKey: ['settings', 'registersAuthorizedUsers'],
+    queryFn:  () => ipc().getRegistersAuthorizedUsers(token),
+    enabled:  !!token,
+  });
+}
+
+export function useUpdateRegistersAuthorizedUsers() {
+  const token = useAuthStore((s) => s.token)!;
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (userIds: number[]) => ipc().updateRegistersAuthorizedUsers(token, userIds),
+    onSuccess:  (res) => {
+      if (res.success) {
+        qc.invalidateQueries({ queryKey: ['settings', 'registersAuthorizedUsers'] });
+        qc.invalidateQueries({ queryKey: ['settings', 'myRegistersAccess'] });
+        toast.success('Utilisateurs autorisés enregistrés');
+      } else toast.error(String(res.error));
+    },
+  });
+}
+
+/** Indique si l'utilisateur connecté a accès aux Registres LBC/FT. */
+export function useMyRegistersAccess() {
+  const token = useAuthStore((s) => s.token)!;
+  return useQuery({
+    queryKey: ['settings', 'myRegistersAccess'],
+    queryFn:  () => ipc().myRegistersAccess(token),
+    enabled:  !!token,
+  });
+}
+
+// ── Criblage — utilisateurs désignés (accès individuel) ────────────────────
+
+export function useScreeningAuthorizedUsers() {
+  const token = useAuthStore((s) => s.token)!;
+  return useQuery({
+    queryKey: ['settings', 'screeningAuthorizedUsers'],
+    queryFn:  () => ipc().getScreeningAuthorizedUsers(token),
+    enabled:  !!token,
+  });
+}
+
+export function useUpdateScreeningAuthorizedUsers() {
+  const token = useAuthStore((s) => s.token)!;
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (userIds: number[]) => ipc().updateScreeningAuthorizedUsers(token, userIds),
+    onSuccess:  (res) => {
+      if (res.success) {
+        qc.invalidateQueries({ queryKey: ['settings', 'screeningAuthorizedUsers'] });
+        qc.invalidateQueries({ queryKey: ['settings', 'myScreeningAccess'] });
+        toast.success('Utilisateurs autorisés enregistrés');
+      } else toast.error(String(res.error));
+    },
+  });
+}
+
+/** Indique si l'utilisateur connecté a accès au Criblage. */
+export function useMyScreeningAccess() {
+  const token = useAuthStore((s) => s.token)!;
+  return useQuery({
+    queryKey: ['settings', 'myScreeningAccess'],
+    queryFn:  () => ipc().myScreeningAccess(token),
+    enabled:  !!token,
+  });
+}
+
+// ── Alertes — utilisateurs désignés (accès individuel) ─────────────────────
+
+export function useAlertsAuthorizedUsers() {
+  const token = useAuthStore((s) => s.token)!;
+  return useQuery({
+    queryKey: ['settings', 'alertsAuthorizedUsers'],
+    queryFn:  () => ipc().getAlertsAuthorizedUsers(token),
+    enabled:  !!token,
+  });
+}
+
+export function useUpdateAlertsAuthorizedUsers() {
+  const token = useAuthStore((s) => s.token)!;
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (userIds: number[]) => ipc().updateAlertsAuthorizedUsers(token, userIds),
+    onSuccess:  (res) => {
+      if (res.success) {
+        qc.invalidateQueries({ queryKey: ['settings', 'alertsAuthorizedUsers'] });
+        qc.invalidateQueries({ queryKey: ['settings', 'myAlertsAccess'] });
+        toast.success('Utilisateurs autorisés enregistrés');
+      } else toast.error(String(res.error));
+    },
+  });
+}
+
+/** Indique si l'utilisateur connecté a accès aux Alertes. */
+export function useMyAlertsAccess() {
+  const token = useAuthStore((s) => s.token)!;
+  return useQuery({
+    queryKey: ['settings', 'myAlertsAccess'],
+    queryFn:  () => ipc().myAlertsAccess(token),
+    enabled:  !!token,
+  });
+}
+
 // ── Retards & Départs précipités ─────────────────────────────────────────────
 
 export function useLatenessSettings() {

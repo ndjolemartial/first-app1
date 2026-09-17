@@ -42,7 +42,7 @@ export function buildOwnerKycDocumentHtml(
   const beneficialOwnersSection = isCompanyLike ? beneficialOwnersTable(2, Array.isArray(owner.beneficialOwners) ? owner.beneficialOwners : []) : '';
 
   const professionalSection = section('3. Situation professionnelle et revenus', ''
-    + rowPair('Employeur / activité', owner.employerName, 'Revenu mensuel déclaré', owner.monthlyIncome != null ? formatCurrency(Number(owner.monthlyIncome)) : null));
+    + rowPair('Employeur / activité', owner.employerName, 'Revenu mensuel déclaré (Optionnel)', owner.monthlyIncome != null ? formatCurrency(Number(owner.monthlyIncome)) : null));
 
   const fundsSection = section('4. Origine des fonds et du patrimoine', ''
     + row('Origine des fonds', formatSourceOfFunds(owner.sourceOfFunds, owner.sourceOfFundsOther))
@@ -98,7 +98,7 @@ export function buildBlankOwnerKycDocumentHtml(
 
   const professionalSection = `
     ${blockTitle('3. Situation professionnelle et revenus')}
-    ${blankPair('Employeur / activité', 'Revenu mensuel déclaré (FCFA)')}`;
+    ${blankPair('Employeur / activité', 'Revenu mensuel déclaré (FCFA) (Optionnel)')}`;
 
   const fundsSection = `
     ${blockTitle('4. Origine des fonds et du patrimoine')}

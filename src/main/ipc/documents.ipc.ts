@@ -20,6 +20,24 @@ const PREVIEW_MAX_BYTES = 25 * 1024 * 1024;
 // soupçon (Module 19) — même liste qu'AML_REPORT_MANAGE_ROLES dans aml.ipc.ts,
 // dupliquée localement (convention du projet : pas d'import inter-fichiers IPC).
 const AML_CONFIDENTIAL_ROLES = ['SUPER_ADMIN', 'ADMIN', 'CONFORMITE', 'MANAGER', 'ACCOUNTANT'];
+
+/**
+ * Pièce jointe rattachée à une entité LBC/FT (profil, revue, formation, alerte) :
+ * lisible par les rôles habilités du module quel que soit son dossier GED (ces
+ * documents sont déposés hors arborescence, `folderId` nul — sans ce
+ * contournement, le rôle CONFORMITE, exclu du « pool général » de la GED, ne
+ * pourrait consulter aucune pièce du module). Même principe ciblé que le
+ * contournement AGENT_TECHNIQUE / « Créas / Publications / Articles ». Les
+ * déclarations de soupçon (`amlSuspiciousReportId`) gardent leur filtre de
+ * confidentialité strict, distinct.
+ */
+function isAmlLinkedAttachmentReadable(
+  session: Sess,
+  doc: { amlProfileId?: number | null; amlTransactionReviewId?: number | null; amlTrainingId?: number | null; amlWatchlistAlertId?: number | null },
+): boolean {
+  if (!AML_CONFIDENTIAL_ROLES.includes(session.role)) return false;
+  return doc.amlProfileId != null || doc.amlTransactionReviewId != null || doc.amlTrainingId != null || doc.amlWatchlistAlertId != null;
+}
 // Rôles autorisés à créer une déclaration de soupçon (donc à y joindre des
 // pièces juste après sa création) — même liste qu'AML_REPORT_CREATE_ROLES.
 const AML_REPORT_CREATE_ROLES = [
@@ -29,6 +47,10 @@ const AML_REPORT_CREATE_ROLES = [
 // Rôles autorisés à gérer un profil/une revue LBC/FT (donc à y joindre
 // des pièces) — même liste qu'AML_ROLES.
 const AML_ROLES = ['SUPER_ADMIN', 'ADMIN', 'CONFORMITE', 'MANAGER', 'ACCOUNTANT'];
+// « Nos Procédures LBC/FT » (aml.ipc.ts) — seuls ces 4 rôles peuvent joindre
+// une pièce à une procédure (rôle EXACT, dupliquée localement — ACCOUNTANT
+// volontairement exclu malgré l'équivalence MANAGER habituelle de checkRole).
+const PROCEDURE_WRITE_ROLES = ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ASSISTANTE_DIRECTION'];
 
 /** Classe un type MIME dans un groupe lisible. */
 function typeGroupOf(mime: string): string {
@@ -276,6 +298,8 @@ const importSchema = z.object({
   amlTransactionReviewId: z.number().int().positive().optional(),
   amlSuspiciousReportId: z.number().int().positive().optional(),
   amlTrainingId: z.number().int().positive().optional(),
+  amlWatchlistAlertId: z.number().int().positive().optional(),
+  amlProcedureId: z.number().int().positive().optional(),
 });
 
 const updateGedSchema = z.object({
@@ -793,7 +817,7 @@ export function registerDocumentsIPC(): void {
       if (document.amlSuspiciousReportId != null && !AML_CONFIDENTIAL_ROLES.includes(session.role)) {
         return { success: false, error: 'Document introuvable' };
       }
-      if (!(await canReadDocumentFolder(db, session, document.folderId))) {
+      if (!isAmlLinkedAttachmentReadable(session, document) && !(await canReadDocumentFolder(db, session, document.folderId))) {
         return { success: false, error: 'Accès refusé à ce document' };
       }
       return { success: true, data: document };
@@ -827,8 +851,11 @@ export function registerDocumentsIPC(): void {
       // Dépôt rattaché à une entité LBC/FT (Module 19) : contourne le droit
       // d'écriture général de la GED, avec ses propres contrôles dédiés.
       let amlUpload = false;
-      if (d.amlProfileId != null || d.amlTransactionReviewId != null || d.amlTrainingId != null) {
+      if (d.amlProfileId != null || d.amlTransactionReviewId != null || d.amlTrainingId != null || d.amlWatchlistAlertId != null) {
         if (!AML_ROLES.includes(session.role)) return { success: false, error: 'Permission insuffisante' };
+        amlUpload = true;
+      } else if (d.amlProcedureId != null) {
+        if (!PROCEDURE_WRITE_ROLES.includes(session.role)) return { success: false, error: 'Permission insuffisante' };
         amlUpload = true;
       } else if (d.amlSuspiciousReportId != null) {
         if (!AML_REPORT_CREATE_ROLES.includes(session.role)) return { success: false, error: 'Permission insuffisante' };
@@ -893,6 +920,8 @@ export function registerDocumentsIPC(): void {
             amlTransactionReviewId: d.amlTransactionReviewId ?? null,
             amlSuspiciousReportId: d.amlSuspiciousReportId ?? null,
             amlTrainingId: d.amlTrainingId ?? null,
+            amlWatchlistAlertId: d.amlWatchlistAlertId ?? null,
+            amlProcedureId: d.amlProcedureId ?? null,
             tags: d.tagIds && d.tagIds.length
               ? { create: d.tagIds.map((tagId) => ({ tagId })) }
               : undefined,
@@ -962,16 +991,21 @@ export function registerDocumentsIPC(): void {
     try {
       const session = getSession(token);
       if (!session) return { success: false, error: 'Session expirée' };
-      checkRole(session, READ_ROLES);
       const db = getDb();
       const doc = await db.document.findUnique({
         where: { id: Number(id) },
         select: {
           id: true, path: true, name: true, folderId: true, amlSuspiciousReportId: true,
+          amlProfileId: true, amlTransactionReviewId: true, amlTrainingId: true, amlWatchlistAlertId: true,
+          amlProcedureId: true,
           crmActivity: { select: { type: true } },
         },
       });
       if (!doc) return { success: false, error: 'Document introuvable' };
+      // Procédures LBC/FT (« Nos Procédures LBC/FT ») : consultables/
+      // téléchargeables par TOUT utilisateur authentifié (y compris RH) —
+      // contourne le contrôle de rôle général READ_ROLES, cf. PROCEDURE_WRITE_ROLES.
+      if (doc.amlProcedureId == null) checkRole(session, READ_ROLES);
       if (doc.amlSuspiciousReportId != null && !AML_CONFIDENTIAL_ROLES.includes(session.role)) {
         return { success: false, error: 'Document introuvable' };
       }
@@ -981,7 +1015,12 @@ export function registerDocumentsIPC(): void {
       // dans crm.ipc.ts), quel que soit le dossier GED de dépôt du document.
       const agentTechniquePublicationBypass =
         session.role === 'AGENT_TECHNIQUE' && doc.crmActivity?.type === 'CREATION_PUBLICATION';
-      if (!agentTechniquePublicationBypass && !(await canReadDocumentFolder(db, session, doc.folderId))) {
+      if (
+        doc.amlProcedureId == null &&
+        !agentTechniquePublicationBypass &&
+        !isAmlLinkedAttachmentReadable(session, doc) &&
+        !(await canReadDocumentFolder(db, session, doc.folderId))
+      ) {
         return { success: false, error: 'Accès refusé à ce document' };
       }
       const abs = resolveStoragePath(doc.path);
@@ -999,16 +1038,20 @@ export function registerDocumentsIPC(): void {
     try {
       const session = getSession(token);
       if (!session) return { success: false, error: 'Session expirée' };
-      checkRole(session, READ_ROLES);
       const db = getDb();
       const doc = await db.document.findUnique({
         where: { id: Number(id) },
         select: {
           path: true, type: true, name: true, size: true, folderId: true, amlSuspiciousReportId: true,
+          amlProfileId: true, amlTransactionReviewId: true, amlTrainingId: true, amlWatchlistAlertId: true,
+          amlProcedureId: true,
           crmActivity: { select: { type: true } },
         },
       });
       if (!doc) return { success: false, error: 'Document introuvable' };
+      // Procédures LBC/FT : aperçu accessible à TOUT utilisateur authentifié —
+      // cf. documents:open.
+      if (doc.amlProcedureId == null) checkRole(session, READ_ROLES);
       if (doc.amlSuspiciousReportId != null && !AML_CONFIDENTIAL_ROLES.includes(session.role)) {
         return { success: false, error: 'Document introuvable' };
       }
@@ -1016,7 +1059,12 @@ export function registerDocumentsIPC(): void {
       // Publications / Articles » de tous les utilisateurs — cf. documents:open.
       const agentTechniquePublicationBypass =
         session.role === 'AGENT_TECHNIQUE' && doc.crmActivity?.type === 'CREATION_PUBLICATION';
-      if (!agentTechniquePublicationBypass && !(await canReadDocumentFolder(db, session, doc.folderId))) {
+      if (
+        doc.amlProcedureId == null &&
+        !agentTechniquePublicationBypass &&
+        !isAmlLinkedAttachmentReadable(session, doc) &&
+        !(await canReadDocumentFolder(db, session, doc.folderId))
+      ) {
         return { success: false, error: 'Accès refusé à ce document' };
       }
       if (doc.size > PREVIEW_MAX_BYTES) {

@@ -20,12 +20,21 @@ export interface AmlRiskThresholds {
   moyenMax: number;
   /** Montant (FCFA) au-delà duquel le facteur MONTANT_ELEVE se déclenche. */
   amountThreshold: number;
+  /**
+   * Seuil (FCFA) de la DSTE (Déclaration Systématique de Transactions en
+   * Espèces) — affiché à titre indicatif sur la « Grille de recensement des
+   * transactions en espèces » (Registres LBC/FT), sans jamais bloquer la
+   * saisie sous ce seuil (une transaction fractionnée pour l'éviter —
+   * « structuration » — doit pouvoir être recensée quand même).
+   */
+  dsteThreshold: number;
 }
 
 const DEFAULT_THRESHOLDS: AmlRiskThresholds = {
   faibleMax: 3,
   moyenMax: 7,
   amountThreshold: 5_000_000,
+  dsteThreshold: 5_000_000,
 };
 
 const THRESHOLDS_KEY = 'aml.riskThresholds';

@@ -1,6 +1,6 @@
 {
   "name": "afrikimmo-app",
-  "version": "1.1.3",
+  "version": "1.1.4",
   "description": "Application de gestion immobilière Afrikimmo",
   "main": "dist/main/index.js",
   "scripts": {
@@ -28,6 +28,7 @@
     "db:reset": "prisma migrate reset",
     "reminders:run": "node dist/main/scripts/run-reminders-once.js",
     "mail:poll": "node dist/main/scripts/run-mailbox-poll-once.js",
+    "aml:screen": "node dist/main/scripts/run-aml-screening-once.js",
     "lint": "eslint src --ext .ts,.tsx",
     "format": "prettier --write src",
     "typecheck": "tsc --noEmit"

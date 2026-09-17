@@ -344,13 +344,31 @@ async function buildQuoteFromEstimate(
   if (!payload.clientId && !payload.prospectId) {
     throw new Error('Sélectionnez un client ou un prospect destinataire du devis.');
   }
-  const quoteItems = buildQuoteItems(lines, payload.splitLaborByLot ?? false);
+  let quoteItems = buildQuoteItems(lines, payload.splitLaborByLot ?? false);
   // La remise éventuelle de l'estimation (ConstructionEstimate.discount*) doit
   // se répercuter sur le devis généré, sous peine que le TOTAL du devis ne
   // corresponde plus au Total HT de l'estimation dont il est issu.
-  const discountIsPercent = estimate.discountIsPercent;
-  const discountPercent = estimate.discountPercent != null ? Number(estimate.discountPercent) : null;
-  const discountAmount = Number(estimate.discountAmount ?? 0);
+  //
+  // Deux traitements distincts selon le mode de la remise :
+  //  - en pourcentage : appliquée directement sur le prix unitaire de chaque
+  //    ligne (aucune ligne « Remise » explicite sur le devis généré) ;
+  //  - en montant fixe (FCFA) : conservée telle quelle comme remise globale
+  //    du devis, affichée explicitement (comportement historique).
+  const estimateDiscountIsPercent = estimate.discountIsPercent;
+  const estimateDiscountPercent = estimate.discountPercent != null ? Number(estimate.discountPercent) : null;
+  const estimateDiscountAmount = Number(estimate.discountAmount ?? 0);
+  let discountIsPercent = false;
+  let discountPercent: number | null = null;
+  let discountAmount = 0;
+  if (estimateDiscountIsPercent && (estimateDiscountPercent ?? 0) > 0) {
+    const factor = 1 - (estimateDiscountPercent ?? 0) / 100;
+    quoteItems = quoteItems.map((it) => {
+      const unitPrice = Math.round(it.unitPrice * factor * 100) / 100;
+      return { ...it, unitPrice, total: Math.round(unitPrice * it.quantity * 100) / 100 };
+    });
+  } else if (!estimateDiscountIsPercent && estimateDiscountAmount > 0) {
+    discountAmount = estimateDiscountAmount;
+  }
   const { subtotal, taxAmount, total, discountAmount: resolvedDiscountAmount } = resolveQuoteAmounts(
     quoteItems.map((it) => ({ quantity: it.quantity, unitPrice: it.unitPrice })),
     { taxRate: payload.taxRate ?? 0, discountAmount, discountIsPercent, discountPercent },

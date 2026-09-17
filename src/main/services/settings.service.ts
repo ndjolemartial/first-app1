@@ -220,6 +220,23 @@ export const SettingsKeys = {
   // que leur rôle (AGENT, AGENT_TECHNIQUE, ASSISTANTE_DIRECTION, READONLY) en
   // est par défaut exclu.
   kycAuthorizedUserIds: 'kyc.authorizedUserIds', // JSON array d'ids User
+
+  // Registres LBC/FT (notifications, échanges CENTIF-CI, DSTE, opérations
+  // suspectes) — utilisateurs désignés autorisés à enregistrer/consulter/
+  // imprimer, en plus des rôles à plein accès du module (AML_ROLES) qui
+  // l'ont par défaut. Même principe que kycAuthorizedUserIds ci-dessus.
+  registersAuthorizedUserIds: 'aml.registers.authorizedUserIds', // JSON array d'ids User
+
+  // Criblage (`/aml/screening`) — utilisateurs désignés autorisés, en plus de
+  // SUPER_ADMIN/ADMIN/MANAGER qui y ont accès par défaut (contrairement au
+  // reste du module 19, CONFORMITE et ACCOUNTANT n'y sont pas inclus d'office).
+  screeningAuthorizedUserIds: 'aml.screening.authorizedUserIds', // JSON array d'ids User
+
+  // Alertes (`/aml/alerts`) — utilisateurs désignés autorisés, en plus de
+  // SUPER_ADMIN/ADMIN/MANAGER qui y ont accès par défaut (même principe que
+  // screeningAuthorizedUserIds ci-dessus : CONFORMITE et ACCOUNTANT en sont
+  // exclus d'office).
+  alertsAuthorizedUserIds: 'aml.alerts.authorizedUserIds', // JSON array d'ids User
 } as const;
 
 /** Liste des clés correspondant à des secrets chiffrés. */

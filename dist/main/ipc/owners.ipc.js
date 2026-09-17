@@ -8,6 +8,7 @@ const electron_1 = require("electron");
 const db_service_1 = require("../services/db.service");
 const auth_service_1 = require("../services/auth.service");
 const logger_1 = __importDefault(require("../utils/logger"));
+const aml_screening_service_1 = require("../services/aml-screening.service");
 const zod_1 = require("zod");
 const ownerBaseSchema = zod_1.z.object({
     type: zod_1.z.enum(['INDIVIDUEL', 'ENTREPRISE']).default('INDIVIDUEL'),
@@ -189,6 +190,8 @@ function registerOwnersIPC() {
                 data.kycSignedAt = new Date(data.kycSignedAt);
             const owner = await db.owner.create({ data });
             logger_1.default.info(`Owner created: id=${owner.id}`);
+            (0, aml_screening_service_1.screenEntity)('OWNER', owner.id, { operatorId: session.userId })
+                .catch((e) => logger_1.default.error(`aml screening after owners:create: ${e.message}`));
             return { success: true, data: ser(owner) };
         }
         catch (error) {

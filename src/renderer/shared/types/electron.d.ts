@@ -539,6 +539,53 @@ interface Window {
         update: (token: string, id: number, payload: object) => Promise<IpcResponse<any>>;
         delete: (token: string, id: number) => Promise<IpcResponse>;
       };
+      alerts: {
+        list: (token: string, page?: number, limit?: number) => Promise<IpcResponse<any[]>>;
+        getById: (token: string, id: number) => Promise<IpcResponse<any>>;
+        create: (token: string, payload: object) => Promise<IpcResponse<any>>;
+        update: (token: string, id: number, payload: object) => Promise<IpcResponse<any>>;
+        delete: (token: string, id: number) => Promise<IpcResponse>;
+      };
+      procedures: {
+        list: (token: string, filters?: object, page?: number, limit?: number) => Promise<IpcResponse<any[]>>;
+        getById: (token: string, id: number) => Promise<IpcResponse<any>>;
+        create: (token: string, payload: object) => Promise<IpcResponse<any>>;
+        update: (token: string, id: number, payload: object) => Promise<IpcResponse<any>>;
+        delete: (token: string, id: number) => Promise<IpcResponse>;
+      };
+      notifications: {
+        list: (token: string, filters?: object, page?: number, limit?: number) => Promise<IpcResponse<any[]>>;
+        create: (token: string, payload: object) => Promise<IpcResponse<any>>;
+        update: (token: string, id: number, payload: object) => Promise<IpcResponse<any>>;
+        delete: (token: string, id: number) => Promise<IpcResponse>;
+      };
+      centifExchanges: {
+        list: (token: string, filters?: object, page?: number, limit?: number) => Promise<IpcResponse<any[]>>;
+        create: (token: string, payload: object) => Promise<IpcResponse<any>>;
+        update: (token: string, id: number, payload: object) => Promise<IpcResponse<any>>;
+        delete: (token: string, id: number) => Promise<IpcResponse>;
+        listSelectable: (token: string) => Promise<IpcResponse<any[]>>;
+      };
+      dste: {
+        list: (token: string, filters?: object, page?: number, limit?: number) => Promise<IpcResponse<any[]> & { dsteThreshold?: number }>;
+        create: (token: string, payload: object) => Promise<IpcResponse<any>>;
+        update: (token: string, id: number, payload: object) => Promise<IpcResponse<any>>;
+        delete: (token: string, id: number) => Promise<IpcResponse>;
+      };
+      suspiciousOperations: {
+        list: (token: string, filters?: object, page?: number, limit?: number) => Promise<IpcResponse<any[]>>;
+        create: (token: string, payload: object) => Promise<IpcResponse<any>>;
+        update: (token: string, id: number, payload: object) => Promise<IpcResponse<any>>;
+        delete: (token: string, id: number) => Promise<IpcResponse>;
+      };
+      screening: {
+        run: (token: string) => Promise<IpcResponse<any>>;
+        summary: (token: string) => Promise<IpcResponse<any>>;
+        runsList: (token: string, filters?: object, page?: number, limit?: number) => Promise<IpcResponse<any[]>>;
+        runById: (token: string, id: number) => Promise<IpcResponse<any>>;
+        hitsList: (token: string, filters?: object, page?: number, limit?: number) => Promise<IpcResponse<any[]>>;
+        hitReview: (token: string, id: number, payload: object) => Promise<IpcResponse<any>>;
+      };
       dashboard: (token: string) => Promise<IpcResponse<any>>;
     };
     terrains: {
@@ -1189,6 +1236,15 @@ interface Window {
       getKycAuthorizedUsers: (token: string) => Promise<IpcResponse<{ userIds: number[] }>>;
       updateKycAuthorizedUsers: (token: string, userIds: number[]) => Promise<IpcResponse<{ userIds: number[] }>>;
       myKycAccess: (token: string) => Promise<IpcResponse<{ hasAccess: boolean }>>;
+      getRegistersAuthorizedUsers: (token: string) => Promise<IpcResponse<{ userIds: number[] }>>;
+      updateRegistersAuthorizedUsers: (token: string, userIds: number[]) => Promise<IpcResponse<{ userIds: number[] }>>;
+      myRegistersAccess: (token: string) => Promise<IpcResponse<{ hasAccess: boolean }>>;
+      getScreeningAuthorizedUsers: (token: string) => Promise<IpcResponse<{ userIds: number[] }>>;
+      updateScreeningAuthorizedUsers: (token: string, userIds: number[]) => Promise<IpcResponse<{ userIds: number[] }>>;
+      myScreeningAccess: (token: string) => Promise<IpcResponse<{ hasAccess: boolean }>>;
+      getAlertsAuthorizedUsers: (token: string) => Promise<IpcResponse<{ userIds: number[] }>>;
+      updateAlertsAuthorizedUsers: (token: string, userIds: number[]) => Promise<IpcResponse<{ userIds: number[] }>>;
+      myAlertsAccess: (token: string) => Promise<IpcResponse<{ hasAccess: boolean }>>;
 
       // Retards & Départs précipités — inclusion des employés liés SUPER_ADMIN/ADMIN/MANAGER
       getLatenessSettings: (token: string) => Promise<IpcResponse<{ includeManagementRoles: boolean; toleranceMinutes: number }>>;
@@ -1196,8 +1252,10 @@ interface Window {
       listAttendanceSpecialDays: (token: string) => Promise<IpcResponse<any[]>>;
       createAttendanceSpecialDay: (token: string, payload: object) => Promise<IpcResponse<any>>;
       deleteAttendanceSpecialDay: (token: string, id: number) => Promise<IpcResponse>;
-      getAmlRiskThresholds: (token: string) => Promise<IpcResponse<{ faibleMax: number; moyenMax: number; amountThreshold: number }>>;
-      updateAmlRiskThresholds: (token: string, payload: { faibleMax: number; moyenMax: number; amountThreshold: number }) => Promise<IpcResponse>;
+      getAmlRiskThresholds: (token: string) => Promise<IpcResponse<{ faibleMax: number; moyenMax: number; amountThreshold: number; dsteThreshold: number }>>;
+      updateAmlRiskThresholds: (token: string, payload: { faibleMax: number; moyenMax: number; amountThreshold: number; dsteThreshold: number }) => Promise<IpcResponse>;
+      getAmlScreeningSchedule: (token: string) => Promise<IpcResponse<any>>;
+      updateAmlScreeningSchedule: (token: string, payload: object) => Promise<IpcResponse>;
 
       // QR Visiteurs (app web autonome)
       getVisitorQr: (token: string) => Promise<IpcResponse<{

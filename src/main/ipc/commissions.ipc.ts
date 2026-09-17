@@ -16,6 +16,7 @@ import {
   recordModification,
 } from '../services/timeline.service';
 import logger from '../utils/logger';
+import { screenEntity } from '../services/aml-screening.service';
 import { z } from 'zod';
 
 // Lecture : tous les rôles peuvent consulter le module — la visibilité est
@@ -1000,6 +1001,8 @@ export function registerCommissionsIPC(): void {
         data: { ...d, email: d.email || null },
       });
       logger.info(`Apporteur d'affaire créé: id=${referrer.id}`);
+      screenEntity('REFERRER', referrer.id, { operatorId: session.userId })
+        .catch((e) => logger.error(`aml screening after commissions:createReferrer: ${e.message}`));
       return ser({ success: true, data: referrer });
     } catch (error: any) {
       logger.error('commissions:createReferrer error', error.message);

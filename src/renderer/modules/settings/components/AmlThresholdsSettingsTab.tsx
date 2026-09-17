@@ -17,16 +17,21 @@ export default function AmlThresholdsSettingsTab() {
   const [faibleMax, setFaibleMax] = useState('3');
   const [moyenMax, setMoyenMax] = useState('7');
   const [amountThreshold, setAmountThreshold] = useState('5000000');
+  const [dsteThreshold, setDsteThreshold] = useState('5000000');
 
   useEffect(() => {
     if (!data?.data) return;
     setFaibleMax(String(data.data.faibleMax));
     setMoyenMax(String(data.data.moyenMax));
     setAmountThreshold(String(data.data.amountThreshold));
+    setDsteThreshold(String(data.data.dsteThreshold ?? 5000000));
   }, [data]);
 
   const save = () => {
-    update.mutate({ faibleMax: Number(faibleMax), moyenMax: Number(moyenMax), amountThreshold: Number(amountThreshold) });
+    update.mutate({
+      faibleMax: Number(faibleMax), moyenMax: Number(moyenMax),
+      amountThreshold: Number(amountThreshold), dsteThreshold: Number(dsteThreshold),
+    });
   };
 
   return (
@@ -42,6 +47,9 @@ export default function AmlThresholdsSettingsTab() {
           onChange={(e) => setMoyenMax(e.target.value)} helper="Au-delà, le profil est classé en risque Élevé." />
         <Input label="Seuil de montant « élevé » (FCFA)" type="number" value={amountThreshold} disabled={!canWrite}
           onChange={(e) => setAmountThreshold(e.target.value)} helper="Déclenche le facteur « Montant élevé » et une revue de transaction." />
+        <Input label="Seuil DSTE (FCFA)" type="number" value={dsteThreshold} disabled={!canWrite}
+          onChange={(e) => setDsteThreshold(e.target.value)}
+          helper="Affiché à titre indicatif sur la Grille de recensement DSTE (Registres LBC/FT) — n'empêche jamais la saisie en dessous du seuil." />
         {canWrite && (
           <div className="flex justify-end">
             <Button icon={<Save className="h-4 w-4" />} loading={update.isPending} onClick={save}>Enregistrer</Button>

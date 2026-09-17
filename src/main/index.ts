@@ -60,6 +60,7 @@ import { registerRemindersIPC } from './ipc/reminders.ipc';
 import { seedDefaultRemindersConfig, scheduleReminders } from './services/reminders.service';
 import { registerMailAccountIPC } from './ipc/mail-account.ipc';
 import { scheduleMailboxPolling } from './services/mailbox-poller.service';
+import { scheduleAmlScreening } from './services/aml-screening.service';
 import { seedDefaultAttestationTemplate } from './services/attestation-templates.service';
 import { seedDefaultQuoteTemplate } from './services/quote-templates.service';
 import { seedDefaultContractTemplates, seedDefaultPayslipTemplates, seedDefaultEssaiCategories } from './services/hr-templates.service';
@@ -226,6 +227,9 @@ app.whenReady().then(async () => {
   // Réception des réponses par email (boîte système + boîtes personnelles) —
   // cf. mailbox-poller.service.ts.
   scheduleMailboxPolling();
+  // Criblage LBC/FT planifié (présets quotidien/hebdo/mensuel) —
+  // cf. aml-screening.service.ts.
+  scheduleAmlScreening();
   // Modèle d'attestation de SOLDE par défaut (créé une seule fois si absent).
   seedDefaultAttestationTemplate()
     .catch((e) => logger.error(`Attestation template bootstrap failed: ${e.message}`));

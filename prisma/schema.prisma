@@ -57,68 +57,77 @@ model User {
   updatedAt              DateTime            @updatedAt
   deletedAt              DateTime?
 
-  activities                  CrmActivity[]                      @relation("ActivityAssignedTo")
-  createdActivities           CrmActivity[]                      @relation("ActivityCreatedBy")
-  conventions                 Convention[]                       @relation("AgentConventions")
-  notes                       Note[]
-  timelineEvents              EntityTimelineEvent[]
-  archivedEntities            ArchiveRecord[]                    @relation("ArchivedBy")
-  restoredEntities            ArchiveRecord[]                    @relation("RestoredBy")
-  commissions                 Commission[]                       @relation("UserCommissions")
-  commissionsPaid             Commission[]                       @relation("CommissionPaidBy")
-  commissionsCancelled        Commission[]                       @relation("CommissionCancelledBy")
-  treasuryOperations          TreasuryOperation[]                @relation("TreasuryCreatedBy")
-  linkedBankAccounts          BankAccount[]                      @relation("BankAccountLinkedUser")
-  bankAccountViews            BankAccountViewer[]
-  defaultAccountEntree        BankAccount?                       @relation("UserDefaultEntreeAccount", fields: [defaultAccountEntreeId], references: [id])
-  defaultAccountSortie        BankAccount?                       @relation("UserDefaultSortieAccount", fields: [defaultAccountSortieId], references: [id])
-  uploadedDocuments           Document[]                         @relation("DocumentUploadedBy")
-  linkedDocuments             Document[]                         @relation("DocumentLinkedUser")
-  documentAuditLogs           DocumentAuditLog[]                 @relation("DocumentAuditUser")
-  managedBudgetLines          BudgetLine[]                       @relation("BudgetLineManager")
-  closedBudgets               Budget[]                           @relation("BudgetClosedBy")
-  assignedProspects           Prospect[]                         @relation("ProspectAssignedTo")
-  createdProspects            Prospect[]                         @relation("ProspectCreatedBy")
-  assignedClients             Client[]                           @relation("ClientAssignedTo")
-  assignedReferrers           BusinessReferrer[]                 @relation("ReferrerAssignedTo")
-  attestationsEmitted         Attestation[]                      @relation("AttestationEmittedBy")
-  communicationsSent          Communication[]                    @relation("CommunicationSentBy")
-  mailAccount                 MailAccount?
-  quotesAsAgent               Quote[]                            @relation("QuoteAgent")
-  quotesCreated               Quote[]                            @relation("QuoteCreatedBy")
-  ownedDocumentFolders        DocumentFolder[]                   @relation("FolderOwner")
-  documentFolderAccesses      DocumentFolderAccess[]             @relation("FolderAccessUser")
-  employee                    Employee?                          @relation("UserEmployee")
-  leaveDecisions              LeaveRequest[]                     @relation("LeaveDecidedBy")
-  forecastExpensesCreated     ForecastExpense[]                  @relation("ForecastExpenseCreatedBy")
-  forecastExpensesSettled     ForecastExpense[]                  @relation("ForecastExpenseSettledBy")
-  visitorsCreated             Visitor[]                          @relation("VisitorCreatedBy")
-  callsCreated                PhoneCall[]                        @relation("PhoneCallCreatedBy")
-  perfEvaluationsAsEvaluator  PerformanceEvaluation[]            @relation("PerfEvaluator")
-  perfRankingSnapshots        PerformanceRankingSnapshot[]       @relation("PerfRankingGeneratedBy")
-  socialPlatformsResponsible  SocialPlatform[]                   @relation("SocialPlatformResponsible")
-  socialPublicationsAuthored  SocialPublication[]                @relation("SocialPublicationAuthor")
-  socialSnapshotsRecorded     SocialFollowerSnapshot[]           @relation("SocialSnapshotRecordedBy")
-  delayJustificationsMade     AttendanceDelayJustification[]     @relation("AttendanceDelayJustifiedBy")
-  delayTolerationsMade        AttendanceDelayJustification[]     @relation("AttendanceDelayToleratedBy")
+  activities                   CrmActivity[]                      @relation("ActivityAssignedTo")
+  createdActivities            CrmActivity[]                      @relation("ActivityCreatedBy")
+  conventions                  Convention[]                       @relation("AgentConventions")
+  notes                        Note[]
+  timelineEvents               EntityTimelineEvent[]
+  archivedEntities             ArchiveRecord[]                    @relation("ArchivedBy")
+  restoredEntities             ArchiveRecord[]                    @relation("RestoredBy")
+  commissions                  Commission[]                       @relation("UserCommissions")
+  commissionsPaid              Commission[]                       @relation("CommissionPaidBy")
+  commissionsCancelled         Commission[]                       @relation("CommissionCancelledBy")
+  treasuryOperations           TreasuryOperation[]                @relation("TreasuryCreatedBy")
+  linkedBankAccounts           BankAccount[]                      @relation("BankAccountLinkedUser")
+  bankAccountViews             BankAccountViewer[]
+  defaultAccountEntree         BankAccount?                       @relation("UserDefaultEntreeAccount", fields: [defaultAccountEntreeId], references: [id])
+  defaultAccountSortie         BankAccount?                       @relation("UserDefaultSortieAccount", fields: [defaultAccountSortieId], references: [id])
+  uploadedDocuments            Document[]                         @relation("DocumentUploadedBy")
+  linkedDocuments              Document[]                         @relation("DocumentLinkedUser")
+  documentAuditLogs            DocumentAuditLog[]                 @relation("DocumentAuditUser")
+  managedBudgetLines           BudgetLine[]                       @relation("BudgetLineManager")
+  closedBudgets                Budget[]                           @relation("BudgetClosedBy")
+  assignedProspects            Prospect[]                         @relation("ProspectAssignedTo")
+  createdProspects             Prospect[]                         @relation("ProspectCreatedBy")
+  assignedClients              Client[]                           @relation("ClientAssignedTo")
+  assignedReferrers            BusinessReferrer[]                 @relation("ReferrerAssignedTo")
+  attestationsEmitted          Attestation[]                      @relation("AttestationEmittedBy")
+  communicationsSent           Communication[]                    @relation("CommunicationSentBy")
+  mailAccount                  MailAccount?
+  quotesAsAgent                Quote[]                            @relation("QuoteAgent")
+  quotesCreated                Quote[]                            @relation("QuoteCreatedBy")
+  ownedDocumentFolders         DocumentFolder[]                   @relation("FolderOwner")
+  documentFolderAccesses       DocumentFolderAccess[]             @relation("FolderAccessUser")
+  employee                     Employee?                          @relation("UserEmployee")
+  leaveDecisions               LeaveRequest[]                     @relation("LeaveDecidedBy")
+  forecastExpensesCreated      ForecastExpense[]                  @relation("ForecastExpenseCreatedBy")
+  forecastExpensesSettled      ForecastExpense[]                  @relation("ForecastExpenseSettledBy")
+  visitorsCreated              Visitor[]                          @relation("VisitorCreatedBy")
+  callsCreated                 PhoneCall[]                        @relation("PhoneCallCreatedBy")
+  perfEvaluationsAsEvaluator   PerformanceEvaluation[]            @relation("PerfEvaluator")
+  perfRankingSnapshots         PerformanceRankingSnapshot[]       @relation("PerfRankingGeneratedBy")
+  socialPlatformsResponsible   SocialPlatform[]                   @relation("SocialPlatformResponsible")
+  socialPublicationsAuthored   SocialPublication[]                @relation("SocialPublicationAuthor")
+  socialSnapshotsRecorded      SocialFollowerSnapshot[]           @relation("SocialSnapshotRecordedBy")
+  delayJustificationsMade      AttendanceDelayJustification[]     @relation("AttendanceDelayJustifiedBy")
+  delayTolerationsMade         AttendanceDelayJustification[]     @relation("AttendanceDelayToleratedBy")
   attendanceSpecialDaysCreated AttendanceSpecialDay[]
-  constructionProjectsAgent   ConstructionProject[]              @relation("ConstructionProjectAgent")
-  constructionProjectsCreated ConstructionProject[]              @relation("ConstructionProjectCreatedBy")
-  constructionEstimates       ConstructionEstimate[]             @relation("ConstructionEstimateGeneratedBy")
-  constructionPriceChanges    ConstructionResourcePriceHistory[] @relation("ConstructionPriceChangedBy")
-  permitProjectsAgent         PermitProject[]                    @relation("PermitProjectAgent")
-  permitProjectsCreated       PermitProject[]                    @relation("PermitProjectCreatedBy")
-  permitEstimatesGenerated    PermitEstimate[]                   @relation("PermitEstimateGeneratedBy")
-  amlProfilesValidated        AmlProfile[]                       @relation("AmlProfileValidatedBy")
-  amlProfilesCreated          AmlProfile[]                       @relation("AmlProfileCreatedBy")
-  amlWatchlistMatchesReviewed AmlWatchlistMatch[]                @relation("AmlWatchlistMatchReviewedBy")
-  amlReviewsReviewed          AmlTransactionReview[]             @relation("AmlReviewReviewedBy")
-  amlReviewsCreated           AmlTransactionReview[]             @relation("AmlReviewCreatedBy")
-  amlReportsDeclared          AmlSuspiciousReport[]              @relation("AmlReportDeclaredBy")
-  amlReportsHandled           AmlSuspiciousReport[]              @relation("AmlReportComplianceOfficer")
-  amlReportsTransmitted       AmlSuspiciousReport[]              @relation("AmlReportTransmittedBy")
-  amlTrainingsAttended        AmlTraining[]                      @relation("AmlTrainingUser")
-  amlTrainingsRecorded        AmlTraining[]                      @relation("AmlTrainingRecordedBy")
+  constructionProjectsAgent    ConstructionProject[]              @relation("ConstructionProjectAgent")
+  constructionProjectsCreated  ConstructionProject[]              @relation("ConstructionProjectCreatedBy")
+  constructionEstimates        ConstructionEstimate[]             @relation("ConstructionEstimateGeneratedBy")
+  constructionPriceChanges     ConstructionResourcePriceHistory[] @relation("ConstructionPriceChangedBy")
+  permitProjectsAgent          PermitProject[]                    @relation("PermitProjectAgent")
+  permitProjectsCreated        PermitProject[]                    @relation("PermitProjectCreatedBy")
+  permitEstimatesGenerated     PermitEstimate[]                   @relation("PermitEstimateGeneratedBy")
+  amlProfilesValidated         AmlProfile[]                       @relation("AmlProfileValidatedBy")
+  amlProfilesCreated           AmlProfile[]                       @relation("AmlProfileCreatedBy")
+  amlWatchlistMatchesReviewed  AmlWatchlistMatch[]                @relation("AmlWatchlistMatchReviewedBy")
+  amlReviewsReviewed           AmlTransactionReview[]             @relation("AmlReviewReviewedBy")
+  amlReviewsCreated            AmlTransactionReview[]             @relation("AmlReviewCreatedBy")
+  amlReportsDeclared           AmlSuspiciousReport[]              @relation("AmlReportDeclaredBy")
+  amlReportsHandled            AmlSuspiciousReport[]              @relation("AmlReportComplianceOfficer")
+  amlReportsTransmitted        AmlSuspiciousReport[]              @relation("AmlReportTransmittedBy")
+  amlTrainingsAttended         AmlTraining[]                      @relation("AmlTrainingUser")
+  amlTrainingsRecorded         AmlTraining[]                      @relation("AmlTrainingRecordedBy")
+  amlAlertsOperated            AmlWatchlistAlert[]                @relation("AmlAlertOperator")
+  amlAlertsCreated             AmlWatchlistAlert[]                @relation("AmlAlertCreatedBy")
+  amlScreeningRunsOperated     AmlScreeningRun[]                  @relation("AmlScreeningRunOperator")
+  amlScreeningHitsReviewed     AmlScreeningHit[]                  @relation("AmlScreeningHitReviewedBy")
+  amlProceduresCreated         AmlProcedure[]                     @relation("AmlProcedureCreatedBy")
+  amlNotificationsRecorded     AmlNotificationRecord[]            @relation("AmlNotificationRecordedBy")
+  amlCentifExchangesRecorded   AmlCentifExchange[]                @relation("AmlCentifExchangeRecordedBy")
+  amlDsteRecordsRecorded       AmlDsteRecord[]                    @relation("AmlDsteRecordedBy")
+  amlSuspiciousOpsRecorded     AmlSuspiciousOperationRecord[]     @relation("AmlSuspiciousOperationRecordedBy")
 }
 
 enum UserRole {
@@ -196,98 +205,98 @@ enum ProspectStatus {
 // ── CLIENTS ───────────────────────────────────────────────────
 
 model Client {
-  id                   Int                @id @default(autoincrement())
-  uuid                 String             @unique @default(cuid())
-  reference            String             @unique // Ex: CLI-2026-0001
-  type                 ClientType         @default(INDIVIDUEL)
-  firstName            String?
-  lastName             String?
-  civilite             CiviliteType       @default(Monsieur)
-  statutConjugal       StatutConjugalType @default(CELIBATAIRE)
-  entreprise           String?
-  registre_de_commerce String?
-  compte_contribuable  String?
+  id                        Int                @id @default(autoincrement())
+  uuid                      String             @unique @default(cuid())
+  reference                 String             @unique // Ex: CLI-2026-0001
+  type                      ClientType         @default(INDIVIDUEL)
+  firstName                 String?
+  lastName                  String?
+  civilite                  CiviliteType       @default(Monsieur)
+  statutConjugal            StatutConjugalType @default(CELIBATAIRE)
+  entreprise                String?
+  registre_de_commerce      String?
+  compte_contribuable       String?
   // Entreprise — informations complémentaires
-  website              String? // Site web de l'entreprise
-  companyActivity      String? // Activités de l'entreprise
+  website                   String? // Site web de l'entreprise
+  companyActivity           String? // Activités de l'entreprise
   // Entreprise — représentant légal
-  legalRepFirstName    String?
-  legalRepLastName     String?
-  legalRepPhone        String?
-  legalRepIdNumber     String?
-  legalRepIdTypeId     Int?
-  email                String?
-  phone                String?
-  mobile               String?
-  address              String?
-  commune              String?
-  city                 String?
-  postalCode           String?
-  country              String             @default("CI")
-  nationality          String?
-  profession           String? // Profession (client particulier)
-  birthDate            DateTime?
-  birthPlace           String?
-  idNumber             String?
-  idTypeId             Int?
-  fatherFirstName      String?
-  fatherLastName       String?
-  motherFirstName      String?
-  motherLastName       String?
+  legalRepFirstName         String?
+  legalRepLastName          String?
+  legalRepPhone             String?
+  legalRepIdNumber          String?
+  legalRepIdTypeId          Int?
+  email                     String?
+  phone                     String?
+  mobile                    String?
+  address                   String?
+  commune                   String?
+  city                      String?
+  postalCode                String?
+  country                   String             @default("CI")
+  nationality               String?
+  profession                String? // Profession (client particulier)
+  birthDate                 DateTime?
+  birthPlace                String?
+  idNumber                  String?
+  idTypeId                  Int?
+  fatherFirstName           String?
+  fatherLastName            String?
+  motherFirstName           String?
+  motherLastName            String?
   // Informations complémentaires — alimentent la « Fiche KYC » imprimable
   // depuis la fiche client (le reste de l'identité — nom, filiation,
   // profession, adresse, pièce d'identité… — est déjà porté par les champs
   // ci-dessus, jamais dupliqué ici).
   employerName              String? // employeur / activité professionnelle
-  monthlyIncome             Decimal?        @db.Decimal(15, 2) // revenu mensuel déclaré
+  monthlyIncome             Decimal?           @db.Decimal(15, 2) // revenu mensuel déclaré
   // Origine des fonds — sélection multiple parmi une liste fermée de sources
   // usuelles (tableau de codes, sans enum Prisma dédié — même convention que
   // PermitProject.missionPhases). sourceOfFundsOther précise le libellé
   // saisi quand le code AUTRE est sélectionné.
   sourceOfFunds             Json? // string[] de codes (FONDS_PROPRES_ENTREPRISE, SALAIRE…)
   sourceOfFundsOther        String? // précision libre quand AUTRE est sélectionné
-  sourceOfWealth            String?         @db.Text // origine du patrimoine
+  sourceOfWealth            String?            @db.Text // origine du patrimoine
   // Objet de la relation d'affaires — même principe de sélection multiple
   // que sourceOfFunds ci-dessus.
   relationshipPurpose       Json? // string[] de codes (ACHAT_TERRAIN, CONSTRUCTION…)
   relationshipPurposeOther  String? // précision libre quand AUTRE est sélectionné
-  expectedTransactionVolume Decimal?        @db.Decimal(15, 2) // volume mensuel estimé des opérations envisagées
+  expectedTransactionVolume Decimal?           @db.Decimal(15, 2) // volume mensuel estimé des opérations envisagées
   acquisitionChannel        String? // comment le client a connu l'agence
-  isPep                     Boolean         @default(false) // personne politiquement exposée
+  isPep                     Boolean            @default(false) // personne politiquement exposée
   pepCategory               AmlPepCategory?
   pepFunction               String?
-  hasRiskyCountryLink       Boolean         @default(false)
+  hasRiskyCountryLink       Boolean            @default(false)
   kycSignedAt               DateTime? // date de signature de la fiche KYC
   kycSignedPlace            String? // lieu de signature
   notes                     String?            @db.Text
-  isActive             Boolean            @default(true)
-  status               ClientStatus       @default(ACTIF)
+  isActive                  Boolean            @default(true)
+  status                    ClientStatus       @default(ACTIF)
   // Refus de relances automatiques par canal (politique de communication).
-  smsOptOut            Boolean            @default(false)
-  emailOptOut          Boolean            @default(false)
+  smsOptOut                 Boolean            @default(false)
+  emailOptOut               Boolean            @default(false)
   // Affectation : un client peut être suivi par un utilisateur interne ET
   // apporté par un référent externe (BusinessReferrer) ; les deux coexistent.
-  assignedToId         Int?
-  referrerId           Int?
-  createdAt            DateTime           @default(now())
-  updatedAt            DateTime           @updatedAt
-  deletedAt            DateTime?
+  assignedToId              Int?
+  referrerId                Int?
+  createdAt                 DateTime           @default(now())
+  updatedAt                 DateTime           @updatedAt
+  deletedAt                 DateTime?
 
   prospect              Prospect?
-  assignedTo            User?                 @relation("ClientAssignedTo", fields: [assignedToId], references: [id])
-  referrer              BusinessReferrer?     @relation("ClientReferrer", fields: [referrerId], references: [id])
-  idType                IdDocumentType?       @relation("ClientIdType", fields: [idTypeId], references: [id])
-  legalRepIdType        IdDocumentType?       @relation("ClientLegalRepIdType", fields: [legalRepIdTypeId], references: [id])
-  conventions           Convention[]          @relation("ConventionClient")
-  secondaryConventions  Convention[]          @relation("ConventionSecondaryClient")
+  assignedTo            User?                   @relation("ClientAssignedTo", fields: [assignedToId], references: [id])
+  referrer              BusinessReferrer?       @relation("ClientReferrer", fields: [referrerId], references: [id])
+  idType                IdDocumentType?         @relation("ClientIdType", fields: [idTypeId], references: [id])
+  legalRepIdType        IdDocumentType?         @relation("ClientLegalRepIdType", fields: [legalRepIdTypeId], references: [id])
+  conventions           Convention[]            @relation("ConventionClient")
+  secondaryConventions  Convention[]            @relation("ConventionSecondaryClient")
   documents             Document[]
   activities            CrmActivity[]
   invoices              Invoice[]
   installments          SaleInstallment[]
   terrains              Terrain[]
-  properties            Property[]            @relation("ClientProperties")
-  attestations          Attestation[]         @relation("AttestationClient")
-  attestationsSecondary Attestation[]         @relation("AttestationSecondaryClient")
+  properties            Property[]              @relation("ClientProperties")
+  attestations          Attestation[]           @relation("AttestationClient")
+  attestationsSecondary Attestation[]           @relation("AttestationSecondaryClient")
   projects              Project[]
   communications        Communication[]
   quotes                Quote[]
@@ -355,35 +364,35 @@ enum StatutConjugalType {
 // ── PROPRIÉTAIRES ─────────────────────────────────────────────
 
 model Owner {
-  id                  Int           @id @default(autoincrement())
-  uuid                String        @unique @default(cuid())
-  type                ClientType    @default(INDIVIDUEL)
+  id                        Int             @id @default(autoincrement())
+  uuid                      String          @unique @default(cuid())
+  type                      ClientType      @default(INDIVIDUEL)
   // Particulier
-  firstName           String?
-  lastName            String?
-  civilite            CiviliteType?
-  nationality         String? // Nationalité (particulier)
-  idNumber            String? // Numéro pièce d'identité (particulier)
-  idTypeId            Int? // Type de pièce d'identité (particulier)
+  firstName                 String?
+  lastName                  String?
+  civilite                  CiviliteType?
+  nationality               String? // Nationalité (particulier)
+  idNumber                  String? // Numéro pièce d'identité (particulier)
+  idTypeId                  Int? // Type de pièce d'identité (particulier)
   // Entreprise
-  companyName         String?
-  registreCommerce    String? // Numéro registre de commerce
-  legalRepFirstName   String? // Prénom représentant légal
-  legalRepLastName    String? // Nom représentant légal
-  legalRepPhone       String? // Contact représentant légal
-  legalRepIdNumber    String? // Numéro pièce d'identité représentant légal
-  legalRepIdTypeId    Int? // Type de pièce d'identité du représentant légal
+  companyName               String?
+  registreCommerce          String? // Numéro registre de commerce
+  legalRepFirstName         String? // Prénom représentant légal
+  legalRepLastName          String? // Nom représentant légal
+  legalRepPhone             String? // Contact représentant légal
+  legalRepIdNumber          String? // Numéro pièce d'identité représentant légal
+  legalRepIdTypeId          Int? // Type de pièce d'identité du représentant légal
   // Commun
-  email               String?
-  phone               String?
-  mobile              String?
-  address             String?
-  city                String?
-  postalCode          String?
-  country             String        @default("CI")
-  bankIban            String?
-  bankBic             String?
-  compte_contribuable String?
+  email                     String?
+  phone                     String?
+  mobile                    String?
+  address                   String?
+  city                      String?
+  postalCode                String?
+  country                   String          @default("CI")
+  bankIban                  String?
+  bankBic                   String?
+  compte_contribuable       String?
   // Informations complémentaires — alimentent la « Fiche KYC » imprimable
   // depuis la fiche propriétaire, même principe que Client.*.
   employerName              String?
@@ -401,11 +410,11 @@ model Owner {
   hasRiskyCountryLink       Boolean         @default(false)
   kycSignedAt               DateTime?
   kycSignedPlace            String?
-  notes               String?       @db.Text
-  isActive            Boolean       @default(true)
-  createdAt           DateTime      @default(now())
-  updatedAt           DateTime      @updatedAt
-  deletedAt           DateTime?
+  notes                     String?         @db.Text
+  isActive                  Boolean         @default(true)
+  createdAt                 DateTime        @default(now())
+  updatedAt                 DateTime        @updatedAt
+  deletedAt                 DateTime?
 
   properties       Property[]
   terrains         Terrain[]
@@ -413,8 +422,8 @@ model Owner {
   activities       CrmActivity[]
   projects         Project[]
   communications   Communication[]
-  idType           IdDocumentType? @relation("OwnerIdType", fields: [idTypeId], references: [id])
-  legalRepIdType   IdDocumentType? @relation("OwnerLegalRepIdType", fields: [legalRepIdTypeId], references: [id])
+  idType           IdDocumentType?        @relation("OwnerIdType", fields: [idTypeId], references: [id])
+  legalRepIdType   IdDocumentType?        @relation("OwnerLegalRepIdType", fields: [legalRepIdTypeId], references: [id])
   beneficialOwners OwnerBeneficialOwner[]
 }
 
@@ -1677,54 +1686,54 @@ enum ActivityStatus {
 }
 
 model Communication {
-  id           Int           @id @default(autoincrement())
-  channel      CommChannel
-  direction    CommDirection @default(SORTANT)
-  to           String
-  subject      String?
-  body         String        @db.Text
-  status       CommStatus    @default(EN_ATTENTE)
-  sentAt       DateTime?
+  id                    Int           @id @default(autoincrement())
+  channel               CommChannel
+  direction             CommDirection @default(SORTANT)
+  to                    String
+  subject               String?
+  body                  String        @db.Text
+  status                CommStatus    @default(EN_ATTENTE)
+  sentAt                DateTime?
   // Remis au serveur de messagerie (destinataire accepté par le SMTP) et
   // première ouverture détectée (pixel de suivi) — emails sortants uniquement.
-  deliveredAt  DateTime?
-  openedAt     DateTime?
-  errorMsg     String?       @db.Text
-  templateId   Int?
+  deliveredAt           DateTime?
+  openedAt              DateTime?
+  errorMsg              String?       @db.Text
+  templateId            Int?
   // Empreinte d'anti-doublon — verrouille un même rappel (cas + entité + fenêtre)
   // ex. INSTALLMENT_42_J-7. Non posée sur les envois manuels.
-  dedupeKey    String?       @unique
-  clientId     Int?
+  dedupeKey             String?       @unique
+  clientId              Int?
   // Rattachements optionnels — utilisés pour l'envoi ciblé depuis l'interface
   // Communication (Propriétaire / Convention / Apporteur d'affaires / Prospect) et la traçabilité.
-  ownerId      Int?
-  conventionId Int?
-  referrerId   Int?
-  prospectId   Int?
+  ownerId               Int?
+  conventionId          Int?
+  referrerId            Int?
+  prospectId            Int?
   // Utilisateur ayant déclenché l'envoi manuel. Null pour les envois
   // systèmes (relances automatiques) — sert au filtrage de visibilité
   // dans l'historique pour les rôles non privilégiés.
-  senderId     Int?
+  senderId              Int?
   // Message-ID sortant (capturé sur la réponse Nodemailer à l'envoi) — permet
   // à une réponse entrante de retrouver l'échange d'origine via l'en-tête
   // In-Reply-To/References (cf. mailbox-poller.service.ts).
-  messageId          String?
+  messageId             String?
   // Pour une ligne ENTRANT : en-tête In-Reply-To (ou 1ʳᵉ valeur de References)
   // du message reçu, tel que parsé — conservé même si aucune correspondance
   // n'a été trouvée (diagnostic).
-  inReplyToMessageId String?
+  inReplyToMessageId    String?
   // Pour une ligne ENTRANT appariée : la Communication SORTANT d'origine.
   parentCommunicationId Int?
   // Boîte IMAP ayant reçu ce message (système des relances, ou boîte
   // personnelle d'un utilisateur) — null pour les lignes SORTANT.
-  mailAccountId Int?
-  metadata     Json?
-  createdAt    DateTime      @default(now())
+  mailAccountId         Int?
+  metadata              Json?
+  createdAt             DateTime      @default(now())
   // Pour une ligne ENTRANT : date de première consultation dans l'app (aperçu
   // ouvert depuis l'historique Communication). Null = pas encore lu. Sans
   // rapport avec `openedAt` (pixel de suivi détectant l'ouverture d'un email
   // SORTANT par le destinataire) — ici c'est nous qui lisons un message reçu.
-  readAt       DateTime?
+  readAt                DateTime?
   // Pour une ligne ENTRANT : adresses en copie/copie cachée du message reçu
   // (cf. mailbox-poller.service.ts), normalisées en minuscules et encadrées
   // de « | » — ex. "|a@x.ci|b@y.ci|" — pour un filtrage `contains` sûr (évite
@@ -1732,18 +1741,18 @@ model Communication {
   // Sert exclusivement à l'exception de visibilité : un utilisateur sans
   // droit sur l'entité rattachée voit quand même le message si sa propre
   // adresse y figure (communication.ipc.ts → communication:getHistory).
-  ccAddresses  String?       @db.Text
+  ccAddresses           String?       @db.Text
 
-  template    CommTemplate?     @relation(fields: [templateId], references: [id])
-  client      Client?           @relation(fields: [clientId], references: [id])
-  owner       Owner?            @relation(fields: [ownerId], references: [id])
-  convention  Convention?       @relation(fields: [conventionId], references: [id])
-  referrer    BusinessReferrer? @relation("CommunicationReferrer", fields: [referrerId], references: [id])
-  sender      User?             @relation("CommunicationSentBy", fields: [senderId], references: [id])
-  prospect    Prospect?         @relation(fields: [prospectId], references: [id])
-  parentCommunication Communication?  @relation("CommunicationThread", fields: [parentCommunicationId], references: [id])
-  replies             Communication[] @relation("CommunicationThread")
-  mailAccount         MailAccount?    @relation(fields: [mailAccountId], references: [id])
+  template            CommTemplate?     @relation(fields: [templateId], references: [id])
+  client              Client?           @relation(fields: [clientId], references: [id])
+  owner               Owner?            @relation(fields: [ownerId], references: [id])
+  convention          Convention?       @relation(fields: [conventionId], references: [id])
+  referrer            BusinessReferrer? @relation("CommunicationReferrer", fields: [referrerId], references: [id])
+  sender              User?             @relation("CommunicationSentBy", fields: [senderId], references: [id])
+  prospect            Prospect?         @relation(fields: [prospectId], references: [id])
+  parentCommunication Communication?    @relation("CommunicationThread", fields: [parentCommunicationId], references: [id])
+  replies             Communication[]   @relation("CommunicationThread")
+  mailAccount         MailAccount?      @relation(fields: [mailAccountId], references: [id])
 
   @@unique([mailAccountId, messageId])
   @@index([clientId])
@@ -1762,31 +1771,31 @@ model Communication {
 // utilisateur). Un seul service de polling traite les deux de la même façon
 // (cf. mailbox-poller.service.ts).
 model MailAccount {
-  id              Int       @id @default(autoincrement())
-  userId          Int?      @unique
-  label           String?
-  imapHost        String
-  imapPort        Int       @default(993)
-  imapSecure      Boolean   @default(true)
-  imapUser        String
+  id                 Int       @id @default(autoincrement())
+  userId             Int?      @unique
+  label              String?
+  imapHost           String
+  imapPort           Int       @default(993)
+  imapSecure         Boolean   @default(true)
+  imapUser           String
   // Chiffré (AES-256-GCM portable, même primitive que les secrets AppSetting
   // — cf. src/main/utils/secretCrypto.ts).
-  imapPasswordEnc String    @db.Text
-  folder          String    @default("INBOX")
-  isActive        Boolean   @default(true)
+  imapPasswordEnc    String    @db.Text
+  folder             String    @default("INBOX")
+  isActive           Boolean   @default(true)
   // Par défaut (false), le poller ne journalise dans Communication que les
   // messages qui prolongent un échange initié depuis l'app (réponse directe
   // ou suite de fil — cf. mailbox-poller.service.ts). À true, TOUS les
   // messages reçus dans cette boîte sont journalisés, y compris ceux sans
   // aucun lien avec un envoi de l'app — réservé à l'usage assumé d'une boîte
   // personnelle dédiée où l'utilisateur veut tout voir dans l'app.
-  receiveAllMessages Boolean @default(false)
+  receiveAllMessages Boolean   @default(false)
   // Curseur de polling (dernier UID IMAP traité) et diagnostic de la dernière passe.
-  lastUid         Int?
-  lastPolledAt    DateTime?
-  lastError       String?   @db.Text
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
+  lastUid            Int?
+  lastPolledAt       DateTime?
+  lastError          String?   @db.Text
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
 
   user           User?           @relation(fields: [userId], references: [id])
   communications Communication[]
@@ -1914,6 +1923,8 @@ model Document {
   amlTransactionReviewId Int? // Revue de transaction LBC/FT/FP dont ce document est une pièce justificative
   amlSuspiciousReportId  Int? // Déclaration de soupçon LBC/FT/FP — pièce jointe strictement confidentielle (cf. documents.ipc.ts)
   amlTrainingId          Int? // Formation LBC/FT/FP dont ce document est le justificatif (attestation…)
+  amlWatchlistAlertId    Int? // Alerte CENTIF-CI / mise à jour de liste SFC dont ce document est la pièce (fichier téléchargé…)
+  amlProcedureId         Int? // Procédure interne LBC/FT/FP dont ce document est le fichier — sans confidentialité, cf. documents.ipc.ts
   uploadedAt             DateTime  @default(now())
   updatedAt              DateTime  @updatedAt
   deletedAt              DateTime?
@@ -1944,6 +1955,8 @@ model Document {
   amlTransactionReview AmlTransactionReview? @relation("AmlTransactionReviewAttachments", fields: [amlTransactionReviewId], references: [id])
   amlSuspiciousReport  AmlSuspiciousReport?  @relation("AmlSuspiciousReportAttachments", fields: [amlSuspiciousReportId], references: [id])
   amlTraining          AmlTraining?          @relation("AmlTrainingAttachments", fields: [amlTrainingId], references: [id])
+  amlWatchlistAlert    AmlWatchlistAlert?    @relation("AmlWatchlistAlertAttachments", fields: [amlWatchlistAlertId], references: [id])
+  amlProcedure         AmlProcedure?         @relation("AmlProcedureAttachments", fields: [amlProcedureId], references: [id])
   tags                 DocumentTag[]
   auditLogs            DocumentAuditLog[]
   activities           CrmActivity[]         @relation("ActivityLinkedDocument")
@@ -2222,20 +2235,20 @@ model ArchivePolicy {
 
 // Apporteur d'affaire : référent externe (non-utilisateur de l'application)
 model BusinessReferrer {
-  id           Int           @id @default(autoincrement())
-  uuid         String        @unique @default(cuid())
-  firstName    String
-  lastName     String
-  civilite     CiviliteType?
-  companyName  String?
-  email        String?
-  phone        String?
-  mobile       String?
-  address      String?
-  city         String?
-  country      String        @default("CI")
-  bankIban     String?
-  bankBic      String?
+  id                        Int             @id @default(autoincrement())
+  uuid                      String          @unique @default(cuid())
+  firstName                 String
+  lastName                  String
+  civilite                  CiviliteType?
+  companyName               String?
+  email                     String?
+  phone                     String?
+  mobile                    String?
+  address                   String?
+  city                      String?
+  country                   String          @default("CI")
+  bankIban                  String?
+  bankBic                   String?
   // Informations complémentaires — alimentent la « Fiche KYC » imprimable
   // depuis la fiche apporteur d'affaire, même principe que Client.*.
   employerName              String?
@@ -2253,20 +2266,20 @@ model BusinessReferrer {
   hasRiskyCountryLink       Boolean         @default(false)
   kycSignedAt               DateTime?
   kycSignedPlace            String?
-  notes        String?       @db.Text
-  isActive     Boolean       @default(true)
+  notes                     String?         @db.Text
+  isActive                  Boolean         @default(true)
   // Utilisateur interne référent de cet apporteur d'affaire (facultatif).
-  assignedToId Int?
-  createdAt    DateTime      @default(now())
-  updatedAt    DateTime      @updatedAt
-  deletedAt    DateTime?
+  assignedToId              Int?
+  createdAt                 DateTime        @default(now())
+  updatedAt                 DateTime        @updatedAt
+  deletedAt                 DateTime?
 
-  assignedTo     User?           @relation("ReferrerAssignedTo", fields: [assignedToId], references: [id])
-  commissions    Commission[]
-  clients        Client[]        @relation("ClientReferrer")
-  conventions    Convention[]    @relation("ConventionReferrer")
-  documents      Document[]      @relation("DocumentReferrer")
-  communications Communication[] @relation("CommunicationReferrer")
+  assignedTo       User?                     @relation("ReferrerAssignedTo", fields: [assignedToId], references: [id])
+  commissions      Commission[]
+  clients          Client[]                  @relation("ClientReferrer")
+  conventions      Convention[]              @relation("ConventionReferrer")
+  documents        Document[]                @relation("DocumentReferrer")
+  communications   Communication[]           @relation("CommunicationReferrer")
   beneficialOwners ReferrerBeneficialOwner[]
 }
 
@@ -3797,13 +3810,13 @@ model AttendanceDelayJustification {
 // afin de ne pas comptabiliser à tort un départ légitimement anticipé comme un
 // départ précipité par rapport aux 17h par défaut.
 model AttendanceSpecialDay {
-  id                Int       @id @default(autoincrement())
-  date              DateTime  @unique @db.Date
+  id                Int      @id @default(autoincrement())
+  date              DateTime @unique @db.Date
   expectedDeparture String // 'HH:MM' — remplace le seuil de départ par défaut ce jour-là
   expectedArrival   String? // 'HH:MM' optionnel — remplace le seuil d'arrivée par défaut ce jour-là
   label             String? // ex. « Journée continue — veille de fête »
   createdById       Int?
-  createdAt         DateTime  @default(now())
+  createdAt         DateTime @default(now())
 
   createdBy User? @relation(fields: [createdById], references: [id])
 }
@@ -4344,17 +4357,17 @@ model ConstructionProject {
   hasElectricityConnection Boolean                    @default(true)
 
   // Extérieurs
-  fenceLength          Decimal?                   @db.Decimal(10, 2) // clôture (ml)
-  fenceHeight          Decimal?                   @db.Decimal(5, 2) // hauteur (m), défaut applicatif 2,00
-  fenceHasCrepissage   Boolean                    @default(false) // clôture crépie ou brute d'agglos
-  fenceHasChainageHaut Boolean                    @default(false) // chaînage haut optionnel
-  fencePostType        ConstructionFencePostType  @default(POTEAUX_SIMPLES) // poteaux sortants ou simples
-  gateCount            Int      @default(0) // portails
-  hasPool              Boolean  @default(false)
-  poolSurface          Decimal? @db.Decimal(10, 2)
-  hasExteriorLayout    Boolean  @default(false) // aménagements extérieurs
-  exteriorPavedSurface Decimal? @db.Decimal(10, 2) // dallage / pavage (m²)
-  hasLandscaping       Boolean  @default(false) // espaces verts
+  fenceLength          Decimal?                  @db.Decimal(10, 2) // clôture (ml)
+  fenceHeight          Decimal?                  @db.Decimal(5, 2) // hauteur (m), défaut applicatif 2,00
+  fenceHasCrepissage   Boolean                   @default(false) // clôture crépie ou brute d'agglos
+  fenceHasChainageHaut Boolean                   @default(false) // chaînage haut optionnel
+  fencePostType        ConstructionFencePostType @default(POTEAUX_SIMPLES) // poteaux sortants ou simples
+  gateCount            Int                       @default(0) // portails
+  hasPool              Boolean                   @default(false)
+  poolSurface          Decimal?                  @db.Decimal(10, 2)
+  hasExteriorLayout    Boolean                   @default(false) // aménagements extérieurs
+  exteriorPavedSurface Decimal?                  @db.Decimal(10, 2) // dallage / pavage (m²)
+  hasLandscaping       Boolean                   @default(false) // espaces verts
 
   // Paramètres économiques (surcharges facultatives — sinon AppSetting/défaut de code)
   fraisChantierPct Decimal?                @db.Decimal(5, 2)
@@ -4408,17 +4421,17 @@ model ConstructionEstimate {
   localityLabel    String?
 
   // Paramètres de prix figés
-  markupMode       ConstructionMarkupMode @default(CASCADE)
-  fraisChantierPct Decimal                @default(0) @db.Decimal(5, 2)
-  fraisGenerauxPct Decimal                @default(0) @db.Decimal(5, 2)
-  margePct         Decimal                @default(0) @db.Decimal(5, 2)
-  tvaPct           Decimal                @default(0) @db.Decimal(5, 2)
-  puRoundingStep   Int                    @default(1) // arrondi du PU en FCFA (1, 5, 10, 100)
+  markupMode        ConstructionMarkupMode @default(CASCADE)
+  fraisChantierPct  Decimal                @default(0) @db.Decimal(5, 2)
+  fraisGenerauxPct  Decimal                @default(0) @db.Decimal(5, 2)
+  margePct          Decimal                @default(0) @db.Decimal(5, 2)
+  tvaPct            Decimal                @default(0) @db.Decimal(5, 2)
+  puRoundingStep    Int                    @default(1) // arrondi du PU en FCFA (1, 5, 10, 100)
   // Remise globale — appliquée entre le sous-total HT et la TVA (même
   // principe que Quote.discountAmount/discountIsPercent/discountPercent).
-  discountAmount    Decimal  @default(0) @db.Decimal(15, 2)
-  discountIsPercent Boolean  @default(false)
-  discountPercent   Decimal? @db.Decimal(5, 2)
+  discountAmount    Decimal                @default(0) @db.Decimal(15, 2)
+  discountIsPercent Boolean                @default(false)
+  discountPercent   Decimal?               @db.Decimal(5, 2)
 
   // Totaux figés
   totalDeboursMateriaux  Decimal  @default(0) @db.Decimal(15, 2)
@@ -4933,6 +4946,25 @@ enum AmlSuspiciousReportStatus {
   CLASSEE_SANS_SUITE
 }
 
+// ── REGISTRES LBC/FT (registre de suivi des notifications, registre de
+// suivi des échanges CENTIF-CI, grille de recensement DSTE, registre des
+// opérations suspectes) — cf. commentaire sur les 4 modèles ci-dessous.
+enum AmlExchangeDirection {
+  ENTRANT
+  SORTANT
+}
+
+enum AmlExchangeStatus {
+  EN_COURS
+  CLOTURE
+  SANS_SUITE
+}
+
+enum AmlSuspiciousOperationDecision {
+  DOS_TRANSMISE
+  DOS_NON_RETENUE
+}
+
 // Profil de vigilance LBC/FT/FP — un par Client OU Owner. Discriminateur
 // scalaire subjectType/subjectId (pas de double FK nullable), même principe
 // que EntityTimelineEvent.entityType/entityId.
@@ -5072,7 +5104,8 @@ model AmlWatchlist {
   updatedAt        DateTime               @updatedAt
   deletedAt        DateTime?
 
-  matches AmlWatchlistMatch[]
+  matches       AmlWatchlistMatch[]
+  screeningHits AmlScreeningHit[]
 
   @@index([name])
 }
@@ -5211,4 +5244,290 @@ model AmlTraining {
 
   @@index([userId])
   @@index([trainingDate])
+}
+
+// ── CRIBLAGE, AUDIT & ALERTES ─────────────────────────────────
+// Criblage de masse du portefeuille (Clients / Prospects / Owners / apporteurs
+// d'affaires) contre le Référentiel de vigilance (AmlWatchlist). Distinct du
+// criblage profil-par-profil (AmlWatchlistMatch, qui exige un AmlProfile).
+
+enum AmlAlertSource {
+  CENTIF_CI
+  SFC
+  ONU
+  UE
+  GIABA
+  AUTRE
+}
+
+enum AmlScreeningTrigger {
+  MANUEL
+  ENTITE_AJOUTEE
+  REFERENTIEL_MAJ
+  PLANIFIE
+}
+
+enum AmlScreeningEntityType {
+  CLIENT
+  PROSPECT
+  OWNER
+  REFERRER
+}
+
+enum AmlScreeningHitStatus {
+  A_VERIFIER
+  CONFIRME
+  FAUX_POSITIF
+}
+
+// Alerte CENTIF-CI / mise à jour d'une liste SFC. Un enregistrement = une
+// version de la base de criblage. La « version courante » est celle dont le
+// integratedAt est le plus récent (calculée, non stockée). Alimente à la fois
+// l'interface « Alertes » (CRUD) et la section « preuve de mise à jour » de
+// l'interface « Audit, Preuve de contrôle & traçabilité ».
+model AmlWatchlistAlert {
+  id                    Int            @id @default(autoincrement())
+  uuid                  String         @unique @default(cuid())
+  reference             String         @unique // MAJ-AAAA-NNNN
+  source                AmlAlertSource @default(CENTIF_CI)
+  title                 String
+  centifPublicationDate DateTime? // date de publication CENTIF-CI
+  fileDownloadedAt      DateTime? // date de téléchargement du fichier
+  integratedAt          DateTime? // date d'intégration dans l'outil interne
+  operatorId            Int? // identité de l'opérateur (compte applicatif)
+  operatorName          String? // ou saisie libre si pas un compte
+  entriesAdded          Int? // nb d'entrées ajoutées au référentiel (saisie)
+  entriesModified       Int? // nb d'entrées existantes modifiées dans le référentiel (saisie)
+  notes                 String?        @db.Text
+  createdById           Int?
+  createdAt             DateTime       @default(now())
+  updatedAt             DateTime       @updatedAt
+  deletedAt             DateTime?
+
+  operator      User?             @relation("AmlAlertOperator", fields: [operatorId], references: [id])
+  createdBy     User?             @relation("AmlAlertCreatedBy", fields: [createdById], references: [id])
+  screeningRuns AmlScreeningRun[]
+  documents     Document[]        @relation("AmlWatchlistAlertAttachments")
+
+  @@index([source])
+  @@index([integratedAt])
+}
+
+// Preuve de criblage — un run = une exécution du criblage de masse (manuelle,
+// planifiée, ou déclenchée par un ajout d'entité / une mise à jour du
+// référentiel). Généré automatiquement par l'outil.
+model AmlScreeningRun {
+  id               Int                 @id @default(autoincrement())
+  uuid             String              @unique @default(cuid())
+  reference        String              @unique // CRIB-AAAA-NNNN
+  trigger          AmlScreeningTrigger
+  startedAt        DateTime            @default(now())
+  finishedAt       DateTime?
+  status           String              @default("EN_COURS") // EN_COURS | TERMINE | ECHEC
+  errorMsg         String?             @db.Text
+  baseAlertId      Int? // version de la base de criblage utilisée
+  baseVersionLabel String? // libellé figé de cette version
+  watchlistCount   Int                 @default(0) // entrées actives du référentiel au moment du run
+  scopeClients     Boolean             @default(true)
+  scopeProspects   Boolean             @default(true)
+  scopeOwners      Boolean             @default(true)
+  scopeReferrers   Boolean             @default(true)
+  entitiesScreened Int                 @default(0)
+  hitsNew          Int                 @default(0)
+  hitsTotal        Int                 @default(0)
+  operatorId       Int?
+  operatorName     String? // « Système (planifié) » pour les runs PLANIFIE
+  createdAt        DateTime            @default(now())
+
+  baseAlert AmlWatchlistAlert? @relation(fields: [baseAlertId], references: [id])
+  operator  User?              @relation("AmlScreeningRunOperator", fields: [operatorId], references: [id])
+  hits      AmlScreeningHit[]
+
+  @@index([trigger])
+  @@index([startedAt])
+}
+
+// Correspondance persistante entité ↔ entrée du référentiel. Dédupliquée sur
+// (entityType, entityId, watchlistId) — un run ultérieur rafraîchit la ligne
+// existante sans écraser sa qualification. matchedOn = terme du référentiel
+// ayant produit la correspondance.
+model AmlScreeningHit {
+  id              Int                    @id @default(autoincrement())
+  entityType      AmlScreeningEntityType
+  entityId        Int
+  entityLabel     String // nom figé de l'entité au moment de la détection
+  watchlistId     Int
+  matchedOn       String
+  matchDetail     String?                @db.Text
+  status          AmlScreeningHitStatus  @default(A_VERIFIER)
+  stillMatching   Boolean                @default(true) // false si un run ultérieur ne détecte plus la correspondance
+  runId           Int? // run créateur
+  lastRunId       Int? // dernier run l'ayant (re)détectée — scalaire sans FK
+  firstDetectedAt DateTime               @default(now())
+  lastDetectedAt  DateTime               @default(now())
+  reviewedById    Int?
+  reviewedAt      DateTime?
+  notes           String?                @db.Text
+  amlProfileId    Int? // profil LBC/FT généré/rattaché à la confirmation (Client/Owner)
+  createdAt       DateTime               @default(now())
+  updatedAt       DateTime               @updatedAt
+
+  watchlist  AmlWatchlist     @relation(fields: [watchlistId], references: [id])
+  run        AmlScreeningRun? @relation(fields: [runId], references: [id])
+  reviewedBy User?            @relation("AmlScreeningHitReviewedBy", fields: [reviewedById], references: [id])
+
+  @@unique([entityType, entityId, watchlistId])
+  @@index([status])
+  @@index([entityType, entityId])
+}
+
+// Procédures internes LBC/FT/FP — bibliothèque documentaire des procédures de
+// l'entreprise (manuel de vigilance, procédures de gel des avoirs, de
+// déclaration de soupçon…). À la différence du reste du Module 19,
+// **consultable par tout utilisateur authentifié**, y compris RH (rôle
+// autrement exclusif à son propre module) — seuls joindre/supprimer sont
+// réservés à SUPER_ADMIN/ADMIN/MANAGER/ASSISTANTE_DIRECTION (rôle exact,
+// ACCOUNTANT volontairement exclu malgré l'équivalence MANAGER habituelle de
+// checkRole — cf. PROCEDURE_WRITE_ROLES dans aml.ipc.ts). Aucune
+// confidentialité particulière sur les pièces jointes (comme AmlTraining),
+// mais accès élargi contrairement à ce dernier — cf. documents.ipc.ts.
+model AmlProcedure {
+  id          Int       @id @default(autoincrement())
+  uuid        String    @unique @default(cuid())
+  reference   String    @unique // PROC-AAAA-NNNN
+  title       String
+  category    String? // libre (ex: "Vigilance clientèle", "Gel des avoirs"…)
+  description String?   @db.Text
+  createdById Int?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  deletedAt   DateTime?
+
+  createdBy User?      @relation("AmlProcedureCreatedBy", fields: [createdById], references: [id])
+  documents Document[] @relation("AmlProcedureAttachments")
+
+  @@index([category])
+}
+
+// ── REGISTRES LBC/FT ──────────────────────────────────────────
+// 4 registres de tenue obligatoire (loi uniforme UEMOA), regroupés sous
+// l'interface « Registres LBC/FT » (`/aml/registers/*`). Accès géré
+// **indépendamment des rôles** : les rôles à plein accès du module
+// (AML_ROLES) l'ont par défaut, et un administrateur peut désigner
+// individuellement, dans Paramètres, n'importe quel autre employé — même
+// principe que l'accès individuel à la Fiche KYC (`kycAuthorizedUserIds`),
+// cf. `registersAuthorizedUserIds` dans settings.service.ts et
+// `assertRegistersAccess` dans aml.ipc.ts. Pas de pièce jointe (non demandé,
+// contrairement à AmlProcedure) — 4 registres de simple saisie.
+
+// 1. Registre de suivi des notifications à la CENTIF-CI / autorité de
+// supervision, après chaque mise à jour significative des procédures ou du
+// dispositif LBC/FT.
+model AmlNotificationRecord {
+  id                Int       @id @default(autoincrement())
+  uuid              String    @unique @default(cuid())
+  reference         String    @unique // NOTIF-AAAA-NNNN
+  updateDate        DateTime // Date de la mise à jour
+  updateDescription String    @db.Text // Description de la mise à jour
+  notificationDate  DateTime? // Date de notification
+  transmissionMode  String? // Mode de transmission (libre : email, courrier, dépôt physique…)
+  ackReceived       Boolean   @default(false) // Accusé de Réception (AR) obtenu
+  notes             String?   @db.Text
+  recordedById      Int?
+  createdAt         DateTime  @default(now()) // « Enregistré le »
+  updatedAt         DateTime  @updatedAt
+  deletedAt         DateTime?
+
+  recordedBy User? @relation("AmlNotificationRecordedBy", fields: [recordedById], references: [id])
+
+  @@index([updateDate])
+}
+
+// 2. Registre de suivi des échanges (courriers, demandes, réponses…) avec la
+// CENTIF-CI.
+model AmlCentifExchange {
+  id           Int                  @id @default(autoincrement())
+  uuid         String               @unique @default(cuid())
+  reference    String               @unique // ECH-AAAA-NNNN
+  exchangeDate DateTime
+  direction    AmlExchangeDirection
+  nature       String // Nature de l'échange (libre : demande d'information, notification, DOS, réponse…)
+  channel      String? // Canal (email, courrier, plateforme, téléphone…)
+  status       AmlExchangeStatus    @default(EN_COURS)
+  closedAt     DateTime? // Date de clôture
+  notes        String?              @db.Text
+  recordedById Int?
+  createdAt    DateTime             @default(now())
+  updatedAt    DateTime             @updatedAt
+  deletedAt    DateTime?
+
+  recordedBy           User?                          @relation("AmlCentifExchangeRecordedBy", fields: [recordedById], references: [id])
+  // Référence DOS des opérations suspectes qui pointent vers cet échange
+  // (déclaration transmise dans le cadre de cet échange précis).
+  suspiciousOperations AmlSuspiciousOperationRecord[]
+
+  @@index([exchangeDate])
+  @@index([status])
+}
+
+// 3. Grille de recensement des transactions en espèces éligibles à la DSTE
+// (Déclaration Systématique de Transactions en Espèces) — seuil paramétrable
+// (Paramètres → Conformité LBC/FT → Seuils de scoring, `dsteThreshold` dans
+// `aml-risk-engine.service.ts`). **Auto-recensée** dès qu'un encaissement en
+// espèces dépasse ce seuil (`aml-dste.service.ts` → `autoRecordDste`, appelé
+// en fire-and-forget depuis `accounting:addPayment`/`payInstallment`) —
+// `sourceType`/`sourceId` (scalaire sans FK, P5, `PAYMENT` → `Payment.id` ou
+// `INSTALLMENT` → l'échéance ciblée par l'action d'encaissement) servent de
+// clé de déduplication (`@@unique`, NULL autorisé plusieurs fois pour la
+// saisie manuelle, toujours possible en complément — ex. espèces reçues hors
+// circuit facture/échéance). Volontairement non bloquée en dessous du seuil
+// (une transaction fractionnée pour l'éviter — « structuration » — doit
+// pouvoir être recensée manuellement quand même).
+model AmlDsteRecord {
+  id              Int       @id @default(autoincrement())
+  uuid            String    @unique @default(cuid())
+  reference       String    @unique // DSTE-AAAA-NNNN
+  transactionDate DateTime
+  subjectLabel    String // Client / dossier concerné (libre)
+  amount          Decimal   @db.Decimal(15, 2)
+  description     String?   @db.Text
+  // Provenance auto-détectée (null = saisie manuelle).
+  sourceType      String? // "PAYMENT" | "INSTALLMENT"
+  sourceId        Int?
+  notes           String?   @db.Text
+  recordedById    Int?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  deletedAt       DateTime?
+
+  recordedBy User? @relation("AmlDsteRecordedBy", fields: [recordedById], references: [id])
+
+  @@unique([sourceType, sourceId])
+  @@index([transactionDate])
+}
+
+// 4. Registre des opérations suspectes — distinct du workflow complet
+// `AmlSuspiciousReport` (déclarations de soupçon confidentielles, transmises
+// à la CENTIF-CI) : simple registre de recensement, dont la « Référence
+// DOS » pointe vers l'échange CENTIF-CI (registre 2) qui a transmis la
+// déclaration correspondante, plutôt que vers `AmlSuspiciousReport`.
+model AmlSuspiciousOperationRecord {
+  id            Int                             @id @default(autoincrement())
+  uuid          String                          @unique @default(cuid())
+  reference     String                          @unique // OPS-AAAA-NNNN
+  detectionDate DateTime // Date de détection
+  subjectLabel  String // Client / dossier concerné (libre)
+  description   String                          @db.Text // Description des faits / indices de suspicion
+  decision      AmlSuspiciousOperationDecision? // DOS transmise / DOS non retenue
+  dosExchangeId Int? // Référence DOS — issue du registre de suivi des échanges CENTIF-CI
+  notes         String?                         @db.Text
+  recordedById  Int?
+  createdAt     DateTime                        @default(now())
+  updatedAt     DateTime                        @updatedAt
+  deletedAt     DateTime?
+
+  dosExchange AmlCentifExchange? @relation(fields: [dosExchangeId], references: [id])
+  recordedBy  User?              @relation("AmlSuspiciousOperationRecordedBy", fields: [recordedById], references: [id])
+
+  @@index([detectionDate])
 }

@@ -8,6 +8,7 @@ const electron_1 = require("electron");
 const db_service_1 = require("../services/db.service");
 const auth_service_1 = require("../services/auth.service");
 const logger_1 = __importDefault(require("../utils/logger"));
+const aml_screening_service_1 = require("../services/aml-screening.service");
 const zod_1 = require("zod");
 const timeline_service_1 = require("../services/timeline.service");
 /** Sérialise pour l'IPC : les Date/Decimal Prisma ne sont pas clonables par Electron. */
@@ -282,6 +283,8 @@ function registerProspectsIPC() {
                 },
             });
             logger_1.default.info(`Prospect créé : #${prospect.id} ${prospect.firstName} ${prospect.lastName}`);
+            (0, aml_screening_service_1.screenEntity)('PROSPECT', prospect.id, { operatorId: session.userId })
+                .catch((e) => logger_1.default.error(`aml screening after prospects:create: ${e.message}`));
             return { success: true, data: serialize(prospect) };
         }
         catch (error) {

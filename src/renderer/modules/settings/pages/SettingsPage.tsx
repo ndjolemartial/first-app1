@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useAuthStore } from '../../../shared/stores/auth.store';
-import { Building2, HardDrive, Database, Mail, MessageSquare, Images, FileText, FileSignature, Award, Briefcase, Tags, Landmark, IdCard, Layers, Bell, BookOpen, ChevronDown, ChevronRight, Inbox, Printer, MapPin, ShoppingBag, QrCode, Clock, AlarmClockOff, TrendingUp, HardHat, Wrench, Sigma, SlidersHorizontal, Calculator, Scale, ClipboardList, ShieldAlert, ListChecks, ShieldCheck } from 'lucide-react';
+import { Building2, HardDrive, Database, Mail, MessageSquare, Images, FileText, FileSignature, Award, Briefcase, Tags, Landmark, IdCard, Layers, Bell, BookOpen, ChevronDown, ChevronRight, Inbox, Printer, MapPin, ShoppingBag, QrCode, Clock, AlarmClockOff, TrendingUp, HardHat, Wrench, Sigma, SlidersHorizontal, Calculator, Scale, ClipboardList, ShieldAlert, ListChecks, ShieldCheck, Radar, BookText, ScanSearch, BellRing } from 'lucide-react';
 import PageLayout from '../../../shared/components/layout/PageLayout';
 import Card from '../../../shared/components/ui/Card';
 import { clsx } from 'clsx';
@@ -46,7 +46,11 @@ import PermitCommunesSettingsTab       from '../components/PermitCommunesSetting
 import PermitFeeItemsSettingsTab       from '../components/PermitFeeItemsSettingsTab';
 import AmlRiskFactorsSettingsTab       from '../components/AmlRiskFactorsSettingsTab';
 import AmlThresholdsSettingsTab        from '../components/AmlThresholdsSettingsTab';
+import AmlScreeningSettingsTab         from '../components/AmlScreeningSettingsTab';
 import KycAccessSettingsTab            from '../components/KycAccessSettingsTab';
+import RegistersAccessSettingsTab      from '../components/RegistersAccessSettingsTab';
+import ScreeningAccessSettingsTab      from '../components/ScreeningAccessSettingsTab';
+import AlertsAccessSettingsTab         from '../components/AlertsAccessSettingsTab';
 import { useMyTemplatePermissions }     from '../../communication/hooks/useCommunication';
 
 type TabKey =
@@ -91,7 +95,11 @@ type TabKey =
   | 'permitFeeItems'
   | 'amlRiskFactors'
   | 'amlThresholds'
-  | 'kycAccess';
+  | 'amlScreening'
+  | 'kycAccess'
+  | 'registersAccess'
+  | 'screeningAccess'
+  | 'alertsAccess';
 
 type GroupKey = 'communication' | 'treasury' | 'printedTemplates' | 'construction' | 'permits' | 'aml';
 
@@ -177,10 +185,22 @@ export const TABS: TabDef[] = [
   // ── Groupe « Conformité LBC/FT » (Module 19) ─────────────
   { key: 'amlRiskFactors',              label: 'Catalogue des facteurs de risque', icon: <ListChecks className="h-4 w-4" />, group: 'aml', roles: ['SUPER_ADMIN', 'ADMIN', 'CONFORMITE', 'MANAGER', 'ACCOUNTANT'] },
   { key: 'amlThresholds',               label: 'Seuils de scoring',        icon: <SlidersHorizontal className="h-4 w-4" />, group: 'aml', roles: ['SUPER_ADMIN', 'ADMIN', 'CONFORMITE', 'MANAGER', 'ACCOUNTANT'] },
+  { key: 'amlScreening',                label: 'Criblage — planification', icon: <Radar className="h-4 w-4" />,             group: 'aml', roles: ['SUPER_ADMIN', 'ADMIN', 'CONFORMITE', 'MANAGER', 'ACCOUNTANT'] },
   // Accès individuel (hors AML à proprement parler, mais même exigence de confidentialité que le
   // reste de ce groupe) — réservé SUPER_ADMIN/ADMIN, sans les équivalences CONFORMITE/MANAGER/ACCOUNTANT
   // des 2 tabs ci-dessus.
   { key: 'kycAccess',                   label: 'Fiche KYC — accès',        icon: <ShieldCheck className="h-4 w-4" />,        group: 'aml' },
+  // Même principe que kycAccess ci-dessus — réservé SUPER_ADMIN/ADMIN.
+  { key: 'registersAccess',             label: 'Registres LBC/FT — accès', icon: <BookText className="h-4 w-4" />,          group: 'aml' },
+  // Même principe — réservé SUPER_ADMIN/ADMIN. Le Criblage n'est PAS en plein
+  // accès pour CONFORMITE/MANAGER/ACCOUNTANT comme les 3 tabs ci-dessus
+  // (seuls SUPER_ADMIN/ADMIN/MANAGER y accèdent d'office), d'où cet onglet
+  // d'accès individuel dédié.
+  { key: 'screeningAccess',             label: 'Criblage — accès',         icon: <ScanSearch className="h-4 w-4" />,        group: 'aml' },
+  // Même principe — réservé SUPER_ADMIN/ADMIN. Les Alertes ne sont PAS en
+  // plein accès pour CONFORMITE/MANAGER/ACCOUNTANT comme le reste du module
+  // (seuls SUPER_ADMIN/ADMIN/MANAGER y accèdent d'office).
+  { key: 'alertsAccess',                label: 'Alertes — accès',          icon: <BellRing className="h-4 w-4" />,          group: 'aml' },
   // ─────────────────────────────────────────────────────────────
 ];
 
@@ -351,6 +371,9 @@ export default function SettingsPage() {
           {active === 'lateness'             && <LatenessSettingsTab />}
           {active === 'careerProfiles'       && <CareerProfilesSettingsTab />}
           {active === 'kycAccess'            && <KycAccessSettingsTab />}
+          {active === 'registersAccess'      && <RegistersAccessSettingsTab />}
+          {active === 'screeningAccess'      && <ScreeningAccessSettingsTab />}
+          {active === 'alertsAccess'         && <AlertsAccessSettingsTab />}
           {active === 'constructionLots'          && <ConstructionLotsSettingsTab />}
           {active === 'constructionResources'     && <ConstructionResourcesSettingsTab />}
           {active === 'constructionWorkItems'     && <ConstructionWorkItemsSettingsTab />}
@@ -362,6 +385,7 @@ export default function SettingsPage() {
           {active === 'permitFeeItems'             && <PermitFeeItemsSettingsTab />}
           {active === 'amlRiskFactors'             && <AmlRiskFactorsSettingsTab />}
           {active === 'amlThresholds'              && <AmlThresholdsSettingsTab />}
+          {active === 'amlScreening'              && <AmlScreeningSettingsTab />}
           {active === 'invoiceTemplates'     && <InvoiceTemplatesSettingsTab />}
           {active === 'listExportTemplates'  && <ListExportTemplatesSettingsTab />}
           {active === 'wireTransferTemplate' && <WireTransferTemplateSettingsTab />}

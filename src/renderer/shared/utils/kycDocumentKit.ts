@@ -81,21 +81,28 @@ export function section(title: string, rowsHtml: string): string {
     </div>`;
 }
 
+/**
+ * Cellule « valeur » d'une fiche renseignée : la valeur si présente, sinon un
+ * trait à compléter à la main après impression (plus de « — »).
+ */
+const kycValueCell = (v: unknown): string =>
+  v == null || v === ''
+    ? '<span style="display:inline-block;min-width:60%;border-bottom:1px solid #cbd5e1;">&nbsp;</span>'
+    : esc(String(v));
+
 export function rowPair(label1: string, value1: unknown, label2: string, value2: unknown): string {
-  const fmt = (v: unknown) => (v == null || v === '' ? '—' : String(v));
   return `<tr>
     <td style="padding:4px 8px;color:#475569;width:22%;border-bottom:1px solid #f1f5f9;">${esc(label1)}</td>
-    <td style="padding:4px 8px;font-weight:600;color:#0f172a;width:28%;border-bottom:1px solid #f1f5f9;">${esc(fmt(value1))}</td>
+    <td style="padding:4px 8px;font-weight:600;color:#0f172a;width:28%;border-bottom:1px solid #f1f5f9;">${kycValueCell(value1)}</td>
     <td style="padding:4px 8px;color:#475569;width:22%;border-bottom:1px solid #f1f5f9;">${esc(label2)}</td>
-    <td style="padding:4px 8px;font-weight:600;color:#0f172a;width:28%;border-bottom:1px solid #f1f5f9;">${esc(fmt(value2))}</td>
+    <td style="padding:4px 8px;font-weight:600;color:#0f172a;width:28%;border-bottom:1px solid #f1f5f9;">${label2 ? kycValueCell(value2) : ''}</td>
   </tr>`;
 }
 
 export function row(label: string, value: unknown): string {
-  const v = value == null || value === '' ? '—' : String(value);
   return `<tr>
     <td style="padding:4px 8px;color:#475569;width:38%;border-bottom:1px solid #f1f5f9;">${esc(label)}</td>
-    <td style="padding:4px 8px;font-weight:600;color:#0f172a;border-bottom:1px solid #f1f5f9;">${esc(v)}</td>
+    <td style="padding:4px 8px;font-weight:600;color:#0f172a;border-bottom:1px solid #f1f5f9;">${kycValueCell(value)}</td>
   </tr>`;
 }
 
@@ -116,11 +123,11 @@ export function beneficialOwnersTable(sectionNumber: number, owners: any[]): str
         </tr>
         ${owners.map((bo) => `
         <tr>
-          <td style="padding:4px 8px;font-weight:600;color:#0f172a;border-bottom:1px solid #f1f5f9;">${esc([bo.lastName, bo.firstName].filter(Boolean).join(' '))}</td>
-          <td style="padding:4px 8px;color:#0f172a;border-bottom:1px solid #f1f5f9;">${esc(bo.nationality ?? '—')}</td>
-          <td style="padding:4px 8px;color:#0f172a;border-bottom:1px solid #f1f5f9;">${esc(bo.idNumber ?? '—')}</td>
-          <td style="padding:4px 8px;color:#0f172a;border-bottom:1px solid #f1f5f9;">${bo.ownershipPct != null ? esc(`${bo.ownershipPct}%`) : '—'}</td>
-          <td style="padding:4px 8px;color:#0f172a;border-bottom:1px solid #f1f5f9;">${esc(bo.role ?? '—')}</td>
+          <td style="padding:4px 8px;font-weight:600;color:#0f172a;border-bottom:1px solid #f1f5f9;">${kycValueCell([bo.lastName, bo.firstName].filter(Boolean).join(' '))}</td>
+          <td style="padding:4px 8px;color:#0f172a;border-bottom:1px solid #f1f5f9;">${kycValueCell(bo.nationality)}</td>
+          <td style="padding:4px 8px;color:#0f172a;border-bottom:1px solid #f1f5f9;">${kycValueCell(bo.idNumber)}</td>
+          <td style="padding:4px 8px;color:#0f172a;border-bottom:1px solid #f1f5f9;">${bo.ownershipPct != null ? esc(`${bo.ownershipPct}%`) : kycValueCell(null)}</td>
+          <td style="padding:4px 8px;color:#0f172a;border-bottom:1px solid #f1f5f9;">${kycValueCell(bo.role)}</td>
           <td style="padding:4px 8px;color:#0f172a;border-bottom:1px solid #f1f5f9;">${bo.isPep ? 'Oui' : 'Non'}</td>
         </tr>`).join('')}
       </table>

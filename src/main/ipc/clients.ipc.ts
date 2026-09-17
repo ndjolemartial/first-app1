@@ -2,6 +2,7 @@ import { ipcMain } from 'electron';
 import { getDb } from '../services/db.service';
 import { getSession, checkRole } from '../services/auth.service';
 import logger from '../utils/logger';
+import { screenEntity } from '../services/aml-screening.service';
 import { z } from 'zod';
 import {
   CLIENT_FIELD_LABELS,
@@ -352,6 +353,8 @@ export function registerClientsIPC(): void {
       if (data.kycSignedAt) data.kycSignedAt = new Date(data.kycSignedAt);
       const client = await db.client.create({ data });
       logger.info(`Client created: id=${client.id}`);
+      screenEntity('CLIENT', client.id, { operatorId: session.userId })
+        .catch((e) => logger.error(`aml screening after clients:create: ${e.message}`));
       return { success: true, data: ser(client) };
     } catch (error: any) {
       return { success: false, error: error.message };

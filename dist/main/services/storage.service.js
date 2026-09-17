@@ -4,6 +4,9 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.setStorageRootOverride = setStorageRootOverride;
+exports.markStorageRootPending = markStorageRootPending;
+exports.isStorageRootPending = isStorageRootPending;
+exports.assertStorageRootReady = assertStorageRootReady;
 exports.storageRoot = storageRoot;
 exports.resolveStoragePath = resolveStoragePath;
 exports.importGedFile = importGedFile;
@@ -34,9 +37,36 @@ const crypto_1 = __importDefault(require("crypto"));
  * la variable d'environnement STORAGE_PATH, puis sur `./data/storage`.
  */
 let STORAGE_ROOT_OVERRIDE = null;
-/** Définit la racine de stockage à chaud (depuis settings.service). */
+// `true` = un `storage.path` est configuré en base mais n'a PAS pu être lu au
+// démarrage (BDD injoignable) → la racine effective serait le repli local, un
+// emplacement « fantôme » que l'app ne relira jamais une fois la BDD revenue.
+// Dans cet état, toute ÉCRITURE de fichier doit échouer bruyamment plutôt que
+// d'aller silencieusement au mauvais endroit.
+let STORAGE_OVERRIDE_PENDING = false;
+/** Définit la racine de stockage à chaud (depuis settings.service). Lève l'état « en attente ». */
 function setStorageRootOverride(rootPath) {
     STORAGE_ROOT_OVERRIDE = rootPath && rootPath.length > 0 ? rootPath : null;
+    STORAGE_OVERRIDE_PENDING = false;
+}
+/** Signale que la racine paramétrée n'a pas pu être résolue au démarrage (BDD KO). */
+function markStorageRootPending() {
+    STORAGE_OVERRIDE_PENDING = true;
+}
+/** Vrai tant que la racine de stockage paramétrée n'a pas pu être chargée. */
+function isStorageRootPending() {
+    return STORAGE_OVERRIDE_PENDING;
+}
+/**
+ * À appeler avant toute **écriture** de fichier : refuse si la racine paramétrée
+ * n'a pas encore pu être chargée (sinon le fichier atterrirait dans le repli
+ * local et deviendrait introuvable au prochain démarrage).
+ */
+function assertStorageRootReady() {
+    if (STORAGE_OVERRIDE_PENDING) {
+        throw new Error("L'emplacement de stockage des fichiers n'a pas encore pu être déterminé "
+            + '(base de données injoignable au démarrage de l\'application). '
+            + 'Patientez quelques instants puis réessayez, ou redémarrez l\'application.');
+    }
 }
 /** Racine du stockage des fichiers — paramétrée en BDD, sinon STORAGE_PATH, sinon défaut. */
 function storageRoot() {
@@ -57,6 +87,7 @@ function extOf(name) {
 }
 /** Répertoire GED de l'année courante (créé si nécessaire). */
 function gedYearDir() {
+    assertStorageRootReady();
     const year = String(new Date().getFullYear());
     const dir = path_1.default.join(storageRoot(), 'ged', year);
     fs_1.default.mkdirSync(dir, { recursive: true });
@@ -90,6 +121,7 @@ function writeGedFile(buffer, numeroArchive, originalName) {
  * Retourne le chemin relatif (stocké en base) et la taille.
  */
 function writeEmployeeSignedContract(employeeId, buffer, originalName) {
+    assertStorageRootReady();
     const dir = path_1.default.join(storageRoot(), 'employees', String(employeeId), 'signed-contracts');
     fs_1.default.mkdirSync(dir, { recursive: true });
     const safe = originalName.replace(/[\\/:*?"<>|]/g, '_').replace(/\s+/g, ' ').trim() || 'contrat';
@@ -100,6 +132,7 @@ function writeEmployeeSignedContract(employeeId, buffer, originalName) {
 }
 /** Écrit la fiche « Congés & Absence » signée jointe à une demande de congé. */
 function writeLeaveSignedDocument(requestId, buffer, originalName) {
+    assertStorageRootReady();
     const dir = path_1.default.join(storageRoot(), 'leave', String(requestId), 'signed');
     fs_1.default.mkdirSync(dir, { recursive: true });
     const safe = originalName.replace(/[\\/:*?"<>|]/g, '_').replace(/\s+/g, ' ').trim() || 'fiche-conge';

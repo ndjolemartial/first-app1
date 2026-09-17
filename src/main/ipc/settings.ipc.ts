@@ -10,8 +10,8 @@ import {
   SettingsKeys, SECRET_MASK,
 } from '../services/settings.service';
 import {
-  storageRoot, setStorageRootOverride, writeLogoFile, writeSlideshowFile,
-  resolveStoragePath, removeStorageFile,
+  storageRoot, setStorageRootOverride, markStorageRootPending, isStorageRootPending,
+  writeLogoFile, writeSlideshowFile, resolveStoragePath, removeStorageFile,
 } from '../services/storage.service';
 import os from 'os';
 import { sendTestEmail } from '../services/email.service';
@@ -184,13 +184,42 @@ function decodeBase64(payload: z.infer<typeof fileUploadSchema>, maxBytes: numbe
   return buf;
 }
 
-/** Lecture initiale de `storage.path` au démarrage pour propager au storage.service. */
+/**
+ * Lecture initiale de `storage.path` au démarrage pour propager au
+ * storage.service. **Critique** : si la BDD est momentanément injoignable au
+ * lancement, on ne doit PAS retomber silencieusement sur le repli local — les
+ * fichiers écrits dans cet intervalle seraient perdus au prochain démarrage
+ * (cf. `markStorageRootPending`/`assertStorageRootReady`). On retente donc
+ * plusieurs fois, puis en tâche de fond jusqu'à obtenir une réponse.
+ */
 export async function initStorageOverride(): Promise<void> {
-  try {
-    const root = await getSetting(SettingsKeys.storagePath);
-    if (root) setStorageRootOverride(root);
-  } catch (err: any) {
-    logger.warn('initStorageOverride', err.message);
+  const MAX_ATTEMPTS = 5;
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    try {
+      const root = await getSetting(SettingsKeys.storagePath);
+      setStorageRootOverride(root && root.length > 0 ? root : null);
+      return;
+    } catch (err: any) {
+      logger.warn(`initStorageOverride (tentative ${attempt}/${MAX_ATTEMPTS})`, err.message);
+      if (attempt < MAX_ATTEMPTS) await new Promise((r) => setTimeout(r, 3000));
+    }
+  }
+  markStorageRootPending();
+  logger.error(
+    'initStorageOverride : racine de stockage NON résolue (BDD injoignable) — '
+    + "les écritures de fichiers sont bloquées jusqu'à résolution. Nouvelle tentative en tâche de fond.",
+  );
+  void retryStorageOverrideInBackground();
+}
+
+async function retryStorageOverrideInBackground(): Promise<void> {
+  while (isStorageRootPending()) {
+    await new Promise((r) => setTimeout(r, 30_000));
+    try {
+      const root = await getSetting(SettingsKeys.storagePath);
+      setStorageRootOverride(root && root.length > 0 ? root : null);
+      logger.info('initStorageOverride : racine de stockage enfin résolue, écritures de fichiers rétablies.');
+    } catch { /* la BDD est encore KO — on retente au prochain tour */ }
   }
 }
 

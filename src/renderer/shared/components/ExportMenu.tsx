@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-import { Download, FileText, FileSpreadsheet, ChevronDown } from 'lucide-react';
+import { Download, FileText, FileSpreadsheet, Printer, ChevronDown } from 'lucide-react';
 import Button from './ui/Button';
 import { toast } from './ui/Toast';
 import { useAuthStore } from '../stores/auth.store';
@@ -49,7 +49,7 @@ export default function ExportMenu<T>({
 }: ExportMenuProps<T>) {
   const token = useAuthStore((s) => s.token)!;
   const [open, setOpen] = useState(false);
-  const [busy, setBusy] = useState<'pdf' | 'xlsx' | null>(null);
+  const [busy, setBusy] = useState<'pdf' | 'xlsx' | 'print' | null>(null);
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -60,33 +60,39 @@ export default function ExportMenu<T>({
     return () => document.removeEventListener('mousedown', onClickOutside);
   }, []);
 
+  /** Construit le payload commun (headers / matrice / ligne de total) à partir des lignes filtrées. */
+  const buildPayload = async () => {
+    const rows = await fetchRows();
+    if (!rows || rows.length === 0) return null;
+    const headers = columns.map((c) => c.header);
+    const matrix = rows.map((row) =>
+      columns.map((c) => {
+        const v = c.cell(row);
+        return v === null || v === undefined ? '' : String(v);
+      }),
+    );
+    const resolvedTotal = typeof totalRow === 'function' ? totalRow(rows) : totalRow;
+    return {
+      fileName,
+      title,
+      subtitle,
+      headers,
+      rows: matrix,
+      totalRow: resolvedTotal?.map((c) => (c === null || c === undefined ? '' : String(c))),
+      ...(sectionBreakColumn != null ? { sectionBreakColumn } : {}),
+    };
+  };
+
   const handleExport = async (format: 'pdf' | 'xlsx') => {
     setOpen(false);
     setBusy(format);
     try {
-      const rows = await fetchRows();
-      if (!rows || rows.length === 0) {
+      const payload = await buildPayload();
+      if (!payload) {
         toast.error('Aucune donnée à exporter');
         return;
       }
-      const headers = columns.map((c) => c.header);
-      const matrix = rows.map((row) =>
-        columns.map((c) => {
-          const v = c.cell(row);
-          return v === null || v === undefined ? '' : String(v);
-        }),
-      );
-      const resolvedTotal = typeof totalRow === 'function' ? totalRow(rows) : totalRow;
-      const res = await window.electron.exporter.generate(token, {
-        format,
-        fileName,
-        title,
-        subtitle,
-        headers,
-        rows: matrix,
-        totalRow: resolvedTotal?.map((c) => (c === null || c === undefined ? '' : String(c))),
-        ...(sectionBreakColumn != null ? { sectionBreakColumn } : {}),
-      });
+      const res = await window.electron.exporter.generate(token, { format, ...payload });
       if (!res.success) {
         toast.error(typeof res.error === 'string' ? res.error : "Erreur lors de l'export");
       } else if (!res.data?.canceled) {
@@ -94,6 +100,26 @@ export default function ExportMenu<T>({
       }
     } catch (e: any) {
       toast.error(e?.message ?? "Erreur lors de l'export");
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const handlePrint = async () => {
+    setOpen(false);
+    setBusy('print');
+    try {
+      const payload = await buildPayload();
+      if (!payload) {
+        toast.error('Aucune donnée à imprimer');
+        return;
+      }
+      const res = await window.electron.exporter.print(token, payload);
+      if (!res.success) {
+        toast.error(typeof res.error === 'string' ? res.error : "Erreur lors de l'impression");
+      }
+    } catch (e: any) {
+      toast.error(e?.message ?? "Erreur lors de l'impression");
     } finally {
       setBusy(null);
     }
@@ -125,6 +151,14 @@ export default function ExportMenu<T>({
             onClick={() => handleExport('xlsx')}
           >
             <FileSpreadsheet className="h-4 w-4 text-green-600" /> Exporter en Excel
+          </button>
+          <div className="my-1 border-t border-slate-100" />
+          <button
+            type="button"
+            className="w-full flex items-center gap-2 px-3 py-2 text-sm text-slate-700 hover:bg-slate-50"
+            onClick={handlePrint}
+          >
+            <Printer className="h-4 w-4 text-slate-500" /> Imprimer la liste
           </button>
         </div>
       )}

@@ -7,12 +7,13 @@ import {
   Map, Landmark, Percent, Wallet, Building, PiggyBank, Briefcase, FileSpreadsheet, UserCog, ReceiptText, CalendarDays, Clock,
   BarChart3, ChevronDown, UserPlus, IdCard, Trophy, Gauge, Target, ClipboardCheck, Sliders,
   Share2, PenTool, Users2, AlarmClockOff, TrendingUp, AlertTriangle, Lightbulb, Radar, Phone,
-  Handshake, Rocket, HardHat, Scale, ShieldAlert, GraduationCap,
+  Handshake, Rocket, HardHat, Scale, ShieldAlert, GraduationCap, ScanSearch, BellRing, BookOpen, BookText,
 } from 'lucide-react';
 import { useAuthStore } from '../../stores/auth.store';
 import { roleLabel } from '../../utils/roleLabel';
 import { TABS as SETTINGS_TABS, ADMIN_ROLES as SETTINGS_ADMIN_ROLES } from '../../../modules/settings/pages/SettingsPage';
 import { useMyTemplatePermissions } from '../../../modules/communication/hooks/useCommunication';
+import { useMyRegistersAccess, useMyScreeningAccess, useMyAlertsAccess } from '../../../modules/settings/hooks/useSettings';
 
 interface NavItem {
   label: string;
@@ -25,6 +26,12 @@ interface NavItem {
    * partie » et ne doit donc pas sélectionner aussi le menu « Commissions ».
    */
   matchExcludePrefixes?: string[];
+  /**
+   * Préfixes supplémentaires qui activent aussi ce lien — ex : « Registres
+   * LBC/FT » pointe vers /aml/registers/notifications mais doit rester
+   * sélectionné sur les 4 volets /aml/registers/*.
+   */
+  matchIncludePrefixes?: string[];
 }
 
 interface NavGroup {
@@ -188,17 +195,39 @@ const navItems: NavEntry[] = [
     // MANAGER et ACCOUNTANT ont été ajoutés en plein accès (parité ADMIN).
     // AGENT / AGENT_TECHNIQUE / ASSISTANTE_DIRECTION / READONLY : accès
     // restreint à « Formations » et « Référentiel de vigilance » uniquement
-    // (roles du groupe élargi à l'union des deux périmètres ; chaque enfant
-    // réservé au périmètre plein accès porte désormais son propre `roles`
-    // explicite).
-    roles: ['SUPER_ADMIN', 'ADMIN', 'CONFORMITE', 'MANAGER', 'ACCOUNTANT', 'AGENT', 'AGENT_TECHNIQUE', 'ASSISTANTE_DIRECTION', 'READONLY'],
+    // (chaque enfant réservé au périmètre plein accès porte son propre
+    // `roles` explicite ; Formations/Référentiel de vigilance également,
+    // depuis l'ajout de RH ci-dessous, pour ne pas leur devenir visibles).
+    // RH ajouté uniquement pour « Nos Procédures LBC/FT » (accessible à
+    // TOUT utilisateur, RH y compris — cf. router.tsx) : sans `roles` propre,
+    // cet enfant hérite de la visibilité du groupe.
+    roles: ['SUPER_ADMIN', 'ADMIN', 'CONFORMITE', 'MANAGER', 'ACCOUNTANT', 'AGENT', 'AGENT_TECHNIQUE', 'ASSISTANTE_DIRECTION', 'READONLY', 'RH'],
     children: [
       { label: 'Tableau de bord', to: '/aml/dashboard', icon: <Gauge className="h-5 w-5" />, roles: ['SUPER_ADMIN', 'ADMIN', 'CONFORMITE', 'MANAGER', 'ACCOUNTANT'] },
+      // Accès géré indépendamment des rôles (SUPER_ADMIN/ADMIN/MANAGER +
+      // désignation individuelle) — filtré séparément dans Sidebar() via
+      // useMyAlertsAccess, pas par `roles` (contrairement au reste du
+      // groupe, CONFORMITE et ACCOUNTANT n'y ont pas accès d'office).
+      { label: 'Alertes', to: '/aml/alerts', icon: <BellRing className="h-5 w-5" /> },
+      // Accès géré indépendamment des rôles (SUPER_ADMIN/ADMIN/MANAGER +
+      // désignation individuelle) — filtré séparément dans Sidebar() via
+      // useMyScreeningAccess, pas par `roles` (contrairement au reste du
+      // groupe, CONFORMITE et ACCOUNTANT n'y ont pas accès d'office).
+      { label: 'Criblage', to: '/aml/screening', icon: <ScanSearch className="h-5 w-5" /> },
+      { label: 'Preuves de contrôle, Traçabilité & Audit', to: '/aml/audit', icon: <ClipboardCheck className="h-5 w-5" />, roles: ['SUPER_ADMIN', 'ADMIN', 'CONFORMITE', 'MANAGER', 'ACCOUNTANT'] },
       { label: 'Profils LBC/FT', to: '/aml/profiles', icon: <UserCheck className="h-5 w-5" />, roles: ['SUPER_ADMIN', 'ADMIN', 'CONFORMITE', 'MANAGER', 'ACCOUNTANT'] },
       { label: 'Revues de transaction', to: '/aml/reviews', icon: <Radar className="h-5 w-5" />, roles: ['SUPER_ADMIN', 'ADMIN', 'CONFORMITE', 'MANAGER', 'ACCOUNTANT'] },
       { label: 'Déclarations de soupçon', to: '/aml/suspicious-reports', icon: <AlertTriangle className="h-5 w-5" />, roles: ['SUPER_ADMIN', 'ADMIN', 'CONFORMITE', 'MANAGER', 'ACCOUNTANT'] },
-      { label: 'Formations', to: '/aml/training', icon: <GraduationCap className="h-5 w-5" /> },
-      { label: 'Référentiel de vigilance', to: '/aml/watchlist', icon: <AlertTriangle className="h-5 w-5" /> },
+      // Accès géré indépendamment des rôles (AML_ROLES + désignation
+      // individuelle) — filtré séparément dans Sidebar() via
+      // useMyRegistersAccess, pas par `roles`. Pointe vers le 1ᵉʳ des 4
+      // onglets internes du groupe (RegistersTabs.tsx), comme /visitors.
+      { label: 'Registres LBC/FT', to: '/aml/registers/notifications', icon: <BookText className="h-5 w-5" />, matchIncludePrefixes: ['/aml/registers'] },
+      { label: 'Formations', to: '/aml/training', icon: <GraduationCap className="h-5 w-5" />, roles: ['SUPER_ADMIN', 'ADMIN', 'CONFORMITE', 'MANAGER', 'ACCOUNTANT', 'AGENT', 'AGENT_TECHNIQUE', 'ASSISTANTE_DIRECTION', 'READONLY'] },
+      // Accessible à TOUS les rôles du groupe ci-dessus (donc à tous les
+      // rôles de l'application, RH inclus) : pas de `roles` propre.
+      { label: 'Nos Procédures LBC/FT', to: '/aml/procedures', icon: <BookOpen className="h-5 w-5" /> },
+      { label: 'Référentiel de vigilance', to: '/aml/watchlist', icon: <AlertTriangle className="h-5 w-5" />, roles: ['SUPER_ADMIN', 'ADMIN', 'CONFORMITE', 'MANAGER', 'ACCOUNTANT', 'AGENT', 'AGENT_TECHNIQUE', 'ASSISTANTE_DIRECTION', 'READONLY'] },
     ],
   },
   // Visibilité calculée dynamiquement dans Sidebar() (hasAnySettingsAccess),
@@ -227,7 +256,10 @@ function itemStyle({ isActive }: { isActive: boolean }) {
 /** Correspondance « actif » d'un lien de navigation, avec exclusions optionnelles de sous-chemins. */
 function isNavItemActive(pathname: string, item: NavItem): boolean {
   const base = item.to.split('?')[0];
-  const matches = pathname === base || pathname.startsWith(`${base}/`);
+  const matches =
+    pathname === base ||
+    pathname.startsWith(`${base}/`) ||
+    !!item.matchIncludePrefixes?.some((p) => pathname === p || pathname.startsWith(`${p}/`));
   if (!matches) return false;
   if (item.matchExcludePrefixes?.some((p) => pathname === p || pathname.startsWith(`${p}/`))) return false;
   return true;
@@ -246,7 +278,7 @@ function SidebarLink({ item, nested = false }: { item: NavItem; nested?: boolean
 
 function SidebarGroup({ group }: { group: NavGroup }) {
   const location = useLocation();
-  const hasActiveChild = group.children.some((c) => location.pathname.startsWith(c.to.split('?')[0]));
+  const hasActiveChild = group.children.some((c) => isNavItemActive(location.pathname, c));
   const [open, setOpen] = useState(hasActiveChild);
 
   return (
@@ -287,11 +319,33 @@ export default function Sidebar() {
   const canManageManualTemplates = templatePermRes?.data?.canManageManual ?? false;
   const hasAnySettingsAccess = isSettingsAdmin || hasRoleTaggedTab || canManageManualTemplates;
 
+  // « Registres LBC/FT » — accès géré indépendamment des rôles (AML_ROLES +
+  // désignation individuelle via Paramètres, cf. aml.ipc.ts). Contrairement
+  // aux autres enfants du groupe « Conformité LBC/FT », `canSee` (basé sur
+  // `roles`) ne peut pas trancher : filtré séparément ci-dessous, même
+  // principe que le filtre dédié à « Paramètres ».
+  const { data: registersAccessRes } = useMyRegistersAccess();
+  const hasRegistersAccess = registersAccessRes?.data?.hasAccess ?? false;
+
+  // « Criblage » — même principe que « Registres LBC/FT » ci-dessus : accès
+  // géré indépendamment des rôles (SUPER_ADMIN/ADMIN/MANAGER + désignation
+  // individuelle), donc filtré séparément plutôt que par `roles`.
+  const { data: screeningAccessRes } = useMyScreeningAccess();
+  const hasScreeningAccess = screeningAccessRes?.data?.hasAccess ?? false;
+
+  // « Alertes » — même principe que « Criblage » ci-dessus.
+  const { data: alertsAccessRes } = useMyAlertsAccess();
+  const hasAlertsAccess = alertsAccessRes?.data?.hasAccess ?? false;
+
   const visible: NavEntry[] = (navItems
     .map((entry) => {
       if (!isGroup(entry)) return canSee(entry.roles) ? entry : null;
       if (!canSee(entry.roles)) return null;
-      const children = entry.children.filter((c) => canSee(c.roles));
+      const children = entry.children
+        .filter((c) => canSee(c.roles))
+        .filter((c) => c.to !== '/aml/registers/notifications' || hasRegistersAccess)
+        .filter((c) => c.to !== '/aml/screening' || hasScreeningAccess)
+        .filter((c) => c.to !== '/aml/alerts' || hasAlertsAccess);
       return children.length > 0 ? { ...entry, children } : null;
     })
     .filter(Boolean) as NavEntry[])

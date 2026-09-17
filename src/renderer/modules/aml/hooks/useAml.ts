@@ -197,7 +197,7 @@ export function useAmlRiskThresholds() {
 export function useUpdateAmlRiskThresholds() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (payload: { faibleMax: number; moyenMax: number; amountThreshold: number }) => settingsIpc().updateAmlRiskThresholds(token(), payload),
+    mutationFn: (payload: { faibleMax: number; moyenMax: number; amountThreshold: number; dsteThreshold: number }) => settingsIpc().updateAmlRiskThresholds(token(), payload),
     onSuccess: (res) => {
       if (res.success) { qc.invalidateQueries({ queryKey: ['aml-risk-thresholds'] }); toast.success('Seuils mis à jour'); }
       else toast.error(String(res.error));
@@ -209,6 +209,14 @@ export function useUpdateAmlRiskThresholds() {
 
 export function useAmlWatchlist(filters: object = {}) {
   return useQuery({ queryKey: ['aml-watchlist', filters], queryFn: () => ipc().watchlist.list(token(), filters) });
+}
+
+export function useAmlWatchlistEntry(id?: number) {
+  return useQuery({
+    queryKey: ['aml-watchlist-entry', id],
+    queryFn: () => ipc().watchlist.getById(token(), id!),
+    enabled: !!id,
+  });
 }
 
 export function useCreateAmlWatchlistEntry() {
@@ -453,6 +461,254 @@ export function useDeleteAmlTraining() {
     mutationFn: (id: number) => ipc().training.delete(token(), id),
     onSuccess: (res) => {
       if (res.success) { qc.invalidateQueries({ queryKey: ['aml-trainings'] }); toast.success('Formation supprimée'); }
+      else toast.error(String(res.error));
+    },
+  });
+}
+
+/* ─── Alertes CENTIF-CI / mises à jour SFC ─────────────────── */
+
+export function useAmlAlerts(page = 1, limit = 50) {
+  return useQuery({ queryKey: ['aml-alerts', page], queryFn: () => ipc().alerts.list(token(), page, limit) });
+}
+
+export function useAmlAlert(id?: number) {
+  return useQuery({ queryKey: ['aml-alert', id], queryFn: () => ipc().alerts.getById(token(), id!), enabled: !!id });
+}
+
+export function useCreateAmlAlert() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: object) => ipc().alerts.create(token(), payload),
+    onSuccess: (res) => {
+      if (res.success) {
+        qc.invalidateQueries({ queryKey: ['aml-alerts'] });
+        qc.invalidateQueries({ queryKey: ['aml-screening-summary'] });
+        toast.success('Alerte enregistrée');
+      } else toast.error(String(res.error));
+    },
+  });
+}
+
+export function useUpdateAmlAlert() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, payload }: { id: number; payload: object }) => ipc().alerts.update(token(), id, payload),
+    onSuccess: (res, vars) => {
+      if (res.success) {
+        qc.invalidateQueries({ queryKey: ['aml-alerts'] });
+        qc.invalidateQueries({ queryKey: ['aml-alert', vars.id] });
+        qc.invalidateQueries({ queryKey: ['aml-screening-summary'] });
+        toast.success('Alerte mise à jour');
+      } else toast.error(String(res.error));
+    },
+  });
+}
+
+export function useDeleteAmlAlert() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: number) => ipc().alerts.delete(token(), id),
+    onSuccess: (res) => {
+      if (res.success) { qc.invalidateQueries({ queryKey: ['aml-alerts'] }); toast.success('Alerte supprimée'); }
+      else toast.error(String(res.error));
+    },
+  });
+}
+
+/* ─── Procédures internes LBC/FT ───────────────────────────── */
+
+export function useAmlProcedures(filters: object = {}, page = 1, limit = 50) {
+  return useQuery({
+    queryKey: ['aml-procedures', filters, page],
+    queryFn: () => ipc().procedures.list(token(), filters, page, limit),
+  });
+}
+
+export function useAmlProcedure(id?: number) {
+  return useQuery({
+    queryKey: ['aml-procedure', id],
+    queryFn: () => ipc().procedures.getById(token(), id!),
+    enabled: !!id,
+  });
+}
+
+export function useCreateAmlProcedure() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: object) => ipc().procedures.create(token(), payload),
+    onSuccess: (res) => {
+      if (res.success) { qc.invalidateQueries({ queryKey: ['aml-procedures'] }); toast.success('Procédure enregistrée'); }
+      else toast.error(String(res.error));
+    },
+  });
+}
+
+export function useUpdateAmlProcedure() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, payload }: { id: number; payload: object }) => ipc().procedures.update(token(), id, payload),
+    onSuccess: (res, vars) => {
+      if (res.success) {
+        qc.invalidateQueries({ queryKey: ['aml-procedures'] });
+        qc.invalidateQueries({ queryKey: ['aml-procedure', vars.id] });
+        toast.success('Procédure mise à jour');
+      } else toast.error(String(res.error));
+    },
+  });
+}
+
+export function useDeleteAmlProcedure() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: number) => ipc().procedures.delete(token(), id),
+    onSuccess: (res) => {
+      if (res.success) { qc.invalidateQueries({ queryKey: ['aml-procedures'] }); toast.success('Procédure supprimée'); }
+      else toast.error(String(res.error));
+    },
+  });
+}
+
+/* ─── Registres LBC/FT ─────────────────────────────────────── */
+
+function makeRegisterHooks<T extends 'notifications' | 'centifExchanges' | 'dste' | 'suspiciousOperations'>(
+  namespace: T,
+  queryKey: string,
+  successLabel: string,
+) {
+  const useList = (filters: object = {}, page = 1, limit = 50) =>
+    useQuery({
+      queryKey: [queryKey, filters, page],
+      queryFn: () => ipc()[namespace].list(token(), filters, page, limit),
+    });
+
+  const useCreate = () => {
+    const qc = useQueryClient();
+    return useMutation({
+      mutationFn: (payload: object) => ipc()[namespace].create(token(), payload),
+      onSuccess: (res: any) => {
+        if (res.success) { qc.invalidateQueries({ queryKey: [queryKey] }); toast.success(`${successLabel} enregistré(e)`); }
+        else toast.error(String(res.error));
+      },
+    });
+  };
+
+  const useUpdate = () => {
+    const qc = useQueryClient();
+    return useMutation({
+      mutationFn: ({ id, payload }: { id: number; payload: object }) => ipc()[namespace].update(token(), id, payload),
+      onSuccess: (res: any) => {
+        if (res.success) { qc.invalidateQueries({ queryKey: [queryKey] }); toast.success(`${successLabel} mis(e) à jour`); }
+        else toast.error(String(res.error));
+      },
+    });
+  };
+
+  const useDelete = () => {
+    const qc = useQueryClient();
+    return useMutation({
+      mutationFn: (id: number) => ipc()[namespace].delete(token(), id),
+      onSuccess: (res: any) => {
+        if (res.success) { qc.invalidateQueries({ queryKey: [queryKey] }); toast.success(`${successLabel} supprimé(e)`); }
+        else toast.error(String(res.error));
+      },
+    });
+  };
+
+  return { useList, useCreate, useUpdate, useDelete };
+}
+
+const notificationHooks = makeRegisterHooks('notifications', 'aml-notifications', 'Enregistrement');
+export const useAmlNotifications = notificationHooks.useList;
+export const useCreateAmlNotification = notificationHooks.useCreate;
+export const useUpdateAmlNotification = notificationHooks.useUpdate;
+export const useDeleteAmlNotification = notificationHooks.useDelete;
+
+const exchangeHooks = makeRegisterHooks('centifExchanges', 'aml-centif-exchanges', 'Échange');
+export const useAmlCentifExchanges = exchangeHooks.useList;
+export const useCreateAmlCentifExchange = exchangeHooks.useCreate;
+export const useUpdateAmlCentifExchange = exchangeHooks.useUpdate;
+export const useDeleteAmlCentifExchange = exchangeHooks.useDelete;
+
+export function useAmlCentifExchangesSelectable() {
+  return useQuery({ queryKey: ['aml-centif-exchanges-selectable'], queryFn: () => ipc().centifExchanges.listSelectable(token()) });
+}
+
+const dsteHooks = makeRegisterHooks('dste', 'aml-dste', 'Transaction');
+export const useAmlDsteRecords = dsteHooks.useList;
+export const useCreateAmlDsteRecord = dsteHooks.useCreate;
+export const useUpdateAmlDsteRecord = dsteHooks.useUpdate;
+export const useDeleteAmlDsteRecord = dsteHooks.useDelete;
+
+const suspiciousOpHooks = makeRegisterHooks('suspiciousOperations', 'aml-suspicious-operations', 'Opération');
+export const useAmlSuspiciousOperations = suspiciousOpHooks.useList;
+export const useCreateAmlSuspiciousOperation = suspiciousOpHooks.useCreate;
+export const useUpdateAmlSuspiciousOperation = suspiciousOpHooks.useUpdate;
+export const useDeleteAmlSuspiciousOperation = suspiciousOpHooks.useDelete;
+
+/* ─── Criblage de masse ────────────────────────────────────── */
+
+export function useAmlScreeningSummary() {
+  return useQuery({ queryKey: ['aml-screening-summary'], queryFn: () => ipc().screening.summary(token()) });
+}
+
+export function useAmlScreeningHits(filters: object = {}, page = 1, limit = 50) {
+  return useQuery({
+    queryKey: ['aml-screening-hits', filters, page],
+    queryFn: () => ipc().screening.hitsList(token(), filters, page, limit),
+  });
+}
+
+export function useAmlScreeningRuns(filters: object = {}, page = 1, limit = 30) {
+  return useQuery({
+    queryKey: ['aml-screening-runs', filters, page],
+    queryFn: () => ipc().screening.runsList(token(), filters, page, limit),
+  });
+}
+
+export function useRunAmlScreening() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => ipc().screening.run(token()),
+    onSuccess: (res) => {
+      if (res.success) {
+        qc.invalidateQueries({ queryKey: ['aml-screening-hits'] });
+        qc.invalidateQueries({ queryKey: ['aml-screening-runs'] });
+        qc.invalidateQueries({ queryKey: ['aml-screening-summary'] });
+        qc.invalidateQueries({ queryKey: ['aml-dashboard'] });
+        const d: any = res.data;
+        toast.success(d ? `Criblage terminé — ${d.entitiesScreened} entités, ${d.hitsNew} nouvelle(s) correspondance(s)` : 'Criblage terminé');
+      } else toast.error(String(res.error));
+    },
+  });
+}
+
+export function useReviewAmlScreeningHit() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, payload }: { id: number; payload: object }) => ipc().screening.hitReview(token(), id, payload),
+    onSuccess: (res) => {
+      if (res.success) {
+        qc.invalidateQueries({ queryKey: ['aml-screening-hits'] });
+        qc.invalidateQueries({ queryKey: ['aml-screening-summary'] });
+        qc.invalidateQueries({ queryKey: ['aml-dashboard'] });
+        qc.invalidateQueries({ queryKey: ['aml-profiles'] });
+        toast.success('Correspondance qualifiée');
+      } else toast.error(String(res.error));
+    },
+  });
+}
+
+export function useAmlScreeningSchedule() {
+  return useQuery({ queryKey: ['aml-screening-schedule'], queryFn: () => settingsIpc().getAmlScreeningSchedule(token()) });
+}
+
+export function useUpdateAmlScreeningSchedule() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: object) => settingsIpc().updateAmlScreeningSchedule(token(), payload),
+    onSuccess: (res) => {
+      if (res.success) { qc.invalidateQueries({ queryKey: ['aml-screening-schedule'] }); toast.success('Planification du criblage mise à jour'); }
       else toast.error(String(res.error));
     },
   });

@@ -61,7 +61,7 @@ export default function GenerateEstimateModal({ open, onClose, project }: { open
   const [fraisGenerauxPct, setFraisGenerauxPct] = useState('');
   const [margePct, setMargePct] = useState('');
   const [tvaPct, setTvaPct] = useState('18');
-  const [discountIsPercent, setDiscountIsPercent] = useState(false);
+  const [discountIsPercent, setDiscountIsPercent] = useState(true);
   const [discountAmount, setDiscountAmount] = useState('0');
   const [discountPercent, setDiscountPercent] = useState('0');
   const [createQuote, setCreateQuote] = useState(false);

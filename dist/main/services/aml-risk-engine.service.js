@@ -10,6 +10,7 @@ const DEFAULT_THRESHOLDS = {
     faibleMax: 3,
     moyenMax: 7,
     amountThreshold: 5_000_000,
+    dsteThreshold: 5_000_000,
 };
 const THRESHOLDS_KEY = 'aml.riskThresholds';
 /** Récupère les seuils de scoring (AppSetting `aml.riskThresholds`), repli sur les défauts. */

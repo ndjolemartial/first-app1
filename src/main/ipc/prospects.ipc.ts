@@ -2,6 +2,7 @@ import { ipcMain } from 'electron';
 import { getDb } from '../services/db.service';
 import { getSession, checkRole } from '../services/auth.service';
 import logger from '../utils/logger';
+import { screenEntity } from '../services/aml-screening.service';
 import { z } from 'zod';
 import {
   PROSPECT_FIELD_LABELS,
@@ -302,6 +303,8 @@ export function registerProspectsIPC(): void {
         },
       });
       logger.info(`Prospect créé : #${prospect.id} ${prospect.firstName} ${prospect.lastName}`);
+      screenEntity('PROSPECT', prospect.id, { operatorId: session.userId })
+        .catch((e) => logger.error(`aml screening after prospects:create: ${e.message}`));
       return { success: true, data: serialize(prospect) };
     } catch (error: any) {
       logger.error('prospects:create', error.message);
