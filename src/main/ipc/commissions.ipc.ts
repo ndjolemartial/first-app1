@@ -123,14 +123,19 @@ const cancelCommissionSchema = z.object({
 
 /**
  * Modification d'une commission existante : seuls les champs financiers
- * (assiette, taux) et la note peuvent évoluer. La convention et le
- * bénéficiaire sont figés à la création — toute autre correction passe par
- * une annulation suivie d'une nouvelle création.
+ * (assiette, taux, montant à payer) et la note peuvent évoluer. La convention
+ * et le bénéficiaire sont figés à la création — toute autre correction passe
+ * par une annulation suivie d'une nouvelle création.
+ *
+ * `amount` est optionnel : par défaut il est recalculé depuis l'assiette et
+ * le taux (`baseAmount × rate / 100`), mais peut être saisi explicitement
+ * pour un montant final négocié/arrondi qui s'écarte de ce calcul.
  */
 const updateCommissionSchema = z.object({
   id: z.number().int().positive(),
   baseAmount: z.number().positive(),
   rate: z.number().min(0).max(100),
+  amount: z.number().positive().optional(),
   notes: z.string().optional(),
 });
 
@@ -797,7 +802,7 @@ export function registerCommissionsIPC(): void {
         };
       }
 
-      const amount = computeCommissionAmount(d.baseAmount, d.rate);
+      const amount = d.amount ?? computeCommissionAmount(d.baseAmount, d.rate);
       const updated = await db.commission.update({
         where: { id: d.id },
         data: {

@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import Modal from '../../../shared/components/ui/Modal';
 import Button from '../../../shared/components/ui/Button';
@@ -95,15 +96,19 @@ export function PayCommissionModal({ commission, onClose, onSuccess }: ModalProp
 }
 
 /**
- * Modale d'édition d'une commission encore à payer : assiette, taux et note.
- * Le montant final est recalculé côté serveur à partir des nouveaux valeurs.
+ * Modale d'édition d'une commission encore à payer : assiette, taux, montant
+ * à payer et note. Le montant à payer se recalcule automatiquement depuis
+ * l'assiette et le taux tant qu'il n'est pas modifié directement — une fois
+ * saisi à la main, il n'est plus écrasé par ce recalcul (montant négocié/
+ * arrondi indépendant de l'assiette × taux).
  */
 export function EditCommissionModal({ commission, onClose, onSuccess }: ModalProps) {
   const updateCommission = useUpdateCommission();
-  const { register, handleSubmit, watch, formState: { errors, isSubmitting } } = useForm({
+  const { register, handleSubmit, watch, setValue, formState: { errors, isSubmitting } } = useForm({
     defaultValues: {
       baseAmount: String(Number(commission.baseAmount)),
       rate: String(Number(commission.rate)),
+      amount: String(Number(commission.amount)),
       notes: commission.notes ?? '',
     },
   });
@@ -111,13 +116,22 @@ export function EditCommissionModal({ commission, onClose, onSuccess }: ModalPro
 
   const baseAmount = Number(watch('baseAmount') || 0);
   const rate = Number(watch('rate') || 0);
-  const previewAmount = Math.round(baseAmount * (rate / 100) * 100) / 100;
+  const computedAmount = Math.round(baseAmount * (rate / 100) * 100) / 100;
+  const [amountEdited, setAmountEdited] = useState(false);
+
+  useEffect(() => {
+    if (amountEdited) return;
+    setValue('amount', String(computedAmount));
+    // Ne dépend que de l'assiette/du taux : `computedAmount` en dérive.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [baseAmount, rate, amountEdited]);
 
   const onSubmit = async (data: any) => {
     const r = await updateCommission.mutateAsync({
       id: commission.id,
       baseAmount: Number(data.baseAmount),
       rate: Number(data.rate),
+      amount: Number(data.amount),
       notes: data.notes || undefined,
     });
     if (r.success) onSuccess();
@@ -175,9 +189,32 @@ export function EditCommissionModal({ commission, onClose, onSuccess }: ModalPro
             {errors.rate && <p className="mt-1 text-xs text-red-600">{errors.rate.message as string}</p>}
           </div>
         </div>
-        <div className="bg-blue-50 rounded-lg p-3 flex items-center justify-between">
-          <span className="text-sm text-slate-600">Nouveau montant</span>
-          <span className="text-xl font-bold text-slate-900">{formatCurrency(previewAmount)}</span>
+        <div className="bg-blue-50 rounded-lg p-3">
+          <div className="flex items-center justify-between mb-1">
+            <label className="block text-xs font-medium text-slate-700">Montant à payer</label>
+            {amountEdited && (
+              <button
+                type="button"
+                onClick={() => setAmountEdited(false)}
+                className="text-xs text-blue-600 hover:underline"
+              >
+                Recalculer (assiette × taux)
+              </button>
+            )}
+          </div>
+          <input
+            type="number"
+            step="0.01"
+            {...register('amount', {
+              validate: (v) => Number(v) > 0 || 'Doit être positif',
+              onChange: () => setAmountEdited(true),
+            })}
+            className="w-full px-3 py-2 border border-slate-300 rounded-lg text-lg font-bold text-slate-900 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+          />
+          {errors.amount && <p className="mt-1 text-xs text-red-600">{errors.amount.message as string}</p>}
+          {!amountEdited && (
+            <p className="mt-1 text-xs text-slate-500">{formatCurrency(computedAmount)} — recalculé depuis l'assiette × le taux</p>
+          )}
         </div>
         <div>
           <label className="block text-xs font-medium text-slate-700 mb-1">Notes (optionnel)</label>

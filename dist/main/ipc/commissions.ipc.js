@@ -102,14 +102,19 @@ const cancelCommissionSchema = zod_1.z.object({
 });
 /**
  * Modification d'une commission existante : seuls les champs financiers
- * (assiette, taux) et la note peuvent évoluer. La convention et le
- * bénéficiaire sont figés à la création — toute autre correction passe par
- * une annulation suivie d'une nouvelle création.
+ * (assiette, taux, montant à payer) et la note peuvent évoluer. La convention
+ * et le bénéficiaire sont figés à la création — toute autre correction passe
+ * par une annulation suivie d'une nouvelle création.
+ *
+ * `amount` est optionnel : par défaut il est recalculé depuis l'assiette et
+ * le taux (`baseAmount × rate / 100`), mais peut être saisi explicitement
+ * pour un montant final négocié/arrondi qui s'écarte de ce calcul.
  */
 const updateCommissionSchema = zod_1.z.object({
     id: zod_1.z.number().int().positive(),
     baseAmount: zod_1.z.number().positive(),
     rate: zod_1.z.number().min(0).max(100),
+    amount: zod_1.z.number().positive().optional(),
     notes: zod_1.z.string().optional(),
 });
 const referrerSchema = zod_1.z.object({
@@ -767,7 +772,7 @@ function registerCommissionsIPC() {
                     error: 'Seule une commission encore à payer peut être modifiée (statut requis : « À payer »).',
                 };
             }
-            const amount = (0, commission_service_1.computeCommissionAmount)(d.baseAmount, d.rate);
+            const amount = d.amount ?? (0, commission_service_1.computeCommissionAmount)(d.baseAmount, d.rate);
             const updated = await db.commission.update({
                 where: { id: d.id },
                 data: {
