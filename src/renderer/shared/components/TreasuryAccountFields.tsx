@@ -11,6 +11,14 @@ interface TreasuryAccountFieldsProps {
   watch?: any;
   /** `setValue` du formulaire parent — requis avec `watch` pour appliquer le compte par défaut. */
   setValue?: any;
+  /**
+   * Compte de trésorerie présélectionné une fois au chargement (nom exact,
+   * insensible à la casse), si le champ est encore vide — indépendant du
+   * mode de paiement, à la différence du pré-remplissage ENTREE ci-dessus.
+   */
+  defaultAccountName?: string;
+  /** Objet d'opération présélectionné une fois au chargement (libellé exact), même principe. */
+  defaultCategoryLabel?: string;
 }
 
 const selectClass =
@@ -51,7 +59,9 @@ function categoryLabel(c: any): string {
  * Si `watch` et `setValue` sont fournis et que le sens est ENTREE, le compte
  * est pré-rempli automatiquement selon le mode de paiement choisi.
  */
-export default function TreasuryAccountFields({ register, direction, watch, setValue }: TreasuryAccountFieldsProps) {
+export default function TreasuryAccountFields({
+  register, direction, watch, setValue, defaultAccountName, defaultCategoryLabel,
+}: TreasuryAccountFieldsProps) {
   const token = useAuthStore((s) => s.token)!;
 
   const { data: accountsRes } = useQuery({
@@ -109,6 +119,30 @@ export default function TreasuryAccountFields({ register, direction, watch, setV
       lastAutoCategoryId.current = null;
     }
   }, [method, accounts, categories, direction, watch, setValue]);
+
+  // Pré-sélection statique (compte/objet fixes, indépendants du mode de
+  // paiement — ex. « Payer la commission ») : appliquée une seule fois, dès
+  // que les listes nécessaires sont chargées, et seulement si le champ est
+  // encore vide — n'écrase jamais un choix déjà fait par l'utilisateur ni ne
+  // revient après qu'il ait vidé le champ.
+  const staticDefaultsAppliedRef = useRef(false);
+  useEffect(() => {
+    if (staticDefaultsAppliedRef.current) return;
+    if (!watch || !setValue) return;
+    if (!defaultAccountName && !defaultCategoryLabel) return;
+    const accountsReady = !defaultAccountName || accounts.length > 0;
+    const categoriesReady = !defaultCategoryLabel || categories.length > 0;
+    if (!accountsReady || !categoriesReady) return;
+    if (defaultAccountName && !watch('bankAccountId')) {
+      const match = accounts.find((a: any) => String(a.name).toUpperCase() === defaultAccountName.toUpperCase());
+      if (match) setValue('bankAccountId', String(match.id));
+    }
+    if (defaultCategoryLabel && !watch('categoryId')) {
+      const match = categories.find((c: any) => String(c.label).toUpperCase() === defaultCategoryLabel.toUpperCase());
+      if (match) setValue('categoryId', String(match.id));
+    }
+    staticDefaultsAppliedRef.current = true;
+  }, [accounts, categories, watch, setValue, defaultAccountName, defaultCategoryLabel]);
 
   return (
     <div className="border-t border-slate-100 pt-4 space-y-4">

@@ -17,7 +17,7 @@ interface ModalProps {
 /** Modale d'enregistrement du paiement d'une commission. */
 export function PayCommissionModal({ commission, onClose, onSuccess }: ModalProps) {
   const payCommission = usePayCommission();
-  const { register, handleSubmit, formState: { isSubmitting } } = useForm({
+  const { register, handleSubmit, watch, setValue, formState: { isSubmitting } } = useForm({
     defaultValues: { method: 'VIREMENT', paymentRef: '', notes: '' },
   });
   const error = payCommission.data && !payCommission.data.success ? payCommission.data.error : null;
@@ -88,7 +88,14 @@ export function PayCommissionModal({ commission, onClose, onSuccess }: ModalProp
             className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
           />
         </div>
-        <TreasuryAccountFields register={register} direction="SORTIE" />
+        <TreasuryAccountFields
+          register={register}
+          direction="SORTIE"
+          watch={watch}
+          setValue={setValue}
+          defaultAccountName="CAISSE PRINCIPALE"
+          defaultCategoryLabel="Commissions"
+        />
         {error && <p className="text-xs text-red-600">{typeof error === 'string' ? error : 'Erreur lors du paiement'}</p>}
       </form>
     </Modal>
