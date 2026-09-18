@@ -869,12 +869,50 @@ export function registerAccountingIPC(): void {
       if (!session) return { success: false, error: 'Session expirée' };
       checkAccountingRole(session, WRITE_ROLES);
       const db = getDb();
+      const before = await db.invoice.findUnique({
+        where: { id, deletedAt: null },
+        select: {
+          id: true, status: true, type: true, total: true, conventionId: true,
+          convention: {
+            select: { id: true, type: true, agentId: true, client: { select: { assignedToId: true } } },
+          },
+        },
+      });
+      if (!before) return { success: false, error: 'Facture introuvable' };
       const invoice = await db.invoice.update({
         where: { id, deletedAt: null },
         data: { status, ...(status === 'PAYEE' && { paidAt: new Date() }) },
         select: { id: true, status: true, reference: true },
       });
       await syncInvoiceActivities(db, id, status);
+
+      // Accrual de commission — une facture VENTE/APPORT_INITIAL basculée
+      // directement en « Payée » (sans passer par « Enregistrer un paiement »)
+      // doit générer la même commission automatique qu'un encaissement normal :
+      // le solde encaissé équivaut alors au montant total de la facture.
+      if (status === 'PAYEE' && before.status !== 'PAYEE'
+        && (before.type === 'VENTE' || before.type === 'APPORT_INITIAL')
+        && before.conventionId && before.convention) {
+        try {
+          const rates = await getDefaultRates(db);
+          const tr = commissionTypeAndRate(before.convention.type, rates);
+          const beneficiaryUserId =
+            before.convention.agentId ?? before.convention.client?.assignedToId ?? null;
+          if (tr && beneficiaryUserId) {
+            await accrueCollectionCommission(db, {
+              conventionId: before.conventionId,
+              invoiceId: before.id,
+              beneficiaryUserId,
+              transactionType: tr.transactionType,
+              rate: tr.rate,
+              collectedTotal: Number(before.total),
+            });
+          }
+        } catch (e: any) {
+          logger.error('accrueCollectionCommission (updateInvoiceStatus) error', e?.message ?? e);
+        }
+      }
+
       return ser({ success: true, data: invoice });
     } catch (error: any) {
       return { success: false, error: error.message };

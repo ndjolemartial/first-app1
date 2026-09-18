@@ -829,12 +829,49 @@ function registerAccountingIPC() {
                 return { success: false, error: 'Session expirée' };
             checkAccountingRole(session, WRITE_ROLES);
             const db = (0, db_service_1.getDb)();
+            const before = await db.invoice.findUnique({
+                where: { id, deletedAt: null },
+                select: {
+                    id: true, status: true, type: true, total: true, conventionId: true,
+                    convention: {
+                        select: { id: true, type: true, agentId: true, client: { select: { assignedToId: true } } },
+                    },
+                },
+            });
+            if (!before)
+                return { success: false, error: 'Facture introuvable' };
             const invoice = await db.invoice.update({
                 where: { id, deletedAt: null },
                 data: { status, ...(status === 'PAYEE' && { paidAt: new Date() }) },
                 select: { id: true, status: true, reference: true },
             });
             await syncInvoiceActivities(db, id, status);
+            // Accrual de commission — une facture VENTE/APPORT_INITIAL basculée
+            // directement en « Payée » (sans passer par « Enregistrer un paiement »)
+            // doit générer la même commission automatique qu'un encaissement normal :
+            // le solde encaissé équivaut alors au montant total de la facture.
+            if (status === 'PAYEE' && before.status !== 'PAYEE'
+                && (before.type === 'VENTE' || before.type === 'APPORT_INITIAL')
+                && before.conventionId && before.convention) {
+                try {
+                    const rates = await (0, commission_service_1.getDefaultRates)(db);
+                    const tr = (0, commission_service_1.commissionTypeAndRate)(before.convention.type, rates);
+                    const beneficiaryUserId = before.convention.agentId ?? before.convention.client?.assignedToId ?? null;
+                    if (tr && beneficiaryUserId) {
+                        await (0, commission_service_1.accrueCollectionCommission)(db, {
+                            conventionId: before.conventionId,
+                            invoiceId: before.id,
+                            beneficiaryUserId,
+                            transactionType: tr.transactionType,
+                            rate: tr.rate,
+                            collectedTotal: Number(before.total),
+                        });
+                    }
+                }
+                catch (e) {
+                    logger_1.default.error('accrueCollectionCommission (updateInvoiceStatus) error', e?.message ?? e);
+                }
+            }
             return ser({ success: true, data: invoice });
         }
         catch (error) {

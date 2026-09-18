@@ -321,9 +321,7 @@ async function assertConventionEligibleForAttestation(db, conventionId, attestat
             balance = 0;
         }
         else {
-            const totalDu = sale
-                + Number(c.fraisOuvertureDossier ?? 0)
-                + Number(c.additionalAmount ?? 0);
+            const totalDu = sale + Number(c.additionalAmount ?? 0);
             const apport = Number(c.apportInitial ?? 0);
             const paid = (c.installments ?? [])
                 .filter((i) => i.status === 'PAYE')
