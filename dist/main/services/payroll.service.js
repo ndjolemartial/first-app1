@@ -10,6 +10,7 @@ exports.computeIts = computeIts;
 exports.ricfMonthlyForParts = ricfMonthlyForParts;
 exports.seniorityRate = seniorityRate;
 exports.computePrimeAnciennete = computePrimeAnciennete;
+exports.computeUnpaidLeaveDeduction = computeUnpaidLeaveDeduction;
 exports.computePayroll = computePayroll;
 exports.computePayslipTotals = computePayslipTotals;
 exports.loadPayslipCompany = loadPayslipCompany;
@@ -153,6 +154,24 @@ function computePrimeAnciennete(baseSalary, hireDate, asOf) {
     const rate = seniorityRate(hireDate, asOf);
     return { rate, amount: Math.round((baseSalary * rate) / 100) };
 }
+/**
+ * Abattement salarial pour congé non rémunéré (congé sans solde, absence non
+ * justifiée…) pris sur la période de paie : jours concernés × salaire
+ * journalier, le salaire journalier étant le salaire de base divisé par le
+ * nombre de jours ouvrés réels du mois de la période (même convention que le
+ * décompte des « heures travaillées » du récapitulatif du bulletin,
+ * `computePayslipTotals`). Renvoie aussi le nombre de jours et le taux
+ * journalier pour affichage sur le bulletin (ligne « Absence non rémunérée »).
+ */
+async function computeUnpaidLeaveDeduction(employeeId, baseSalary, periodYear, periodMonth) {
+    const periodStart = new Date(periodYear, periodMonth - 1, 1);
+    const periodLastDay = new Date(periodYear, periodMonth, 0); // dernier jour du mois
+    const periodEndExclusive = new Date(periodYear, periodMonth, 1);
+    const days = await (0, leave_service_1.unpaidLeaveDaysInRange)(employeeId, periodStart, periodEndExclusive);
+    const monthWorkingDays = (0, leave_service_1.workingDays)(periodStart, periodLastDay);
+    const dailyRate = monthWorkingDays > 0 ? baseSalary / monthWorkingDays : 0;
+    return { days, dailyRate: round(dailyRate), amount: days > 0 ? round(dailyRate * days) : 0 };
+}
 /** Calcule l'ensemble d'un bulletin de paie à partir des entrées et des taux. */
 function computePayroll(input, rates) {
     const baseSalary = Math.max(0, round(input.baseSalary || 0));
@@ -166,7 +185,14 @@ function computePayroll(input, rates) {
     const transportCeiling = rates.transportExemptCeiling ?? 30_000;
     const transportExempt = Math.min(transport, transportCeiling);
     const transportTaxable = Math.max(0, transport - transportCeiling);
-    const grossTaxable = baseSalary + sursalaire + primeAnciennete + taxablePrime + overtime + transportTaxable + commissionsVente;
+    const grossBeforeUnpaidLeave = baseSalary + sursalaire + primeAnciennete + taxablePrime + overtime + transportTaxable + commissionsVente;
+    // Abattement pour congé non rémunéré (sans solde…) : réduit le brut imposable
+    // lui-même (donc les bases CNPS/ITS/CMU/charges patronales), pas une simple
+    // retenue post-taxes — l'employé n'a pas perçu de salaire sur ces jours.
+    // Plafonné pour ne jamais rendre le brut négatif (absence couvrant tout le mois).
+    const unpaidLeaveDays = Math.max(0, input.unpaidLeaveDays || 0);
+    const unpaidLeaveDeduction = Math.min(Math.max(0, round(input.unpaidLeaveAmount || 0)), grossBeforeUnpaidLeave);
+    const grossTaxable = grossBeforeUnpaidLeave - unpaidLeaveDeduction;
     const totalGains = grossTaxable + transportExempt;
     // Retenues salariales
     const cnpsBase = Math.min(grossTaxable, rates.cnpsCeiling);
@@ -194,6 +220,16 @@ function computePayroll(input, rates) {
     const lines = [];
     let o = 0;
     lines.push({ type: 'GAIN', label: 'Salaire de base', amount: baseSalary, order: o++ });
+    if (unpaidLeaveDeduction > 0) {
+        const daysLabel = Number.isInteger(unpaidLeaveDays) ? String(unpaidLeaveDays) : unpaidLeaveDays.toFixed(1);
+        lines.push({
+            type: 'GAIN',
+            label: `Absence non rémunérée (congé sans solde) — ${daysLabel} j`,
+            base: round(input.unpaidLeaveDailyRate ?? 0),
+            amount: -unpaidLeaveDeduction,
+            order: o++,
+        });
+    }
     if (sursalaire > 0)
         lines.push({ type: 'GAIN', label: 'Sursalaire', amount: sursalaire, order: o++ });
     if (primeAnciennete > 0)
@@ -335,7 +371,10 @@ function renderPayslipHtml(payslip, employee, company, template, logoDataUri, co
     const name = `${employee.lastName ?? ''} ${employee.firstName ?? ''}`.trim();
     const periodStart = new Date(payslip.periodYear, (payslip.periodMonth ?? 1) - 1, 1);
     const periodEnd = new Date(payslip.periodYear, payslip.periodMonth ?? 1, 0); // dernier jour du mois
-    const period = `du ${fmtDate(periodStart)} au ${fmtDate(periodEnd)}`;
+    // Dates de période personnalisées (ex. période d'essai à cheval sur deux
+    // mois) : n'affectent que cette ligne — le mois de paie et le calcul restent
+    // ceux de periodYear/periodMonth.
+    const period = `du ${fmtDate(payslip.periodStartDate ?? periodStart)} au ${fmtDate(payslip.periodEndDate ?? periodEnd)}`;
     // Mois + année en toutes lettres (ex. « Juillet 2026 »), affiché en gras
     // entre le titre et la ligne de période détaillée.
     const periodMonthLabel = periodStart.toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' });

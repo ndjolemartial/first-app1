@@ -3,6 +3,12 @@
 /** Rôles autorisés à créer / modifier des comptes et des opérations. */
 export const TREASURY_WRITE_ROLES = ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ACCOUNTANT', 'ASSISTANTE_DIRECTION'];
 
+/** Rôles autorisés à corriger/modifier une opération existante (rôle exact, MANAGER exclu). */
+export const TREASURY_OPERATION_EDIT_ROLES = ['SUPER_ADMIN', 'ADMIN', 'ACCOUNTANT'];
+
+/** Origines d'opération modifiables / supprimables à la main. */
+export const TREASURY_EDITABLE_SOURCES = ['MANUEL', 'TRANSFERT'];
+
 /** Rôles autorisés à supprimer un compte ou un objet d'opération. */
 export const TREASURY_ADMIN_ROLES = ['SUPER_ADMIN', 'ADMIN'];
 
@@ -39,6 +45,9 @@ export const SOURCE_LABEL: Record<string, string> = {
   FACTURE: 'Encaissement facture',
   ECHEANCE: 'Règlement échéance',
   COMMISSION: 'Paiement commission',
+  PAIE: 'Paie',
+  CHARGE: 'Charge',
+  TRANSFERT: 'Transfert',
 };
 
 export const PAYMENT_METHOD_OPTIONS = [
@@ -47,6 +56,7 @@ export const PAYMENT_METHOD_OPTIONS = [
   { value: 'TRANSFERT', label: 'Transfert' },
   { value: 'VIREMENT', label: 'Virement bancaire' },
   { value: 'MOBILE_MONEY', label: 'Mobile Money' },
+  { value: 'PRELEVEMENT', label: 'Prélèvement bancaire' },
 ];
 
 export const PAYMENT_METHOD_LABEL: Record<string, string> = Object.fromEntries(

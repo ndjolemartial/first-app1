@@ -10,10 +10,13 @@ import { SkeletonTable } from '../../../shared/components/ui/Skeleton';
 import EmptyState from '../../../shared/components/ui/EmptyState';
 import ConfirmDialog from '../../../shared/components/ui/ConfirmDialog';
 import ExportMenu, { ExportColumn } from '../../../shared/components/ExportMenu';
+import RegisterDetailModal from '../components/RegisterDetailModal';
 import {
   useAmlDsteRecords, useCreateAmlDsteRecord, useUpdateAmlDsteRecord, useDeleteAmlDsteRecord,
 } from '../hooks/useAml';
-import { Plus, Edit, Trash2, Save, X, Banknote } from 'lucide-react';
+import {
+  Plus, Edit, Trash2, Save, X, Banknote, Eye, Calendar, User, Coins, StickyNote, Clock, Sparkles, PenLine,
+} from 'lucide-react';
 
 interface EditState {
   id?: number;
@@ -39,6 +42,7 @@ export default function AmlDsteRegisterPage() {
 
   const [editing, setEditing] = useState<EditState | null>(null);
   const [toDelete, setToDelete] = useState<any>(null);
+  const [viewing, setViewing] = useState<any>(null);
 
   const startNew = () => setEditing({ ...emptyState });
   const startEdit = (r: any) => setEditing({
@@ -162,6 +166,7 @@ export default function AmlDsteRegisterPage() {
                   <td className="px-4 py-3 text-slate-500">{fmtDate(r.createdAt)}</td>
                   <td className="px-4 py-3">
                     <div className="flex justify-end gap-1">
+                      <Button variant="ghost" size="sm" icon={<Eye className="h-4 w-4" />} onClick={() => setViewing(r)} />
                       <Button variant="ghost" size="sm" icon={<Edit className="h-4 w-4" />} onClick={() => startEdit(r)} />
                       <Button variant="ghost" size="sm" icon={<Trash2 className="h-4 w-4" />} onClick={() => setToDelete(r)} />
                     </div>
@@ -177,6 +182,31 @@ export default function AmlDsteRegisterPage() {
         message={`Supprimer l'enregistrement « ${toDelete?.reference ?? ''} » ?`}
         onConfirm={async () => { if (toDelete) await del.mutateAsync(toDelete.id); setToDelete(null); }}
         onClose={() => setToDelete(null)} />
+
+      <RegisterDetailModal
+        open={!!viewing}
+        onClose={() => setViewing(null)}
+        accent="emerald"
+        icon={<Banknote className="h-5 w-5" />}
+        eyebrow="Transaction DSTE"
+        reference={viewing?.reference}
+        badge={viewing && (
+          <Badge variant={viewing.sourceType ? 'info' : 'default'}>
+            <span className="flex items-center gap-1">
+              {viewing.sourceType ? <Sparkles className="h-3 w-3" /> : <PenLine className="h-3 w-3" />}
+              {viewing.sourceType ? 'Automatique' : 'Manuelle'}
+            </span>
+          </Badge>
+        )}
+        fields={viewing ? [
+          { key: 'transactionDate', label: 'Date de la transaction', value: fmtDate(viewing.transactionDate), icon: <Calendar className="h-4 w-4" /> },
+          { key: 'subjectLabel', label: 'Client / dossier concerné', value: viewing.subjectLabel, icon: <User className="h-4 w-4" /> },
+          { key: 'amount', label: 'Montant (FCFA)', value: fmtAmount(viewing.amount), icon: <Coins className="h-4 w-4" /> },
+          { key: 'createdAt', label: 'Enregistré le', value: fmtDate(viewing.createdAt), icon: <Clock className="h-4 w-4" /> },
+          { key: 'description', label: 'Description', value: viewing.description, icon: <Banknote className="h-3.5 w-3.5" />, full: true },
+          { key: 'notes', label: 'Notes', value: viewing.notes, icon: <StickyNote className="h-3.5 w-3.5" />, full: true },
+        ] : []}
+      />
     </PageLayout>
   );
 }

@@ -35,6 +35,7 @@ const ALERT_EXPORT_COLUMNS: ExportColumn<any>[] = [
   { header: "Intégration dans l'outil", cell: (a) => fmtDateExport(a.integratedAt) },
   { header: 'Entrées ajoutées', cell: (a) => (a.entriesAdded ?? '') },
   { header: 'Entrées modifiées', cell: (a) => (a.entriesModified ?? '') },
+  { header: 'Entrées supprimées', cell: (a) => (a.entriesDeleted ?? '') },
   { header: 'Opérateur', cell: (a) => a.operatorDisplayName ?? a.operatorName ?? '' },
 ];
 

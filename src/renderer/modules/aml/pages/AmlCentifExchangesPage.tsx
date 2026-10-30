@@ -11,10 +11,13 @@ import { SkeletonTable } from '../../../shared/components/ui/Skeleton';
 import EmptyState from '../../../shared/components/ui/EmptyState';
 import ConfirmDialog from '../../../shared/components/ui/ConfirmDialog';
 import ExportMenu, { ExportColumn } from '../../../shared/components/ExportMenu';
+import RegisterDetailModal from '../components/RegisterDetailModal';
 import {
   useAmlCentifExchanges, useCreateAmlCentifExchange, useUpdateAmlCentifExchange, useDeleteAmlCentifExchange,
 } from '../hooks/useAml';
-import { Plus, Edit, Trash2, Save, X, MessageSquare } from 'lucide-react';
+import {
+  Plus, Edit, Trash2, Save, X, MessageSquare, Eye, ArrowLeftRight, Calendar, Share2, CalendarCheck, StickyNote, FileText,
+} from 'lucide-react';
 
 const DIRECTION_LABEL: Record<string, string> = { ENTRANT: 'Entrant', SORTANT: 'Sortant' };
 const STATUS_LABEL: Record<string, string> = { EN_COURS: 'En cours', CLOTURE: 'Clôturé', SANS_SUITE: 'Sans suite' };
@@ -46,6 +49,7 @@ export default function AmlCentifExchangesPage() {
 
   const [editing, setEditing] = useState<EditState | null>(null);
   const [toDelete, setToDelete] = useState<any>(null);
+  const [viewing, setViewing] = useState<any>(null);
 
   const startNew = () => setEditing({ ...emptyState });
   const startEdit = (r: any) => setEditing({
@@ -169,6 +173,7 @@ export default function AmlCentifExchangesPage() {
                   <td className="px-4 py-3 text-slate-500">{fmtDate(r.closedAt)}</td>
                   <td className="px-4 py-3">
                     <div className="flex justify-end gap-1">
+                      <Button variant="ghost" size="sm" icon={<Eye className="h-4 w-4" />} onClick={() => setViewing(r)} />
                       <Button variant="ghost" size="sm" icon={<Edit className="h-4 w-4" />} onClick={() => startEdit(r)} />
                       <Button variant="ghost" size="sm" icon={<Trash2 className="h-4 w-4" />} onClick={() => setToDelete(r)} />
                     </div>
@@ -184,6 +189,26 @@ export default function AmlCentifExchangesPage() {
         message={`Supprimer l'enregistrement « ${toDelete?.reference ?? ''} » ?`}
         onConfirm={async () => { if (toDelete) await del.mutateAsync(toDelete.id); setToDelete(null); }}
         onClose={() => setToDelete(null)} />
+
+      <RegisterDetailModal
+        open={!!viewing}
+        onClose={() => setViewing(null)}
+        accent="sky"
+        icon={<MessageSquare className="h-5 w-5" />}
+        eyebrow="Échange CENTIF-CI"
+        reference={viewing?.reference}
+        badge={viewing && (
+          <Badge variant={STATUS_VARIANT[viewing.status]}>{STATUS_LABEL[viewing.status] ?? viewing.status}</Badge>
+        )}
+        fields={viewing ? [
+          { key: 'exchangeDate', label: 'Date', value: fmtDate(viewing.exchangeDate), icon: <Calendar className="h-4 w-4" /> },
+          { key: 'direction', label: 'Sens', value: <Badge variant="default"><span className="flex items-center gap-1"><ArrowLeftRight className="h-3 w-3" />{DIRECTION_LABEL[viewing.direction] ?? viewing.direction}</span></Badge>, icon: <ArrowLeftRight className="h-4 w-4" /> },
+          { key: 'channel', label: 'Canal', value: viewing.channel, icon: <Share2 className="h-4 w-4" /> },
+          { key: 'closedAt', label: 'Date de clôture', value: fmtDate(viewing.closedAt), icon: <CalendarCheck className="h-4 w-4" /> },
+          { key: 'nature', label: "Nature de l'échange", value: viewing.nature, icon: <FileText className="h-3.5 w-3.5" />, full: true },
+          { key: 'notes', label: 'Notes', value: viewing.notes, icon: <StickyNote className="h-3.5 w-3.5" />, full: true },
+        ] : []}
+      />
     </PageLayout>
   );
 }

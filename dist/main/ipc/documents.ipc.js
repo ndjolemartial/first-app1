@@ -12,6 +12,7 @@ const zod_1 = require("zod");
 const db_service_1 = require("../services/db.service");
 const auth_service_1 = require("../services/auth.service");
 const storage_service_1 = require("../services/storage.service");
+const settings_service_1 = require("../services/settings.service");
 const logger_1 = __importDefault(require("../utils/logger"));
 const WRITE_ROLES = ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'AGENT'];
 // CONFORMITE (Module 19) ajouté en lecture — sans quoi le chargé de
@@ -38,6 +39,29 @@ function isAmlLinkedAttachmentReadable(session, doc) {
     if (!AML_CONFIDENTIAL_ROLES.includes(session.role))
         return false;
     return doc.amlProfileId != null || doc.amlTransactionReviewId != null || doc.amlTrainingId != null || doc.amlWatchlistAlertId != null;
+}
+// « Alertes » LBC/FT (aml.ipc.ts → ALERTS_ROLES / assertAlertsAccess) :
+// SUPER_ADMIN/ADMIN/MANAGER d'office, sinon désignation individuelle via
+// Paramètres → « Alertes — accès » (AppSetting aml.alerts.authorizedUserIds).
+// Dupliqué localement (convention du projet : pas d'import inter-fichiers IPC).
+const ALERTS_ROLES = ['SUPER_ADMIN', 'ADMIN', 'MANAGER'];
+async function hasAlertsAccess(session) {
+    if (ALERTS_ROLES.includes(session.role))
+        return true;
+    const raw = await (0, settings_service_1.getSetting)(settings_service_1.SettingsKeys.alertsAuthorizedUserIds);
+    if (!raw)
+        return false;
+    try {
+        const ids = JSON.parse(raw);
+        return Array.isArray(ids) && ids.includes(session.userId);
+    }
+    catch {
+        return false;
+    }
+}
+/** Pièce jointe d'une alerte LBC/FT lisible par un utilisateur ayant accès à l'interface « Alertes ». */
+async function isAlertAttachmentReadable(session, doc) {
+    return doc.amlWatchlistAlertId != null && (await hasAlertsAccess(session));
 }
 // Rôles autorisés à créer une déclaration de soupçon (donc à y joindre des
 // pièces juste après sa création) — même liste qu'AML_REPORT_CREATE_ROLES.
@@ -852,7 +876,14 @@ function registerDocumentsIPC() {
             // Dépôt rattaché à une entité LBC/FT (Module 19) : contourne le droit
             // d'écriture général de la GED, avec ses propres contrôles dédiés.
             let amlUpload = false;
-            if (d.amlProfileId != null || d.amlTransactionReviewId != null || d.amlTrainingId != null || d.amlWatchlistAlertId != null) {
+            if (d.amlWatchlistAlertId != null) {
+                // Alertes : AML_ROLES historiques + accès « Alertes » (rôles d'office ou désignation individuelle).
+                if (!AML_ROLES.includes(session.role) && !(await hasAlertsAccess(session))) {
+                    return { success: false, error: 'Permission insuffisante' };
+                }
+                amlUpload = true;
+            }
+            else if (d.amlProfileId != null || d.amlTransactionReviewId != null || d.amlTrainingId != null) {
                 if (!AML_ROLES.includes(session.role))
                     return { success: false, error: 'Permission insuffisante' };
                 amlUpload = true;
@@ -1019,7 +1050,8 @@ function registerDocumentsIPC() {
             // Procédures LBC/FT (« Nos Procédures LBC/FT ») : consultables/
             // téléchargeables par TOUT utilisateur authentifié (y compris RH) —
             // contourne le contrôle de rôle général READ_ROLES, cf. PROCEDURE_WRITE_ROLES.
-            if (doc.amlProcedureId == null)
+            const alertBypass = await isAlertAttachmentReadable(session, doc);
+            if (doc.amlProcedureId == null && !alertBypass)
                 (0, auth_service_1.checkRole)(session, READ_ROLES);
             if (doc.amlSuspiciousReportId != null && !AML_CONFIDENTIAL_ROLES.includes(session.role)) {
                 return { success: false, error: 'Document introuvable' };
@@ -1031,6 +1063,7 @@ function registerDocumentsIPC() {
             const agentTechniquePublicationBypass = session.role === 'AGENT_TECHNIQUE' && doc.crmActivity?.type === 'CREATION_PUBLICATION';
             if (doc.amlProcedureId == null &&
                 !agentTechniquePublicationBypass &&
+                !alertBypass &&
                 !isAmlLinkedAttachmentReadable(session, doc) &&
                 !(await canReadDocumentFolder(db, session, doc.folderId))) {
                 return { success: false, error: 'Accès refusé à ce document' };
@@ -1067,7 +1100,8 @@ function registerDocumentsIPC() {
                 return { success: false, error: 'Document introuvable' };
             // Procédures LBC/FT : aperçu accessible à TOUT utilisateur authentifié —
             // cf. documents:open.
-            if (doc.amlProcedureId == null)
+            const alertBypass = await isAlertAttachmentReadable(session, doc);
+            if (doc.amlProcedureId == null && !alertBypass)
                 (0, auth_service_1.checkRole)(session, READ_ROLES);
             if (doc.amlSuspiciousReportId != null && !AML_CONFIDENTIAL_ROLES.includes(session.role)) {
                 return { success: false, error: 'Document introuvable' };
@@ -1077,6 +1111,7 @@ function registerDocumentsIPC() {
             const agentTechniquePublicationBypass = session.role === 'AGENT_TECHNIQUE' && doc.crmActivity?.type === 'CREATION_PUBLICATION';
             if (doc.amlProcedureId == null &&
                 !agentTechniquePublicationBypass &&
+                !alertBypass &&
                 !isAmlLinkedAttachmentReadable(session, doc) &&
                 !(await canReadDocumentFolder(db, session, doc.folderId))) {
                 return { success: false, error: 'Accès refusé à ce document' };

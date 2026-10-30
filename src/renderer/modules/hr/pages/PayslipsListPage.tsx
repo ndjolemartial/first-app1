@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { useNavigate } from 'react-router-dom';
 import PageLayout from '../../../shared/components/layout/PageLayout';
@@ -130,11 +130,20 @@ export default function PayslipsListPage() {
   const [year, setYear] = useState(String(now.getFullYear()));
   const [month, setMonth] = useState('');
   const [status, setStatus] = useState('');
+  const [searchInput, setSearchInput] = useState('');
+  const [search, setSearch] = useState('');
   const [showGenerate, setShowGenerate] = useState(false);
   const [duplicateSource, setDuplicateSource] = useState<Payslip | null>(null);
   const [showWireTransfer, setShowWireTransfer] = useState(false);
 
+  // Recherche différée : évite une requête à chaque frappe.
+  useEffect(() => {
+    const t = setTimeout(() => { setSearch(searchInput.trim()); setPage(1); }, 300);
+    return () => clearTimeout(t);
+  }, [searchInput]);
+
   const filters = {
+    search: search || undefined,
     periodYear: year || undefined,
     periodMonth: month || undefined,
     status: status || undefined,
@@ -180,6 +189,10 @@ export default function PayslipsListPage() {
       }
     >
       <Card className="mb-4 flex flex-wrap items-end gap-3">
+        <div className="w-64">
+          <Input label="Rechercher un employé" placeholder="Nom, prénoms ou matricule…"
+            value={searchInput} onChange={(e) => setSearchInput(e.target.value)} />
+        </div>
         <div className="w-40">
           <Select label="Année" options={[{ value: '', label: 'Toutes' }, ...YEAR_OPTIONS]} value={year}
             onChange={(e) => { setYear(e.target.value); setPage(1); }} />

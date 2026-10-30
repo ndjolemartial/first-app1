@@ -217,3 +217,25 @@ export async function approvedLeaveDaysInRange(
   }
   return { congePaye: round1(congePaye), reposComp: round1(reposComp) };
 }
+
+/**
+ * Jours de congé approuvés **non rémunérés** (`LeaveType.isPaid = false` —
+ * congé sans solde, absence non justifiée…) dont la date de début est dans
+ * [start, end[. Sert à calculer l'abattement salarial correspondant sur le
+ * bulletin de paie (`computeUnpaidLeaveDeduction`, `payroll.service.ts`).
+ */
+export async function unpaidLeaveDaysInRange(
+  employeeId: number,
+  start: Date,
+  end: Date,
+): Promise<number> {
+  const db = getDb();
+  const reqs = await db.leaveRequest.findMany({
+    where: {
+      employeeId, status: 'APPROUVE', deletedAt: null,
+      type: { isPaid: false }, startDate: { gte: start, lt: end },
+    },
+    select: { days: true },
+  });
+  return round1(reqs.reduce((s, r) => s + Number(r.days), 0));
+}

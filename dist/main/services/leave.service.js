@@ -10,6 +10,7 @@ exports.workingDays = workingDays;
 exports.computeLeaveBalance = computeLeaveBalance;
 exports.computePayslipLeaveCounters = computePayslipLeaveCounters;
 exports.approvedLeaveDaysInRange = approvedLeaveDaysInRange;
+exports.unpaidLeaveDaysInRange = unpaidLeaveDaysInRange;
 const db_service_1 = require("./db.service");
 const logger_1 = __importDefault(require("../utils/logger"));
 /**
@@ -189,4 +190,21 @@ async function approvedLeaveDaysInRange(employeeId, start, end) {
             reposComp += d;
     }
     return { congePaye: round1(congePaye), reposComp: round1(reposComp) };
+}
+/**
+ * Jours de congé approuvés **non rémunérés** (`LeaveType.isPaid = false` —
+ * congé sans solde, absence non justifiée…) dont la date de début est dans
+ * [start, end[. Sert à calculer l'abattement salarial correspondant sur le
+ * bulletin de paie (`computeUnpaidLeaveDeduction`, `payroll.service.ts`).
+ */
+async function unpaidLeaveDaysInRange(employeeId, start, end) {
+    const db = (0, db_service_1.getDb)();
+    const reqs = await db.leaveRequest.findMany({
+        where: {
+            employeeId, status: 'APPROUVE', deletedAt: null,
+            type: { isPaid: false }, startDate: { gte: start, lt: end },
+        },
+        select: { days: true },
+    });
+    return round1(reqs.reduce((s, r) => s + Number(r.days), 0));
 }

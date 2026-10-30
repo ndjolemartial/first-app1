@@ -627,8 +627,12 @@ function registerConventionsIPC() {
                     // Résiliations / avenants à paiement additionnel facultatif : aucune facture
                     // de frais d'ouverture ni de vente. Une seule facture, pour le paiement
                     // additionnel (« Avec paiement »), générée si le montant saisi est > 0.
+                    // Exception : avenant de transfert de site hérité dont le paiement
+                    // additionnel est échelonné — il est appelé via l'échéancier, pas en
+                    // une facture unique.
                     const additionnel = Number(d.additionalAmount ?? 0);
-                    if (additionnel > 0)
+                    const viaInstallments = d.paymentModalites !== 'CASH' && (d.installments?.length ?? 0) > 0;
+                    if (additionnel > 0 && !viaInstallments)
                         autoInvoices.push({ type: 'OTHER', amount: additionnel, label: 'Paiement additionnel' });
                 }
                 else {

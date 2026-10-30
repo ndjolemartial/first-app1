@@ -11,11 +11,14 @@ import { SkeletonTable } from '../../../shared/components/ui/Skeleton';
 import EmptyState from '../../../shared/components/ui/EmptyState';
 import ConfirmDialog from '../../../shared/components/ui/ConfirmDialog';
 import ExportMenu, { ExportColumn } from '../../../shared/components/ExportMenu';
+import RegisterDetailModal from '../components/RegisterDetailModal';
 import {
   useAmlSuspiciousOperations, useCreateAmlSuspiciousOperation, useUpdateAmlSuspiciousOperation,
   useDeleteAmlSuspiciousOperation, useAmlCentifExchangesSelectable,
 } from '../hooks/useAml';
-import { Plus, Edit, Trash2, Save, X, AlertTriangle } from 'lucide-react';
+import {
+  Plus, Edit, Trash2, Save, X, AlertTriangle, Eye, Calendar, User, Hash, StickyNote, ShieldAlert,
+} from 'lucide-react';
 
 const DECISION_LABEL: Record<string, string> = { DOS_TRANSMISE: 'DOS transmise', DOS_NON_RETENUE: 'DOS non retenue' };
 const DECISION_VARIANT: Record<string, any> = { DOS_TRANSMISE: 'danger', DOS_NON_RETENUE: 'default' };
@@ -47,6 +50,7 @@ export default function AmlSuspiciousOperationsPage() {
 
   const [editing, setEditing] = useState<EditState | null>(null);
   const [toDelete, setToDelete] = useState<any>(null);
+  const [viewing, setViewing] = useState<any>(null);
 
   const startNew = () => setEditing({ ...emptyState });
   const startEdit = (r: any) => setEditing({
@@ -170,6 +174,7 @@ export default function AmlSuspiciousOperationsPage() {
                   <td className="px-4 py-3 text-slate-500">{r.dosExchange?.reference ?? '—'}</td>
                   <td className="px-4 py-3">
                     <div className="flex justify-end gap-1">
+                      <Button variant="ghost" size="sm" icon={<Eye className="h-4 w-4" />} onClick={() => setViewing(r)} />
                       <Button variant="ghost" size="sm" icon={<Edit className="h-4 w-4" />} onClick={() => startEdit(r)} />
                       <Button variant="ghost" size="sm" icon={<Trash2 className="h-4 w-4" />} onClick={() => setToDelete(r)} />
                     </div>
@@ -185,6 +190,25 @@ export default function AmlSuspiciousOperationsPage() {
         message={`Supprimer l'enregistrement « ${toDelete?.reference ?? ''} » ?`}
         onConfirm={async () => { if (toDelete) await del.mutateAsync(toDelete.id); setToDelete(null); }}
         onClose={() => setToDelete(null)} />
+
+      <RegisterDetailModal
+        open={!!viewing}
+        onClose={() => setViewing(null)}
+        accent="rose"
+        icon={<AlertTriangle className="h-5 w-5" />}
+        eyebrow="Opération suspecte"
+        reference={viewing?.reference}
+        badge={viewing?.decision && (
+          <Badge variant={DECISION_VARIANT[viewing.decision]}>{DECISION_LABEL[viewing.decision]}</Badge>
+        )}
+        fields={viewing ? [
+          { key: 'detectionDate', label: 'Date de détection', value: fmtDate(viewing.detectionDate), icon: <Calendar className="h-4 w-4" /> },
+          { key: 'subjectLabel', label: 'Client / dossier concerné', value: viewing.subjectLabel, icon: <User className="h-4 w-4" /> },
+          { key: 'dosExchange', label: 'Référence DOS', value: viewing.dosExchange?.reference, icon: <Hash className="h-4 w-4" /> },
+          { key: 'description', label: 'Description des faits / indices de suspicion', value: viewing.description, icon: <ShieldAlert className="h-3.5 w-3.5" />, full: true },
+          { key: 'notes', label: 'Notes', value: viewing.notes, icon: <StickyNote className="h-3.5 w-3.5" />, full: true },
+        ] : []}
+      />
     </PageLayout>
   );
 }

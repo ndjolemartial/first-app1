@@ -16,11 +16,12 @@ import {
 import {
   ACCOUNT_TYPE_LABEL, ACCOUNT_TYPE_VARIANT, DIRECTION_LABEL, DIRECTION_OPTIONS,
   SOURCE_LABEL, PAYMENT_METHOD_LABEL, TREASURY_WRITE_ROLES, TREASURY_ADMIN_ROLES,
-  categoryLabel,
+  TREASURY_OPERATION_EDIT_ROLES, TREASURY_EDITABLE_SOURCES, categoryLabel,
 } from '../utils/treasury.utils';
 import { formatCurrency, formatDate } from '../../../shared/utils/format';
 import { Plus, Pencil, Trash2, Search, ArrowLeft, Paperclip } from 'lucide-react';
 import OperationDocumentsModal from '../components/OperationDocumentsModal';
+import EditOperationModal from '../components/EditOperationModal';
 
 const SOURCE_OPTIONS = [
   { value: '', label: 'Toutes origines' },
@@ -28,6 +29,7 @@ const SOURCE_OPTIONS = [
   { value: 'FACTURE', label: 'Encaissement facture' },
   { value: 'ECHEANCE', label: 'Règlement échéance' },
   { value: 'COMMISSION', label: 'Paiement commission' },
+  { value: 'TRANSFERT', label: 'Transfert' },
 ];
 
 export default function AccountDetailPage() {
@@ -38,6 +40,7 @@ export default function AccountDetailPage() {
   const role = useAuthStore((s) => s.user?.role ?? '');
   const canManage = TREASURY_WRITE_ROLES.includes(role);
   const canDelete = TREASURY_ADMIN_ROLES.includes(role);
+  const canEditOperation = TREASURY_OPERATION_EDIT_ROLES.includes(role);
 
   const [direction, setDirection] = useState('');
   const [source, setSource] = useState('');
@@ -51,6 +54,7 @@ export default function AccountDetailPage() {
   const [deleteAccountOpen, setDeleteAccountOpen] = useState(false);
   const [deleteOpTarget, setDeleteOpTarget] = useState<any>(null);
   const [docsOpTarget, setDocsOpTarget] = useState<any>(null);
+  const [editOpTarget, setEditOpTarget] = useState<any>(null);
 
   const { data: accountRes, isLoading: accountLoading } = useTreasuryAccount(accountId);
   const account = accountRes?.data;
@@ -306,7 +310,15 @@ export default function AccountDetailPage() {
                             title="Pièces jointes"
                             onClick={() => setDocsOpTarget(op)}
                           />
-                          {canManage && op.source === 'MANUEL' && (
+                          {canEditOperation && TREASURY_EDITABLE_SOURCES.includes(op.source) && (
+                            <Button
+                              size="sm" variant="ghost"
+                              icon={<Pencil className="h-4 w-4 text-slate-500" />}
+                              title="Modifier"
+                              onClick={() => setEditOpTarget(op)}
+                            />
+                          )}
+                          {canManage && TREASURY_EDITABLE_SOURCES.includes(op.source) && (
                             <Button
                               size="sm" variant="ghost"
                               icon={<Trash2 className="h-4 w-4 text-red-500" />}
@@ -365,11 +377,14 @@ export default function AccountDetailPage() {
         message={
           deleteOpError && typeof deleteOpError === 'string'
             ? deleteOpError
-            : `Supprimer l'opération « ${deleteOpTarget?.label ?? ''} » (${deleteOpTarget ? formatCurrency(Number(deleteOpTarget.amount)) : ''}) ?`
+            : `Supprimer l'opération « ${deleteOpTarget?.label ?? ''} » (${deleteOpTarget ? formatCurrency(Number(deleteOpTarget.amount)) : ''}) ?${
+                deleteOpTarget?.source === 'TRANSFERT' ? ' Il s\'agit d\'un transfert : l\'opération liée sur l\'autre compte sera également supprimée.' : ''}`
         }
         confirmLabel="Supprimer"
         loading={deleteOperation.isPending}
       />
+
+      <EditOperationModal operation={editOpTarget} onClose={() => setEditOpTarget(null)} />
 
       <OperationDocumentsModal
         operation={docsOpTarget}

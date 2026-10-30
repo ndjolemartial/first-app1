@@ -326,16 +326,32 @@ const trainingUpdateSchema = trainingBaseSchema.extend({ userId: z.coerce.number
 
 // Alerte CENTIF-CI / mise à jour d'une liste SFC — un enregistrement = une
 // version de la base de criblage.
+/**
+ * Date facultative d'une alerte, bornée aux années 1900–9999 : un champ date
+ * Chromium accepte une année sur 5-6 chiffres (ex. « 12026 » si l'on tape dans un
+ * segment année non vide), que MariaDB/Prisma refusent ensuite avec une erreur
+ * technique illisible. On rejette donc ici avec un message clair.
+ */
+const alertDate = (label: string) => z.preprocess(
+  emptyToNull,
+  z.coerce.date()
+    .refine((d) => d.getUTCFullYear() >= 1900 && d.getUTCFullYear() <= 9999,
+      { message: `${label} : année invalide (vérifiez la saisie, ex. 12026 au lieu de 2026)` })
+    .nullable()
+    .optional(),
+);
+
 const alertBaseSchema = z.object({
   source: z.enum(['CENTIF_CI', 'SFC', 'ONU', 'UE', 'GIABA', 'AUTRE']),
   title: z.string().min(1, 'Intitulé requis'),
-  centifPublicationDate: z.preprocess(emptyToNull, z.coerce.date().nullable().optional()),
-  fileDownloadedAt: z.preprocess(emptyToNull, z.coerce.date().nullable().optional()),
-  integratedAt: z.preprocess(emptyToNull, z.coerce.date().nullable().optional()),
+  centifPublicationDate: alertDate('Date de publication CENTIF-CI'),
+  fileDownloadedAt: alertDate('Date de téléchargement du fichier'),
+  integratedAt: alertDate("Date d'intégration dans l'outil interne"),
   operatorId: z.preprocess(emptyToNull, z.coerce.number().int().positive().nullable().optional()),
   operatorName: z.preprocess(emptyToNull, z.string().nullable().optional()),
   entriesAdded: z.preprocess(emptyToNull, z.coerce.number().int().min(0).nullable().optional()),
   entriesModified: z.preprocess(emptyToNull, z.coerce.number().int().min(0).nullable().optional()),
+  entriesDeleted: z.preprocess(emptyToNull, z.coerce.number().int().min(0).nullable().optional()),
   notes: z.preprocess(emptyToNull, z.string().nullable().optional()),
 });
 const alertCreateSchema = alertBaseSchema;

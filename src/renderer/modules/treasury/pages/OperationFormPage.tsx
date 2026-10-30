@@ -195,6 +195,28 @@ export default function OperationFormPage() {
   const { data: budgetLinesRes } = useAccessibleBudgetLines();
   const budgetLines = budgetLinesRes?.data ?? [];
 
+  // Sélection croisée par défaut : Mode de règlement « Prélèvement bancaire »
+  // ↔ Objet d'opération « Frais bancaire ». Chaque effet ne force l'autre
+  // champ que si les deux ne correspondent pas déjà — évite toute boucle et
+  // n'empêche pas l'utilisateur de changer l'un des deux ensuite.
+  const watchedPaymentMethod = watch('paymentMethod');
+  const watchedCategoryId = watch('categoryId');
+  const fraisBancaireCategory = categories.find(
+    (c: any) => c.label?.trim().toLowerCase() === 'frais bancaire',
+  );
+  useEffect(() => {
+    if (!fraisBancaireCategory) return;
+    if (watchedPaymentMethod === 'PRELEVEMENT' && watchedCategoryId !== String(fraisBancaireCategory.id)) {
+      setValue('categoryId', String(fraisBancaireCategory.id));
+    }
+  }, [watchedPaymentMethod, fraisBancaireCategory, watchedCategoryId, setValue]);
+  useEffect(() => {
+    if (!fraisBancaireCategory) return;
+    if (watchedCategoryId === String(fraisBancaireCategory.id) && watchedPaymentMethod !== 'PRELEVEMENT') {
+      setValue('paymentMethod', 'PRELEVEMENT');
+    }
+  }, [watchedCategoryId, fraisBancaireCategory, watchedPaymentMethod, setValue]);
+
   // Le compte de destination est obligatoire : redirige si aucun n'existe.
   useEffect(() => {
     if (accountsRes && accounts.length === 0) {

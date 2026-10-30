@@ -38,6 +38,7 @@ interface EditState {
   operatorName: string;
   entriesAdded: string;
   entriesModified: string;
+  entriesDeleted: string;
   notes: string;
 }
 
@@ -100,7 +101,7 @@ export default function AmlAlertsPage() {
 
   const startNew = () => { setPendingFiles([]); setEditing({
     source: 'CENTIF_CI', title: '', centifPublicationDate: '', fileDownloadedAt: '',
-    integratedAt: '', operatorName: operatorDefault, entriesAdded: '', entriesModified: '', notes: '',
+    integratedAt: '', operatorName: operatorDefault, entriesAdded: '', entriesModified: '', entriesDeleted: '', notes: '',
   }); };
   const startEdit = (a: any) => { setPendingFiles([]); setEditing({
     id: a.id, source: a.source, title: a.title,
@@ -110,6 +111,7 @@ export default function AmlAlertsPage() {
     operatorName: a.operatorDisplayName ?? a.operatorName ?? '',
     entriesAdded: a.entriesAdded != null ? String(a.entriesAdded) : '',
     entriesModified: a.entriesModified != null ? String(a.entriesModified) : '',
+    entriesDeleted: a.entriesDeleted != null ? String(a.entriesDeleted) : '',
     notes: a.notes ?? '',
   }); };
 
@@ -124,6 +126,7 @@ export default function AmlAlertsPage() {
       operatorName: editing.operatorName || null,
       entriesAdded: editing.entriesAdded === '' ? null : Number(editing.entriesAdded),
       entriesModified: editing.entriesModified === '' ? null : Number(editing.entriesModified),
+      entriesDeleted: editing.entriesDeleted === '' ? null : Number(editing.entriesDeleted),
       notes: editing.notes || null,
     };
     if (editing.id) {
@@ -166,11 +169,12 @@ export default function AmlAlertsPage() {
             <Input label="Intitulé *" className="col-span-2" value={editing.title}
               onChange={(e) => setEditing({ ...editing, title: e.target.value })}
               placeholder="Ex. Communiqué CENTIF-CI n°04/2026 — actualisation liste nationale" />
-            <Input label="Date de publication CENTIF-CI" type="date" value={editing.centifPublicationDate}
+            {/* min/max : borne l'année à 4 chiffres (sinon Chromium accepte « 12026 »). */}
+            <Input label="Date de publication CENTIF-CI" type="date" min="1900-01-01" max="9999-12-31" value={editing.centifPublicationDate}
               onChange={(e) => setEditing({ ...editing, centifPublicationDate: e.target.value })} />
-            <Input label="Date de téléchargement du fichier" type="date" value={editing.fileDownloadedAt}
+            <Input label="Date de téléchargement du fichier" type="date" min="1900-01-01" max="9999-12-31" value={editing.fileDownloadedAt}
               onChange={(e) => setEditing({ ...editing, fileDownloadedAt: e.target.value })} />
-            <Input label="Date d'intégration dans l'outil interne" type="date" value={editing.integratedAt}
+            <Input label="Date d'intégration dans l'outil interne" type="date" min="1900-01-01" max="9999-12-31" value={editing.integratedAt}
               onChange={(e) => setEditing({ ...editing, integratedAt: e.target.value })}
               helper="Détermine la version courante de la base de criblage." />
             <Input label="Nombre d'entrées ajoutées au référentiel" type="number" min="0" value={editing.entriesAdded}
@@ -178,6 +182,9 @@ export default function AmlAlertsPage() {
             <Input label="Nombre d'entrées modifiées dans le référentiel" type="number" min="0" value={editing.entriesModified}
               onChange={(e) => setEditing({ ...editing, entriesModified: e.target.value })}
               helper="Modifications d'enregistrements déjà existants." />
+            <Input label="Nombre d'entrées supprimées du référentiel" type="number" min="0" value={editing.entriesDeleted}
+              onChange={(e) => setEditing({ ...editing, entriesDeleted: e.target.value })}
+              helper="Enregistrements retirés de la liste (radiations)." />
           </div>
           <Textarea label="Notes" rows={2} value={editing.notes} onChange={(e) => setEditing({ ...editing, notes: e.target.value })} />
 

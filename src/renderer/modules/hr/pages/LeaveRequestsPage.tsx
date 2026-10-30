@@ -29,26 +29,18 @@ import {
 const WRITE_ROLES = new Set(['SUPER_ADMIN', 'ADMIN', 'RH', 'ACCOUNTANT', 'MANAGER', 'ASSISTANTE_DIRECTION']);
 
 /**
- * Date de fin (« Au ») calculée à partir d'une date de début et d'un nombre de
- * jours ouvrés : renvoie la date du dernier jour ouvré couvert. Si le début
- * tombe un week-end, le comptage démarre au premier jour ouvré suivant. Les
- * demi-journées étendent la fin jusqu'au jour ouvré touché (arrondi au jour).
+ * Date de fin (« Au ») calculée à partir d'une date de début et d'un nombre
+ * de jours : compte les jours calendaires (week-ends et jours fériés inclus),
+ * pas seulement les jours ouvrés. Les demi-journées arrondissent au jour
+ * supérieur pour la détermination de la date de fin.
  */
-function endDateFromWorkingDays(start: string, days: number): string {
+function endDateFromDays(start: string, days: number): string {
   if (!start || !days || days <= 0) return '';
   const s = new Date(start);
   if (isNaN(s.getTime())) return '';
   const target = Math.ceil(days);
   const d = new Date(s.getFullYear(), s.getMonth(), s.getDate());
-  let counted = 0;
-  for (let i = 0; i < 3650; i += 1) {
-    const day = d.getDay();
-    if (day !== 0 && day !== 6) {
-      counted += 1;
-      if (counted >= target) break;
-    }
-    d.setDate(d.getDate() + 1);
-  }
+  d.setDate(d.getDate() + (target - 1));
   const pad = (n: number) => String(n).padStart(2, '0');
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 }
@@ -67,8 +59,8 @@ function RequestModal({ onClose }: { onClose: () => void }) {
   });
   const empId = Number(watch('employeeId')) || 0;
   const start = watch('startDate'); const days = watch('days');
-  // « Au » calculé automatiquement à partir de « Du » et du nombre de jours ouvrés.
-  const autoEnd = useMemo(() => endDateFromWorkingDays(start, Number(days)), [start, days]);
+  // « Au » calculé automatiquement à partir de « Du » et du nombre de jours (calendaires).
+  const autoEnd = useMemo(() => endDateFromDays(start, Number(days)), [start, days]);
   useEffect(() => { setValue('endDate', autoEnd); }, [autoEnd, setValue]);
   const { data: balRes } = useLeaveBalance(empId);
   const balance = balRes?.data;
@@ -112,7 +104,7 @@ function RequestModal({ onClose }: { onClose: () => void }) {
         <Select label="Type" options={typeOptions} {...register('typeId', { required: true })} />
         <div />
         <Input label="Du" type="date" {...register('startDate', { required: true })} />
-        <Input label="Nombre de jours ouvrés" type="number" step="0.5" min="0"
+        <Input label="Nombre de jours" type="number" step="0.5" min="0"
           placeholder="0" {...register('days', { required: true })} />
         <Input label="Au (calculé automatiquement)" type="date" readOnly
           {...register('endDate', { required: true })} />

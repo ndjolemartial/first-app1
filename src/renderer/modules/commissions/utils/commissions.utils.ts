@@ -58,7 +58,7 @@ export const SOURCE_LABEL: Record<string, string> = {
 };
 
 export const BENEFICIARY_TYPE_LABEL: Record<string, string> = {
-  USER: 'Utilisateur',
+  USER: 'Employé(e)',
   REFERRER: 'Apporteur d\'affaire',
 };
 

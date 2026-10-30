@@ -582,6 +582,15 @@ export default function ConventionFormPage() {
   // Conventions proposant l'option « Avec / Sans paiement » (paiement additionnel
   // facultatif). L'avenant de transfert de site conserve son propre flux financier.
   const showPaymentChoice = PAYMENT_OPTION_TYPES.includes(watchType ?? '') && !isTransfertSite;
+  // Avenant de transfert de site / lot d'une convention HÉRITÉE « Avec paiement »
+  // d'un montant > 0 : le paiement additionnel suit les mêmes modalités que le
+  // montant supplémentaire d'un avenant de transfert de site (comptant ou
+  // échéancier, base = paiement additionnel, sans apport).
+  const isHeriteTransfertPayment = watchType === 'AVENANT_TRANSFERT_SITE_HERITE'
+    && withPayment && (Number(watchAdditionalAmount) || 0) > 0;
+  // L'échéancier a pour base le montant additionnel (et pas le prix de vente).
+  const additionalIsInstallmentBase = isTransfertSite || isHeriteTransfertPayment;
+  const additionalBaseLabel = isTransfertSite ? 'Montant supplémentaire' : 'Paiement additionnel';
   // Conventions héritées : champs « Date convention antérieure » et « Conditions
   // particulières » dans le bloc Délais.
   const showPriorConventionDate = INHERITED_CONVENTION_TYPES.includes(watchType ?? '');
@@ -615,10 +624,10 @@ export default function ConventionFormPage() {
   // montant supplémentaire (et il n'y a pas d'apport — c'est un complément).
   // Pour les autres conventions de vente, on reste sur le prix de vente
   // total avec apport initial éventuel.
-  const installmentBaseAmount = isTransfertSite
+  const installmentBaseAmount = additionalIsInstallmentBase
     ? (Number(watchAdditionalAmount) || 0)
     : (Number(watchSaleAmount) || 0);
-  const installmentApportAmount = isTransfertSite ? 0 : (Number(watchApport) || 0);
+  const installmentApportAmount = additionalIsInstallmentBase ? 0 : (Number(watchApport) || 0);
 
   const recomputeInstallments = () => {
     setInstallmentRows(buildInstallments(
@@ -1201,12 +1210,19 @@ export default function ConventionFormPage() {
       // Ces conventions n'ont ni prix de vente ni frais d'ouverture de dossier.
       payload.saleAmount = undefined;
       payload.fraisOuvertureDossier = 0;
-      payload.paymentModalites = 'CASH';
+      // Avenant de transfert de site hérité avec paiement additionnel > 0 :
+      // les modalités saisies (comptant / échéancier) sont conservées. Sinon,
+      // paiement comptant.
+      const keepsModalites = payload.type === 'AVENANT_TRANSFERT_SITE_HERITE'
+        && payload.additionalAmount > 0;
+      if (!keepsModalites) payload.paymentModalites = 'CASH';
     } else if (!isTransfertSitePayload) {
       delete payload.additionalAmount;
     }
     // Échéancier : vente par échéances uniquement
     if (isSale && payload.paymentModalites !== 'CASH') {
+      // Base = paiement additionnel (transfert de site hérité) : pas d'apport initial.
+      if (isPaymentChoicePayload) delete payload.apportInitial;
       payload.installments = installmentRows
         .filter((r) => r.dueDate && r.amount !== '')
         .map((r) => ({ dueDate: new Date(r.dueDate).toISOString(), amount: Number(r.amount) }));
@@ -1592,7 +1608,9 @@ export default function ConventionFormPage() {
                         {...register('additionalAmount')}
                       />
                       <p className="text-xs text-slate-500 mt-1">
-                        Une facture sera générée à l'enregistrement de la convention si le montant saisi est supérieur à 0.
+                        {isHeriteTransfertPayment && isInstallment
+                          ? "Le paiement additionnel sera appelé selon l'échéancier ci-dessous."
+                          : "Une facture sera générée à l'enregistrement de la convention si le montant saisi est supérieur à 0."}
                       </p>
                     </div>
                   )}
@@ -1644,7 +1662,7 @@ export default function ConventionFormPage() {
                   <Input label="Honoraires agence (FCFA)" type="number" step="1000" {...register('agencyFees')} />
                 </div>
               )}
-              {!showPaymentChoice && (
+              {(!showPaymentChoice || isHeriteTransfertPayment) && (
                 <>
               <div className="grid grid-cols-2 gap-4 mt-4">
                 <Select label="Modalités de paiement" options={PAYMENT_MODALITES_OPTIONS} {...register('paymentModalites')} />
@@ -1654,7 +1672,7 @@ export default function ConventionFormPage() {
                 <div className="mt-4 p-4 bg-blue-50 rounded-lg space-y-4">
                   {/* Pour un transfert de site, pas d'apport — la base de
                       l'échéancier est directement le montant supplémentaire. */}
-                  {!isTransfertSite && (
+                  {!additionalIsInstallmentBase && (
                     <div className="grid grid-cols-2 gap-4">
                       <Input label="Apport initial (FCFA)" type="number" step="1000" {...register('apportInitial')} />
                       {watchModalites === 'SUR_PLUS_60_MOIS' && (
@@ -1662,7 +1680,7 @@ export default function ConventionFormPage() {
                       )}
                     </div>
                   )}
-                  {isTransfertSite && watchModalites === 'SUR_PLUS_60_MOIS' && (
+                  {additionalIsInstallmentBase && watchModalites === 'SUR_PLUS_60_MOIS' && (
                     <Input label="Nombre d'échéances" type="number" {...register('installmentCount')} />
                   )}
                   {installmentCount > 0 && (
@@ -1693,15 +1711,15 @@ export default function ConventionFormPage() {
                       </div>
                       <div className="flex justify-between text-xs mt-2 pt-2 border-t border-blue-200 text-slate-600">
                         <span>Total échéances : <span className="font-semibold">{installmentsTotal.toLocaleString('fr-FR')} FCFA</span></span>
-                        {isTransfertSite ? (
-                          <span>Montant supplémentaire : <span className="font-semibold">{(Number(watchAdditionalAmount) || 0).toLocaleString('fr-FR')} FCFA</span></span>
+                        {additionalIsInstallmentBase ? (
+                          <span>{additionalBaseLabel} : <span className="font-semibold">{(Number(watchAdditionalAmount) || 0).toLocaleString('fr-FR')} FCFA</span></span>
                         ) : (
                           <span>Apport + échéances : <span className="font-semibold">{(installmentsTotal + (Number(watchApport) || 0)).toLocaleString('fr-FR')} FCFA</span></span>
                         )}
                       </div>
                       <p className="text-xs text-slate-500 mt-1">
-                        {isTransfertSite
-                          ? "Par défaut : montant supplémentaire ÷ nombre d'échéances, le 5 de chaque mois à partir de la signature. Dates et montants modifiables."
+                        {additionalIsInstallmentBase
+                          ? `Par défaut : ${additionalBaseLabel.toLowerCase()} ÷ nombre d'échéances, le 5 de chaque mois à partir de la signature. Dates et montants modifiables.`
                           : "Par défaut : (prix de vente − apport) ÷ nombre d'échéances, le 5 de chaque mois à partir de la signature. Dates et montants modifiables."}
                       </p>
                     </div>

@@ -144,6 +144,7 @@ export const CONVENTION_VARIABLE_GROUPS: VariableGroup[] = [
       { token: 'avenant.nombreEcheances', label: "Nombre d'échéances (montant supplémentaire)" },
       { token: 'avenant.nombreEcheances.enLettres', label: "Nombre d'échéances du montant supplémentaire (en lettres)" },
       { token: 'avenant.echeancier', label: 'Tableau des échéances (montant supplémentaire)' },
+      { token: 'avenant.paiementAdditionnel.echeancier', label: 'Tableau des échéances du paiement additionnel (transfert de site hérité)' },
       { token: 'convention.initiale.reference', label: 'Référence de la convention initiale' },
       { token: 'convention.initiale.dateSignature', label: 'Date de signature de la convention initiale' },
       { token: 'convention.initiale.montantSouscription', label: 'Montant de souscription (convention initiale)' },
@@ -508,6 +509,13 @@ export function resolveConventionVariables(
       ? numL(c.installmentCount)
       : '',
     'avenant.echeancier': (c.type === 'AVENANT' && c.amendmentType === 'TRANSFERT_SITE')
+      ? buildInstallmentsTable(c.installments)
+      : '',
+    // Avenant de transfert de site / lot d'une convention HÉRITÉE avec paiement
+    // additionnel > 0 réglé par échéances : tableau de l'échéancier de ce
+    // paiement additionnel. Vide dans tous les autres cas (dont comptant).
+    'avenant.paiementAdditionnel.echeancier': (c.type === 'AVENANT_TRANSFERT_SITE_HERITE'
+        && Number(c.additionalAmount ?? 0) > 0)
       ? buildInstallmentsTable(c.installments)
       : '',
     'convention.initiale.reference': c.parentConvention?.reference ?? '',

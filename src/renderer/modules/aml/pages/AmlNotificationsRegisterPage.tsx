@@ -10,10 +10,13 @@ import { SkeletonTable } from '../../../shared/components/ui/Skeleton';
 import EmptyState from '../../../shared/components/ui/EmptyState';
 import ConfirmDialog from '../../../shared/components/ui/ConfirmDialog';
 import ExportMenu, { ExportColumn } from '../../../shared/components/ExportMenu';
+import RegisterDetailModal from '../components/RegisterDetailModal';
 import {
   useAmlNotifications, useCreateAmlNotification, useUpdateAmlNotification, useDeleteAmlNotification,
 } from '../hooks/useAml';
-import { Plus, Edit, Trash2, Save, X, BellRing } from 'lucide-react';
+import {
+  Plus, Edit, Trash2, Save, X, BellRing, Eye, Calendar, Send, Share2, CheckCircle2, XCircle, StickyNote, Clock,
+} from 'lucide-react';
 
 interface EditState {
   id?: number;
@@ -40,6 +43,7 @@ export default function AmlNotificationsRegisterPage() {
 
   const [editing, setEditing] = useState<EditState | null>(null);
   const [toDelete, setToDelete] = useState<any>(null);
+  const [viewing, setViewing] = useState<any>(null);
 
   const startNew = () => setEditing({ ...emptyState });
   const startEdit = (r: any) => setEditing({
@@ -165,6 +169,7 @@ export default function AmlNotificationsRegisterPage() {
                   <td className="px-4 py-3 text-slate-500">{fmtDate(r.createdAt)}</td>
                   <td className="px-4 py-3">
                     <div className="flex justify-end gap-1">
+                      <Button variant="ghost" size="sm" icon={<Eye className="h-4 w-4" />} onClick={() => setViewing(r)} />
                       <Button variant="ghost" size="sm" icon={<Edit className="h-4 w-4" />} onClick={() => startEdit(r)} />
                       <Button variant="ghost" size="sm" icon={<Trash2 className="h-4 w-4" />} onClick={() => setToDelete(r)} />
                     </div>
@@ -180,6 +185,31 @@ export default function AmlNotificationsRegisterPage() {
         message={`Supprimer l'enregistrement « ${toDelete?.reference ?? ''} » ?`}
         onConfirm={async () => { if (toDelete) await del.mutateAsync(toDelete.id); setToDelete(null); }}
         onClose={() => setToDelete(null)} />
+
+      <RegisterDetailModal
+        open={!!viewing}
+        onClose={() => setViewing(null)}
+        accent="amber"
+        icon={<BellRing className="h-5 w-5" />}
+        eyebrow="Notification"
+        reference={viewing?.reference}
+        badge={viewing && (
+          <Badge variant={viewing.ackReceived ? 'success' : 'default'}>
+            <span className="flex items-center gap-1">
+              {viewing.ackReceived ? <CheckCircle2 className="h-3 w-3" /> : <XCircle className="h-3 w-3" />}
+              {viewing.ackReceived ? 'AR obtenu' : 'AR non obtenu'}
+            </span>
+          </Badge>
+        )}
+        fields={viewing ? [
+          { key: 'updateDate', label: 'Date de la mise à jour', value: fmtDate(viewing.updateDate), icon: <Calendar className="h-4 w-4" /> },
+          { key: 'notificationDate', label: 'Date de notification', value: fmtDate(viewing.notificationDate), icon: <Send className="h-4 w-4" /> },
+          { key: 'transmissionMode', label: 'Mode de transmission', value: viewing.transmissionMode, icon: <Share2 className="h-4 w-4" /> },
+          { key: 'createdAt', label: 'Enregistré le', value: fmtDate(viewing.createdAt), icon: <Clock className="h-4 w-4" /> },
+          { key: 'updateDescription', label: 'Description de la mise à jour', value: viewing.updateDescription, icon: <BellRing className="h-3.5 w-3.5" />, full: true },
+          { key: 'notes', label: 'Notes', value: viewing.notes, icon: <StickyNote className="h-3.5 w-3.5" />, full: true },
+        ] : []}
+      />
     </PageLayout>
   );
 }

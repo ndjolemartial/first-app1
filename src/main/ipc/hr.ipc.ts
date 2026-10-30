@@ -8,7 +8,7 @@ import { htmlToPdf, openPrintPreview } from '../services/pdf.service';
 import { loadContractCompany } from '../services/contract-template.service';
 import { getDefaultRates } from '../services/commission.service';
 import {
-  computePayroll, computePrimeAnciennete, getPayrollRates, setPayrollRates,
+  computePayroll, computePrimeAnciennete, computeUnpaidLeaveDeduction, getPayrollRates, setPayrollRates,
   loadPayslipCompany, renderPayslipHtml, loadPayslipLogo, computePayslipTotals, type PayrollRates,
 } from '../services/payroll.service';
 import {
@@ -966,6 +966,8 @@ export function registerHrIPC(): void {
     // Ancienneté figée à la fin de la période de paie (et non à la date du jour).
     const periodEnd = new Date(p.periodYear, p.periodMonth, 0);
     const prime = computePrimeAnciennete(Number(contract.baseSalary), employee.hireDate, periodEnd);
+    // Abattement salarial pour congé non rémunéré (sans solde…) approuvé sur la période.
+    const unpaidLeave = await computeUnpaidLeaveDeduction(employee.id, Number(contract.baseSalary), p.periodYear, p.periodMonth);
     const result = computePayroll(
       {
         baseSalary: Number(contract.baseSalary),
@@ -977,6 +979,9 @@ export function registerHrIPC(): void {
         overtimeAmount,
         transportAllowance: p.transportAllowance,
         commissionsVente: p.commissionsVente,
+        unpaidLeaveDays: unpaidLeave.days,
+        unpaidLeaveDailyRate: unpaidLeave.dailyRate,
+        unpaidLeaveAmount: unpaidLeave.amount,
       },
       rates,
     );
@@ -1047,6 +1052,20 @@ export function registerHrIPC(): void {
       if (filters.status) where.status = filters.status;
       if (filters.periodYear) where.periodYear = Number(filters.periodYear);
       if (filters.periodMonth) where.periodMonth = Number(filters.periodMonth);
+      // Recherche par nom d'employé : chaque mot saisi doit se retrouver dans le
+      // nom, les prénoms ou le matricule (ordre libre : « Nom Prénom » ou « Prénom Nom »).
+      const terms = String(filters.search ?? '').trim().split(/\s+/).filter(Boolean);
+      if (terms.length) {
+        where.employee = {
+          AND: terms.map((t) => ({
+            OR: [
+              { lastName: { contains: t } },
+              { firstName: { contains: t } },
+              { matricule: { contains: t } },
+            ],
+          })),
+        };
+      }
       // Rôles restreints : uniquement les bulletins des employés non-CDI.
       const scope = await hrScopeWhere(session, db, 'employeeId');
       if (scope.employeeId) (where.AND ??= []).push({ employeeId: scope.employeeId });
@@ -1220,6 +1239,8 @@ export function registerHrIPC(): void {
       // Ancienneté figée à la fin de la période de paie (et non à la date du jour).
       const periodEnd = new Date(payslip.periodYear, payslip.periodMonth, 0);
       const prime = computePrimeAnciennete(Number(contract.baseSalary), employee.hireDate, periodEnd);
+      // Abattement salarial pour congé non rémunéré (sans solde…) approuvé sur la période.
+      const unpaidLeave = await computeUnpaidLeaveDeduction(employee.id, Number(contract.baseSalary), payslip.periodYear, payslip.periodMonth);
       const result = computePayroll(
         {
           baseSalary: Number(contract.baseSalary),
@@ -1234,6 +1255,9 @@ export function registerHrIPC(): void {
           overtimeAmount,
           transportAllowance: d.transportAllowance,
           commissionsVente: d.commissionsVente,
+          unpaidLeaveDays: unpaidLeave.days,
+          unpaidLeaveDailyRate: unpaidLeave.dailyRate,
+          unpaidLeaveAmount: unpaidLeave.amount,
         },
         rates,
       );

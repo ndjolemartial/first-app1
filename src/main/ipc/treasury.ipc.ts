@@ -10,6 +10,29 @@ import { z } from 'zod';
 const READ_ROLES = ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ACCOUNTANT'];
 const WRITE_ROLES = ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ACCOUNTANT'];
 const ADMIN_ROLES = ['SUPER_ADMIN', 'ADMIN'];
+/**
+ * Rôles autorisés à corriger/modifier une opération de trésorerie existante
+ * (montant, date, libellé…). Contrôle de rôle EXACT : MANAGER en est exclu
+ * malgré son droit de saisie, et aucune équivalence `checkRole` ne s'applique.
+ */
+const OPERATION_EDIT_ROLES = ['SUPER_ADMIN', 'ADMIN', 'ACCOUNTANT'];
+/** Origines d'opération modifiables/supprimables à la main (les règlements restent liés à leur source). */
+const EDITABLE_SOURCES = ['MANUEL', 'TRANSFERT'];
+
+/**
+ * Retourne l'écriture miroir d'un virement interne (l'autre opération du même
+ * `transferGroupId`), ou `null` si l'opération n'est pas un virement.
+ */
+async function findTransferCounterpart(
+  db: ReturnType<typeof getDb>,
+  op: { id: number; transferGroupId: string | null },
+) {
+  if (!op.transferGroupId) return null;
+  return db.treasuryOperation.findFirst({
+    where: { transferGroupId: op.transferGroupId, id: { not: op.id }, deletedAt: null },
+    include: { bankAccount: { select: { id: true, name: true, linkedUserId: true } } },
+  });
+}
 
 /**
  * Vérifie le rôle pour l'accès au module Trésorerie.
@@ -73,7 +96,7 @@ const ser = <T>(v: T): T => JSON.parse(JSON.stringify(v));
 /** Inclusion Prisma : titulaire d'un compte privé (sans données sensibles). */
 const linkedUserInclude = { select: { id: true, firstName: true, lastName: true, role: true } } as const;
 
-const PAYMENT_METHODS = ['ESPECE', 'CHEQUE', 'TRANSFERT', 'VIREMENT', 'MOBILE_MONEY'] as const;
+const PAYMENT_METHODS = ['ESPECE', 'CHEQUE', 'TRANSFERT', 'VIREMENT', 'MOBILE_MONEY', 'PRELEVEMENT'] as const;
 
 /* ─── Schémas de validation Zod ────────────────────────────────────── */
 
@@ -105,7 +128,8 @@ const thirdPartySchema = z.object({
   isActive: z.boolean().optional(),
 });
 
-const operationSchema = z
+/** Champs d'une opération (sans le contrôle d'exclusivité, réutilisé en `.partial()` pour la modification). */
+const operationBaseSchema = z
   .object({
     bankAccountId: z.number().int().positive(),
     direction: z.enum(['ENTREE', 'SORTIE']),
@@ -131,7 +155,9 @@ const operationSchema = z
     lotissementId: z.number().int().positive().nullable().optional(),
     programmeId: z.number().int().positive().nullable().optional(),
     notes: z.string().optional(),
-  })
+  });
+
+const operationSchema = operationBaseSchema
   .refine(
     (d) => {
       const set = [d.projectId, d.lotissementId, d.programmeId].filter((v) => v != null).length;
@@ -674,13 +700,13 @@ export function registerTreasuryIPC(): void {
     try {
       const session = getSession(token);
       if (!session) return { success: false, error: 'Session expirée' };
-      checkTreasuryRole(session, WRITE_ROLES);
+      if (!OPERATION_EDIT_ROLES.includes(session.role)) {
+        return { success: false, error: 'Permission insuffisante : seuls SUPER_ADMIN, ADMIN et Comptable peuvent modifier une opération' };
+      }
       // Sur l'update partiel, on ne peut pas réutiliser le refine du schéma complet.
       // On le wrappe en mode "passthrough" puis on revalide l'exclusivité après merge
       // avec l'existant (cf. plus bas).
-      const updateSchema = (operationSchema as any).innerType
-        ? (operationSchema as any).innerType().partial()
-        : (operationSchema as unknown as z.ZodObject<any>).partial();
+      const updateSchema = operationBaseSchema.partial();
       const parsed = updateSchema.safeParse(payload);
       if (!parsed.success) return { success: false, error: parsed.error.format() };
       const d = parsed.data;
@@ -688,7 +714,7 @@ export function registerTreasuryIPC(): void {
 
       const existing = await db.treasuryOperation.findUnique({
         where: { id },
-        include: { bankAccount: { select: { linkedUserId: true } } },
+        include: { bankAccount: { select: { name: true, linkedUserId: true } } },
       });
       if (!existing || existing.deletedAt) return { success: false, error: 'Opération introuvable' };
       // Compte privé : opération réservée au titulaire (ou SUPER_ADMIN/ADMIN).
@@ -697,8 +723,31 @@ export function registerTreasuryIPC(): void {
       }
       // Les opérations générées par un règlement ne sont pas modifiables ici :
       // elles reflètent un encaissement/paiement et restent liées à leur source.
-      if (existing.source !== 'MANUEL') {
-        return { success: false, error: 'Seule une opération saisie manuellement peut être modifiée' };
+      if (!EDITABLE_SOURCES.includes(existing.source)) {
+        return { success: false, error: 'Une opération issue d\'un règlement ne peut pas être modifiée' };
+      }
+      // Virement interne : les deux écritures liées sont mises à jour ensemble.
+      // Le compte et le sens d'une écriture de virement sont figés (sinon la
+      // paire crédit/débit perdrait sa cohérence).
+      const counterpart = existing.source === 'TRANSFERT' ? await findTransferCounterpart(db, existing) : null;
+      if (existing.source === 'TRANSFERT') {
+        if (d.bankAccountId !== undefined && d.bankAccountId !== existing.bankAccountId) {
+          return { success: false, error: 'Le compte d\'une opération de transfert ne peut pas être modifié' };
+        }
+        if (d.direction !== undefined && d.direction !== existing.direction) {
+          return { success: false, error: 'Le sens d\'une opération de transfert ne peut pas être modifié' };
+        }
+        if (counterpart && !canAccessAccount(session, counterpart.bankAccount)) {
+          return { success: false, error: 'Vous n\'avez pas accès au compte de l\'opération liée à ce transfert' };
+        }
+      }
+      // L'objet d'opération doit rester cohérent avec le sens.
+      if (d.categoryId != null && d.categoryId !== existing.categoryId) {
+        const category = await db.treasuryCategory.findUnique({ where: { id: d.categoryId } });
+        if (!category || category.deletedAt) return { success: false, error: 'Objet d\'opération introuvable' };
+        if (category.direction !== (d.direction ?? existing.direction)) {
+          return { success: false, error: 'L\'objet choisi ne correspond pas au sens de l\'opération' };
+        }
       }
       // Si l'opération est déplacée vers un autre compte, celui-ci doit aussi être accessible.
       if (d.bankAccountId !== undefined && d.bankAccountId !== existing.bankAccountId) {
@@ -761,9 +810,37 @@ export function registerTreasuryIPC(): void {
       }
 
       const data: any = { ...d };
+      // `linkedAccountId` ne sert qu'à la création d'un virement (pas une colonne).
+      delete data.linkedAccountId;
       if (d.amount !== undefined) data.amount = d.amount as never;
       if (d.operationDate !== undefined) data.operationDate = new Date(d.operationDate);
-      const operation = await db.treasuryOperation.update({ where: { id }, data });
+
+      // Champs répercutés sur l'écriture miroir d'un virement (même mouvement
+      // d'argent) : montant, date, mode et référence de paiement, notes.
+      // Objet, tiers et imputations restent propres à chaque écriture.
+      const mirrorData: any = {};
+      if (counterpart) {
+        if (data.amount !== undefined) mirrorData.amount = data.amount;
+        if (data.operationDate !== undefined) mirrorData.operationDate = data.operationDate;
+        if (d.paymentMethod !== undefined) mirrorData.paymentMethod = d.paymentMethod;
+        if (d.paymentRef !== undefined) mirrorData.paymentRef = d.paymentRef;
+        if (d.notes !== undefined) mirrorData.notes = d.notes;
+        // Libellé : l'écriture miroir porte « <libellé> – <compte d'origine> ».
+        // Si l'écriture modifiée est l'originale, on garde ce suffixe aligné.
+        if (d.label !== undefined && d.label.trim() && d.label !== existing.label
+            && counterpart.label === `${existing.label} – ${existing.bankAccount.name}`) {
+          mirrorData.label = `${d.label.trim()} – ${existing.bankAccount.name}`;
+        }
+      }
+
+      const operation = await db.$transaction(async (tx) => {
+        const op = await tx.treasuryOperation.update({ where: { id }, data });
+        if (counterpart && Object.keys(mirrorData).length > 0) {
+          await tx.treasuryOperation.update({ where: { id: counterpart.id }, data: mirrorData });
+        }
+        return op;
+      });
+      logger.info(`Opération de trésorerie modifiée: ${operation.reference}${counterpart ? ` (+ écriture liée ${counterpart.reference})` : ''}`);
       return ser({ success: true, data: operation });
     } catch (error: any) {
       logger.error('treasury:updateOperation error', error.message);
@@ -786,11 +863,19 @@ export function registerTreasuryIPC(): void {
       if (!canAccessAccount(session, existing.bankAccount)) {
         return { success: false, error: 'Vous n\'avez pas accès à ce compte de trésorerie' };
       }
-      if (existing.source !== 'MANUEL') {
+      if (!EDITABLE_SOURCES.includes(existing.source)) {
         return { success: false, error: 'Une opération issue d\'un règlement ne peut pas être supprimée' };
       }
-      await db.treasuryOperation.update({ where: { id }, data: { deletedAt: new Date() } });
-      logger.info(`Opération de trésorerie supprimée: id=${id}`);
+      // Virement interne : l'écriture miroir est supprimée avec elle.
+      const counterpart = existing.source === 'TRANSFERT' ? await findTransferCounterpart(db, existing) : null;
+      if (counterpart && !canAccessAccount(session, counterpart.bankAccount)) {
+        return { success: false, error: 'Vous n\'avez pas accès au compte de l\'opération liée à ce transfert' };
+      }
+      await db.treasuryOperation.updateMany({
+        where: { id: { in: counterpart ? [id, counterpart.id] : [id] }, deletedAt: null },
+        data: { deletedAt: new Date() },
+      });
+      logger.info(`Opération de trésorerie supprimée: id=${id}${counterpart ? ` (+ écriture liée ${counterpart.reference})` : ''}`);
       return { success: true };
     } catch (error: any) {
       logger.error('treasury:deleteOperation error', error.message);

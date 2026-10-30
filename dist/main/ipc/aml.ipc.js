@@ -299,16 +299,27 @@ const trainingCreateSchema = trainingBaseSchema.extend({
 const trainingUpdateSchema = trainingBaseSchema.extend({ userId: zod_1.z.coerce.number().int().positive() }).partial();
 // Alerte CENTIF-CI / mise à jour d'une liste SFC — un enregistrement = une
 // version de la base de criblage.
+/**
+ * Date facultative d'une alerte, bornée aux années 1900–9999 : un champ date
+ * Chromium accepte une année sur 5-6 chiffres (ex. « 12026 » si l'on tape dans un
+ * segment année non vide), que MariaDB/Prisma refusent ensuite avec une erreur
+ * technique illisible. On rejette donc ici avec un message clair.
+ */
+const alertDate = (label) => zod_1.z.preprocess(emptyToNull, zod_1.z.coerce.date()
+    .refine((d) => d.getUTCFullYear() >= 1900 && d.getUTCFullYear() <= 9999, { message: `${label} : année invalide (vérifiez la saisie, ex. 12026 au lieu de 2026)` })
+    .nullable()
+    .optional());
 const alertBaseSchema = zod_1.z.object({
     source: zod_1.z.enum(['CENTIF_CI', 'SFC', 'ONU', 'UE', 'GIABA', 'AUTRE']),
     title: zod_1.z.string().min(1, 'Intitulé requis'),
-    centifPublicationDate: zod_1.z.preprocess(emptyToNull, zod_1.z.coerce.date().nullable().optional()),
-    fileDownloadedAt: zod_1.z.preprocess(emptyToNull, zod_1.z.coerce.date().nullable().optional()),
-    integratedAt: zod_1.z.preprocess(emptyToNull, zod_1.z.coerce.date().nullable().optional()),
+    centifPublicationDate: alertDate('Date de publication CENTIF-CI'),
+    fileDownloadedAt: alertDate('Date de téléchargement du fichier'),
+    integratedAt: alertDate("Date d'intégration dans l'outil interne"),
     operatorId: zod_1.z.preprocess(emptyToNull, zod_1.z.coerce.number().int().positive().nullable().optional()),
     operatorName: zod_1.z.preprocess(emptyToNull, zod_1.z.string().nullable().optional()),
     entriesAdded: zod_1.z.preprocess(emptyToNull, zod_1.z.coerce.number().int().min(0).nullable().optional()),
     entriesModified: zod_1.z.preprocess(emptyToNull, zod_1.z.coerce.number().int().min(0).nullable().optional()),
+    entriesDeleted: zod_1.z.preprocess(emptyToNull, zod_1.z.coerce.number().int().min(0).nullable().optional()),
     notes: zod_1.z.preprocess(emptyToNull, zod_1.z.string().nullable().optional()),
 });
 const alertCreateSchema = alertBaseSchema;
